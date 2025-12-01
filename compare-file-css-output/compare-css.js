@@ -6,38 +6,36 @@ const path = require('path');
  * So sánh CSS trước và sau khi migration để verify không có thay đổi về styling
  */
 
-// Config các file cần compare
-const CSS_COMPARISON_CONFIG = [
+// ==== CONFIG (có thể chỉnh) ====
+const BEFORE_ROOT = "/Users/thien.ho/Projects/aemaacs-investments-azure/mandg-investments/ui.frontend/dist/";
+const AFTER_ROOT = "/Users/thien.ho/Projects/aemaacs-investments-azure-2/mandg-investments/ui.frontend/dist/";
+
+// Danh sách các file CSS cần compare (chỉ cần path tương ứng, vì cấu trúc thư mục giống nhau ở cả 2 bên)
+const CSS_COMPARISON_FILES = [
   {
     name: 'Infracapital Main CSS',
-    before: path.join(__dirname, 'coverage/css-origin-before/clientlib-site-infracapital/css/site-infracapital.css'),
-    after: path.join(__dirname, 'dist/clientlib-site-infracapital/css/site-infracapital.css'),
+    filePath: 'infracapital/clientlib-site-infracapital/css/site-infracapital.css',
   },
   {
     name: 'Infracapital Print CSS',
-    before: path.join(
-      __dirname,
-      'coverage/css-origin-before/clientlib-site-infracapital/css/site-infracapital-print.css',
-    ),
-    after: path.join(__dirname, 'dist/clientlib-site-infracapital/css/site-infracapital-print.css'),
+    filePath: 'infracapital/clientlib-site-infracapital/css/site-infracapital-print.css',
   },
   {
     name: 'Investments Main CSS',
-    before: path.join(
-      __dirname,
-      'coverage/css-origin-before/clientlib-site-mg-investments/css/site-mg-investments.css',
-    ),
-    after: path.join(__dirname, 'dist/clientlib-site-mg-investments/css/site-mg-investments.css'),
+    filePath: 'clientlib-site-mg-investments/css/site-mg-investments.css',
   },
   {
     name: 'Investments Print CSS',
-    before: path.join(
-      __dirname,
-      'coverage/css-origin-before/clientlib-site-mg-investments/css/site-mg-investments-print.css',
-    ),
-    after: path.join(__dirname, 'dist/clientlib-site-mg-investments/css/site-mg-investments-print.css'),
+    filePath: 'clientlib-site-mg-investments/css/site-mg-investments-print.css',
   },
 ];
+
+// Build full config từ base paths và file paths
+const CSS_COMPARISON_CONFIG = CSS_COMPARISON_FILES.map((file) => ({
+  name: file.name,
+  before: path.join(BEFORE_ROOT, file.filePath),
+  after: path.join(AFTER_ROOT, file.filePath),
+}));
 
 /**
  * Parse CSS thành object với selector và properties

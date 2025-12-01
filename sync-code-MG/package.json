@@ -1,0 +1,24 @@
+{
+  "name": "sync-code-mg",
+  "version": "1.0.0",
+  "description": "Scripts to sync code between MG projects",
+  "main": "index.js",
+  "scripts": {
+    "sync-other": "node sync-other.js",
+    "sync-import": "node sync-import.js",
+    "sync-component": "node sync-component.js",
+    "sync-component-scss": "node sync-component-scss.js",
+    "sync-component-update": "node synt-component-update.js"
+  },
+  "keywords": [
+    "sync",
+    "mg",
+    "code-sync"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "fs-extra": "^11.2.0"
+  }
+}
+

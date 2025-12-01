@@ -1,0 +1,18 @@
+{
+  "name": "compare-css-output",
+  "version": "1.0.0",
+  "description": "Script to compare CSS files before and after migration",
+  "main": "compare-css.js",
+  "scripts": {
+    "compare": "node compare-css.js",
+    "compare-css": "node compare-css.js"
+  },
+  "keywords": [
+    "css",
+    "comparison",
+    "migration"
+  ],
+  "author": "",
+  "license": "ISC"
+}
+
