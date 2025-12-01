@@ -1,0 +1,17 @@
+npm test -- --coverage --testPathPattern=6-components
+npm test -- --coverage --testPathPattern=react/fund-charge-calculator
+
+
+npm test -- --coverage --coverageReporters=text-summary --testPathPattern=
+
+npm test -- --coverage --coverageReporters=text-summary
+
+npm test -- contactInfoTiles --coverage --collectCoverageFrom="src/main/webpack/js/base/6-components/contactInfoTiles/**/*.{ts,tsx}" 2>&1 | tail -20
+source ~/.nvm/nvm.sh && nvm use 22 && npm run test:coverage
+
+npm run test:coverage -- --coverageReporters=text-summary
+
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+cd ./mandg-investments/ui.frontend && yarn install --ignore-optional && npx lint-staged

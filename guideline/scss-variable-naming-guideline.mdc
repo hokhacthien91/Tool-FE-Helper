@@ -1,0 +1,261 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# SCSS/Sass Variable Naming Guideline với BEM
+
+## Khi nào nên đặt biến SCSS/Sass?
+
+Bạn nên quyết định đặt biến SCSS/Sass trong các trường hợp sau:
+
+1. **Giá trị được dùng lặp lại nhiều lần**
+2. **Giá trị có thể thay đổi theo theme, brand, hoặc môi trường**
+3. **Giá trị dùng cho responsive (nhiều breakpoint)**
+4. **Giá trị là chuẩn của design system hoặc guideline**
+5. **Giá trị liên quan đến trạng thái, semantic, animation, transition**
+6. **Giá trị có thể được tái sử dụng giữa nhiều component**
+7. **Giá trị cần override hoặc custom cho từng component**
+8. **Giá trị là magic number (số liệu không rõ nghĩa)**
+9. **Giá trị liên quan đến accessibility hoặc trạng thái đặc biệt**
+10. **Khi muốn chuẩn hóa code, tăng khả năng đọc hiểu cho team**
+
+> **Tóm lại:**
+> Bất cứ khi nào bạn thấy một giá trị có thể lặp lại, có khả năng thay đổi, hoặc cần dùng lại ở nhiều nơi/component, hãy đặt nó thành biến!
+
+---
+
+## Mục đích
+Tài liệu này hướng dẫn quy tắc đặt tên biến SCSS/Sass cho dự án, giúp team thống nhất và dễ bảo trì code, đặc biệt áp dụng cho các thư mục như `mg-investments`, `1-settings`, `6-components` trong arrow-ds.
+
+---
+
+## 1. Quy tắc tổng quát
+- **Dùng tiếng Anh** cho tên biến.
+- **Kebab-case**: Các từ nối với nhau bằng dấu gạch ngang `-`.
+- **BEM methodology**: Tuân thủ cấu trúc `$block__element-property--modifier` cho biến component.
+- **Tiền tố (prefix)** và **hậu tố (suffix)** rõ ràng, thể hiện nhóm chức năng, loại giá trị, trạng thái hoặc breakpoint.
+- **Tên biến mô tả rõ ràng** về mục đích sử dụng.
+- **Không viết tắt khó hiểu** (chỉ viết tắt phổ biến như `bg` cho background, `sm` cho small, v.v.).
+- **Tất cả biến SCSS phải có `!default`** để dễ override.
+- **Không tạo biến cho giá trị = 0** (dùng trực tiếp số 0 trong SCSS).
+- **Chỉ tạo biến cho giá trị thực sự dùng, loại bỏ biến không dùng khỏi file settings**.
+- **Không tạo biến cho z-index, luôn dùng giá trị số trực tiếp cho z-index trong SCSS.**
+
+---
+
+## 2. Cấu trúc BEM cho biến SCSS (Component Variables)
+- **Block**: `$component-name__`
+- **Element**: `$component-name__element-`
+- **Modifier**: `$component-name__element-property--modifier`
+
+### Ví dụ BEM Structure:
+```scss
+// Block properties (thuộc tính chung của component)
+$graphic-count__gap: 32px !default;
+$graphic-count__width-full: 100% !default;
+$graphic-count__font-weight-bold: 700 !default;
+
+// Element properties (thuộc tính của element cụ thể)
+$graphic-count__counter-font-size: functions.pxToRem(84) !default;
+$graphic-count__label-font-size: functions.pxToRem(20) !default;
+$graphic-count__container-padding-y: 40px !default;
+$graphic-count__counter-wrapper-separator-width: 100% !default;
+
+// Element properties with modifiers (thuộc tính element với biến thể)
+$graphic-count__counter-font-size--large: functions.pxToRem(102) !default;
+$graphic-count__counter-font-size--medium: functions.pxToRem(72) !default;
+$graphic-count__container-max-width--small: 406px !default;
+$graphic-count__counter-wrapper-separator-color--grey: color.$hover-secondary-800 !default;
+```
+
+---
+
+## 3. Tiền tố (Prefix) theo loại biến
+### **A. Biến dùng chung (Global Variables):**
+- **Biến dùng chung cho design system:**
+  - `$ds-` (ví dụ: `$ds-font-size-heading-1`)
+- **Biến màu sắc:**
+  - `$color-` (ví dụ: `$color-coral-eb-5-c-37`)
+  - `$color-semantic-` (ví dụ: `$color-semantic-success`, `$color-semantic-error`)
+- **Biến theme:**
+  - `$theme-group--` (ví dụ: `$theme-group--investment`)
+- **Biến spacing, padding, grid, v.v.:**
+  - `$spacing-`, `$padding-`, `$grid-`, `$margin-`, `$gap-`, v.v.
+- **Biến animation, transition:**
+  - `$animation-`, `$transition-`, `$easing-`, `$duration-`, v.v.
+
+### **B. Biến component theo BEM:**
+- **Biến block:** `$component-name__property`
+- **Biến element:** `$component-name__element-property`
+- **Biến element với modifier:** `$component-name__element-property--modifier`
+
+---
+
+## 4. Hậu tố (Suffix) theo BEM
+- **Modifier size:** `--large`, `--medium`, `--small`, `--xl`, `--xs`
+- **Modifier state:** `--active`, `--hover`, `--disabled`, `--focus`, `--selected`
+- **Modifier theme:** `--dark`, `--light`, `--primary`, `--secondary`
+- **Modifier color:** `--grey`, `--teal`, `--white`, `--green`
+- **Modifier responsive:** `--mobile`, `--tablet`, `--desktop`
+- **Modifier orientation:** `--horizontal`, `--vertical`
+- **Modifier variant:** `--thin`, `--thick`, `--solid`, `--dashed`
+
+---
+
+## 5. Đặt tên biến trong component theo BEM
+- **Biến settings cho component:**
+  - Đặt trong file `*.settings.scss`, tuân thủ BEM structure.
+  - Ví dụ: `$graphic-count__counter-font-size`, `$graphic-count__label-margin-top`
+- **Biến element với modifier:**
+  - `$graphic-count__counter-font-size--large`
+  - `$graphic-count__container-padding-y--medium`
+  - `$graphic-count__counter-wrapper-separator-color--grey`
+
+### Mapping BEM CSS với SCSS Variables:
+```scss
+// CSS: .graphic-count__counter--large
+// SCSS: $graphic-count__counter-font-size--large
+
+// CSS: .graphic-count__item--grey
+// SCSS: $graphic-count__counter-wrapper-separator-color--grey
+
+// CSS: .graphic-count__container
+// SCSS: $graphic-count__container-padding-y
+```
+
+---
+
+## 6. Đặt tên mixin, function, placeholder
+- **Mixin:**
+  - `@mixin <component>-<action>-<state>` (ví dụ: `@mixin button-hover-effect`, `@mixin card-elevated`)
+- **Function:**
+  - `@function <action>-<type>` (ví dụ: `@function rem-calc`, `@function color-shade`)
+- **Placeholder selector:**
+  - `%<component>-<purpose>` (ví dụ: `%button-reset`, `%card-container`)
+
+---
+
+## 7. Quy tắc đặc biệt cho font-size và đơn vị rem
+- **Chỉ các biến font-size mới dùng hàm chuyển đổi px sang rem:**
+  - Sử dụng function: `functions.pxToRem(<px-value>)` (import từ `@use '../../2-tools/functions'`)
+  - Ví dụ: `$graphic-count__counter-font-size: functions.pxToRem(84) !default;`
+- **Các giá trị spacing, width, height, margin, padding... vẫn dùng đơn vị px hoặc % như bình thường.**
+- **Không tạo biến cho giá trị 0 (dùng trực tiếp số 0 trong SCSS).**
+- **Không tạo biến cho z-index, luôn dùng giá trị số trực tiếp cho z-index trong SCSS.**
+
+---
+
+## 8. Import và override biến theo BEM
+- **Import file settings bằng cú pháp:**
+  - `@use './<component>.settings' as <alias>;`
+  - Ví dụ: `@use './graphicCount.settings' as graphicCountSettings;`
+- **Sử dụng biến:** `graphicCountSettings.$graphic-count__counter-font-size`
+- **Import function chuyển đổi rem:**
+  - `@use '../../2-tools/functions';`
+- **Tất cả biến trong file settings phải có `!default` để cho phép override.**
+- **Loại bỏ các biến không còn được sử dụng khỏi file settings.**
+
+---
+
+## 9. Theme/component override chuẩn với @use ... with (...)
+- **Khi muốn override settings cho theme hoặc component, luôn dùng cú pháp:**
+  - `@use '<path-to-base>/<component>.settings' with (...);`
+- **Không copy-paste lại toàn bộ biến, chỉ override giá trị cần thiết.**
+- **Ví dụ thực tế với BEM:**
+```scss
+@use '../../../base/1-settings/color';
+@use '../../../base/2-tools/functions';
+@use '../../../base/6-components/graphicCount/graphicCount.settings' with (
+  $graphic-count__counter-font-size--large: functions.pxToRem(120),
+  $graphic-count__container-padding-y--large: 120px,
+  $graphic-count__counter-wrapper-separator-color--teal: color.$primary-200,
+  // ... các biến khác theo BEM structure
+);
+```
+- **Áp dụng đúng như các file trong mg-investments.**
+
+---
+
+## 10. Ví dụ thực tế theo BEM
+```scss
+@use '../../2-tools/functions';
+@use '../../1-settings/color';
+
+// Block properties (thuộc tính chung của component)
+$graphic-count__gap: 32px !default;
+$graphic-count__width-full: 100% !default;
+$graphic-count__font-weight-bold: 700 !default;
+
+// Element: counter (header/số đếm)
+$graphic-count__counter-font-size: functions.pxToRem(84) !default;
+$graphic-count__counter-font-size--large: functions.pxToRem(102) !default;
+$graphic-count__counter-line-height: 1.1 !default;
+
+// Element: label (text/nhãn)
+$graphic-count__label-font-size: functions.pxToRem(20) !default;
+$graphic-count__label-margin-top: 8px !default;
+
+// Element: container với modifiers
+$graphic-count__container-max-width--large: 600px !default;
+$graphic-count__container-padding-y--medium: 72px !default;
+
+// Element: counter-wrapper (separator) với modifiers
+$graphic-count__counter-wrapper-separator-color--grey: color.$hover-secondary-800 !default;
+$graphic-count__counter-wrapper-separator-height--thick: 2px !default;
+
+// Không tạo biến cho giá trị 0
+// Không tạo biến cho z-index
+```
+
+---
+
+## 11. Checklist khi đặt tên biến theo BEM
+- [x] **Tuân thủ BEM structure**: `$block__element-property--modifier`
+- [x] Đặt tên bằng tiếng Anh, rõ ràng, mô tả đúng chức năng.
+- [x] Dùng kebab-case.
+- [x] **Có cấu trúc BEM rõ ràng** (block, element, modifier).
+- [x] **Biến element phản ánh đúng HTML structure**.
+- [x] **Modifier mô tả đúng variant/state**.
+- [x] Biến dùng riêng cho component nên đặt trong file `.settings.scss` tương ứng.
+- [x] Biến trạng thái, responsive, semantic, animation đặt đúng chuẩn.
+- [x] Tất cả biến phải có `!default`.
+- [x] Không tạo biến cho giá trị 0.
+- [x] Biến font-size dùng function pxToRem nếu là px.
+- [x] Loại bỏ biến không dùng khỏi file settings.
+- [x] **Override theme/component phải dùng @use ... with (...), không copy lại toàn bộ biến.**
+- [x] **Không tạo biến cho z-index, luôn dùng giá trị số trực tiếp cho z-index trong SCSS.**
+
+---
+
+## 12. So sánh: Trước và Sau khi áp dụng BEM
+
+### ❌ **Trước (không theo BEM):**
+```scss
+$graphic-count-font-size-header-large: functions.pxToRem(102) !default;
+$graphic-count-color-primary-100: color.$primary-100 !default;
+$graphic-count-padding-y-medium: 72px !default;
+```
+
+### ✅ **Sau (theo BEM):**
+```scss
+$graphic-count__counter-font-size--large: functions.pxToRem(102) !default;
+$graphic-count__counter-wrapper-separator-color--teal: color.$primary-100 !default;
+$graphic-count__container-padding-y--medium: 72px !default;
+```
+
+### 🎯 **Lợi ích:**
+- **Tính nhất quán**: Mọi biến đều tuân thủ cấu trúc BEM
+- **Dễ hiểu**: Tên biến phản ánh đúng HTML structure  
+- **Dễ bảo trì**: Rõ ràng element nào thuộc về component nào
+- **Scalable**: Dễ mở rộng với modifier mới
+- **Theme-ready**: Dễ override theo theme với BEM structure
+
+---
+
+**Mọi thắc mắc hoặc đề xuất bổ sung, vui lòng liên hệ team FE để cập nhật guideline này!** 
