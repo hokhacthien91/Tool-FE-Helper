@@ -1,0 +1,23 @@
+{
+  "name": "check-name",
+  "version": "1.0.0",
+  "description": "Tool to scan pages and extract accessible names from links, buttons, checkboxes, radio buttons, and text elements",
+  "main": "scan-elements.js",
+  "type": "module",
+  "scripts": {
+    "scan": "node scan-elements.js"
+  },
+  "keywords": [
+    "accessibility",
+    "scan",
+    "elements",
+    "excel"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^21.6.1",
+    "xlsx": "^0.18.5"
+  }
+}
+
