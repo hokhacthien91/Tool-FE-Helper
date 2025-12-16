@@ -75,8 +75,20 @@ const RULES = {
   // 7) Accessibility - Color Contrast (WCAG AA only)
   checkTextContrast: true,
   contrastAA: 4.5, // WCAG AA for normal text
-  contrastAALarge: 3.0 // WCAG AA for large text (>= 18pt or >= 14pt bold)
+  contrastAALarge: 3.0, // WCAG AA for large text (>= 18pt or >= 14pt bold)
+  
+  // 8) Accessibility - Text Size for Mobile (ADA)
+  checkTextSizeMobile: true,
+  mobileMinTextSize: 16, // Minimum text size for mobile (px)
+  mobileMinTextSizeBold: 14 // Minimum text size for bold text on mobile (px)
 };
+
+const STORAGE_KEYS = {
+  lastReport: "design-qa-last-report",
+  history: "design-qa-history"
+};
+
+const MAX_HISTORY_ENTRIES = 10;
 
 // Hash for duplicate detection (more detailed)
 function nodeHash(node) {
@@ -523,6 +535,58 @@ function checkTextContrast(node) {
       gradientType: gradientType,
       gradientString: gradientString,
       fromSibling: bgInfo.fromSibling || false
+    };
+  }
+  
+  return null;
+}
+
+// Check if a node is within mobile breakpoint (based on parent frame width)
+function isWithinMobileBreakpoint(node) {
+  if (!node || !node.parent) return false;
+  
+  // Traverse up the parent chain to find the first FRAME/COMPONENT/INSTANCE
+  let current = node.parent;
+  while (current && current.type !== "PAGE") {
+    if (current.type === "FRAME" || current.type === "COMPONENT" || current.type === "INSTANCE") {
+      // Check if frame width is within mobile breakpoint (0-768px)
+      if ("width" in current && typeof current.width === "number") {
+        const width = current.width;
+        return width > 0 && width <= RULES.breakpoints.mobile.max;
+      }
+    }
+    current = current.parent;
+  }
+  
+  // If no frame found, check if we're in a page that might be mobile
+  // Default: assume mobile if we can't determine (conservative approach)
+  return true;
+}
+
+// Check text size for mobile (ADA compliance)
+function checkTextSizeMobile(node) {
+  if (node.type !== "TEXT" || !RULES.checkTextSizeMobile) return null;
+  
+  // Check if text is within mobile breakpoint
+  if (!isWithinMobileBreakpoint(node)) return null;
+  
+  // Get font size
+  const fontSize = (node.fontSize && typeof node.fontSize === "number" && !isNaN(node.fontSize)) ? node.fontSize : null;
+  if (!fontSize) return null;
+  
+  // Check if text is too small (12px or smaller)
+  if (fontSize <= 12) {
+    const textPreview = node.characters ? node.characters.slice(0, 30) : "";
+    
+    return {
+      severity: "error",
+      type: "text-size-mobile",
+      message: `Text quá nhỏ trên mobile (${fontSize}px) — không đạt ADA. Font size từ 12px trở xuống không được phép trên mobile. Text: "${textPreview}"`,
+      id: node.id,
+      nodeName: node.name || "Unnamed",
+      fontSize: fontSize,
+      minSize: 12,
+      textPreview: textPreview
     };
   }
   
@@ -1541,6 +1605,14 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             contrastGroups.get(contrastKey).push(contrastIssue);
           }
         }
+        
+        // Text size for mobile (ADA) check
+        if (RULES.checkTextSizeMobile) {
+          const mobileSizeIssue = checkTextSizeMobile(node);
+          if (mobileSizeIssue) {
+            addIssue(mobileSizeIssue);
+          }
+        }
       }
 
       // 6) Component check (only for FRAME, not GROUP)
@@ -1836,15 +1908,27 @@ async function extractDesignTokens(target) {
     fontFamily: new Map()
   };
 
-  function addToken(map, value, nodeId, nodeName, colorType = null) {
+  function addToken(map, value, nodeId, nodeName, colorType = null, nodeMeta = null) {
     const key = String(value);
     if (!map.has(key)) {
       map.set(key, { value, nodes: [], colorType: colorType || null });
     }
     // Only add if not already in nodes array
     const existing = map.get(key);
-    if (!existing.nodes.some(n => n.id === nodeId)) {
-      existing.nodes.push({ id: nodeId, name: nodeName || "Unnamed" });
+    const existingNode = existing.nodes.find(n => n.id === nodeId);
+    if (!existingNode) {
+      const nodeObj = { id: nodeId, name: nodeName || "Unnamed" };
+      if (nodeMeta && typeof nodeMeta === "object") {
+        Object.assign(nodeObj, nodeMeta);
+      }
+      existing.nodes.push(nodeObj);
+    } else if (nodeMeta && typeof nodeMeta === "object") {
+      // Merge metadata if node already exists (keep the latest non-empty values)
+      for (const [k, v] of Object.entries(nodeMeta)) {
+        if (v !== undefined && v !== null && v !== "" && existingNode[k] !== v) {
+          existingNode[k] = v;
+        }
+      }
     }
     // Update colorType if provided and not already set
     if (colorType && !existing.colorType) {
@@ -1951,10 +2035,11 @@ async function extractDesignTokens(target) {
 
         // Font weight
         if (node.fontName && typeof node.fontName === "object") {
+          const family = node.fontName.family || "";
           const style = node.fontName.style || "";
           // Extract weight from style (e.g., "Bold", "Regular", "Medium")
           if (style) {
-            addToken(tokens.fontWeight, style, nodeId, nodeName);
+            addToken(tokens.fontWeight, style, nodeId, nodeName, null, { fontFamily: family || "Unknown" });
           }
         }
 
@@ -1979,7 +2064,23 @@ async function extractDesignTokens(target) {
       });
   }
 
-  return {
+  function enrichFontWeightTokens(fontWeightTokens) {
+    if (!Array.isArray(fontWeightTokens)) return fontWeightTokens;
+    for (const token of fontWeightTokens) {
+      const nodes = Array.isArray(token.nodes) ? token.nodes : [];
+      const familyCount = new Map();
+      for (const n of nodes) {
+        const fam = (n && n.fontFamily) ? String(n.fontFamily) : "Unknown";
+        familyCount.set(fam, (familyCount.get(fam) || 0) + 1);
+      }
+      token.fontFamilies = Array.from(familyCount.entries())
+        .map(([family, count]) => ({ family, count }))
+        .sort((a, b) => (b.count - a.count) || a.family.localeCompare(b.family));
+    }
+    return fontWeightTokens;
+  }
+
+  const result = {
     colors: mapToArray(tokens.colors),
     gradients: mapToArray(tokens.gradients),
     borderRadius: mapToArray(tokens.borderRadius, (a, b) => a - b),
@@ -1988,11 +2089,17 @@ async function extractDesignTokens(target) {
     fontSize: mapToArray(tokens.fontSize, (a, b) => b - a), // Descending
     fontFamily: mapToArray(tokens.fontFamily)
   };
+
+  // Add font-family usage breakdown for each font-weight token
+  result.fontWeight = enrichFontWeightTokens(result.fontWeight);
+
+  return result;
 }
 
 // Listen for UI commands
 figma.ui.onmessage = async msg => {
-  if (msg.type === "scan") {
+  switch (msg.type) {
+    case "scan": {
     const mode = msg.mode || "page";
     const spacingScaleInput = msg.spacingScale || "";
     const spacingThreshold = msg.spacingThreshold || 100;
@@ -2075,18 +2182,20 @@ figma.ui.onmessage = async msg => {
       figma.notify(`Lỗi khi quét: ${error.message}`);
       figma.ui.postMessage({ type: "report", issues: [], error: error.message });
     }
+    break;
   }
-  if (msg.type === "extract-tokens") {
-    const mode = msg.mode || "page";
-    try {
-      const tokens = await extractDesignTokens(mode);
-      figma.ui.postMessage({ type: "tokens-report", tokens });
-    } catch (error) {
-      figma.notify(`Lỗi khi extract tokens: ${error.message}`);
-      figma.ui.postMessage({ type: "tokens-report", tokens: null, error: error.message });
+    case "extract-tokens": {
+      const mode = msg.mode || "page";
+      try {
+        const tokens = await extractDesignTokens(mode);
+        figma.ui.postMessage({ type: "tokens-report", tokens });
+      } catch (error) {
+        figma.notify(`Lỗi khi extract tokens: ${error.message}`);
+        figma.ui.postMessage({ type: "tokens-report", tokens: null, error: error.message });
+      }
+      break;
     }
-  }
-  if (msg.type === "select-node") {
+    case "select-node": {
     const id = msg.id;
     const node = figma.getNodeById(id);
     if (node) {
@@ -2152,8 +2261,57 @@ figma.ui.onmessage = async msg => {
     } else {
       figma.notify("Không tìm thấy node");
     }
+    break;
   }
-  if (msg.type === "close") figma.closePlugin();
+    case "save-last-report": {
+      try {
+        await figma.clientStorage.setAsync(STORAGE_KEYS.lastReport, msg.report || null);
+      } catch (e) {
+        console.error("Failed to save last report", e);
+      }
+      break;
+    }
+    case "get-last-report": {
+      try {
+        const report = await figma.clientStorage.getAsync(STORAGE_KEYS.lastReport);
+        figma.ui.postMessage({ type: "last-report", report: report || null });
+      } catch (e) {
+        console.error("Failed to load last report", e);
+        figma.ui.postMessage({ type: "last-report", report: null });
+      }
+      break;
+    }
+    case "save-history-entry": {
+      try {
+        const entry = msg.entry;
+        if (entry) {
+          let history = await figma.clientStorage.getAsync(STORAGE_KEYS.history) || [];
+          history.unshift(entry);
+          history = history.slice(0, MAX_HISTORY_ENTRIES);
+          await figma.clientStorage.setAsync(STORAGE_KEYS.history, history);
+          figma.ui.postMessage({ type: "history-data", history });
+        }
+      } catch (e) {
+        console.error("Failed to save history entry", e);
+      }
+      break;
+    }
+    case "get-history": {
+      try {
+        const history = await figma.clientStorage.getAsync(STORAGE_KEYS.history) || [];
+        figma.ui.postMessage({ type: "history-data", history });
+      } catch (e) {
+        console.error("Failed to load history", e);
+        figma.ui.postMessage({ type: "history-data", history: [] });
+      }
+      break;
+    }
+    case "close":
+      figma.closePlugin();
+      break;
+    default:
+      break;
+  }
 };
 
 console.log("code.js loaded");

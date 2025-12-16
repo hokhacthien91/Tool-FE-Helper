@@ -34,7 +34,7 @@ body {
 .header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 20px 24px;
+  padding: 15px 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -57,7 +57,7 @@ body {
 }
 
 .controls {
-  padding: 16px 24px;
+  padding: 15px 20px;
   background: white;
   border-bottom: 1px solid #e5e5e7;
   display: flex;
@@ -90,7 +90,7 @@ body {
 
 #btn-scan, 
 #btn-extract-tokens {
-  padding: 10px 20px;
+  padding: 10px 10px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
@@ -106,7 +106,8 @@ body {
     margin-left: 0;
 }
 
-#btn-scan:hover {
+#btn-scan:hover,
+#btn-extract-tokens:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
 }
@@ -123,10 +124,8 @@ body {
 
 #results {
   flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px;
+  padding: 15px 20px;
   background: #f5f5f7;
-  min-height: 450px;
 }
 
 #results::-webkit-scrollbar {
@@ -434,7 +433,7 @@ body {
 }
 
 .footer {
-  padding: 16px 24px;
+  padding: 15px 20px;
   background: white;
   border-top: 1px solid #e5e5e7;
   display: flex;
@@ -485,7 +484,7 @@ body {
 }
 
 .history-header {
-  padding: 20px 24px;
+  padding: 15px 20px;
   border-bottom: 1px solid #e5e5e7;
   display: flex;
   justify-content: space-between;
@@ -690,11 +689,11 @@ body {
   padding: 16px;
   color: #dc2626;
   font-size: 13px;
-  margin: 20px 24px;
+  margin: 20px 20px;
 }
 
 .filter-controls {
-  padding: 12px 24px;
+  padding: 12px 20px;
   background: white;
   border-bottom: 1px solid #e5e5e7;
   display: flex;
@@ -729,6 +728,7 @@ body {
 .btn-clear-search {
   position: absolute;
   right: 8px;
+  top: 7px;
   background: transparent;
   border: none;
   color: #86868b;
@@ -940,6 +940,36 @@ body {
   margin-top: 2px;
 }
 
+.token-empty-message {
+  padding: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.token-note {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.token-note-label {
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 2px;
+}
+
+.token-note-list {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.token-note-list li {
+  margin: 0;
+  padding: 0;
+}
+
 .token-matched-by-name {
   color: #667eea;
   font-weight: 500;
@@ -1049,7 +1079,7 @@ body {
         </div>
      
         <button id="btn-scan" class="tooltip">
-          🔍 Run Scan
+          🔍 Run Scan Design
           <span class="tooltiptext tooltip-right">Kiểm tra design theo các chuẩn: naming, auto-layout, spacing, typography, components...</span>
         </button>
         <button id="btn-extract-tokens" class="tooltip">
@@ -1072,7 +1102,7 @@ body {
             >
             <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị spacing scale cách nhau bằng dấu phẩy. Để trống để bỏ qua check spacing.</span>
           </div>
-          <div class="tooltip" style="flex: 0 0 120px;">
+          <div class="tooltip" style="flex: 0 0 80px;">
             <label for="spacing-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
             <input 
               type="number" 
@@ -1103,7 +1133,7 @@ body {
             >
             <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị font-size scale cách nhau bằng dấu phẩy. Để trống để bỏ qua check font-size.</span>
           </div>
-          <div class="tooltip" style="flex: 0 0 120px;">
+          <div class="tooltip" style="flex: 0 0 80px;">
             <label for="font-size-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
             <input 
               type="number" 
@@ -1135,19 +1165,6 @@ body {
             <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị line-height scale (dạng %) cách nhau bằng dấu phẩy. Để trống để bỏ qua check line-height. Giá trị "auto" luôn được chấp nhận.</span>
           </div>
           <div class="tooltip" style="flex: 0 0 80px;">
-            <label for="line-height-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
-            <input 
-              type="number" 
-              id="line-height-threshold" 
-              placeholder="300" 
-              value="300"
-              min="0"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
-              class="tooltip"
-            >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: giá trị line-height lớn hơn threshold sẽ pass (case đặc biệt).</span>
-          </div>
-          <div class="tooltip" style="flex: 0 0 80px;">
             <label for="line-height-baseline-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Baseline Min (%):</label>
             <input 
               type="number" 
@@ -1161,6 +1178,20 @@ body {
             >
             <span class="tooltiptext" style="bottom: 65%;left: 25%;">Baseline threshold: line-height < threshold% sẽ báo cảnh báo (ví dụ: 120% = 1.2x font-size).</span>
           </div>
+          <div class="tooltip" style="flex: 0 0 80px;">
+            <label for="line-height-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
+            <input 
+              type="number" 
+              id="line-height-threshold" 
+              placeholder="300" 
+              value="300"
+              min="0"
+              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="tooltip"
+            >
+            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: giá trị line-height lớn hơn threshold sẽ pass (case đặc biệt).</span>
+          </div>
+        
         </div>
        
       </div>
@@ -1261,6 +1292,39 @@ console.log("ui.js loaded");
           timestamp: null
         };
 
+        function saveLastReport(report) {
+          if (!report) return;
+          parent.postMessage({ pluginMessage: { type: "save-last-report", report } }, "*");
+        }
+
+        function restoreLastReport() {
+          parent.postMessage({ pluginMessage: { type: "get-last-report" } }, "*");
+        }
+
+        function applySavedReport(saved) {
+          if (!saved || !saved.type) {
+            console.log("No last report to apply");
+            return;
+          }
+
+          if (saved.scanMode) {
+            const scopeRadio = document.querySelector(`input[name="scope"][value="${saved.scanMode}"]`);
+            if (scopeRadio) {
+              scopeRadio.checked = true;
+            }
+          }
+
+          currentReportData.scanMode = saved.scanMode || currentReportData.scanMode;
+
+          if (saved.type === "issues" && Array.isArray(saved.issues)) {
+            console.log("Applying saved issues report");
+            renderResults(saved.issues, true, { skipSave: true, restoreTimestamp: saved.timestamp });
+          } else if (saved.type === "tokens" && saved.tokens) {
+            console.log("Applying saved tokens report");
+            renderTokens(saved.tokens, true, { skipSave: true, restoreTimestamp: saved.timestamp });
+          }
+        }
+
         // Filter state
         let currentFilter = "all";
         let currentSearch = "";
@@ -1293,26 +1357,28 @@ console.log("ui.js loaded");
             component: "🧩",
             "empty-frame": "📭",
             "nested-group": "📚",
-            contrast: "🎨"
+            contrast: "🎨",
+            "text-size-mobile": "📱"
           };
           return icons[type] || "🔍";
         }
 
         function getTypeDisplayName(type) {
           const displayNames = {
-            naming: "Naming",
+            naming: "Naming Layer",
             autolayout: "Auto Layout",
             spacing: "Spacing",
             typography: "Font Size",
-            "typography-style": "Typography Style",
+            "typography-style": "Text Style (key)",
             "line-height": "Line Height",
-            position: "Position",
-            duplicate: "Duplicate",
-            group: "Group",
-            component: "Component",
-            "empty-frame": "Empty Frame",
-            "nested-group": "Nested Group",
-            contrast: "Contrast"
+            position: "Position Layer",
+            duplicate: "Duplicate Layer",
+            group: "Group Layer",
+            component: "Component Reusable",
+            "empty-frame": "Empty Frame Layer",
+            "nested-group": "Nested Group Layer",
+            contrast: "Contrast (ADA AA)",
+            "text-size-mobile": "Text Size (ADA)"
           };
           return displayNames[type] || type.replace(/-/g, " ");
         }
@@ -1393,12 +1459,14 @@ console.log("ui.js loaded");
           return filtered;
         }
 
-        function renderResults(issues, resetFilters = false) {
+        function renderResults(issues = [], resetFilters = false, options = {}) {
+          const { skipSave = false, restoreTimestamp = null } = options;
           // Store report data
           const isNewData = currentReportData.issues !== issues;
           currentReportData.issues = issues;
           currentReportData.tokens = null;
-          currentReportData.timestamp = new Date().toISOString();
+          const timestamp = restoreTimestamp || new Date().toISOString();
+          currentReportData.timestamp = timestamp;
           isViewingTokens = false;
           
           // Only reset filters if this is new data or explicitly requested
@@ -1494,7 +1562,7 @@ console.log("ui.js loaded");
           const allIssueTypes = [
             "naming", "autolayout", "spacing", "typography", "typography-style", 
             "line-height", "position", "duplicate", "group", "component", 
-            "empty-frame", "nested-group", "contrast"
+            "empty-frame", "nested-group", "contrast", "text-size-mobile"
           ];
 
           // Render all issue types (including those with 0 issues)
@@ -1639,6 +1707,15 @@ console.log("ui.js loaded");
             groupEl.appendChild(groupContent);
             results.appendChild(groupEl);
           }
+
+          if (!skipSave) {
+            saveLastReport({
+              type: "issues",
+              issues,
+              timestamp,
+              scanMode: currentReportData.scanMode || null
+            });
+          }
         }
 
         function filterAndSearchTokens(tokens) {
@@ -1650,9 +1727,10 @@ console.log("ui.js loaded");
           if (!tokens) return null;
 
           const filtered = {};
+          let hasMatches = false;
           
           for (const [key, values] of Object.entries(tokens)) {
-            let filteredValues = values;
+            let filteredValues = values || [];
             console.log(`Processing ${key}, initial count:`, filteredValues.length);
 
             // Filter by color type (for colors and gradients)
@@ -1698,20 +1776,24 @@ console.log("ui.js loaded");
             }
 
             if (filteredValues.length > 0) {
-              filtered[key] = filteredValues;
+              hasMatches = true;
             }
+
+            filtered[key] = filteredValues;
           }
 
           console.log("Final filtered tokens keys:", Object.keys(filtered));
-          return Object.keys(filtered).length > 0 ? filtered : null;
+          return { tokens: filtered, hasMatches };
         }
 
-        function renderTokens(tokens, resetFilters = false) {
+        function renderTokens(tokens, resetFilters = false, options = {}) {
+          const { skipSave = false, restoreTimestamp = null } = options;
           // Store report data
           const isNewData = currentReportData.tokens !== tokens;
           currentReportData.issues = null;
           currentReportData.tokens = tokens;
-          currentReportData.timestamp = new Date().toISOString();
+          const timestamp = restoreTimestamp || new Date().toISOString();
+          currentReportData.timestamp = timestamp;
           isViewingTokens = true;
           
           // Only reset filters if this is new data or explicitly requested
@@ -1752,7 +1834,7 @@ console.log("ui.js loaded");
 
           // Filter tokens - use current filter/search values
           console.log("About to filter tokens with:", { currentColorTypeFilter, currentSearch });
-          const filteredTokens = filterAndSearchTokens(tokens);
+          const filterResult = filterAndSearchTokens(tokens);
           
           clearResults();
 
@@ -1766,7 +1848,22 @@ console.log("ui.js loaded");
             return;
           }
 
-          if (!filteredTokens) {
+          if (!filterResult) {
+            results.innerHTML = `
+              <div class="empty-state">
+                <div class="icon">🔍</div>
+                <p><strong>Không tìm thấy kết quả</strong></p>
+                <p style="margin-top: 8px; font-size: 12px;">Thử thay đổi filter hoặc search keyword.</p>
+              </div>
+            `;
+            return;
+          }
+
+          const filteredTokens = filterResult.tokens || {};
+          const hasTokenMatches = filterResult.hasMatches;
+          const isSearchActive = currentSearch.trim() || currentColorTypeFilter !== "all";
+
+          if (isSearchActive && !hasTokenMatches) {
             results.innerHTML = `
               <div class="empty-state">
                 <div class="icon">🔍</div>
@@ -1801,8 +1898,6 @@ console.log("ui.js loaded");
 
           // Render token groups
           for (const [key, group] of Object.entries(tokenGroups)) {
-            if (group.values.length === 0) continue;
-
             const groupEl = document.createElement("div");
             groupEl.className = "issue-group collapsed"; // Default collapsed
             
@@ -1855,11 +1950,13 @@ console.log("ui.js loaded");
             
             groupEl.appendChild(groupHeader);
 
-            // Create token list
-            const tokenList = document.createElement("div");
-            tokenList.className = "token-list";
+            const hasValues = Array.isArray(group.values) && group.values.length > 0;
 
-            group.values.forEach((token, idx) => {
+            if (hasValues) {
+              const tokenList = document.createElement("div");
+              tokenList.className = "token-list";
+
+              group.values.forEach((token, idx) => {
               const tokenNumber = idx + 1;
               const tokenEl = document.createElement("div");
               tokenEl.className = "token-item";
@@ -1913,6 +2010,35 @@ console.log("ui.js loaded");
                   nodeNameDisplay = `<div class="token-node-name">Node: ${escapeHtml(firstNode.name)}</div>`;
                 }
               }
+
+              // Extra note for Font Weight: show font-family usage breakdown
+              let noteHtml = "";
+              if (key === "fontWeight") {
+                const fontFamilies = Array.isArray(token.fontFamilies) ? token.fontFamilies : null;
+                let list = fontFamilies;
+                if (!list) {
+                  // Fallback (older data): compute from nodes
+                  const counts = {};
+                  nodes.forEach(n => {
+                    const fam = (n && n.fontFamily) ? String(n.fontFamily) : "Unknown";
+                    counts[fam] = (counts[fam] || 0) + 1;
+                  });
+                  list = Object.entries(counts)
+                    .map(([family, count]) => ({ family, count }))
+                    .sort((a, b) => (b.count - a.count) || a.family.localeCompare(b.family));
+                }
+                if (Array.isArray(list) && list.length > 0) {
+                  const items = list
+                    .map(x => `<li><code>${escapeHtml(x.family)}</code> (${x.count})</li>`)
+                    .join("");
+                  noteHtml = `
+                    <div class="token-note">
+                      <div class="token-note-label">Font-family:</div>
+                      <ul class="token-note-list">${items}</ul>
+                    </div>
+                  `;
+                }
+              }
               
               tokenEl.innerHTML = `
                 <div class="token-item-row">
@@ -1927,6 +2053,7 @@ console.log("ui.js loaded");
                   ` : ""}
                 </div>
                 ${nodeNameDisplay}
+                ${noteHtml}
               `;
               
               // Add click handler for Select button
@@ -1937,12 +2064,27 @@ console.log("ui.js loaded");
                 };
               }
               
-              tokenList.appendChild(tokenEl);
-            });
+                tokenList.appendChild(tokenEl);
+              });
 
-            groupContent.appendChild(tokenList);
+              groupContent.appendChild(tokenList);
+            } else {
+              const emptyMsg = document.createElement("div");
+              emptyMsg.className = "token-empty-message";
+              emptyMsg.textContent = "Chưa có token nào trong nhóm này.";
+              groupContent.appendChild(emptyMsg);
+            }
             groupEl.appendChild(groupContent);
             results.appendChild(groupEl);
+          }
+
+          if (!skipSave) {
+            saveLastReport({
+              type: "tokens",
+              tokens,
+              timestamp,
+              scanMode: currentReportData.scanMode || null
+            });
           }
   }
 
@@ -2025,6 +2167,7 @@ console.log("ui.js loaded");
       `;
       btnScan.disabled = true;
       btnExtractTokens.disabled = true;
+      currentReportData.scanMode = scope;
       parent.postMessage({ 
         pluginMessage: { 
           type: "scan", 
@@ -2063,6 +2206,7 @@ console.log("ui.js loaded");
       `;
       btnScan.disabled = true;
       btnExtractTokens.disabled = true;
+      currentReportData.scanMode = scope;
       parent.postMessage({ pluginMessage: { type: "extract-tokens", mode: scope } }, "*");
       console.log("Message sent:", { type: "extract-tokens", mode: scope });
     } catch (error) {
@@ -2127,6 +2271,24 @@ console.log("ui.js loaded");
       padding-bottom: 8px;
       border-bottom: 1px solid #e5e5e7;
     }
+    .export-filter-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .export-filter-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      cursor: pointer;
+    }
+    .export-filter-btn.active {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
     .stats {
       display: flex;
       gap: 16px;
@@ -2134,7 +2296,7 @@ console.log("ui.js loaded");
       flex-wrap: wrap;
     }
     .stat-card {
-      padding: 16px 24px;
+      padding: 16px 20px;
       border-radius: 8px;
       background: #f5f5f7;
       min-width: 120px;
@@ -2153,12 +2315,36 @@ console.log("ui.js loaded");
     }
     .issue-group {
       margin-bottom: 24px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 16px;
+      background: #fff;
     }
     .issue-group-header {
       font-size: 16px;
       font-weight: 600;
-      margin-bottom: 12px;
       color: #1d1d1f;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .issue-group-toggle {
+      border: none;
+      background: #f3f4f6;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .issue-group-content {
+      margin-top: 12px;
+    }
+    .issue-group.collapsed .issue-group-content {
+      display: none;
     }
     .issue {
       padding: 12px 16px;
@@ -2229,6 +2415,12 @@ console.log("ui.js loaded");
       color: #86868b;
       margin-top: 4px;
     }
+    .token-empty-message {
+      padding: 12px;
+      font-size: 12px;
+      color: #9ca3af;
+      font-style: italic;
+    }
     @media print {
       body { padding: 20px; }
       .container { box-shadow: none; }
@@ -2266,23 +2458,34 @@ console.log("ui.js loaded");
     </div>
 
     <div class="section">
-      <h2 class="section-title">🔍 Issues</h2>`;
+      <h2 class="section-title">🔍 Issues</h2>
+      <div class="export-filter-group">
+        <button class="export-filter-btn active" data-severity="all">All</button>
+        <button class="export-filter-btn" data-severity="error">Errors</button>
+        <button class="export-filter-btn" data-severity="warn">Warnings</button>
+      </div>`;
 
             for (const [type, typeIssues] of Object.entries(grouped)) {
+              const typeLabel = escapeHtml(getTypeDisplayName(type));
               html += `
-      <div class="issue-group">
-        <div class="issue-group-header">${type.replace(/-/g, " ")} (${typeIssues.length})</div>`;
+      <div class="issue-group collapsed" data-type="${type}" data-label="${typeLabel}">
+        <div class="issue-group-header">
+          <button class="issue-group-toggle" type="button">+</button>
+          <span>${typeLabel} (${typeIssues.length})</span>
+        </div>
+        <div class="issue-group-content">`;
               
               typeIssues.forEach(issue => {
                 html += `
-        <div class="issue ${issue.severity}">
-          <div class="issue-type">${issue.severity.toUpperCase()}</div>
-          <div class="issue-message">${escapeHtml(issue.message)}</div>
-          ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ''}
-        </div>`;
+          <div class="issue ${issue.severity}">
+            <div class="issue-type">${issue.severity.toUpperCase()}</div>
+            <div class="issue-message">${escapeHtml(issue.message)}</div>
+            ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ''}
+          </div>`;
               });
               
               html += `
+        </div>
       </div>`;
             }
 
@@ -2306,12 +2509,25 @@ console.log("ui.js loaded");
             };
 
             for (const [key, group] of Object.entries(tokenGroups)) {
-              if (group.values.length === 0) continue;
+              html += `
+      <div class="issue-group collapsed">
+        <div class="issue-group-header">
+          <button class="issue-group-toggle" type="button">+</button>
+          <span>${group.label} (${group.values.length})</span>
+        </div>
+        <div class="issue-group-content">`;
+
+              if (!group.values || group.values.length === 0) {
+                html += `
+          <div class="token-empty-message">Chưa có token nào trong nhóm này.</div>`;
+                html += `
+        </div>
+      </div>`;
+                continue;
+              }
 
               html += `
-      <div class="issue-group">
-        <div class="issue-group-header">${group.label} (${group.values.length})</div>
-        <div class="token-list">`;
+          <div class="token-list">`;
 
               group.values.forEach(token => {
                 const tokenValue = token.value;
@@ -2339,15 +2555,39 @@ console.log("ui.js loaded");
             ${nodeCount > 1 ? `<div class="token-node-count">Used in ${nodeCount} nodes</div>` : ''}
           </div>`;
                 } else {
+                  // Special note for Font Weight: include font-family breakdown
+                  let extraNote = "";
+                  if (key === "fontWeight") {
+                    let list = Array.isArray(token.fontFamilies) ? token.fontFamilies : null;
+                    if (!list) {
+                      const counts = {};
+                      const nodes = Array.isArray(token.nodes) ? token.nodes : [];
+                      nodes.forEach(n => {
+                        const fam = (n && n.fontFamily) ? String(n.fontFamily) : "Unknown";
+                        counts[fam] = (counts[fam] || 0) + 1;
+                      });
+                      list = Object.entries(counts)
+                        .map(([family, count]) => ({ family, count }))
+                        .sort((a, b) => (b.count - a.count) || a.family.localeCompare(b.family));
+                    }
+                    if (Array.isArray(list) && list.length > 0) {
+                      const items = list
+                        .map(x => `${escapeHtml(x.family)} (${x.count})`)
+                        .join("<br/>");
+                      extraNote = `<div class="token-node-count" style="margin-top: 6px;">Font-family:<br/>${items}</div>`;
+                    }
+                  }
                   html += `
           <div class="token-item">
             <div class="token-value">${escapeHtml(String(tokenValue))}</div>
             ${nodeCount > 1 ? `<div class="token-node-count">Used in ${nodeCount} nodes</div>` : ''}
+            ${extraNote}
           </div>`;
                 }
               });
 
               html += `
+          </div>
         </div>
       </div>`;
             }
@@ -2358,31 +2598,121 @@ console.log("ui.js loaded");
 
           html += `
   </div>
+  <script>
+    (function() {
+      function updateGroupState(group, content, toggleBtn) {
+        const collapsed = group.classList.contains('collapsed');
+        if (collapsed) {
+          content.style.display = 'none';
+          if (toggleBtn) toggleBtn.textContent = '+';
+        } else {
+          content.style.display = 'block';
+          if (toggleBtn) toggleBtn.textContent = '−';
+        }
+      }
+
+      function initCollapsibles() {
+        document.querySelectorAll('.issue-group').forEach(group => {
+          const header = group.querySelector('.issue-group-header');
+          const content = group.querySelector('.issue-group-content');
+          const toggleBtn = group.querySelector('.issue-group-toggle');
+          if (!content || !header) return;
+
+          const toggle = () => {
+            group.classList.toggle('collapsed');
+            updateGroupState(group, content, toggleBtn);
+          };
+
+          if (toggleBtn) {
+            toggleBtn.addEventListener('click', e => {
+              e.stopPropagation();
+              toggle();
+            });
+          }
+
+          header.addEventListener('click', e => {
+            if (toggleBtn && (e.target === toggleBtn || toggleBtn.contains(e.target))) {
+              return;
+            }
+            toggle();
+          });
+
+          updateGroupState(group, content, toggleBtn);
+        });
+      }
+
+      function applySeverityFilter(filter) {
+        const buttons = document.querySelectorAll('.export-filter-btn');
+        buttons.forEach(btn => {
+          const val = btn.getAttribute('data-severity') || 'all';
+          btn.classList.toggle('active', val === filter);
+        });
+
+        document.querySelectorAll('.issue-group').forEach(group => {
+          const issues = group.querySelectorAll('.issue');
+          const label = group.getAttribute('data-label') || '';
+          let visibleCount = 0;
+
+          issues.forEach(issue => {
+            const isError = issue.classList.contains('error');
+            const isWarn = issue.classList.contains('warn');
+            let show = false;
+            if (filter === 'all') show = true;
+            else if (filter === 'error') show = isError;
+            else if (filter === 'warn') show = isWarn;
+            issue.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+          });
+
+          const headerCountSpan = group.querySelector('.issue-group-header span:last-child');
+          if (headerCountSpan && label) {
+            headerCountSpan.textContent = label + ' (' + visibleCount + ')';
+          }
+        });
+      }
+
+      function initExportFilters() {
+        const buttons = document.querySelectorAll('.export-filter-btn');
+        if (!buttons.length) return;
+        let current = 'all';
+
+        buttons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const val = btn.getAttribute('data-severity') || 'all';
+            current = val;
+            applySeverityFilter(current);
+          });
+        });
+
+        // Initial apply
+        applySeverityFilter(current);
+      }
+
+      function initExportUI() {
+        initCollapsibles();
+        initExportFilters();
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initExportUI);
+      } else {
+        initExportUI();
+      }
+    })();
+  <\/script>
 </body>
 </html>`;
 
           return html;
         }
 
-        // Scan history management - use memory storage as localStorage may not be available in Figma plugin
-        const SCAN_HISTORY_KEY = "design-review-scan-history";
+        // Scan history management - persisted via clientStorage through main plugin
         const MAX_HISTORY = 10;
-        let scanHistoryMemory = []; // Fallback memory storage
-
-        function isLocalStorageAvailable() {
-          try {
-            const test = '__localStorage_test__';
-            localStorage.setItem(test, test);
-            localStorage.removeItem(test);
-            return true;
-          } catch (e) {
-            return false;
-          }
-        }
+        let scanHistoryMemory = [];
+        let hasLoadedHistoryOnce = false;
 
         function saveScanHistory(mode, type, data) {
           try {
-            // Only save if we have actual data
             if (type === "issues" && (!data.issues || data.issues.length === 0)) {
               console.log("Skipping save - no issues data");
               return;
@@ -2392,12 +2722,10 @@ console.log("ui.js loaded");
               return;
             }
 
-            console.log("Saving scan history:", { mode, type, hasIssues: !!data.issues, hasTokens: !!data.tokens });
-            
             const entry = {
-              id: Date.now().toString(), // Unique ID
-              mode: mode,
-              type: type, // "issues" or "tokens"
+              id: Date.now().toString(),
+              mode,
+              type,
               timestamp: new Date().toISOString(),
               data: {
                 issues: data.issues || null,
@@ -2407,96 +2735,42 @@ console.log("ui.js loaded");
               }
             };
 
-            let history = [];
-            
-            // Try localStorage first, fallback to memory
-            if (isLocalStorageAvailable()) {
-              try {
-                history = JSON.parse(localStorage.getItem(SCAN_HISTORY_KEY) || "[]");
-              } catch (e) {
-                console.warn("Failed to read from localStorage, using memory:", e);
-                history = scanHistoryMemory;
-              }
-            } else {
-              console.log("localStorage not available, using memory storage");
-              history = scanHistoryMemory;
-            }
-            
-            // Add to beginning
-            history.unshift(entry);
-            
-            // Keep only last MAX_HISTORY entries
-            history = history.slice(0, MAX_HISTORY);
-            
-            // Save to both localStorage (if available) and memory
-            if (isLocalStorageAvailable()) {
-              try {
-                localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(history));
-              } catch (e) {
-                console.warn("Failed to save to localStorage, using memory only:", e);
-                // If localStorage fails, just use memory
-                scanHistoryMemory = history;
-              }
-            } else {
-              scanHistoryMemory = history;
-            }
-            
-            // Always update memory as backup
-            scanHistoryMemory = history;
-            
-            console.log("Scan history saved successfully:", history.length, "entries");
-            console.log("Latest entry:", { id: entry.id, type: entry.type, issuesCount: entry.data.issuesCount, tokensCount: entry.data.tokensCount });
-            
-            // Refresh history UI if visible
+            // Optimistically update local memory
+            scanHistoryMemory.unshift(entry);
+            scanHistoryMemory = scanHistoryMemory.slice(0, MAX_HISTORY);
+
             const historyPanel = document.getElementById("history-panel");
             if (historyPanel && historyPanel.style.display !== "none") {
               renderScanHistory();
             }
+
+            parent.postMessage({ pluginMessage: { type: "save-history-entry", entry } }, "*");
           } catch (e) {
             console.error("Error saving scan history:", e);
-            // Fallback: save to memory only
-            try {
-              const entry = {
-                id: Date.now().toString(),
-                mode: mode,
-                type: type,
-                timestamp: new Date().toISOString(),
-                data: {
-                  issues: data.issues || null,
-                  tokens: data.tokens || null,
-                  issuesCount: data.issues ? data.issues.length : 0,
-                  tokensCount: data.tokens ? Object.keys(data.tokens).reduce((sum, k) => sum + (data.tokens[k]?.length || 0), 0) : 0
-                }
-              };
-              scanHistoryMemory.unshift(entry);
-              scanHistoryMemory = scanHistoryMemory.slice(0, MAX_HISTORY);
-              console.log("Saved to memory fallback:", scanHistoryMemory.length, "entries");
-            } catch (e2) {
-              console.error("Failed to save to memory:", e2);
-            }
           }
         }
 
+        function requestScanHistory() {
+          parent.postMessage({ pluginMessage: { type: "get-history" } }, "*");
+        }
+
         function getScanHistory() {
+          return scanHistoryMemory || [];
+        }
+
+        function loadLastScanMode() {
           try {
-            if (isLocalStorageAvailable()) {
-              try {
-                const stored = localStorage.getItem(SCAN_HISTORY_KEY);
-                if (stored) {
-                  const parsed = JSON.parse(stored);
-                  // Sync memory with localStorage
-                  scanHistoryMemory = parsed;
-                  return parsed;
-                }
-              } catch (e) {
-                console.warn("Failed to read from localStorage, using memory:", e);
+            const history = getScanHistory();
+            if (history.length > 0) {
+              const lastScan = history[0];
+              const radio = document.querySelector(`input[name="scope"][value="${lastScan.mode}"]`);
+              if (radio) {
+                radio.checked = true;
+                console.log("Loaded last scan mode:", lastScan.mode);
               }
             }
-            // Fallback to memory
-            return scanHistoryMemory;
           } catch (e) {
-            console.error("Error reading scan history:", e);
-            return scanHistoryMemory || [];
+            console.error("Error loading last scan mode:", e);
           }
         }
 
@@ -2620,18 +2894,19 @@ console.log("ui.js loaded");
             if (radio) {
               radio.checked = true;
             }
+            currentReportData.scanMode = entry.mode;
 
             // Restore report data
             if (entry.type === "issues" && entry.data.issues) {
               currentReportData.issues = entry.data.issues;
               currentReportData.tokens = null;
               isViewingTokens = false;
-              renderResults(entry.data.issues, true);
+              renderResults(entry.data.issues, true, { restoreTimestamp: entry.timestamp });
             } else if (entry.type === "tokens" && entry.data.tokens) {
               currentReportData.issues = null;
               currentReportData.tokens = entry.data.tokens;
               isViewingTokens = true;
-              renderTokens(entry.data.tokens, true);
+              renderTokens(entry.data.tokens, true, { restoreTimestamp: entry.timestamp });
             }
 
             // Close history panel
@@ -2888,11 +3163,15 @@ console.log("ui.js loaded");
       console.log("DOMContentLoaded fired, setting up handlers");
       setupFilterHandlers();
       loadLastScanMode(); // Load last scan mode
+      restoreLastReport(); // Restore last report if available
+      requestScanHistory(); // Fetch persisted history
     });
   } else {
     console.log("DOM already ready, setting up handlers immediately");
     setupFilterHandlers();
     loadLastScanMode(); // Load last scan mode
+    restoreLastReport(); // Restore last report if available
+    requestScanHistory(); // Fetch persisted history
   }
 
   // History panel handlers
@@ -2926,6 +3205,30 @@ console.log("ui.js loaded");
   window.onmessage = (event) => {
     console.log("Received message:", event.data);
     const msg = event.data.pluginMessage;
+
+    if (msg && msg.type === "last-report") {
+      if (msg.report) {
+        applySavedReport(msg.report);
+      } else {
+        console.log("No last report stored");
+      }
+      return;
+    }
+
+    if (msg && msg.type === "history-data") {
+      const history = Array.isArray(msg.history) ? msg.history.slice(0, MAX_HISTORY) : [];
+      scanHistoryMemory = history;
+      if (!hasLoadedHistoryOnce) {
+        loadLastScanMode();
+        hasLoadedHistoryOnce = true;
+      }
+      const historyPanel = document.getElementById("history-panel");
+      if (historyPanel && historyPanel.style.display !== "none") {
+        renderScanHistory();
+      }
+      return;
+    }
+
     if (msg && msg.type === "report") {
             btnScan.disabled = false;
             btnExtractTokens.disabled = false;
