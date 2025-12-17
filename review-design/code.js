@@ -607,7 +607,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
     } else {
       // Auto is not in scale, show warning
       return {
-        severity: "warn",
+        severity: "error",
         type: "line-height",
         message: `Line-height để "AUTO" — nên set giá trị cụ thể để tính toán spacing chính xác.`,
         id: node.id,
@@ -657,7 +657,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
     }
     
     return {
-      severity: "warn",
+      severity: "error",
       type: "line-height",
       message: `Line-height ${lineHeightPercent}%${detailInfo} không theo scale. Scale: ${scaleDisplay}%`,
       id: node.id,
@@ -676,7 +676,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
       // Use configurable baseline threshold (default 120% = 1.2x)
       if (ratioPercent < lineHeightBaselineThreshold) {
         return {
-          severity: "warn",
+          severity: "error",
           type: "line-height",
           message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightValue}px) quá gần với font-size — có thể gây lỗi tính toán spacing giữa các element. Nên dùng line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
@@ -688,7 +688,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
       if (lineHeightPercent < lineHeightBaselineThreshold) {
         const lineHeightPx = lineHeightPixels !== null ? lineHeightPixels : Math.round((lineHeightPercent / 100) * fontSize);
         return {
-          severity: "warn",
+          severity: "error",
           type: "line-height",
           message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightPx}px) quá gần với font-size — có thể gây lỗi tính toán spacing giữa các element. Nên dùng line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
@@ -825,6 +825,37 @@ function hasValidGroupStructure(group) {
   }
   
   return false;
+}
+
+// Treat icon-only groups as valid (often used to build a single icon from vectors)
+function isIconOnlyGroup(group) {
+  if (!group || group.type !== "GROUP" || !("children" in group) || !Array.isArray(group.children)) return false;
+  if (group.children.length === 0) return false;
+
+  // If group contains any TEXT/FRAME/INSTANCE/COMPONENT, it's not a simple icon group
+  const disallowed = new Set(["TEXT", "FRAME", "INSTANCE", "COMPONENT"]);
+  for (const child of group.children) {
+    if (!child) return false;
+    if (disallowed.has(child.type)) return false;
+    // Nested group: only allow if that nested group is also icon-only
+    if (child.type === "GROUP") {
+      if (!isIconOnlyGroup(child)) return false;
+      continue;
+    }
+  }
+
+  // Allow common vector/shape primitives used for icons
+  const allowed = new Set([
+    "VECTOR",
+    "BOOLEAN_OPERATION",
+    "STAR",
+    "LINE",
+    "ELLIPSE",
+    "POLYGON",
+    "RECTANGLE"
+  ]);
+
+  return group.children.every(c => c && (allowed.has(c.type) || c.type === "GROUP"));
 }
 
 // Check for nested groups (only flag if truly illogical)
@@ -1399,6 +1430,11 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       // 2) Groups - disallow and check nested
       if (node.type === "GROUP") {
         groupNodes.push(node);
+
+        // Icon groups built from vectors/shapes are valid (no need for Auto-layout)
+        if (isIconOnlyGroup(node)) {
+          continue;
+        }
         
         if (RULES.disallowGroups) {
           // Skip groups with only 1 child - no need for Auto-layout with single child
@@ -1451,7 +1487,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                 // Pass - value is above threshold (special case)
               } else if (!isInScale(node.itemSpacing, customSpacingScale)) {
               addIssue({
-                severity: "warn",
+                severity: "error",
                 type: "spacing",
                   message: `Gap (itemSpacing: ${node.itemSpacing}px) không theo scale trên "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
                   id: node.id,
@@ -1489,7 +1525,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                   continue;
                 } else if (!isInScale(pad.value, customSpacingScale)) {
                 addIssue({
-                  severity: "warn",
+                  severity: "error",
                   type: "spacing",
                     message: `Padding ${pad.name} (${pad.value}px) không theo scale trên "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
                     id: node.id,
@@ -1541,7 +1577,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             // Check against custom font-size scale
             if (!customFontSizeScale.includes(Math.round(fs))) {
           addIssue({
-            severity: "warn",
+            severity: "error",
             type: "typography",
                 message: `fontSize ${fs}px không theo scale trên text "${node.characters.slice(0, 30)}". Scale: ${customFontSizeScale.join(", ")}`,
                 id: node.id,
@@ -1551,7 +1587,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           } else if (!isValidTypographySize(fs)) {
             // Check against default scale
             addIssue({
-              severity: "warn",
+              severity: "error",
               type: "typography",
               message: `fontSize ${fs}px không theo scale trên text "${node.characters.slice(0, 30)}". Scale: ${RULES.allTypographySizes.join(", ")}`,
               id: node.id,

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), clipboard-write=(), display-capture=(), local-network-access=()" />
-    <title>Design Review — Professional QA</title>
+    <title>Design Review — Professional QA Checker</title>
     <!-- 58, 46, 36, 30, 24, 20, 16, 14 -->
     <!-- auto, 103, 104, 106, 107, 108, 110,130, 163 -->
     <style>
@@ -1059,9 +1059,9 @@ body {
       <div class="header">
         <h2>
           <span>🎨</span>
-          Design Review — Professional QA
+          Design Review — Professional QA Checker
         </h2>
-        <div class="subtitle">Kiểm tra design theo chuẩn chuyên nghiệp</div>
+        <div class="subtitle">Check design quality and extract design tokens with professional standards of Gravity Global.</div>
       </div>
 
       <div class="controls">
@@ -1541,12 +1541,12 @@ console.log("ui.js loaded");
           const header = document.createElement("div");
           header.className = "results-header";
           header.innerHTML = `
-            <h3>Kết quả kiểm tra</h3>
+            <h3>Check Result</h3>
             <div class="results-stats">
-              ${stats.error > 0 ? `<span class="stat error">${stats.error} Lỗi</span>` : ""}
-              ${stats.warn > 0 ? `<span class="stat warn">${stats.warn} Cảnh báo</span>` : ""}
-              <span class="stat">${stats.total} Tổng</span>
-              ${stats.originalTotal !== stats.total ? `<span class="stat" style="opacity: 0.6;">(${stats.originalTotal} tổng)</span>` : ""}
+              ${stats.error > 0 ? `<span class="stat error">${stats.error} Error</span>` : ""}
+              ${stats.warn > 0 ? `<span class="stat warn">${stats.warn} Warning</span>` : ""}
+              <span class="stat">${stats.total} Total</span>
+              ${stats.originalTotal !== stats.total ? `<span class="stat" style="opacity: 0.6;">(${stats.originalTotal} total)</span>` : ""}
             </div>
           `;
           results.appendChild(header);

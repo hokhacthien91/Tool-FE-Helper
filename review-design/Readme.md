@@ -1,5 +1,5 @@
 ## Tổng quan
-**Design QA Checker** là Figma plugin kiểm tra design theo chuẩn chuyên nghiệp, tự động phát hiện lỗi và cảnh báo, đồng thời trích xuất design tokens.
+**Design QA Checker** là Figma plugin kiểm tra design theo chuẩn Gravity Global, tự động phát hiện lỗi và cảnh báo, đồng thời trích xuất design tokens.
 
 ---
 
@@ -11,18 +11,18 @@ Quét và phát hiện các vấn đề trong design:
 #### A. Naming Convention
 - Frame/Component: Cảnh báo nếu tên chứa "Frame" hoặc "Group" (tên mặc định)
 - Text: Kiểm tra theo pattern: `Title`, `Desc`, `Label`, `Caption`, `Heading`, `Body`, `Link`, `Button-text`, `Content`
-- Cho phép: text dài (>20 ký tự, ≥3 từ), text trùng với nội dung, button text ngắn (1-3 từ)
 
 #### B. Structure & Layout
 - Groups: Cảnh báo khi dùng Group (nên dùng Frame + Auto-layout)
-- Nested Groups: Phát hiện Group lồng nhau
+  - Exception: Group chỉ dùng để tạo icon (children toàn vector/shape) sẽ PASS (không yêu cầu Auto-layout)
+- Nested Groups: Phát hiện Group lồng nhau (trừ các trường hợp group hợp lệ như button pattern / icon-only)
 - Auto-layout: Yêu cầu bật Auto-layout cho Frame/Component có nhiều children
 - Empty Frames: Phát hiện Frame trống hoặc thừa
 - Duplicate Frames: Phát hiện Frame/Component trùng lặp (dựa trên hash)
 
 #### C. Spacing System
-- Gap (itemSpacing): Kiểm tra theo spacing scale tùy chỉnh
-- Padding: Kiểm tra paddingLeft/Right/Top/Bottom theo scale
+- Gap (itemSpacing): Báo lỗi nếu không theo spacing scale tùy chỉnh (có threshold)
+- Padding: Báo lỗi nếu paddingLeft/Right/Top/Bottom không theo scale (có threshold)
 - Custom Scale: Nhập scale (ví dụ: `0, 4, 8, 12, 16, 24, 32, 40, 48, 64`)
 - Threshold: Giá trị > threshold sẽ pass (case đặc biệt)
 
@@ -33,8 +33,11 @@ Quét và phát hiện các vấn đề trong design:
 - Line Height:
   - Kiểm tra line-height theo scale (%)
   - Hỗ trợ "auto"
-  - Cảnh báo nếu < baseline threshold (mặc định 120%)
+  - Báo lỗi nếu < baseline threshold (mặc định 120%)
   - Custom scale: `auto, 100, 120, 140, 150, 160, 180, 200`
+- Text too small (Mobile ADA):
+  - Chỉ áp dụng khi text nằm trong frame mobile (width ≤ 768px)
+  - Báo lỗi nếu `fontSize ≤ 12px`
 
 #### E. Color Contrast (Accessibility - WCAG AA)
 - Text Contrast: Kiểm tra contrast ratio giữa text và background
@@ -101,16 +104,20 @@ Trích xuất và tổng hợp design tokens:
 - Node Selection: Click "Select" để select node trong Figma
 - Usage Count: Hiển thị số lần sử dụng cho tokens
 - Font Family Breakdown: Với Font Weight, hiển thị list font-family + count
+- Design Tokens groups: luôn hiển thị đủ nhóm (kể cả `0`), nhóm rỗng sẽ có message “Chưa có token nào trong nhóm này.”
 
 #### E. Export Reports
 - Export HTML: Export báo cáo dạng HTML
+  - Collapsible groups (mặc định đóng)
+  - Filter Issues: `All / Errors / Warnings` (mặc định `All`)
 - Export PDF: Export báo cáo dạng PDF
 - Export JSON: Export dữ liệu dạng JSON
 
 #### F. Scan History
 - Lưu 10 scan gần nhất
 - Xem lại kết quả cũ
-- Hỗ trợ localStorage (fallback memory storage)
+- Persist bằng `figma.clientStorage` (không bị mất khi đóng/mở lại plugin)
+- Auto restore report gần nhất khi mở lại plugin (issues hoặc tokens)
 
 ---
 
@@ -135,8 +142,8 @@ Trích xuất và tổng hợp design tokens:
 
 ## Cấu trúc code
 
-- `code.js` (2194 lines): Logic chính, scan rules, token extraction
-- `ui.html` (3031 lines): UI, rendering, export, history
+- `code.js`: Logic chính, scan rules, token extraction, persisted storage handlers (`figma.clientStorage`)
+- `ui.html`: UI, rendering, export (HTML/PDF/JSON), history + auto-restore
 - `manifest.json`: Plugin configuration
 
 ---
