@@ -22,6 +22,57 @@ function traverse(node, cb, skipHidden = true) {
   }
 }
 
+// Build a human-readable scan context label for history/export (page name or top-level container name)
+function buildScanContext(mode) {
+  const fileName = (figma.root && figma.root.name) ? figma.root.name : "Untitled File";
+  const pageName = (figma.currentPage && figma.currentPage.name) ? figma.currentPage.name : "Unnamed Page";
+
+  // Page scan
+  if (mode !== "selection") {
+    return { mode: "page", fileName, pageName, label: `File: ${fileName} • Page: ${pageName}` };
+  }
+
+  // Selection scan
+  const selection = Array.isArray(figma.currentPage.selection) ? figma.currentPage.selection : [];
+  if (!selection.length) {
+    // Will fallback to scanning the whole page in scan()/extractDesignTokens()
+    return { mode: "page", fileName, pageName, label: `File: ${fileName} • Page: ${pageName}` };
+  }
+
+  function getTopLevelContainerName(node) {
+    // Walk up to PAGE; remember the last FRAME/COMPONENT/INSTANCE encountered (closest to PAGE)
+    let current = node;
+    let topContainer = null;
+    while (current && current.type !== "PAGE") {
+      if (current.type === "FRAME" || current.type === "COMPONENT" || current.type === "INSTANCE") {
+        topContainer = current;
+      }
+      current = current.parent;
+    }
+    if (topContainer && topContainer.name) return topContainer.name;
+    return (node && node.name) ? node.name : "Selection";
+  }
+
+  const names = new Set();
+  for (const n of selection) {
+    try {
+      names.add(getTopLevelContainerName(n));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const unique = Array.from(names).filter(Boolean);
+  if (unique.length === 1) {
+    return { mode: "selection", fileName, pageName, label: `File: ${fileName} • Selection: ${unique[0]}` };
+  }
+
+  // Multiple containers selected
+  const preview = unique.slice(0, 2).join(", ");
+  const more = unique.length > 2 ? ` (+${unique.length - 2} more)` : "";
+  return { mode: "selection", fileName, pageName, label: `File: ${fileName} • Selection: ${preview}${more}` };
+}
+
 // Allowed rules / settings
 const RULES = {
   // 1) Frame Naming semantic
@@ -506,15 +557,15 @@ function checkTextContrast(node) {
     // - WARNING if gradient (needs manual check) or contrast = 1.00 (likely background detection issue)
     // - ERROR otherwise
     let severity = "error";
-    let message = `Text contrast ratio ${contrast.toFixed(2)}:1 không đạt WCAG ${isLargeText ? "AA (large text)" : "AA"} (cần >= ${minContrast}:1). Text: "${node.characters.slice(0, 30)}"`;
+    let message = `Text contrast ratio ${contrast.toFixed(2)}:1 fails WCAG ${isLargeText ? "AA (large text)" : "AA"} (requires >= ${minContrast}:1). Text: "${node.characters.slice(0, 30)}"`;
     
     if (isGradient) {
       severity = "warn";
-      message = `Text contrast ratio ${contrast.toFixed(2)}:1 không đạt WCAG ${isLargeText ? "AA (large text)" : "AA"} (cần >= ${minContrast}:1) với gradient background. Cần check manual vì gradient có thể có vị trí pass. Text: "${node.characters.slice(0, 30)}"`;
+      message = `Text contrast ratio ${contrast.toFixed(2)}:1 fails WCAG ${isLargeText ? "AA (large text)" : "AA"} (requires >= ${minContrast}:1) with a gradient background. Manual check recommended because gradients may pass at some positions. Text: "${node.characters.slice(0, 30)}"`;
     } else if (Math.abs(contrast - 1.0) < 0.01) {
       // Contrast = 1.00:1 (likely same color or background detection failed)
       severity = "warn";
-      message = `Text contrast ratio ${contrast.toFixed(2)}:1 - Có thể không lấy được background color đúng (có thể là layer cùng cấp nằm dưới text). Cần check manual. Text: "${node.characters.slice(0, 30)}"`;
+      message = `Text contrast ratio ${contrast.toFixed(2)}:1 — background color may not have been detected correctly (e.g. a sibling layer behind the text). Manual check recommended. Text: "${node.characters.slice(0, 30)}"`;
     }
     
     return {
@@ -581,7 +632,7 @@ function checkTextSizeMobile(node) {
     return {
       severity: "error",
       type: "text-size-mobile",
-      message: `Text quá nhỏ trên mobile (${fontSize}px) — không đạt ADA. Font size từ 12px trở xuống không được phép trên mobile. Text: "${textPreview}"`,
+      message: `Text is too small on mobile (${fontSize}px) — ADA non-compliant. Font sizes of 12px or smaller are not allowed on mobile. Text: "${textPreview}"`,
       id: node.id,
       nodeName: node.name || "Unnamed",
       fontSize: fontSize,
@@ -609,7 +660,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
       return {
         severity: "error",
         type: "line-height",
-        message: `Line-height để "AUTO" — nên set giá trị cụ thể để tính toán spacing chính xác.`,
+        message: `Line-height is set to "AUTO" — set an explicit value to ensure spacing calculations are accurate.`,
         id: node.id,
         nodeName: node.name || "Unnamed"
       };
@@ -678,7 +729,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
         return {
           severity: "error",
           type: "line-height",
-          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightValue}px) quá gần với font-size — có thể gây lỗi tính toán spacing giữa các element. Nên dùng line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
+          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightValue}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
           nodeName: node.name || "Unnamed"
         };
@@ -690,7 +741,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
         return {
           severity: "error",
           type: "line-height",
-          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightPx}px) quá gần với font-size — có thể gây lỗi tính toán spacing giữa các element. Nên dùng line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
+          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightPx}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
           nodeName: node.name || "Unnamed"
         };
@@ -975,7 +1026,7 @@ function shouldUseAutoLayoutCheck(node) {
   if (childCount === 1 && children[0].type === "TEXT") {
     return { 
       required: true, 
-      message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Text có thể thay đổi độ dài, nên dùng Auto Layout.` 
+      message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Text can change length, should use Auto Layout.` 
     };
   }
   
@@ -997,7 +1048,7 @@ function shouldUseAutoLayoutCheck(node) {
         if (deltaX < 10 || deltaY < 10) { // Close alignment
           return { 
             required: true, 
-            message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Button/Label pattern (Icon + Text) nên dùng Auto Layout.` 
+            message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Button/Label pattern (Icon + Text) should use Auto Layout.` 
           };
         }
       }
@@ -1019,7 +1070,7 @@ function shouldUseAutoLayoutCheck(node) {
         if (isEven) {
           return { 
             required: true, 
-            message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Text stack (title + description) nên dùng Auto Layout.` 
+            message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Text stack (title + description) should use Auto Layout.` 
           };
         }
       }
@@ -1044,7 +1095,7 @@ function shouldUseAutoLayoutCheck(node) {
         if (isEvenX && avgXSpacing > 0) {
           return { 
             required: true, 
-            message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Khoảng cách đều giữa các children, nên dùng Auto Layout.` 
+            message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Even spacing between children, should use Auto Layout.` 
           };
         }
       }
@@ -1062,7 +1113,7 @@ function shouldUseAutoLayoutCheck(node) {
         if (isEvenY && avgYSpacing > 0) {
           return { 
             required: true, 
-            message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Khoảng cách đều giữa các children, nên dùng Auto Layout.` 
+            message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Even spacing between children, should use Auto Layout.` 
           };
         }
       }
@@ -1091,7 +1142,7 @@ function shouldUseAutoLayoutCheck(node) {
       if (isConsistent) {
         return { 
           required: true, 
-          message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Frame có padding thủ công, nên dùng Auto Layout.` 
+          message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Frame has manual padding, should use Auto Layout.` 
         };
       }
     }
@@ -1101,7 +1152,7 @@ function shouldUseAutoLayoutCheck(node) {
   if (node.type === "COMPONENT") {
     return { 
       required: true, 
-      message: `Auto-layout chưa bật trên Component "${node.name || "Unnamed"}" — Component reusable nên dùng Auto Layout.` 
+      message: `Auto-layout is not enabled on Component "${node.name || "Unnamed"}" — Component reusable should use Auto Layout.` 
     };
   }
   
@@ -1118,12 +1169,12 @@ function shouldUseAutoLayoutCheck(node) {
     if (hasConstraints) {
       return { 
         required: true, 
-        message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Frame có responsive constraints, nên dùng Auto Layout.` 
+        message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Frame has responsive constraints, should use Auto Layout.` 
       };
     }
   }
   
-  // TC-10: Các child có kích thước giống nhau (List/Grid)
+  // TC-10: Children have the same size (List/Grid)
   if (childCount >= 3) {
     const widths = children.map(c => ("width" in c) ? c.width : 0);
     const heights = children.map(c => ("height" in c) ? c.height : 0);
@@ -1160,7 +1211,7 @@ function shouldUseAutoLayoutCheck(node) {
       if (isSameSize && isEvenlySpaced) {
         return { 
           required: true, 
-          message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — List/Grid pattern (children cùng size), nên dùng Auto Layout.` 
+          message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — List/Grid pattern (children same size), should use Auto Layout.` 
         };
       }
     }
@@ -1171,14 +1222,14 @@ function shouldUseAutoLayoutCheck(node) {
   if (uiKeywords.test(nodeName)) {
     return { 
       required: true, 
-      message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — Standard UI pattern nên dùng Auto Layout.` 
+      message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — Standard UI pattern should use Auto Layout.` 
     };
   }
   
   // Default: require auto-layout for frames/components
   return { 
     required: true, 
-    message: `Auto-layout chưa bật trên ${node.type} "${node.name || "Unnamed"}" — yêu cầu 100% Auto-layout.` 
+    message: `Auto-layout is not enabled on ${node.type} "${node.name || "Unnamed"}" — requires 100% Auto-layout.` 
   };
 }
 
@@ -1234,7 +1285,7 @@ function isEmptyOrRedundant(node) {
   
   // Empty frame (no children AND no visual content)
   if (node.children.length === 0) {
-    return { type: "empty", message: "Frame trống — nên xóa hoặc thêm nội dung." };
+    return { type: "empty", message: "Empty frame — remove it or add content." };
   }
   
   // Frame with only one child (might be redundant)
@@ -1276,7 +1327,7 @@ function isEmptyOrRedundant(node) {
       
       return { 
         type: "redundant", 
-        message: `Frame chỉ chứa 1 child có kích thước giống hệt — có thể là frame dư thừa.` 
+        message: `Frame only contains 1 child with the same size — it might be a redundant frame.` 
       };
     }
   }
@@ -1289,7 +1340,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
   const nodesToScan = [];
   if (target === "selection") {
     if (figma.currentPage.selection.length === 0) {
-      figma.notify("Không có selection — quét toàn bộ page.");
+      figma.notify("No selection — scanning the whole page.");
       traverse(figma.currentPage, n => nodesToScan.push(n));
     } else {
       for (const n of figma.currentPage.selection) traverse(n, nd => nodesToScan.push(nd));
@@ -1390,7 +1441,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         addIssue({
           severity: "warn",
           type: "naming",
-            message: `Naming không theo convention: "${nodeName}". Nên đặt tên có ý nghĩa thay vì dùng tên mặc định.`,
+            message: `Naming does not follow convention: "${nodeName}". Should be named with a meaningful name instead of default name.`,  
             id: node.id,
             nodeName: nodeName
           });
@@ -1420,7 +1471,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           addIssue({
             severity: "warn",
             type: "naming",
-            message: `Text naming không theo convention: "${nodeName}". Nên dùng: Title/Desc/Label/Caption/Heading/Body/Content...`,
+            message: `Text naming does not follow convention: "${nodeName}". Should be named with a meaningful name instead of default name.`,
             id: node.id,
             nodeName: nodeName
           });
@@ -1442,7 +1493,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             addIssue({
               severity: "error",
               type: "group",
-              message: `Group detected — nên dùng Frame + Auto-layout thay thế.`,
+              message: `Group detected — should use Frame + Auto-layout instead.`,
               id: node.id,
               nodeName: nodeName
             });
@@ -1453,7 +1504,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           addIssue({
             severity: "error",
             type: "nested-group",
-            message: `Group lồng nhau phát hiện — cấu trúc không hợp lý.`,
+            message: `Nested groups detected — structure is not recommended.`,
             id: node.id,
             nodeName: nodeName
           });
@@ -1470,7 +1521,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           addIssue({
               severity: "error",
             type: "autolayout",
-              message: shouldUseAutoLayout.message || `Auto-layout chưa bật trên ${node.type} "${nodeName}" — yêu cầu 100% Auto-layout.`,
+              message: shouldUseAutoLayout.message || `Auto-layout is not enabled on ${node.type} "${nodeName}" — requires 100% Auto-layout.`,
               id: node.id,
               nodeName: nodeName
           });
@@ -1489,7 +1540,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
               addIssue({
                 severity: "error",
                 type: "spacing",
-                  message: `Gap (itemSpacing: ${node.itemSpacing}px) không theo scale trên "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
+                  message: `Gap (itemSpacing: ${node.itemSpacing}px) does not follow scale on "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
                   id: node.id,
                   nodeName: nodeName
               });
@@ -1501,7 +1552,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
               addIssue({
                 severity: "info",
                 type: "spacing",
-                message: `Gap (itemSpacing: ${node.itemSpacing}px) - Check spacing đã bị bỏ qua (spacing scale trống).`,
+                message: `Gap (itemSpacing: ${node.itemSpacing}px) - Check spacing is skipped (spacing scale is empty).`,
                 id: node.id,
                 nodeName: nodeName
               });
@@ -1527,7 +1578,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                 addIssue({
                   severity: "error",
                   type: "spacing",
-                    message: `Padding ${pad.name} (${pad.value}px) không theo scale trên "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
+                    message: `Padding ${pad.name} (${pad.value}px) does not follow scale on "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
                     id: node.id,
                     nodeName: nodeName
                 });
@@ -1542,7 +1593,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
               addIssue({
                 severity: "info",
                 type: "spacing",
-                message: `Padding - Check spacing đã bị bỏ qua (spacing scale trống).`,
+                message: `Padding - Check spacing is skipped (spacing scale is empty).`,
                 id: node.id,
                 nodeName: nodeName
               });
@@ -1579,7 +1630,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           addIssue({
             severity: "error",
             type: "typography",
-                message: `fontSize ${fs}px không theo scale trên text "${node.characters.slice(0, 30)}". Scale: ${customFontSizeScale.join(", ")}`,
+                message: `fontSize ${fs}px does not follow scale on text "${node.characters.slice(0, 30)}". Scale: ${customFontSizeScale.join(", ")}`,
                 id: node.id,
                 nodeName: nodeName
           });
@@ -1589,7 +1640,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             addIssue({
               severity: "error",
               type: "typography",
-              message: `fontSize ${fs}px không theo scale trên text "${node.characters.slice(0, 30)}". Scale: ${RULES.allTypographySizes.join(", ")}`,
+              message: `fontSize ${fs}px does not follow scale on text "${node.characters.slice(0, 30)}". Scale: ${RULES.allTypographySizes.join(", ")}`,
               id: node.id,
               nodeName: nodeName
             });
@@ -1603,7 +1654,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             addIssue({
               severity: "warn",
               type: "typography-style",
-              message: `Text không dùng Text Style (key) — khó quản lý và không đồng bộ. Nên tạo và dùng Text Style.`,
+              message: `Text does not use Text Style (variable) — difficult to manage and not consistent. Should create and use Text Style Variable.`,
               id: node.id,
               nodeName: nodeName
             });
@@ -1614,7 +1665,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             addIssue({
               severity: "warn",
               type: "typography-style",
-              message: `Text không dùng Text Style chuẩn.`,
+              message: `Text does not use standard Text Style.`,
               id: node.id,
               nodeName: nodeName
             });
@@ -1666,11 +1717,11 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           // Only report once per unique hash to avoid duplicate warnings
           if (usageCount > 1 && h && !reportedHashes.has(h)) {
             reportedHashes.add(h); // Mark as reported
-            const usageText = ` (đang dùng ${usageCount} lần)`;
+            const usageText = ` (used ${usageCount} times)`;
           addIssue({
             severity: "warn",
               type: "component",
-              message: `${nodeTypeLabel} "${nodeName}" nên được component hóa để tái sử dụng${usageText}.`,
+              message: `${nodeTypeLabel} "${nodeName}" should be componentized for reuse${usageText}.`,
               id: node.id, // Use first node's ID for selection
               nodeName: nodeName
           });
@@ -1687,7 +1738,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           addIssue({
             severity: "warn",
             type: "position",
-            message: `Child có vị trí âm (x:${Math.round(node.x)}, y:${Math.round(node.y)}) trong "${node.parent.name}". Kiểm tra margin/absolute positioning.`,
+            message: `Child has negative position (x:${Math.round(node.x)}, y:${Math.round(node.y)}) in "${node.parent.name}". Check margin/absolute positioning.`,
             id: node.id,
             nodeName: nodeName
           });
@@ -1752,11 +1803,11 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           const minContrast = firstIssue.minContrast !== undefined ? firstIssue.minContrast : (isLargeText ? RULES.contrastAALarge : RULES.contrastAA);
           
           if (firstIssue.isGradient) {
-            message = `Text contrast ratio ${contrastRatio}:1 không đạt WCAG ${isLargeText ? "AA (large text)" : "AA"} (cần >= ${minContrast}:1) với gradient background (${count} text nodes). Cần check manual vì gradient có thể có vị trí pass.`;
+            message = `Text contrast ratio ${contrastRatio}:1 fails WCAG ${isLargeText ? "AA (large text)" : "AA"} (requires >= ${minContrast}:1) with a gradient background (${count} text nodes). Manual check recommended because gradients may pass at some positions.`;
           } else if (Math.abs(firstIssue.contrast - 1.0) < 0.01) {
-            message = `Text contrast ratio ${contrastRatio}:1 - Có thể không lấy được background color đúng (có thể là layer cùng cấp nằm dưới text) (${count} text nodes). Cần check manual.`;
+            message = `Text contrast ratio ${contrastRatio}:1 — background color may not have been detected correctly (e.g. a sibling layer behind the text) (${count} text nodes). Manual check recommended.`;
           } else {
-            message = `Text contrast ratio ${contrastRatio}:1 không đạt WCAG ${isLargeText ? "AA (large text)" : "AA"} (cần >= ${minContrast}:1) (${count} text nodes).`;
+            message = `Text contrast ratio ${contrastRatio}:1 fails WCAG ${isLargeText ? "AA (large text)" : "AA"} (requires >= ${minContrast}:1) (${count} text nodes).`;
           }
         }
         
@@ -1925,7 +1976,7 @@ async function extractDesignTokens(target) {
   const nodesToScan = [];
   if (target === "selection") {
     if (figma.currentPage.selection.length === 0) {
-      figma.notify("Không có selection — quét toàn bộ page.");
+      figma.notify("No selection — scanning the whole page.");
       traverse(figma.currentPage, n => nodesToScan.push(n));
     } else {
       for (const n of figma.currentPage.selection) traverse(n, nd => nodesToScan.push(nd));
@@ -2137,6 +2188,7 @@ figma.ui.onmessage = async msg => {
   switch (msg.type) {
     case "scan": {
     const mode = msg.mode || "page";
+    const context = buildScanContext(mode);
     const spacingScaleInput = msg.spacingScale || "";
     const spacingThreshold = msg.spacingThreshold || 100;
     const fontSizeScaleInput = msg.fontSizeScale || "";
@@ -2213,21 +2265,22 @@ figma.ui.onmessage = async msg => {
     
     try {
       const issues = await scan(mode, customSpacingScale, spacingThreshold, customFontSizeScale, fontSizeThreshold, customLineHeightScale, lineHeightThreshold, lineHeightBaselineThreshold);
-    figma.ui.postMessage({ type: "report", issues });
+    figma.ui.postMessage({ type: "report", issues, context });
     } catch (error) {
-      figma.notify(`Lỗi khi quét: ${error.message}`);
-      figma.ui.postMessage({ type: "report", issues: [], error: error.message });
+      figma.notify(`Scan failed: ${error.message}`);
+      figma.ui.postMessage({ type: "report", issues: [], error: error.message, context });
     }
     break;
   }
     case "extract-tokens": {
       const mode = msg.mode || "page";
+      const context = buildScanContext(mode);
       try {
         const tokens = await extractDesignTokens(mode);
-        figma.ui.postMessage({ type: "tokens-report", tokens });
+        figma.ui.postMessage({ type: "tokens-report", tokens, context });
       } catch (error) {
-        figma.notify(`Lỗi khi extract tokens: ${error.message}`);
-        figma.ui.postMessage({ type: "tokens-report", tokens: null, error: error.message });
+        figma.notify(`Token extraction failed: ${error.message}`);
+        figma.ui.postMessage({ type: "tokens-report", tokens: null, error: error.message, context });
       }
       break;
     }
@@ -2264,7 +2317,7 @@ figma.ui.onmessage = async msg => {
       } else {
         // Fallback to scrollAndZoomIntoView
       figma.viewport.scrollAndZoomIntoView([node]);
-        figma.notify("Đã chọn node");
+        figma.notify("Node selected");
         return;
       }
       
@@ -2293,9 +2346,9 @@ figma.ui.onmessage = async msg => {
       figma.viewport.center = { x: centerX, y: centerY };
       figma.viewport.zoom = zoom;
       
-      figma.notify("Đã chọn và hiển thị node ở giữa màn hình");
+      figma.notify("Node selected and centered in the viewport");
     } else {
-      figma.notify("Không tìm thấy node");
+      figma.notify("Node not found");
     }
     break;
   }

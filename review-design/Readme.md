@@ -1,157 +1,159 @@
-## Tổng quan
-**Design QA Checker** là Figma plugin kiểm tra design theo chuẩn Gravity Global, tự động phát hiện lỗi và cảnh báo, đồng thời trích xuất design tokens.
+## Overview
+**Design QA Checker** is a Figma plugin for **Gravity Global** design QA. It automatically detects design issues and warnings, and can also extract design tokens.
 
 ---
 
-## Chức năng chính
+## Core features
 
 ### 1. Design Quality Scan (Run Scan)
-Quét và phát hiện các vấn đề trong design:
+Scan and detect issues in your design:
 
 #### A. Naming Convention
-- Frame/Component: Cảnh báo nếu tên chứa "Frame" hoặc "Group" (tên mặc định)
-- Text: Kiểm tra theo pattern: `Title`, `Desc`, `Label`, `Caption`, `Heading`, `Body`, `Link`, `Button-text`, `Content`
+- Frame/Component: Warn if the name contains **"Frame"** or **"Group"** (default Figma naming)
+- Text: Validate against patterns like `Title`, `Desc`, `Label`, `Caption`, `Heading`, `Body`, `Link`, `Button-text`, `Content`
 
 #### B. Structure & Layout
-- Groups: Cảnh báo khi dùng Group (nên dùng Frame + Auto-layout)
-  - Exception: Group chỉ dùng để tạo icon (children toàn vector/shape) sẽ PASS (không yêu cầu Auto-layout)
-- Nested Groups: Phát hiện Group lồng nhau (trừ các trường hợp group hợp lệ như button pattern / icon-only)
-- Auto-layout: Yêu cầu bật Auto-layout cho Frame/Component có nhiều children
-- Empty Frames: Phát hiện Frame trống hoặc thừa
-- Duplicate Frames: Phát hiện Frame/Component trùng lặp (dựa trên hash)
+- Groups: Warn when using `GROUP` (prefer `FRAME` + Auto Layout)
+  - Exception: icon-only groups (children are vectors/shapes) are **allowed** (no Auto Layout requirement)
+- Nested Groups: Detect nested groups (except valid patterns such as button/icon-only patterns)
+- Auto Layout: Require Auto Layout for frames/components based on common UI patterns and heuristics
+- Empty Frames: Detect empty or redundant frames
+- Duplicate Frames: Detect potential duplicates (hash-based)
 
 #### C. Spacing System
-- Gap (itemSpacing): Báo lỗi nếu không theo spacing scale tùy chỉnh (có threshold)
-- Padding: Báo lỗi nếu paddingLeft/Right/Top/Bottom không theo scale (có threshold)
-- Custom Scale: Nhập scale (ví dụ: `0, 4, 8, 12, 16, 24, 32, 40, 48, 64`)
-- Threshold: Giá trị > threshold sẽ pass (case đặc biệt)
+- Gap (`itemSpacing`): **Error** if not in the custom spacing scale (with threshold)
+- Padding: **Error** if `paddingLeft/Right/Top/Bottom` is not in the custom spacing scale (with threshold)
+- Custom scale: Provide a comma-separated scale (example: `0, 4, 8, 12, 16, 24, 32, 40, 48, 64`)
+- Threshold: Values **greater than threshold** are treated as pass (special-case)
 
 #### D. Typography
-- Font Size: Kiểm tra theo typography scale (mặc định: `32, 24, 20, 18, 16, 14, 12`)
-- Custom Font Size Scale: Nhập scale tùy chỉnh
-- Text Style: Cảnh báo nếu text không dùng Text Style (key)
+- Font size: Validate against the typography scale (default: `32, 24, 20, 18, 16, 14, 12`)
+- Custom font-size scale: Provide your own font-size scale
+- Text Style: Warn if text does not use a Text Style (style variable)
 - Line Height:
-  - Kiểm tra line-height theo scale (%)
-  - Hỗ trợ "auto"
-  - Báo lỗi nếu < baseline threshold (mặc định 120%)
-  - Custom scale: `auto, 100, 120, 140, 150, 160, 180, 200`
+  - Validate line-height against the configured scale (percent-based)
+  - Supports `"auto"` (if included in the custom scale)
+  - **Error** if below the baseline threshold (default: 120%)
+  - Custom scale example: `auto, 100, 120, 140, 150, 160, 180, 200`
 - Text too small (Mobile ADA):
-  - Chỉ áp dụng khi text nằm trong frame mobile (width ≤ 768px)
-  - Báo lỗi nếu `fontSize ≤ 12px`
+  - Only applies when the text is inside a “mobile” frame (width ≤ 768px)
+  - **Error** if `fontSize ≤ 12px`
 
 #### E. Color Contrast (Accessibility - WCAG AA)
-- Text Contrast: Kiểm tra contrast ratio giữa text và background
-- WCAG AA: Normal text ≥ 4.5, Large text (≥18pt hoặc ≥14pt bold) ≥ 3.0
-- Hỗ trợ: Semi-transparent backgrounds, gradient backgrounds, nested backgrounds
+- Text contrast: Check contrast ratio between text and background
+- WCAG AA thresholds:
+  - Normal text: ≥ 4.5
+  - Large text (≥18px or ≥14px bold): ≥ 3.0
+- Supports: semi-transparent backgrounds, gradient backgrounds (average-color approximation), nested backgrounds
 
 #### F. Componentization
-- Component Reuse: Cảnh báo Frame nên component hóa nếu dùng ≥2 lần
-- Component Patterns: Kiểm tra theo pattern: `Card`, `Button`, `Header-item`, `CTA`, `Input`, `Select`, etc.
+- Component reuse: Warn when a frame should be componentized if used ≥ 2 times
+- Component patterns: Checks common patterns like `Card`, `Button`, `Header-item`, `CTA`, `Input`, `Select`, etc.
 
 #### G. Position Issues
-- Negative Position: Cảnh báo nếu child có vị trí âm (x < 0 hoặc y < 0)
+- Negative position: Warn when a child has negative coordinates (x < 0 or y < 0)
 
 ---
 
 ### 2. Extract Design Tokens
-Trích xuất và tổng hợp design tokens:
+Extract and aggregate design tokens:
 
 #### A. Colors
-- Solid Colors: Tất cả màu solid (RGB, RGBA)
-- Color Types: Phân loại theo usage:
-  - `text`: Màu text
-  - `background`: Màu background
-  - `border`: Màu border
-  - `shadow`: Màu shadow/effect
-  - `fill`: Màu fill
+- Solid colors: All solid colors (hex / rgba)
+- Color types: Categorized by usage:
+  - `text`: text color
+  - `background`: background color
+  - `border`: stroke/border color
+  - `shadow`: shadow/effect color
+  - `fill`: generic fill color
 
 #### B. Gradients
-- Linear, Radial, Angular, Diamond gradients
-- Hiển thị gradient string với color stops
+- Linear, radial, angular, diamond gradients
+- Exports gradient strings including color stops
 
 #### C. Typography Tokens
-- Font Family: Tất cả font families (kèm style)
-- Font Weight: Tất cả font weights
-  - Note: Hiển thị danh sách font-family dùng weight đó + số lần dùng
-- Font Size: Tất cả font sizes
-- Line Height: Tất cả line-heights (dạng %)
+- Font family: All font families (with style)
+- Font weight: All font “weights” (derived from font style)
+  - Note: shows a per-weight breakdown of `font-family` usage with counts
+- Font size: All font sizes
+- Line height: All line-heights (percent-based)
 
 #### D. Spacing Tokens
-- Border Radius: Tất cả border radius values
+- Border radius: All border-radius values
 
 ---
 
 ### 3. UI Features
 
 #### A. Scope Selection
-- Scan Page: Quét toàn bộ page
-- Scan Selection: Chỉ quét elements đã chọn
+- Scan Page: scan the entire current page
+- Scan Selection: scan only selected elements
 
 #### B. Customizable Settings
-- Spacing Scale: Nhập scale tùy chỉnh
-- Font Size Scale: Nhập scale tùy chỉnh
-- Line Height Scale: Nhập scale tùy chỉnh (hỗ trợ "auto")
-- Thresholds: Cấu hình threshold cho từng loại
+- Spacing scale: input a custom spacing scale
+- Font-size scale: input a custom font-size scale
+- Line-height scale: input a custom line-height scale (supports `"auto"`)
+- Thresholds: configure thresholds for each category
 
 #### C. Filtering & Search
 - Filter by Severity: `All`, `Errors`, `Warnings`
-- Search: Tìm kiếm theo message, node name, type, value
-- Color Type Filter: Lọc tokens theo color type (text/background/border/shadow/fill)
+- Search: search by message, node name, type, or value
+- Color type filter: filter tokens by color type (text/background/border/shadow/fill)
 
 #### D. Results Display
-- Grouped Issues: Nhóm issues theo type
-- Collapsible Groups: Expand/collapse từng nhóm
-- Node Selection: Click "Select" để select node trong Figma
-- Usage Count: Hiển thị số lần sử dụng cho tokens
-- Font Family Breakdown: Với Font Weight, hiển thị list font-family + count
-- Design Tokens groups: luôn hiển thị đủ nhóm (kể cả `0`), nhóm rỗng sẽ có message “Chưa có token nào trong nhóm này.”
+- Grouped issues: issues are grouped by type
+- Collapsible groups: expand/collapse each group
+- Node selection: click **Select** to select & focus the node in Figma
+- Usage count: shows usage counts for tokens
+- Font-family breakdown: for **Font Weight** tokens, shows a list of font families + counts
+- Token groups are always shown (including `0`); empty groups show “No tokens in this group.”
 
 #### E. Export Reports
-- Export HTML: Export báo cáo dạng HTML
-  - Collapsible groups (mặc định đóng)
-  - Filter Issues: `All / Errors / Warnings` (mặc định `All`)
-- Export PDF: Export báo cáo dạng PDF
-- Export JSON: Export dữ liệu dạng JSON
+- Export HTML: export a standalone HTML report
+  - Collapsible groups (default: collapsed)
+  - Issue filter: `All / Errors / Warnings` (default: `All`)
+- Export PDF: export via browser print flow (opens report for printing)
+- Export JSON: export raw report data (issues/tokens)
 
 #### F. Scan History
-- Lưu 10 scan gần nhất
-- Xem lại kết quả cũ
-- Persist bằng `figma.clientStorage` (không bị mất khi đóng/mở lại plugin)
-- Auto restore report gần nhất khi mở lại plugin (issues hoặc tokens)
+- Stores the last 10 scans
+- Restore and view previous results
+- Persists via `figma.clientStorage` (survives plugin reload/unload)
+- Auto-restores the most recent report on plugin startup (issues or tokens)
 
 ---
 
 ### 4. Smart Features
 
 #### A. Issue Grouping
-- Nhóm issues tương tự để tránh duplicate
-- Contrast issues: Nhóm theo ratio + colors
-- Component issues: Nhóm theo usage count
+- Groups similar issues to reduce duplicates
+- Contrast issues: grouped by ratio + colors
+- Component issues: driven by usage count
 
 #### B. Node Traversal
-- Bỏ qua hidden nodes
-- Bỏ qua "Sticky Note" và "Not check design"
-- Recursive traversal qua tất cả children
+- Skips hidden nodes
+- Skips nodes named “Sticky Note” and “Not check design”
+- Recursively traverses all children
 
 #### C. Background Detection
-- Tự động detect background color cho text contrast
-- Hỗ trợ semi-transparent backgrounds
-- Hỗ trợ gradient backgrounds (tính average color)
+- Automatically detects background color for text contrast checks
+- Supports semi-transparent backgrounds
+- Supports gradient backgrounds (average-color approximation)
 
 ---
 
-## Cấu trúc code
+## Code structure
 
-- `code.js`: Logic chính, scan rules, token extraction, persisted storage handlers (`figma.clientStorage`)
-- `ui.html`: UI, rendering, export (HTML/PDF/JSON), history + auto-restore
+- `code.js`: Core logic (scan rules, token extraction, persistence via `figma.clientStorage`)
+- `ui.html`: UI rendering, export (HTML/PDF/JSON), history + auto-restore
 - `manifest.json`: Plugin configuration
 
 ---
 
 ## Use Cases
 
-1. Design Review: Kiểm tra design trước khi handoff
-2. Design System Audit: Đảm bảo tuân thủ design system
-3. Token Extraction: Trích xuất tokens để tạo design system
-4. Accessibility Check: Kiểm tra color contrast (WCAG AA)
-5. Code Quality: Đảm bảo naming, structure, spacing consistency
+1. Design review: validate design quality before handoff
+2. Design system audit: enforce consistency with the design system
+3. Token extraction: extract tokens for engineering handoff / DS tooling
+4. Accessibility check: verify color contrast (WCAG AA)
+5. Quality guardrails: naming, structure, spacing, typography consistency

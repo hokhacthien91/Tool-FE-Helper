@@ -1069,22 +1069,22 @@ body {
           <label class="tooltip">
             <input id="scan-page" type="radio" name="scope" value="page" checked>
             <span>Scan Page</span>
-            <span class="tooltiptext">Quét toàn bộ page hiện tại để kiểm tra design issues</span>
+            <span class="tooltiptext">Scan the entire current page to check design issues</span>
           </label>
           <label class="tooltip">
             <input id="scan-selection" type="radio" name="scope" value="selection">
             <span>Scan Selection</span>
-            <span class="tooltiptext">Chỉ quét các elements đã được chọn trong Figma</span>
+            <span class="tooltiptext">Scan only the selected elements in Figma</span>
           </label>
         </div>
      
         <button id="btn-scan" class="tooltip">
           🔍 Run Scan Design
-          <span class="tooltiptext tooltip-right">Kiểm tra design theo các chuẩn: naming, auto-layout, spacing, typography, components...</span>
+          <span class="tooltiptext tooltip-right">Check design according to the standards: naming, auto-layout, spacing, typography, components...</span>
         </button>
         <button id="btn-extract-tokens" class="tooltip">
           🎨 Extract Design Tokens
-          <span class="tooltiptext tooltip-right">Trích xuất tất cả design tokens: colors, gradients, fonts, spacing, border-radius...</span>
+          <span class="tooltiptext tooltip-right">Extract all design tokens: colors, gradients, fonts, spacing, border-radius...</span>
         </button>
       </div>
 
@@ -1100,7 +1100,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị spacing scale cách nhau bằng dấu phẩy. Để trống để bỏ qua check spacing.</span>
+            <span class="tooltiptext" style="bottom: 65%;">Enter the spacing scale values separated by commas. Leave empty to skip spacing check.</span>
           </div>
           <div class="tooltip" style="flex: 0 0 80px;">
             <label for="spacing-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
@@ -1113,7 +1113,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: giá trị spacing lớn hơn threshold sẽ pass (case đặc biệt).</span>
+            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
           </div>
         </div>
        
@@ -1131,7 +1131,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị font-size scale cách nhau bằng dấu phẩy. Để trống để bỏ qua check font-size.</span>
+            <span class="tooltiptext" style="bottom: 65%;">Enter the font-size scale values separated by commas. Leave empty to skip font-size check.</span>
           </div>
           <div class="tooltip" style="flex: 0 0 80px;">
             <label for="font-size-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
@@ -1144,7 +1144,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: giá trị font-size lớn hơn threshold sẽ pass (case đặc biệt).</span>
+            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
           </div>
         </div>
        
@@ -1162,7 +1162,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Nhập các giá trị line-height scale (dạng %) cách nhau bằng dấu phẩy. Để trống để bỏ qua check line-height. Giá trị "auto" luôn được chấp nhận.</span>
+            <span class="tooltiptext" style="bottom: 65%;">Enter the line-height scale values separated by commas. Leave empty to skip line-height check. The value "auto" is always accepted.</span>
           </div>
           <div class="tooltip" style="flex: 0 0 80px;">
             <label for="line-height-baseline-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Baseline Min (%):</label>
@@ -1176,7 +1176,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Baseline threshold: line-height < threshold% sẽ báo cảnh báo (ví dụ: 120% = 1.2x font-size).</span>
+            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Baseline threshold: line-height &lt; threshold% will show a warning (e.g. 120% = 1.2x font-size).</span>
           </div>
           <div class="tooltip" style="flex: 0 0 80px;">
             <label for="line-height-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
@@ -1189,7 +1189,7 @@ body {
               style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: giá trị line-height lớn hơn threshold sẽ pass (case đặc biệt).</span>
+            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
           </div>
         
         </div>
@@ -1198,21 +1198,21 @@ body {
       <div class="filter-controls" id="filter-controls" style="display: none;">
         <div class="search-box tooltip">
           <input type="text" id="search-input" placeholder="🔍 Search issues/tokens..." class="search-input">
-          <span class="tooltiptext">Tìm kiếm trong issues và tokens theo message, node name, type, hoặc value</span>
+          <span class="tooltiptext">Search issues and tokens by message, node name, type, or value</span>
           <button id="btn-clear-search" class="btn-clear-search" style="display: none;">✕</button>
         </div>
         <div class="filter-buttons" id="filter-buttons">
           <button class="filter-btn active tooltip" data-filter="all">
             All
-            <span class="tooltiptext">Hiển thị tất cả issues</span>
+            <span class="tooltiptext">Show all issues</span>
           </button>
           <button class="filter-btn tooltip" data-filter="error">
             ❌ Errors
-            <span class="tooltiptext">Chỉ hiển thị lỗi nghiêm trọng (cần sửa ngay)</span>
+            <span class="tooltiptext">Show only critical errors (need to fix immediately)</span>
           </button>
           <button class="filter-btn tooltip" data-filter="warn">
             ⚠️ Warnings
-            <span class="tooltiptext">Chỉ hiển thị cảnh báo (nên sửa)</span>
+            <span class="tooltiptext">Show only warnings (need to fix)</span>
           </button>
         </div>
         <div class="color-type-filter" id="color-type-filter" style="display: none;">
@@ -1230,7 +1230,7 @@ body {
       <div id="results">
         <div class="empty-state">
           <div class="icon">📋</div>
-          <p>Chưa có báo cáo — nhấn Run Scan để bắt đầu kiểm tra</p>
+          <p>No report yet — press Run Scan to start checking</p>
         </div>
       </div>
 
@@ -1238,7 +1238,7 @@ body {
         <div class="footer-left">
           <button id="btn-history" class="btn-history tooltip">
             📚 History
-            <span class="tooltiptext tooltip-right">Xem 10 scan gần nhất</span>
+            <span class="tooltiptext tooltip-right">View last 10 scans</span>
           </button>
         </div>
         <div class="footer-right">
@@ -1246,11 +1246,11 @@ body {
             <button id="btn-export" class="btn-export">📄 Export Report</button>
             <div class="export-dropdown" id="export-dropdown">
               <button class="export-option" data-format="html">📄 Export HTML</button>
-              <button class="export-option" data-format="pdf">📑 Export PDF</button>
+              <!-- <button class="export-option" data-format="pdf">📑 Export PDF</button> -->
               <button class="export-option" data-format="json">📋 Export JSON</button>
             </div>
           </div>
-          <button id="btn-close">Đóng</button>
+          <button id="btn-close">Close</button>
       </div>
     </div>
 
@@ -1289,7 +1289,8 @@ console.log("ui.js loaded");
           issues: null,
           tokens: null,
           scanMode: null,
-          timestamp: null
+          timestamp: null,
+          context: null
         };
 
         function saveLastReport(report) {
@@ -1315,6 +1316,7 @@ console.log("ui.js loaded");
           }
 
           currentReportData.scanMode = saved.scanMode || currentReportData.scanMode;
+          currentReportData.context = saved.context || currentReportData.context;
 
           if (saved.type === "issues" && Array.isArray(saved.issues)) {
             console.log("Applying saved issues report");
@@ -1369,7 +1371,7 @@ console.log("ui.js loaded");
             autolayout: "Auto Layout",
             spacing: "Spacing",
             typography: "Font Size",
-            "typography-style": "Text Style (key)",
+            "typography-style": "Text Style (variable)",
             "line-height": "Line Height",
             position: "Position Layer",
             duplicate: "Duplicate Layer",
@@ -1513,16 +1515,16 @@ console.log("ui.js loaded");
               results.innerHTML = `
                 <div class="empty-state success">
                   <div class="icon">✅</div>
-                  <p><strong>Không có vấn đề nào!</strong></p>
-                  <p style="margin-top: 8px; font-size: 12px;">Design của bạn đã tuân thủ đầy đủ các chuẩn.</p>
+                  <p><strong>No issues found!</strong></p>
+                  <p style="margin-top: 8px; font-size: 12px;">Your design passed all configured checks.</p>
                 </div>
               `;
             } else {
               results.innerHTML = `
                 <div class="empty-state">
                   <div class="icon">🔍</div>
-                  <p><strong>Không tìm thấy kết quả</strong></p>
-                  <p style="margin-top: 8px; font-size: 12px;">Thử thay đổi filter hoặc search keyword.</p>
+                  <p><strong>No results found</strong></p>
+                  <p style="margin-top: 8px; font-size: 12px;">Try changing the filter or search keyword.</p>
                 </div>
               `;
             }
@@ -1634,7 +1636,7 @@ console.log("ui.js loaded");
                 <div class="issue-header">
                   <div>
                     <span class="issue-type">✅ PASSED</span>
-                    <div class="issue-body">Không có vấn đề nào trong loại này.</div>
+                    <div class="issue-body">No issues in this type.</div>
                   </div>
                 </div>
               `;
@@ -1713,7 +1715,8 @@ console.log("ui.js loaded");
               type: "issues",
               issues,
               timestamp,
-              scanMode: currentReportData.scanMode || null
+              scanMode: currentReportData.scanMode || null,
+              context: currentReportData.context || null
             });
           }
         }
@@ -1842,7 +1845,7 @@ console.log("ui.js loaded");
             results.innerHTML = `
               <div class="empty-state">
                 <div class="icon">📋</div>
-                <p>Không tìm thấy design tokens</p>
+                <p>No design tokens found</p>
               </div>
             `;
             return;
@@ -1852,8 +1855,8 @@ console.log("ui.js loaded");
             results.innerHTML = `
               <div class="empty-state">
                 <div class="icon">🔍</div>
-                <p><strong>Không tìm thấy kết quả</strong></p>
-                <p style="margin-top: 8px; font-size: 12px;">Thử thay đổi filter hoặc search keyword.</p>
+                <p><strong>No results found</strong></p>
+                <p style="margin-top: 8px; font-size: 12px;">Try changing the filter or search keyword.</p>
               </div>
             `;
             return;
@@ -1867,8 +1870,8 @@ console.log("ui.js loaded");
             results.innerHTML = `
               <div class="empty-state">
                 <div class="icon">🔍</div>
-                <p><strong>Không tìm thấy kết quả</strong></p>
-                <p style="margin-top: 8px; font-size: 12px;">Thử thay đổi filter hoặc search keyword.</p>
+                <p><strong>No results found</strong></p>
+                <p style="margin-top: 8px; font-size: 12px;">Try changing the filter or search keyword.</p>
               </div>
             `;
             return;
@@ -2071,7 +2074,7 @@ console.log("ui.js loaded");
             } else {
               const emptyMsg = document.createElement("div");
               emptyMsg.className = "token-empty-message";
-              emptyMsg.textContent = "Chưa có token nào trong nhóm này.";
+              emptyMsg.textContent = "No tokens in this group.";
               groupContent.appendChild(emptyMsg);
             }
             groupEl.appendChild(groupContent);
@@ -2083,7 +2086,8 @@ console.log("ui.js loaded");
               type: "tokens",
               tokens,
               timestamp,
-              scanMode: currentReportData.scanMode || null
+              scanMode: currentReportData.scanMode || null,
+              context: currentReportData.context || null
             });
           }
   }
@@ -2113,7 +2117,7 @@ console.log("ui.js loaded");
       if (spacingScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(spacingScaleValue)) {
-          results.innerHTML = `<div class="error-message">Lỗi: Spacing scale format không đúng. Vui lòng nhập các số cách nhau bằng dấu phẩy (ví dụ: 4, 8, 12, 16)</div>`;
+          results.innerHTML = `<div class="error-message">Error: Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)</div>`;
           return;
         }
       }
@@ -2122,7 +2126,7 @@ console.log("ui.js loaded");
       if (fontSizeScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(fontSizeScaleValue)) {
-          results.innerHTML = `<div class="error-message">Lỗi: Font-size scale format không đúng. Vui lòng nhập các số cách nhau bằng dấu phẩy (ví dụ: 32, 24, 20, 18)</div>`;
+          results.innerHTML = `<div class="error-message">Error: Font-size scale format is incorrect. Please enter the numbers separated by commas (e.g. 32, 24, 20, 18)</div>`;
           return;
         }
       }
@@ -2131,29 +2135,29 @@ console.log("ui.js loaded");
       if (lineHeightScaleValue) {
         const formatRegex = /^(\s*auto\s*,?\s*)?(\d+(\s*,\s*\d+)*)?$/i;
         if (!formatRegex.test(lineHeightScaleValue)) {
-          results.innerHTML = `<div class="error-message">Lỗi: Line-height scale format không đúng. Vui lòng nhập "auto" (nếu muốn chấp nhận) và các số cách nhau bằng dấu phẩy (ví dụ: auto, 100, 120, 140, 150)</div>`;
+          results.innerHTML = `<div class="error-message">Error: Line-height scale format is incorrect. Please enter "auto" (if you want to accept) and the numbers separated by commas (e.g. auto, 100, 120, 140, 150)</div>`;
           return;
         }
       }
       
       // Validate thresholds
       if (isNaN(spacingThreshold) || spacingThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Lỗi: Spacing threshold phải là số >= 0</div>`;
+        results.innerHTML = `<div class="error-message">Error: Spacing threshold must be a number >= 0</div>`;
         return;
       }
       
       if (isNaN(fontSizeThreshold) || fontSizeThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Lỗi: Font-size threshold phải là số >= 0</div>`;
+        results.innerHTML = `<div class="error-message">Error: Font-size threshold must be a number >= 0</div>`;
         return;
       }
       
       if (isNaN(lineHeightThreshold) || lineHeightThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Lỗi: Line-height threshold phải là số >= 0</div>`;
+        results.innerHTML = `<div class="error-message">Error: Line-height threshold must be a number >= 0</div>`;
         return;
       }
       
       if (isNaN(lineHeightBaselineThreshold) || lineHeightBaselineThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Lỗi: Line-height baseline threshold phải là số >= 0</div>`;
+        results.innerHTML = `<div class="error-message">Error: Line-height baseline threshold must be a number >= 0</div>`;
         return;
       }
       
@@ -2162,7 +2166,7 @@ console.log("ui.js loaded");
       results.innerHTML = `
         <div class="scanning">
           <div class="spinner"></div>
-          <p>Đang quét design... Vui lòng đợi</p>
+          <p>Scanning design... Please wait</p>
         </div>
       `;
       btnScan.disabled = true;
@@ -2184,7 +2188,7 @@ console.log("ui.js loaded");
       console.log("Message sent:", { type: "scan", mode: scope });
     } catch (error) {
       console.error("Error in btnScan.onclick:", error);
-      results.innerHTML = `<div class="error-message">Lỗi: ${escapeHtml(error.message)}</div>`;
+      results.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
       btnScan.disabled = false;
       btnExtractTokens.disabled = false;
     }
@@ -2201,7 +2205,7 @@ console.log("ui.js loaded");
       results.innerHTML = `
         <div class="scanning">
           <div class="spinner"></div>
-          <p>Đang extract design tokens... Vui lòng đợi</p>
+          <p>Extracting design tokens... Please wait</p>
         </div>
       `;
       btnScan.disabled = true;
@@ -2211,7 +2215,7 @@ console.log("ui.js loaded");
       console.log("Message sent:", { type: "extract-tokens", mode: scope });
     } catch (error) {
       console.error("Error in btnExtractTokens.onclick:", error);
-      results.innerHTML = `<div class="error-message">Lỗi: ${escapeHtml(error.message)}</div>`;
+      results.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
       btnScan.disabled = false;
       btnExtractTokens.disabled = false;
     }
@@ -2519,7 +2523,7 @@ console.log("ui.js loaded");
 
               if (!group.values || group.values.length === 0) {
                 html += `
-          <div class="token-empty-message">Chưa có token nào trong nhóm này.</div>`;
+          <div class="token-empty-message">No tokens in this group.</div>`;
                 html += `
         </div>
       </div>`;
@@ -2711,7 +2715,7 @@ console.log("ui.js loaded");
         let scanHistoryMemory = [];
         let hasLoadedHistoryOnce = false;
 
-        function saveScanHistory(mode, type, data) {
+        function saveScanHistory(mode, type, data, context) {
           try {
             if (type === "issues" && (!data.issues || data.issues.length === 0)) {
               console.log("Skipping save - no issues data");
@@ -2727,6 +2731,7 @@ console.log("ui.js loaded");
               mode,
               type,
               timestamp: new Date().toISOString(),
+              context: context || null,
               data: {
                 issues: data.issues || null,
                 tokens: data.tokens || null,
@@ -2799,12 +2804,12 @@ console.log("ui.js loaded");
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
 
-            if (diffMins < 1) return "Vừa xong";
-            if (diffMins < 60) return `${diffMins} phút trước`;
-            if (diffHours < 24) return `${diffHours} giờ trước`;
-            if (diffDays < 7) return `${diffDays} ngày trước`;
+            if (diffMins < 1) return "Just now";
+            if (diffMins < 60) return `${diffMins} minutes ago`;
+            if (diffHours < 24) return `${diffHours} hours ago`;
+            if (diffDays < 7) return `${diffDays} days ago`;
             
-            return date.toLocaleString('vi-VN', {
+            return date.toLocaleString('en-US', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
@@ -2830,8 +2835,8 @@ console.log("ui.js loaded");
             historyList.innerHTML = `
               <div class="history-empty">
                 <div class="icon">📋</div>
-                <p>Chưa có scan history</p>
-                <p style="font-size: 11px; margin-top: 8px;">Các scan sẽ được lưu tự động</p>
+                <p>No scan history</p>
+                <p style="font-size: 11px; margin-top: 8px;">Scans will be saved automatically</p>
               </div>
             `;
             return;
@@ -2842,6 +2847,7 @@ console.log("ui.js loaded");
             const modeLabel = entry.mode === "page" ? "Page" : "Selection";
             const typeLabel = entry.type === "issues" ? "Issues" : "Tokens";
             const typeClass = entry.type === "issues" ? "issues" : "tokens";
+            const contextLabel = (entry.context && entry.context.label) ? entry.context.label : `${modeLabel} scan`;
             
             let statsHtml = "";
             if (entry.type === "issues") {
@@ -2864,7 +2870,7 @@ console.log("ui.js loaded");
                   <span class="history-item-type ${typeClass}">${typeLabel}</span>
                   <span class="history-item-time">${timeStr}</span>
                 </div>
-                <div class="history-item-info">${modeLabel} scan</div>
+                <div class="history-item-info">${escapeHtml(contextLabel)}</div>
                 <div class="history-item-stats">${statsHtml}</div>
               </div>
             `;
@@ -2885,7 +2891,7 @@ console.log("ui.js loaded");
             const entry = history.find(e => e.id === entryId);
             
             if (!entry) {
-              alert("Không tìm thấy scan history!");
+              alert("Scan history entry not found!");
               return;
             }
 
@@ -2895,6 +2901,7 @@ console.log("ui.js loaded");
               radio.checked = true;
             }
             currentReportData.scanMode = entry.mode;
+            currentReportData.context = entry.context || null;
 
             // Restore report data
             if (entry.type === "issues" && entry.data.issues) {
@@ -2918,13 +2925,13 @@ console.log("ui.js loaded");
             console.log("Report restored from history:", entryId);
           } catch (e) {
             console.error("Error restoring report from history:", e);
-            alert("Lỗi khi khôi phục report: " + e.message);
+            alert("Error restoring report: " + e.message);
           }
         }
 
         function exportReport(format) {
           if (!currentReportData.issues && !currentReportData.tokens) {
-            alert("Không có dữ liệu để export!");
+            alert("No data to export!");
             return;
           }
 
@@ -2956,7 +2963,7 @@ console.log("ui.js loaded");
               
               if (!printWindow) {
                 // Popup blocked - fallback to download HTML with print instructions
-                alert("Popup bị chặn. Đang tải file HTML - bạn có thể mở file và chọn Print để tạo PDF.");
+                alert("Popup blocked. Downloading HTML - you can open the file and select Print to create PDF.");
                 const blob = new Blob([html], { type: "text/html" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
@@ -2989,7 +2996,7 @@ console.log("ui.js loaded");
             } catch (error) {
               console.error("Error opening print window:", error);
               // Fallback: download HTML
-              alert("Không thể mở cửa sổ in. Đang tải file HTML - bạn có thể mở file và chọn Print để tạo PDF.");
+              alert("Cannot open print window. Downloading HTML - you can open the file and select Print to create PDF.");
               const blob = new Blob([html], { type: "text/html" });
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
@@ -3233,23 +3240,25 @@ console.log("ui.js loaded");
             btnScan.disabled = false;
             btnExtractTokens.disabled = false;
       const issues = msg.issues || [];
+            currentReportData.context = msg.context || null;
             renderResults(issues);
             
             // Save to history after successful scan (with full data)
             const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
-            saveScanHistory(scope, "issues", { issues: issues });
+            saveScanHistory(scope, "issues", { issues: issues }, msg.context || null);
           }
           if (msg && msg.type === "tokens-report") {
             btnScan.disabled = false;
             btnExtractTokens.disabled = false;
             if (msg.error) {
-              results.innerHTML = `<div class="error-message">Lỗi: ${escapeHtml(msg.error)}</div>`;
+              results.innerHTML = `<div class="error-message">Error: ${escapeHtml(msg.error)}</div>`;
             } else {
+              currentReportData.context = msg.context || null;
               renderTokens(msg.tokens);
               
               // Save to history after successful extract (with full data)
               const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
-              saveScanHistory(scope, "tokens", { tokens: msg.tokens });
+              saveScanHistory(scope, "tokens", { tokens: msg.tokens }, msg.context || null);
       }
     }
   };
