@@ -2862,12 +2862,193 @@ figma.ui.onmessage = async msg => {
     }
     case "clear-history": {
       try {
-        await figma.clientStorage.deleteAsync("scanHistory");
-        await figma.clientStorage.deleteAsync("lastReport");
-        await figma.clientStorage.deleteAsync("inputValues");
+        // Use STORAGE_KEYS constants (correct keys with prefix)
+        await figma.clientStorage.deleteAsync(STORAGE_KEYS.history);
+        await figma.clientStorage.deleteAsync(STORAGE_KEYS.lastReport);
+        await figma.clientStorage.deleteAsync(STORAGE_KEYS.inputValues);
+        // Send empty history back to UI
+        figma.ui.postMessage({ type: "history-data", history: [] });
         figma.notify("✅ History and settings cleared");
       } catch (error) {
         console.error("Error clearing history:", error);
+      }
+      break;
+    }
+    case "extract-typography-styles": {
+      try {
+        const mode = msg.mode || "all"; // desktop, tablet, mobile, or all
+        const textStyles = figma.getLocalTextStyles();
+        const extractedStyles = [];
+        
+        for (const style of textStyles) {
+          const styleName = style.name.toLowerCase();
+          
+          // Helper functions to detect device types
+          const isMobile = styleName.includes("mobile") || styleName.includes("mob") || 
+                          styleName.includes("m/") || styleName.endsWith("/m");
+          const isTablet = styleName.includes("tablet") || styleName.includes("tab") || 
+                          styleName.includes("t/") || styleName.endsWith("/t");
+          
+          // Filter based on mode
+          if (mode === "desktop") {
+            // Skip if name contains mobile or tablet
+            if (isMobile || isTablet) {
+              continue;
+            }
+          } else if (mode === "tablet") {
+            // Only include if name contains tablet
+            if (!isTablet) {
+              continue;
+            }
+          } else if (mode === "mobile") {
+            // Only include if name contains mobile
+            if (!isMobile) {
+              continue;
+            }
+          }
+          // mode === "all" -> include everything
+          
+          // Get font name
+          const fontFamily = style.fontName && style.fontName.family ? style.fontName.family : "Inter";
+          const fontWeight = style.fontName && style.fontName.style ? style.fontName.style : "Regular";
+          
+          // Get font size (default to 16 if not set)
+          const fontSize = typeof style.fontSize === "number" ? Math.round(style.fontSize) : 16;
+          
+          // Get line height
+          let lineHeight = "150%";
+          if (style.lineHeight && style.lineHeight.unit === "PERCENT") {
+            lineHeight = Math.round(style.lineHeight.value) + "%";
+          } else if (style.lineHeight && style.lineHeight.unit === "AUTO") {
+            lineHeight = "auto";
+          } else if (style.lineHeight && style.lineHeight.unit === "PIXELS" && fontSize) {
+            const percentage = Math.round((style.lineHeight.value / fontSize) * 100);
+            lineHeight = percentage + "%";
+          }
+          
+          // Get letter spacing (default to 0)
+          let letterSpacing = "0";
+          if (style.letterSpacing && style.letterSpacing.unit === "PIXELS") {
+            letterSpacing = String(Math.round(style.letterSpacing.value * 100) / 100);
+          } else if (style.letterSpacing && style.letterSpacing.unit === "PERCENT") {
+            letterSpacing = String(Math.round(style.letterSpacing.value * 10) / 10) + "%";
+          }
+          
+          extractedStyles.push({
+            name: style.name,
+            styleId: style.id, // Store style ID for "Select" button
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+            fontWeight: fontWeight,
+            lineHeight: lineHeight,
+            letterSpacing: letterSpacing,
+            wordSpacing: "0" // Figma doesn't expose word spacing in API
+          });
+        }
+        
+        const modeLabel = mode === "desktop" ? "Desktop" : 
+                         mode === "tablet" ? "Tablet" : 
+                         mode === "mobile" ? "Mobile" : "All";
+        figma.ui.postMessage({ 
+          type: "typography-styles-extracted", 
+          styles: extractedStyles,
+          mode: mode
+        });
+        
+        if (extractedStyles.length === 0) {
+          figma.notify(`⚠️ No ${modeLabel.toLowerCase()} text styles found`);
+        } else {
+          figma.notify(`✅ Extracted ${extractedStyles.length} ${modeLabel.toLowerCase()} text styles`);
+        }
+      } catch (error) {
+        figma.notify(`❌ Error extracting text styles: ${error.message}`);
+        console.error("Error extracting text styles:", error);
+      }
+      break;
+    }
+    case "select-text-style": {
+      try {
+        const styleId = msg.styleId;
+        if (!styleId) {
+          figma.notify("⚠️ No style ID provided");
+          break;
+        }
+        
+        // Find the text style
+        const textStyle = figma.getStyleById(styleId);
+        if (!textStyle || textStyle.type !== "TEXT") {
+          figma.notify("⚠️ Text style not found");
+          break;
+        }
+        
+        // Find first text node using this style
+        function findTextNodeWithStyle(node, targetStyleId) {
+          if (node.type === "TEXT" && node.textStyleId === targetStyleId) {
+            return node;
+          }
+          if ("children" in node) {
+            for (const child of node.children) {
+              const found = findTextNodeWithStyle(child, targetStyleId);
+              if (found) return found;
+            }
+          }
+          return null;
+        }
+        
+        const textNode = findTextNodeWithStyle(figma.currentPage, styleId);
+        if (textNode) {
+          figma.currentPage.selection = [textNode];
+          figma.viewport.scrollAndZoomIntoView([textNode]);
+          figma.notify(`✅ Selected "${textNode.characters.slice(0, 30)}..." with style "${textStyle.name}"`);
+        } else {
+          figma.notify(`⚠️ No text using style "${textStyle.name}" found on this page`);
+        }
+      } catch (error) {
+        figma.notify(`❌ Error: ${error.message}`);
+        console.error("Error selecting text style:", error);
+      }
+      break;
+    }
+    case "extract-color-styles": {
+      try {
+        const paintStyles = figma.getLocalPaintStyles();
+        const extractedColors = [];
+        
+        for (const style of paintStyles) {
+          // Only process solid color paints
+          if (style.paints && style.paints.length > 0) {
+            const firstPaint = style.paints[0];
+            
+            if (firstPaint.type === "SOLID" && firstPaint.color) {
+              const color = firstPaint.color;
+              const r = Math.round(color.r * 255);
+              const g = Math.round(color.g * 255);
+              const b = Math.round(color.b * 255);
+              const hex = "#" + r.toString(16).padStart(2, "0") + 
+                               g.toString(16).padStart(2, "0") + 
+                               b.toString(16).padStart(2, "0");
+              
+              extractedColors.push({
+                name: style.name,
+                hex: hex.toUpperCase()
+              });
+            }
+          }
+        }
+        
+        figma.ui.postMessage({ 
+          type: "color-styles-extracted", 
+          colors: extractedColors 
+        });
+        
+        if (extractedColors.length === 0) {
+          figma.notify("⚠️ No color styles found in this file");
+        } else {
+          figma.notify(`✅ Extracted ${extractedColors.length} color styles`);
+        }
+      } catch (error) {
+        figma.notify(`❌ Error extracting color styles: ${error.message}`);
+        console.error("Error extracting color styles:", error);
       }
       break;
     }

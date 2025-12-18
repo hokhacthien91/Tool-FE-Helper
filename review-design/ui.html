@@ -870,10 +870,12 @@ body {
 
 .controls-group-spacing {
   padding: 5px 20px;
+  display: block;
 }
 
 .controls-group-padding {
   padding: 10px 20px;
+  display: block;
 }
 
 /* Color Swatch Components */
@@ -977,6 +979,13 @@ body {
   border-width: 5px;
   border-style: solid;
   border-color: #1d1d1f transparent transparent transparent;
+}
+.tooltip .tooltiptext.left-style{
+  left: 0;
+  margin-left: 0;
+}
+.tooltip .tooltiptext.left-style::after {
+  left: 45px;
 }
 
 .tooltip:hover .tooltiptext {
@@ -1240,12 +1249,6 @@ body {
 }
 
 /* Typography Settings Panel */
-.typography-panel {
-  margin: 10px 20px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e5e5e7;
-}
 
 .typography-panel-header {
   display: flex;
@@ -1254,13 +1257,8 @@ body {
   padding: 12px 16px;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.2s;
-  background: #fafafa;
 }
 
-.typography-panel-header:hover {
-  background: #f5f5f7;
-}
 
 .typography-panel.collapsed .typography-panel-content {
   display: none;
@@ -1310,7 +1308,7 @@ body {
   border-radius: 4px;
   font-size: 10px;
   font-family: 'SF Mono', Monaco, monospace;
-  min-width: 70px;
+  /* min-width: 100px; */
 }
 
 .typography-table input:focus,
@@ -1403,33 +1401,33 @@ body {
   font-size: 12px;
   font-style: italic;
 }
-/* 
-.issue-group-header-left{
-    display: flex;
-    align-items: center;
-    margin: 10px 0;
+.typography-table-style-name {
+  min-width: 220px;
 }
-.issue-group-header-left h4 {
-    margin: 0;
-    padding: 0 5px;
-    text-transform: capitalize;
-    font-size: 20px;
+.typography-table-font-weight{
+  min-width: 135px;
 }
-.badge {
-    color: red;
+.typography-table-font-family{
+  min-width: 120px;
 }
-.issue-group-toggle{
-    padding: 0;
-    background: transparent;
-    border: none;
-    box-shadow: none;
+
+.controls-group-padding,
+.controls-group-spacing,
+.typography-panel{
+  margin: 5px 20px;
+    margin-bottom: 16px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e5e5e7;
+    padding: 12px 15px;
 }
-.issue-group{
-    margin: 20px 0;
-    background: #ebebeb;
-    padding: 10px 15px;
-    border-radius: 10px;
-} */
+
+.mt-10{
+  margin-top: 10px;
+}
+.typography-panel{
+  padding: 0;
+}
 
     </style>
   </head>
@@ -1448,17 +1446,19 @@ body {
           <label class="tooltip">
             <input id="scan-page" type="radio" name="scope" value="page" checked>
             <span>Scan Page</span>
+            <span class="tooltiptext left-style">Scan the entire current page to check design issues</span>
           </label>
           <label class="tooltip">
             <input id="scan-selection" type="radio" name="scope" value="selection">
             <span>Scan Selection</span>
+            <span class="tooltiptext">Scan only the selected elements in Figma</span>
           </label>
         </div>
         </div>
         <div class="controls">
         <button id="btn-scan" class="tooltip">
           🔍 Run Scan Design
-          <span class="tooltiptext tooltip-right">Check design according to the standards: naming, auto-layout, spacing, typography, components...</span>
+          <span class="tooltiptext left-style">Check design according to the standards: naming, auto-layout, spacing, typography, components...</span>
         </button>
         <button id="btn-extract-tokens" class="tooltip">
           🎨 Extract Design Tokens
@@ -1475,6 +1475,18 @@ body {
           </div>
           <div style="width: 100%; height: 4px; background: #e5e5e7; border-radius: 2px; overflow: hidden;">
             <div id="scan-progress-bar" style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: 0%; transition: width 0.3s;"></div>
+          </div>
+        </div>
+
+        <!-- Validation Error Message -->
+        <div id="validation-error" style="display: none; padding: 12px 16px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; margin: 8px 0;">
+          <div style="display: flex; align-items: start; gap: 8px;">
+            <span style="font-size: 18px;">⚠️</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">Validation Error</div>
+              <div id="validation-error-message" style="font-size: 13px; color: #856404; line-height: 1.5;"></div>
+            </div>
+            <button id="btn-close-validation-error" style="background: transparent; border: none; cursor: pointer; font-size: 18px; color: #856404; padding: 0; line-height: 1;">✕</button>
           </div>
         </div>
      
@@ -1497,13 +1509,7 @@ body {
             </div>
           
           </div>
-          <div class="tooltip flex-80">
-            <label class="control-label">&nbsp;</label>
-            <button id="btn-fill-spacing-scale" class="btn-add-scale tooltip btn-full-height" disabled>
-              Use tokens
-            </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Spacing Scale input with all extracted spacing tokens (unique + sorted). Run “Extract Design Tokens” first.</span>
-          </div>
+    
           <div class="tooltip flex-80">
             <label for="spacing-threshold" class="control-label">Threshold:</label>
             <div class="tooltip"> <input 
@@ -1517,6 +1523,14 @@ body {
             >
             <span class="tooltiptext" style="left: 25%;">Threshold: values greater than threshold will pass (special case).</span></div>
            
+          </div>
+        </div>
+        <div class="flex-row mt-10">
+          <div class="tooltip flex-80">
+            <button id="btn-fill-spacing-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext left-style">Replace Spacing Scale input with all extracted spacing tokens (unique + sorted). Run “Extract Design Tokens” first.</span>
           </div>
         </div>
        
@@ -1540,15 +1554,22 @@ body {
             <!-- Color Preview Swatches -->
             <div id="color-preview" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 20px;"></div>
           </div>
+      
+        </div>
+        <div class="flex-row mt-10">
           <div class="tooltip flex-80">
-            <label class="control-label">&nbsp;</label>
             <button id="btn-fill-color-scale" class="btn-add-scale tooltip btn-full-height" disabled>
               Use tokens
             </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Color Scale input with all extracted color tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+            <span class="tooltiptext left-style">Replace Color Scale input with all extracted color tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
           </div>
-        </div>
-       
+          <div class="tooltip flex-80">
+            <button id="btn-extract-color-styles" class="btn-add-scale tooltip btn-full-height">
+              📥 Extract from Figma
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Extract all Color Styles (Paint Styles) from Figma and fill into Color Scale input.</span>
+          </div>
+          </div>
       </div>
 
       <div class="controls-group controls-group-spacing">
@@ -1568,13 +1589,7 @@ body {
           </div>
             </div>
            
-          <div class="tooltip flex-80">
-            <label class="control-label">&nbsp;</label>
-            <button id="btn-fill-font-size-scale" class="btn-add-scale tooltip btn-full-height" disabled>
-              Use tokens
-            </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Font Size Scale input with all extracted font size tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
-          </div>
+       
           <div class="tooltip flex-80">
             <label for="font-size-threshold" class="control-label">Threshold:</label>
             <div class="tooltip">
@@ -1590,6 +1605,20 @@ body {
             <span class="tooltiptext" style="left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
             </div>
           
+          </div>
+        </div>
+        <div class="flex-row-start mt-10">
+          <div class="tooltip flex-80">
+            <button id="btn-fill-font-size-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext left-style">Replace Font Size Scale input with all extracted font size tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <button id="btn-fill-font-size-from-typo" class="btn-add-scale tooltip btn-full-height">
+              Use Typography
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Font Size Scale input with all font sizes from Typography table (unique + sorted).</span>
           </div>
         </div>
        
@@ -1612,13 +1641,7 @@ body {
             </div>
             
           </div>
-          <div class="tooltip flex-80">
-            <label class="control-label">&nbsp;</label>
-            <button id="btn-fill-line-height-scale" class="btn-add-scale tooltip btn-full-height" disabled>
-              Use tokens
-            </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Line Height Scale input with all extracted line height tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
-          </div>
+         
           <div class="tooltip flex-80">
             <label for="line-height-baseline-threshold" class="control-label">Baseline Min (%):</label>
             <div class="tooltip">
@@ -1652,7 +1675,20 @@ body {
             </div>
            
           </div>
-        
+        </div>
+        <div class="flex-row-start mt-10">
+          <div class="tooltip flex-80">
+            <button id="btn-fill-line-height-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext left-style">Replace Line Height Scale input with all extracted line height tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <button id="btn-fill-line-height-from-typo" class="btn-add-scale tooltip btn-full-height">
+              Use Typography
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Line Height Scale input with all line heights from Typography table (unique + sorted).</span>
+          </div>
         </div>
        
       </div>
@@ -1705,13 +1741,14 @@ body {
             <table class="typography-table" id="typography-table">
               <thead>
                 <tr>
-                  <th style="width: 120px;">Style Name</th>
-                  <th style="width: 140px;">Font Family</th>
-                  <th style="width: 80px;">Size (px)</th>
-                  <th style="width: 100px;">Weight</th>
-                  <th style="width: 100px;">Line Height</th>
-                  <th style="width: 100px;">Letter Spacing</th>
-                  <th style="width: 80px;">Actions</th>
+                  <th class="typography-table-actions">Actions</th>
+                  <th class="typography-table-style-name" style="width: 120px;">Style Name</th>
+                  <th class="typography-table-font-family" style="width: 140px;">Font Family</th>
+                  <th class="typography-table-font-size" style="width: 80px;">Size (px)</th>
+                  <th class="typography-table-font-weight" style="width: 100px;">Weight</th>
+                  <th class="typography-table-line-height" style="width: 100px;">Line Height</th>
+                  <th class="typography-table-letter-spacing" style="width: 100px;">Letter Spacing</th>
+                  <th class="typography-table-word-spacing" style="width: 100px;">Word Spacing</th>
                 </tr>
               </thead>
               <tbody id="typography-table-body">
@@ -1720,12 +1757,47 @@ body {
             </table>
           </div>
 
-          <button class="btn-add-typo-style" id="btn-add-typo-style">
-            ➕ Add Typography Style
-          </button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-add-typo-style" id="btn-add-typo-style">
+              ➕ Add Style
+            </button>
+            <button class="btn-add-typo-style tooltip" id="btn-extract-typo-desktop" style="background: #28a745;">
+              🖥️ Desktop
+              <span class="tooltiptext" style="width: 250px;">Extract Text Styles for Desktop (e.g., H1, H2, Body)</span>
+            </button>
+            <button class="btn-add-typo-style tooltip" id="btn-extract-typo-tablet" style="background: #fd7e14;">
+              📱 Tablet
+              <span class="tooltiptext" style="width: 250px;">Extract Text Styles for Tablet (e.g., H1/Tablet, Body/Tablet)</span>
+            </button>
+            <button class="btn-add-typo-style tooltip" id="btn-extract-typo-mobile" style="background: #17a2b8;">
+              📱 Mobile
+              <span class="tooltiptext" style="width: 250px;">Extract Text Styles for Mobile (e.g., H1/Mobile, Body/Mobile)</span>
+            </button>
+            <button class="btn-add-typo-style tooltip" id="btn-extract-typo-all" style="background: #6c757d;">
+              🌐 All
+              <span class="tooltiptext" style="width: 250px;">Extract all Text Styles (Desktop + Tablet + Mobile)</span>
+            </button>
+            <button class="btn-add-typo-style tooltip" id="btn-reset-typo-table" style="background: #dc3545;">
+              🔄 Reset
+              <span class="tooltiptext" style="width: 200px;">Reset table to default typography styles</span>
+            </button>
+          </div>
         </div>
       </div>
 
+      <!-- Report Tabs -->
+      <div class="report-tabs">
+        <button class="report-tab active" data-tab="issues">
+          📋 Issues
+          <span class="tab-badge" id="issues-count">0</span>
+        </button>
+        <button class="report-tab" data-tab="tokens">
+          🎨 Design Tokens
+          <span class="tab-badge" id="tokens-count">0</span>
+        </button>
+      </div>
+
+      <!-- Filter Controls -->
       <div class="filter-controls" id="filter-controls" style="display: none;">
         <div class="search-box tooltip">
           <input type="text" id="search-input" placeholder="🔍 Search issues/tokens..." class="search-input">
@@ -1756,18 +1828,6 @@ body {
             <option value="fill">Fill</option>
           </select>
         </div>
-      </div>
-
-      <!-- Report Tabs -->
-      <div class="report-tabs">
-        <button class="report-tab active" data-tab="issues">
-          📋 Issues
-          <span class="tab-badge" id="issues-count">0</span>
-        </button>
-        <button class="report-tab" data-tab="tokens">
-          🎨 Design Tokens
-          <span class="tab-badge" id="tokens-count">0</span>
-        </button>
       </div>
 
       <!-- Issues Report -->
@@ -1835,8 +1895,11 @@ console.log("ui.js loaded");
         const btnExtractTokens = document.getElementById("btn-extract-tokens");
         const btnFillSpacingScale = document.getElementById("btn-fill-spacing-scale");
         const btnFillColorScale = document.getElementById("btn-fill-color-scale");
+        const btnExtractColorStyles = document.getElementById("btn-extract-color-styles");
         const btnFillFontSizeScale = document.getElementById("btn-fill-font-size-scale");
         const btnFillLineHeightScale = document.getElementById("btn-fill-line-height-scale");
+        const btnFillFontSizeFromTypo = document.getElementById("btn-fill-font-size-from-typo");
+        const btnFillLineHeightFromTypo = document.getElementById("btn-fill-line-height-from-typo");
         const btnExport = document.getElementById("btn-export");
         const btnHistory = document.getElementById("btn-history");
         const btnCloseHistory = document.getElementById("btn-close-history");
@@ -2350,6 +2413,11 @@ console.log("ui.js loaded");
             // Skip if no issues and no original issues (first scan)
             if (issueCount === 0 && issues.length === 0) {
               continue; // Don't show empty groups on first scan with no issues
+            }
+            
+            // Hide groups with 0 count when filtering by error or warning
+            if (issueCount === 0 && currentFilter !== "all") {
+              continue; // Skip empty groups when filtering
             }
             const groupEl = document.createElement("div");
             groupEl.className = "issue-group collapsed"; // Default collapsed
@@ -2930,9 +2998,48 @@ console.log("ui.js loaded");
           }
         }
 
+  // Helper function to show validation error
+  function showValidationError(message) {
+    const validationError = document.getElementById("validation-error");
+    const validationErrorMessage = document.getElementById("validation-error-message");
+    const btnCloseValidationError = document.getElementById("btn-close-validation-error");
+    
+    if (validationError && validationErrorMessage) {
+      validationErrorMessage.textContent = message;
+      validationError.style.display = "block";
+      
+      // Hide scan progress and cancel button
+      btnScan.style.display = "block";
+      btnCancelScan.style.display = "none";
+      scanProgress.style.display = "none";
+      btnScan.disabled = false;
+      btnExtractTokens.disabled = false;
+      
+      // Auto-hide after 10 seconds
+      setTimeout(() => {
+        if (validationError.style.display === "block") {
+          validationError.style.display = "none";
+        }
+      }, 10000);
+      
+      // Close button handler
+      if (btnCloseValidationError) {
+        btnCloseValidationError.onclick = () => {
+          validationError.style.display = "none";
+        };
+      }
+    }
+  }
+
   btnScan.onclick = () => {
     console.log("btnScan clicked");
     try {
+      // Hide validation error if visible
+      const validationError = document.getElementById("validation-error");
+      if (validationError) {
+        validationError.style.display = "none";
+      }
+      
       // Show cancel button and progress, hide scan button
       btnScan.style.display = "none";
       btnCancelScan.style.display = "block";
@@ -2971,8 +3078,7 @@ console.log("ui.js loaded");
       if (spacingScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(spacingScaleValue)) {
-          resultsIssues.innerHTML = `<div class="error-message">Error: Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)</div>`;
-      switchToTab("issues");
+          showValidationError("Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)");
           return;
         }
       }
@@ -2984,8 +3090,7 @@ console.log("ui.js loaded");
         const colorRegex = /^#[0-9a-fA-F]{3,8}$/;
         const invalidColors = colors.filter(c => !colorRegex.test(c));
         if (invalidColors.length > 0) {
-          resultsIssues.innerHTML = `<div class="error-message">Error: Color scale format is incorrect. Invalid colors: ${escapeHtml(invalidColors.join(", "))}. Please use hex format only (e.g., #000000, #FFFFFF).</div>`;
-      switchToTab("issues");
+          showValidationError(`Color scale format is incorrect. Invalid colors: ${invalidColors.join(", ")}. Please use hex format only (e.g., #000000, #FFFFFF).`);
           return;
         }
       }
@@ -2994,44 +3099,43 @@ console.log("ui.js loaded");
       if (fontSizeScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(fontSizeScaleValue)) {
-          resultsIssues.innerHTML = `<div class="error-message">Error: Font-size scale format is incorrect. Please enter the numbers separated by commas (e.g. 32, 24, 20, 18)</div>`;
-      switchToTab("issues");
+          showValidationError("Font-size scale format is incorrect. Please enter the numbers separated by commas (e.g. 32, 24, 20, 18)");
           return;
         }
       }
       
-      // Validate line-height scale format if not empty (allow "auto" keyword)
+      // Validate line-height scale format if not empty (allow "auto" keyword anywhere)
       if (lineHeightScaleValue) {
-        const formatRegex = /^(\s*auto\s*,?\s*)?(\d+(\s*,\s*\d+)*)?$/i;
-        if (!formatRegex.test(lineHeightScaleValue)) {
-          resultsIssues.innerHTML = `<div class="error-message">Error: Line-height scale format is incorrect. Please enter "auto" (if you want to accept) and the numbers separated by commas (e.g. auto, 100, 120, 140, 150)</div>`;
-      switchToTab("issues");
+        // Split by comma and check each value
+        const values = lineHeightScaleValue.split(",").map(v => v.trim()).filter(v => v);
+        const isValid = values.every(v => {
+          return v.toLowerCase() === "auto" || /^\d+$/.test(v);
+        });
+        
+        if (!isValid || values.length === 0) {
+          showValidationError('Line-height scale format is incorrect. Please enter "auto" and/or numbers separated by commas. "auto" can be placed anywhere (e.g. auto, 100, 120 or 100, auto, 150)');
           return;
         }
       }
       
       // Validate thresholds
       if (isNaN(spacingThreshold) || spacingThreshold < 0) {
-        resultsIssues.innerHTML = `<div class="error-message">Error: Spacing threshold must be a number >= 0</div>`;
-      switchToTab("issues");
+        showValidationError("Spacing threshold must be a number >= 0");
         return;
       }
       
       if (isNaN(fontSizeThreshold) || fontSizeThreshold < 0) {
-        resultsIssues.innerHTML = `<div class="error-message">Error: Font-size threshold must be a number >= 0</div>`;
-      switchToTab("issues");
+        showValidationError("Font-size threshold must be a number >= 0");
         return;
       }
       
       if (isNaN(lineHeightThreshold) || lineHeightThreshold < 0) {
-        resultsIssues.innerHTML = `<div class="error-message">Error: Line-height threshold must be a number >= 0</div>`;
-      switchToTab("issues");
+        showValidationError("Line-height threshold must be a number >= 0");
         return;
       }
       
       if (isNaN(lineHeightBaselineThreshold) || lineHeightBaselineThreshold < 0) {
-        resultsIssues.innerHTML = `<div class="error-message">Error: Line-height baseline threshold must be a number >= 0</div>`;
-      switchToTab("issues");
+        showValidationError("Line-height baseline threshold must be a number >= 0");
         return;
       }
       
@@ -3194,6 +3298,12 @@ console.log("ui.js loaded");
     }
   };
 
+  // Extract Color Styles from Figma
+  btnExtractColorStyles.onclick = () => {
+    // Request color styles from Figma
+    parent.postMessage({ pluginMessage: { type: "extract-color-styles" } }, "*");
+  };
+
   btnFillFontSizeScale.onclick = () => {
     try {
       const tokens = currentReportData.tokens;
@@ -3264,6 +3374,95 @@ console.log("ui.js loaded");
       input.setSelectionRange(input.value.length, input.value.length);
     } catch (e) {
       console.error("Failed to fill line height scale from tokens", e);
+    }
+  };
+
+  // Use Typography for Font Size Scale
+  btnFillFontSizeFromTypo.onclick = () => {
+    try {
+      if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
+        alert("No typography styles defined. Please add typography styles or extract from Figma first.");
+        return;
+      }
+
+      const input = document.getElementById("font-size-scale");
+      if (!input) return;
+
+      // Extract unique font sizes from typography styles
+      const values = typographyStyles
+        .map(style => {
+          const size = parseInt(String(style.fontSize || "").trim(), 10);
+          return isNaN(size) ? null : size;
+        })
+        .filter(v => v !== null);
+
+      if (!values.length) {
+        alert("No valid font sizes found in typography styles.");
+        return;
+      }
+
+      const uniqueSorted = Array.from(new Set(values)).sort((a, b) => b - a); // Descending for font sizes
+      input.value = uniqueSorted.join(", ");
+      
+      // Save and visual feedback
+      saveInputValues();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      
+      console.log("Filled font size scale from typography:", uniqueSorted);
+    } catch (e) {
+      console.error("Failed to fill font size scale from typography", e);
+    }
+  };
+
+  // Use Typography for Line Height Scale
+  btnFillLineHeightFromTypo.onclick = () => {
+    try {
+      if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
+        alert("No typography styles defined. Please add typography styles or extract from Figma first.");
+        return;
+      }
+
+      const input = document.getElementById("line-height-scale");
+      if (!input) return;
+
+      // Extract unique line heights from typography styles
+      const values = [];
+      typographyStyles.forEach(style => {
+        const lh = String(style.lineHeight || "").trim();
+        if (lh === "auto") {
+          values.push("auto");
+        } else {
+          // Handle both percentage (120%) and numeric (1.5)
+          const numValue = parseFloat(lh.replace("%", ""));
+          if (!isNaN(numValue)) {
+            values.push(numValue);
+          }
+        }
+      });
+
+      if (!values.length) {
+        alert("No valid line heights found in typography styles.");
+        return;
+      }
+
+      // Separate auto and numeric values
+      const hasAuto = values.includes("auto");
+      const numericValues = values.filter(v => v !== "auto");
+      const uniqueSorted = Array.from(new Set(numericValues)).sort((a, b) => a - b); // Ascending
+
+      // Combine: auto first, then sorted numeric
+      const finalValues = hasAuto ? ["auto", ...uniqueSorted] : uniqueSorted;
+      input.value = finalValues.join(", ");
+      
+      // Save and visual feedback
+      saveInputValues();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      
+      console.log("Filled line height scale from typography:", finalValues);
+    } catch (e) {
+      console.error("Failed to fill line height scale from typography", e);
     }
   };
 
@@ -3373,15 +3572,15 @@ console.log("ui.js loaded");
 
     const activeRules = getActiveRules();
 
-    // Build table headers based on active rules
-    let headers = '<th style="width: 120px;">Style Name</th>';
-    if (activeRules.fontFamily) headers += '<th style="width: 140px;">Font Family</th>';
-    if (activeRules.fontSize) headers += '<th style="width: 80px;">Size (px)</th>';
-    if (activeRules.fontWeight) headers += '<th style="width: 100px;">Weight</th>';
-    if (activeRules.lineHeight) headers += '<th style="width: 100px;">Line Height</th>';
-    if (activeRules.letterSpacing) headers += '<th style="width: 100px;">Letter Spacing</th>';
-    if (activeRules.wordSpacing) headers += '<th style="width: 100px;">Word Spacing</th>';
-    headers += '<th style="width: 80px;">Actions</th>';
+    // Build table headers based on active rules (Actions first)
+    let headers = '<th class="typography-table-actions">Actions</th>';
+    headers += '<th class="typography-table-style-name" style="width: 120px;">Style Name</th>';
+    if (activeRules.fontFamily) headers += '<th class="typography-table-font-family" style="width: 140px;">Font Family</th>';
+    if (activeRules.fontSize) headers += '<th class="typography-table-font-size" style="width: 80px;">Size (px)</th>';
+    if (activeRules.fontWeight) headers += '<th class="typography-table-font-weight" style="width: 100px;">Weight</th>';
+    if (activeRules.lineHeight) headers += '<th class="typography-table-line-height" style="width: 100px;">Line Height</th>';
+    if (activeRules.letterSpacing) headers += '<th class="typography-table-letter-spacing" style="width: 100px;">Letter Spacing</th>';
+    if (activeRules.wordSpacing) headers += '<th class="typography-table-word-spacing" style="width: 100px;">Word Spacing</th>';
     thead.innerHTML = headers;
 
     if (typographyStyles.length === 0) {
@@ -3398,6 +3597,19 @@ console.log("ui.js loaded");
 
     tbody.innerHTML = typographyStyles.map(style => {
       let row = `<tr data-id="${style.id}">`;
+      
+      // Actions column first
+      row += `<td class="typography-table-actions">`;
+      
+      // Add select button if styleId exists
+      if (style.styleId) {
+        row += `<button class="btn-table-action" onclick="selectTypographyStyle('${style.styleId}')" title="Select layer in Figma" style="background: #0071e3; color: white;">👁</button>`;
+      }
+      
+      row += `<button class="btn-table-action delete" onclick="deleteTypographyStyle(${style.id})" title="Delete">🗑</button>
+        </td>`;
+      
+      // Style Name
       row += `<td><input type="text" value="${escapeHtml(style.name)}" data-field="name"></td>`;
       
       if (activeRules.fontFamily) {
@@ -3436,10 +3648,7 @@ console.log("ui.js loaded");
         row += `<td><input type="text" value="${escapeHtml(style.wordSpacing || "0")}" data-field="wordSpacing" placeholder="0"></td>`;
       }
       
-      row += `<td class="typography-table-actions">
-          <button class="btn-table-action delete" onclick="deleteTypographyStyle(${style.id})" title="Delete">🗑</button>
-        </td>
-      </tr>`;
+      row += `</tr>`;
       
       return row;
     }).join("");
@@ -3495,10 +3704,65 @@ console.log("ui.js loaded");
     saveInputValues();
   };
 
+  window.selectTypographyStyle = function(styleId) {
+    // Send message to backend to select the text style
+    parent.postMessage({ pluginMessage: { type: "select-text-style", styleId: styleId } }, "*");
+  };
+
   // Add button handler
   const btnAddTypoStyle = document.getElementById("btn-add-typo-style");
   if (btnAddTypoStyle) {
     btnAddTypoStyle.onclick = () => addTypographyStyle();
+  }
+
+  const btnExtractTypoDesktop = document.getElementById("btn-extract-typo-desktop");
+  if (btnExtractTypoDesktop) {
+    btnExtractTypoDesktop.onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "extract-typography-styles", mode: "desktop" } }, "*");
+    };
+  }
+
+  const btnExtractTypoTablet = document.getElementById("btn-extract-typo-tablet");
+  if (btnExtractTypoTablet) {
+    btnExtractTypoTablet.onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "extract-typography-styles", mode: "tablet" } }, "*");
+    };
+  }
+
+  const btnExtractTypoMobile = document.getElementById("btn-extract-typo-mobile");
+  if (btnExtractTypoMobile) {
+    btnExtractTypoMobile.onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "extract-typography-styles", mode: "mobile" } }, "*");
+    };
+  }
+
+  const btnExtractTypoAll = document.getElementById("btn-extract-typo-all");
+  if (btnExtractTypoAll) {
+    btnExtractTypoAll.onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "extract-typography-styles", mode: "all" } }, "*");
+    };
+  }
+
+  const btnResetTypoTable = document.getElementById("btn-reset-typo-table");
+  if (btnResetTypoTable) {
+    btnResetTypoTable.onclick = () => {
+      if (confirm("⚠️ Reset typography table to default styles?\n\nThis will:\n• Clear all current styles\n• Restore default H1-H6 and Body styles\n\nThis action cannot be undone.")) {
+        // Reset to default styles
+        typographyStyles = [
+          { id: 1, name: "H1", fontFamily: "Inter", fontSize: 48, fontWeight: "Bold", lineHeight: "120%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 2, name: "H2", fontFamily: "Inter", fontSize: 36, fontWeight: "Bold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 3, name: "H3", fontFamily: "Inter", fontSize: 30, fontWeight: "Semi Bold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 4, name: "H4", fontFamily: "Inter", fontSize: 24, fontWeight: "Semi Bold", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 5, name: "H5", fontFamily: "Inter", fontSize: 20, fontWeight: "Semi Bold", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 6, name: "H6", fontFamily: "Inter", fontSize: 16, fontWeight: "Semi Bold", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 7, name: "Body", fontFamily: "Inter", fontSize: 14, fontWeight: "Regular", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" }
+        ];
+        nextTypoStyleId = 8;
+        renderTypographyTable();
+        saveInputValues();
+        alert("✅ Typography table has been reset to default styles!");
+      }
+    };
   }
 
   // Initial render
@@ -4567,9 +4831,17 @@ console.log("ui.js loaded");
         scanHistoryMemory = [];
         parent.postMessage({ pluginMessage: { type: "clear-history" } }, "*");
         
-        // Save reset state
+        // Re-render history panel to show empty state
+        const historyPanel = document.getElementById("history-panel");
+        if (historyPanel && historyPanel.style.display !== "none") {
+          renderScanHistory();
+        }
+        
+        // Save reset input values only (don't save report - it's already cleared in backend)
         saveInputValues();
-        saveLastReport();
+        
+        // Note: Don't call saveLastReport() here - backend already cleared it
+        // and we want to keep it empty
         
         alert("✅ All settings have been reset to default and history has been cleared!");
       }
@@ -4684,6 +4956,87 @@ console.log("ui.js loaded");
               // Save to history after successful extract (with full data)
               const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
               saveScanHistory(scope, "tokens", { tokens: msg.tokens }, msg.context || null);
+      }
+    }
+
+    if (msg && msg.type === "typography-styles-extracted") {
+      if (msg.styles && Array.isArray(msg.styles) && msg.styles.length > 0) {
+        const modeLabel = msg.mode === "desktop" ? "Desktop" : 
+                         msg.mode === "tablet" ? "Tablet" : 
+                         msg.mode === "mobile" ? "Mobile" : "All";
+        
+        // Clear existing styles and replace with extracted ones
+        typographyStyles = msg.styles.map((style, index) => {
+          return {
+            id: index + 1,
+            name: style.name,
+            styleId: style.styleId, // Store styleId for "Select" button
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
+            letterSpacing: style.letterSpacing || "0",
+            wordSpacing: style.wordSpacing || "0"
+          };
+        });
+        
+        nextTypoStyleId = typographyStyles.length + 1;
+        
+        // Re-render table
+        renderTypographyTable();
+        
+        // Save to storage
+        saveInputValues();
+        
+        alert(`✅ Successfully imported ${msg.styles.length} ${modeLabel} typography styles from Figma!\n\nStyles: ${msg.styles.map(s => s.name).join(", ")}`);
+      } else {
+        const modeLabel = msg.mode === "desktop" ? "Desktop" : 
+                         msg.mode === "tablet" ? "Tablet" : 
+                         msg.mode === "mobile" ? "Mobile" : "";
+        alert(`⚠️ No ${modeLabel.toLowerCase()} text styles found in this Figma file.\n\nMake sure you have defined text styles in your design system.`);
+      }
+    }
+
+    if (msg && msg.type === "color-styles-extracted") {
+      if (msg.colors && Array.isArray(msg.colors) && msg.colors.length > 0) {
+        const input = document.getElementById("color-scale");
+        if (!input) return;
+
+        // Extract unique hex colors
+        const uniqueColors = Array.from(new Set(msg.colors.map(c => c.hex)));
+
+        // Sort by brightness (dark to light)
+        function getColorBrightness(hex) {
+          const cleanHex = hex.replace("#", "");
+          const r = parseInt(cleanHex.substring(0, 2), 16);
+          const g = parseInt(cleanHex.substring(2, 4), 16);
+          const b = parseInt(cleanHex.substring(4, 6), 16);
+          return (r * 299 + g * 587 + b * 114) / 1000;
+        }
+
+        const sortedColors = uniqueColors.sort((a, b) => {
+          return getColorBrightness(a) - getColorBrightness(b);
+        });
+
+        input.value = sortedColors.join(", ");
+
+        // Render color preview
+        if (typeof renderColorPreview === "function") renderColorPreview();
+
+        // Save to storage
+        saveInputValues();
+
+        // Visual feedback
+        try {
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        } catch (e) {
+          // ignore
+        }
+
+        alert(`✅ Successfully imported ${msg.colors.length} color styles from Figma!\n\nColors: ${msg.colors.map(c => c.name + " (" + c.hex + ")").join(", ")}`);
+      } else {
+        alert("⚠️ No color styles found in this Figma file.\n\nMake sure you have defined color styles (paint styles) in your design system.");
       }
     }
   };
