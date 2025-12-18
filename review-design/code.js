@@ -1,6 +1,9 @@
 // code.js - runs in Figma plugin environment
 figma.showUI(__html__, { width: 600, height: 700 });
 
+// Global cancel flag
+let cancelRequested = false;
+
 // Utility: traverse nodes (skip hidden nodes, Sticky Notes, and "Not check design")
 function traverse(node, cb, skipHidden = true) {
   // Skip hidden nodes if skipHidden is true
@@ -136,7 +139,8 @@ const RULES = {
 
 const STORAGE_KEYS = {
   lastReport: "design-qa-last-report",
-  history: "design-qa-history"
+  history: "design-qa-history",
+  inputValues: "design-qa-input-values"
 };
 
 const MAX_HISTORY_ENTRIES = 10;
@@ -1335,8 +1339,262 @@ function isEmptyOrRedundant(node) {
   return null;
 }
 
+// Normalize color to lowercase hex or rgba for comparison
+function normalizeColor(colorStr) {
+  if (!colorStr) return null;
+  const trimmed = colorStr.trim().toUpperCase();
+  // Normalize hex colors (#fff -> #FFFFFF)
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.slice(1);
+    if (hex.length === 3) {
+      // Expand shorthand hex (#fff -> #FFFFFF)
+      return "#" + hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    }
+    return trimmed;
+  }
+  return trimmed;
+}
+
+// Check if color is in scale
+function isColorInScale(colorStr, scale) {
+  if (!colorStr || !scale || !Array.isArray(scale)) return false;
+  const normalized = normalizeColor(colorStr);
+  if (!normalized) return false;
+  return scale.some(scaleColor => normalizeColor(scaleColor) === normalized);
+}
+
+// Check if text matches a typography style
+function checkTypographyStyleMatch(node, styles, rules) {
+  if (node.type !== "TEXT") return null;
+  if (!styles || styles.length === 0) return null;
+  if (!rules || !rules.checkStyle) return null; // Skip if style check is disabled
+
+  // Get node properties
+  const nodeFontSize = (node.fontSize && typeof node.fontSize === "number") ? Math.round(node.fontSize) : null;
+  const nodeFontFamily = (node.fontName && typeof node.fontName === "object") ? node.fontName.family : null;
+  const nodeFontWeight = (node.fontName && typeof node.fontName === "object") ? node.fontName.style : null;
+  
+  // Get line height
+  let nodeLineHeight = null;
+  if (node.lineHeight && node.lineHeight.unit === "PERCENT") {
+    nodeLineHeight = `${Math.round(node.lineHeight.value)}%`;
+  } else if (node.lineHeight && node.lineHeight.unit === "AUTO") {
+    nodeLineHeight = "auto";
+  } else if (node.lineHeight && node.lineHeight.unit === "PIXELS" && nodeFontSize) {
+    const percent = Math.round((node.lineHeight.value / nodeFontSize) * 100);
+    nodeLineHeight = `${percent}%`;
+  }
+  
+  // Get letter spacing
+  let nodeLetterSpacing = null;
+  if (node.letterSpacing && typeof node.letterSpacing === "object") {
+    if (node.letterSpacing.unit === "PERCENT") {
+      nodeLetterSpacing = `${node.letterSpacing.value}%`;
+    } else if (node.letterSpacing.unit === "PIXELS") {
+      nodeLetterSpacing = `${node.letterSpacing.value}px`;
+    }
+  } else if (typeof node.letterSpacing === "number") {
+    nodeLetterSpacing = `${node.letterSpacing}`;
+  }
+  
+  // Get color (removed from check, but keep for reference)
+  let nodeColor = null;
+  if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+    for (const fill of node.fills) {
+      if (fill.type === "SOLID" && fill.visible !== false) {
+        nodeColor = colorToString(fill.color);
+        break;
+      }
+    }
+  }
+
+  // Try to match with any style
+  let bestMatch = null;
+  let bestMatchScore = 0;
+  
+  for (const style of styles) {
+    let score = 0;
+    let maxScore = 0;
+    
+    // Font Size (if check enabled)
+    if (rules.checkFontSize && nodeFontSize !== null && style.fontSize) {
+      maxScore++;
+      if (nodeFontSize === parseInt(style.fontSize)) score++;
+    }
+    
+    // Font Family (if check enabled)
+    if (rules.checkFontFamily && nodeFontFamily && style.fontFamily) {
+      maxScore++;
+      if (nodeFontFamily.toLowerCase().includes(style.fontFamily.toLowerCase()) || 
+          style.fontFamily.toLowerCase().includes(nodeFontFamily.toLowerCase())) {
+        score++;
+      }
+    }
+    
+    // Font Weight (if check enabled)
+    if (rules.checkFontWeight && nodeFontWeight && style.fontWeight) {
+      maxScore++;
+      if (nodeFontWeight.toLowerCase().includes(style.fontWeight.toLowerCase()) ||
+          style.fontWeight.toLowerCase().includes(nodeFontWeight.toLowerCase())) {
+        score++;
+      }
+    }
+    
+    // Line Height (if check enabled)
+    if (rules.checkLineHeight && nodeLineHeight && style.lineHeight) {
+      maxScore++;
+      const styleLineHeight = String(style.lineHeight).toLowerCase();
+      if (nodeLineHeight.toLowerCase() === styleLineHeight) {
+        score++;
+      }
+    }
+    
+    // Letter Spacing (if check enabled)
+    if (rules.checkLetterSpacing && nodeLetterSpacing !== null && style.letterSpacing !== undefined) {
+      maxScore++;
+      const styleLetterSpacing = String(style.letterSpacing).toLowerCase().trim();
+      const nodeLetterSpacingNormalized = nodeLetterSpacing.toLowerCase().trim();
+      
+      // Normalize "0" variants
+      const isZero = (val) => val === "0" || val === "0px" || val === "0%";
+      
+      if (isZero(styleLetterSpacing) && isZero(nodeLetterSpacingNormalized)) {
+        score++;
+      } else if (styleLetterSpacing === nodeLetterSpacingNormalized) {
+        score++;
+      }
+    }
+    
+    // Word Spacing (if check enabled - future implementation)
+    if (rules.checkWordSpacing && style.wordSpacing !== undefined) {
+      // TODO: Implement word spacing check when Figma API supports it
+      // For now, we'll skip this
+    }
+    
+    // Perfect match
+    if (maxScore > 0 && score === maxScore) {
+      return { 
+        matched: true, 
+        styleName: style.name,
+        nodeProps: {
+          fontFamily: nodeFontFamily,
+          fontSize: nodeFontSize,
+          fontWeight: nodeFontWeight,
+          lineHeight: nodeLineHeight,
+          letterSpacing: nodeLetterSpacing
+        },
+        styleProps: {
+          fontFamily: style.fontFamily,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
+          letterSpacing: style.letterSpacing
+        }
+      };
+    }
+    
+    // Track best partial match
+    if (maxScore > 0 && score > bestMatchScore) {
+      bestMatchScore = score;
+      bestMatch = style;
+    }
+  }
+  
+  // No perfect match found - build detailed report
+  const textPreview = node.characters ? node.characters.slice(0, 30) : "";
+  
+  // Count enabled rules
+  let totalProps = 0;
+  if (rules.checkFontFamily) totalProps++;
+  if (rules.checkFontSize) totalProps++;
+  if (rules.checkFontWeight) totalProps++;
+  if (rules.checkLineHeight) totalProps++;
+  if (rules.checkLetterSpacing) totalProps++;
+  if (rules.checkWordSpacing) totalProps++;
+  
+  // Build differences array for best match
+  const differences = [];
+  if (bestMatch) {
+    if (rules.checkFontFamily && nodeFontFamily && bestMatch.fontFamily) {
+      const matches = nodeFontFamily.toLowerCase().includes(bestMatch.fontFamily.toLowerCase()) || 
+                      bestMatch.fontFamily.toLowerCase().includes(nodeFontFamily.toLowerCase());
+      differences.push({
+        property: "Font Family",
+        current: nodeFontFamily,
+        expected: bestMatch.fontFamily,
+        matches
+      });
+    }
+    if (rules.checkFontSize && nodeFontSize !== null && bestMatch.fontSize) {
+      const matches = nodeFontSize === parseInt(bestMatch.fontSize);
+      differences.push({
+        property: "Font Size",
+        current: nodeFontSize + "px",
+        expected: bestMatch.fontSize + "px",
+        matches
+      });
+    }
+    if (rules.checkFontWeight && nodeFontWeight && bestMatch.fontWeight) {
+      const matches = nodeFontWeight.toLowerCase().includes(bestMatch.fontWeight.toLowerCase()) ||
+                      bestMatch.fontWeight.toLowerCase().includes(nodeFontWeight.toLowerCase());
+      differences.push({
+        property: "Font Weight",
+        current: nodeFontWeight,
+        expected: bestMatch.fontWeight,
+        matches
+      });
+    }
+    if (rules.checkLineHeight && nodeLineHeight && bestMatch.lineHeight) {
+      const matches = nodeLineHeight.toLowerCase() === String(bestMatch.lineHeight).toLowerCase();
+      differences.push({
+        property: "Line Height",
+        current: nodeLineHeight,
+        expected: bestMatch.lineHeight,
+        matches
+      });
+    }
+    if (rules.checkLetterSpacing && nodeLetterSpacing !== null && bestMatch.letterSpacing !== undefined) {
+      const isZero = (val) => val === "0" || val === "0px" || val === "0%";
+      const styleLS = String(bestMatch.letterSpacing).toLowerCase().trim();
+      const nodeLS = nodeLetterSpacing.toLowerCase().trim();
+      const matches = (isZero(styleLS) && isZero(nodeLS)) || styleLS === nodeLS;
+      differences.push({
+        property: "Letter Spacing",
+        current: nodeLetterSpacing,
+        expected: bestMatch.letterSpacing,
+        matches
+      });
+    }
+  }
+  
+  let matchPercentage = 0;
+  if (totalProps > 0 && bestMatchScore > 0) {
+    matchPercentage = Math.round((bestMatchScore / totalProps) * 100);
+  }
+  
+  return {
+    matched: false,
+    message: `Typography does not match any defined style. Text: "${textPreview}"`,
+    textPreview,
+    nodeProps: {
+      fontFamily: nodeFontFamily,
+      fontSize: nodeFontSize,
+      fontWeight: nodeFontWeight,
+      lineHeight: nodeLineHeight,
+      letterSpacing: nodeLetterSpacing
+    },
+    bestMatch: bestMatch ? {
+      name: bestMatch.name,
+      score: bestMatchScore,
+      total: totalProps,
+      percentage: matchPercentage,
+      differences
+    } : null
+  };
+}
+
 // Compute issues scanning a selection or whole page
-async function scan(target, customSpacingScale = null, spacingThreshold = 100, customFontSizeScale = null, fontSizeThreshold = 100, customLineHeightScale = null, lineHeightThreshold = 300, lineHeightBaselineThreshold = 120) {
+async function scan(target, customSpacingScale = null, spacingThreshold = 100, customColorScale = null, customFontSizeScale = null, fontSizeThreshold = 100, customLineHeightScale = null, lineHeightThreshold = 300, lineHeightBaselineThreshold = 120, typographyStyles = [], typographyRules = {}) {
   const nodesToScan = [];
   if (target === "selection") {
     if (figma.currentPage.selection.length === 0) {
@@ -1423,8 +1681,33 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
   }
 
   // Second pass: Check all rules and create issues
+  const totalNodes = nodesToScan.length;
+  let processedNodes = 0;
+  const progressInterval = Math.max(1, Math.floor(totalNodes / 50)); // Report progress every 2%
+  
   for (const node of nodesToScan) {
     try {
+      // Check for cancel request
+      if (cancelRequested) {
+        figma.notify("Scan cancelled by user");
+        cancelRequested = false; // Reset flag
+        throw new Error("Scan cancelled");
+      }
+      
+      // Report progress periodically and yield control
+      processedNodes++;
+      if (processedNodes % progressInterval === 0 || processedNodes === totalNodes) {
+        const progress = Math.round((processedNodes / totalNodes) * 100);
+        figma.ui.postMessage({ 
+          type: "scan-progress", 
+          progress: progress,
+          current: processedNodes,
+          total: totalNodes
+        });
+        // Yield control to prevent UI blocking
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
       // Skip hidden nodes (double check in case traverse didn't catch it)
       if ("visible" in node && node.visible === false) {
         continue;
@@ -1616,6 +1899,66 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         }
       }
 
+      // 4.5) Color check - Check fills/strokes/effects against color scale
+      if (customColorScale !== null && Array.isArray(customColorScale) && customColorScale.length > 0) {
+        // Check fills
+        if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+          for (const fill of node.fills) {
+            if (fill.visible !== false && fill.type === "SOLID") {
+              const colorStr = colorToString(fill.color);
+              if (colorStr && !isColorInScale(colorStr, customColorScale)) {
+                addIssue({
+                  severity: "error",
+                  type: "color",
+                  message: `Color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                  id: node.id,
+                  nodeName: nodeName
+                });
+                break; // Only report once per node
+              }
+            }
+          }
+        }
+        
+        // Check strokes
+        if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
+          for (const stroke of node.strokes) {
+            if (stroke.visible !== false && stroke.type === "SOLID") {
+              const colorStr = colorToString(stroke.color);
+              if (colorStr && !isColorInScale(colorStr, customColorScale)) {
+                addIssue({
+                  severity: "error",
+                  type: "color",
+                  message: `Stroke color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                  id: node.id,
+                  nodeName: nodeName
+                });
+                break; // Only report once per node
+              }
+            }
+          }
+        }
+        
+        // Check effects (shadows)
+        if ("effects" in node && Array.isArray(node.effects) && node.effects.length > 0) {
+          for (const effect of node.effects) {
+            if (effect.visible !== false && (effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW")) {
+              const colorStr = colorToString(effect.color);
+              if (colorStr && !isColorInScale(colorStr, customColorScale)) {
+                addIssue({
+                  severity: "error",
+                  type: "color",
+                  message: `Effect color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                  id: node.id,
+                  nodeName: nodeName
+                });
+                break; // Only report once per node
+              }
+            }
+          }
+        }
+      }
+
       // 5) Text nodes: typography / style usage
       if (node.type === "TEXT") {
         const fs = node.fontSize;
@@ -1700,6 +2043,35 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             addIssue(mobileSizeIssue);
           }
         }
+        
+        // Typography Style Match check
+        if (typographyStyles && typographyStyles.length > 0 && typographyRules && typographyRules.checkStyle) {
+          const typoMatch = checkTypographyStyleMatch(node, typographyStyles, typographyRules);
+          if (typoMatch && !typoMatch.matched) {
+            addIssue({
+              severity: "error",
+              type: "typography-check",
+              message: typoMatch.message,
+              id: node.id,
+              nodeName: nodeName,
+              textPreview: typoMatch.textPreview,
+              nodeProps: typoMatch.nodeProps,
+              bestMatch: typoMatch.bestMatch
+            });
+          } else if (typoMatch && typoMatch.matched) {
+            // Add success info for matched typography - same type to group together
+            addIssue({
+              severity: "info",
+              type: "typography-check",
+              message: `✓ Matches style "${typoMatch.styleName}"`,
+              id: node.id,
+              nodeName: nodeName,
+              styleName: typoMatch.styleName,
+              nodeProps: typoMatch.nodeProps,
+              styleProps: typoMatch.styleProps
+            });
+          }
+        }
       }
 
       // 6) Component check (only for FRAME, not GROUP)
@@ -1773,15 +2145,13 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           }
         }
         
-        // Create grouped issue
-        issues.push({
-          severity: firstIssue.severity,
-          type: firstIssue.type,
-          message: message,
-          id: firstIssue.id, // Use first node's ID for selection
-          nodeName: firstIssue.nodeName,
-          affectedCount: count
+        // Create grouped issue - copy ALL properties from firstIssue
+        const groupedIssue = Object.assign({}, firstIssue, {
+          message: message,  // Override with grouped message
+          affectedCount: count  // Add count
         });
+        
+        issues.push(groupedIssue);
       }
     }
   }
@@ -1883,12 +2253,9 @@ function colorToString(color, fillOpacity = 1) {
   const r = Math.round(color.r * 255);
   const g = Math.round(color.g * 255);
   const b = Math.round(color.b * 255);
-  // Combine color alpha with fill opacity
-  const alpha = (color.a !== undefined ? color.a : 1) * fillOpacity;
-  if (alpha < 1) {
-    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
-  }
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  // Always return hex (ignore alpha/opacity for color extraction)
+  // Convert to uppercase for consistency
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
 }
 
 // Convert gradient to string with full details
@@ -1985,9 +2352,14 @@ async function extractDesignTokens(target) {
     traverse(figma.currentPage, n => nodesToScan.push(n));
   }
 
+  const totalNodes = nodesToScan.length;
+  let processedNodes = 0;
+  const progressInterval = Math.max(1, Math.floor(totalNodes / 50)); // Report progress every 2%
+
   const tokens = {
     colors: new Map(), // value -> {value, nodes: [{id, name}]}
     gradients: new Map(),
+    spacing: new Map(), // number(px) -> {value, nodes: [{id, name, spacingType}]}
     borderRadius: new Map(),
     fontWeight: new Map(),
     lineHeight: new Map(),
@@ -2030,6 +2402,27 @@ async function extractDesignTokens(target) {
 
   for (const node of nodesToScan) {
     try {
+      // Check for cancel request
+      if (cancelRequested) {
+        figma.notify("Extraction cancelled by user");
+        cancelRequested = false; // Reset flag
+        throw new Error("Extraction cancelled");
+      }
+      
+      // Report progress periodically and yield control
+      processedNodes++;
+      if (processedNodes % progressInterval === 0 || processedNodes === totalNodes) {
+        const progress = Math.round((processedNodes / totalNodes) * 100);
+        figma.ui.postMessage({ 
+          type: "scan-progress", 
+          progress: progress,
+          current: processedNodes,
+          total: totalNodes
+        });
+        // Yield control to prevent UI blocking
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
       // Skip hidden nodes (double check in case traverse didn't catch it)
       if ("visible" in node && node.visible === false) {
         continue;
@@ -2037,6 +2430,31 @@ async function extractDesignTokens(target) {
       
       const nodeId = node.id;
       const nodeName = node.name || "Unnamed";
+
+      // Spacing tokens (Auto Layout gaps/paddings)
+      // Only FRAME/COMPONENT/INSTANCE can have auto-layout spacing properties.
+      if (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE") {
+        // itemSpacing + paddings exist when auto-layout is enabled
+        if (node.layoutMode && node.layoutMode !== "NONE") {
+          if (typeof node.itemSpacing === "number" && !isNaN(node.itemSpacing)) {
+            // Always use absolute value for spacing (convert negative to positive)
+            addToken(tokens.spacing, Math.abs(Math.round(node.itemSpacing)), nodeId, nodeName, null, { spacingType: "itemSpacing" });
+          }
+
+          const pads = [
+            { k: "paddingLeft", v: node.paddingLeft },
+            { k: "paddingRight", v: node.paddingRight },
+            { k: "paddingTop", v: node.paddingTop },
+            { k: "paddingBottom", v: node.paddingBottom }
+          ];
+          for (const p of pads) {
+            if (typeof p.v === "number" && !isNaN(p.v)) {
+              // Always use absolute value for spacing (convert negative to positive)
+              addToken(tokens.spacing, Math.abs(Math.round(p.v)), nodeId, nodeName, null, { spacingType: p.k });
+            }
+          }
+        }
+      }
 
       // Colors (fills) - distinguish by node type and usage
       if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
@@ -2170,6 +2588,7 @@ async function extractDesignTokens(target) {
   const result = {
     colors: mapToArray(tokens.colors),
     gradients: mapToArray(tokens.gradients),
+    spacing: mapToArray(tokens.spacing, (a, b) => a - b),
     borderRadius: mapToArray(tokens.borderRadius, (a, b) => a - b),
     fontWeight: mapToArray(tokens.fontWeight),
     lineHeight: mapToArray(tokens.lineHeight),
@@ -2186,16 +2605,25 @@ async function extractDesignTokens(target) {
 // Listen for UI commands
 figma.ui.onmessage = async msg => {
   switch (msg.type) {
+    case "cancel-scan": {
+      cancelRequested = true;
+      figma.notify("Cancelling scan...");
+      break;
+    }
     case "scan": {
+      cancelRequested = false; // Reset cancel flag when starting new scan
     const mode = msg.mode || "page";
     const context = buildScanContext(mode);
     const spacingScaleInput = msg.spacingScale || "";
     const spacingThreshold = msg.spacingThreshold || 100;
+    const colorScaleInput = msg.colorScale || "";
     const fontSizeScaleInput = msg.fontSizeScale || "";
     const fontSizeThreshold = msg.fontSizeThreshold || 100;
     const lineHeightScaleInput = msg.lineHeightScale || "";
     const lineHeightThreshold = msg.lineHeightThreshold || 300;
     const lineHeightBaselineThreshold = msg.lineHeightBaselineThreshold || 120;
+    const typographyStyles = msg.typographyStyles || [];
+    const typographyRules = msg.typographyRules || {};
     
     // Parse spacing scale from input
     let customSpacingScale = null;
@@ -2212,6 +2640,24 @@ figma.ui.onmessage = async msg => {
         }
       } catch (e) {
         console.error("Error parsing spacing scale:", e);
+      }
+    }
+    
+    // Parse color scale from input
+    let customColorScale = null;
+    if (colorScaleInput.trim()) {
+      try {
+        // Parse comma-separated color values (hex or rgba)
+        const values = colorScaleInput.split(",").map(v => {
+          const trimmed = v.trim();
+          return trimmed ? normalizeColor(trimmed) : null;
+        }).filter(v => v !== null);
+        
+        if (values.length > 0) {
+          customColorScale = values;
+        }
+      } catch (e) {
+        console.error("Error parsing color scale:", e);
       }
     }
     
@@ -2264,7 +2710,7 @@ figma.ui.onmessage = async msg => {
     }
     
     try {
-      const issues = await scan(mode, customSpacingScale, spacingThreshold, customFontSizeScale, fontSizeThreshold, customLineHeightScale, lineHeightThreshold, lineHeightBaselineThreshold);
+      const issues = await scan(mode, customSpacingScale, spacingThreshold, customColorScale, customFontSizeScale, fontSizeThreshold, customLineHeightScale, lineHeightThreshold, lineHeightBaselineThreshold, typographyStyles, typographyRules);
     figma.ui.postMessage({ type: "report", issues, context });
     } catch (error) {
       figma.notify(`Scan failed: ${error.message}`);
@@ -2273,6 +2719,7 @@ figma.ui.onmessage = async msg => {
     break;
   }
     case "extract-tokens": {
+      cancelRequested = false; // Reset cancel flag when starting new extraction
       const mode = msg.mode || "page";
       const context = buildScanContext(mode);
       try {
@@ -2392,6 +2839,35 @@ figma.ui.onmessage = async msg => {
       } catch (e) {
         console.error("Failed to load history", e);
         figma.ui.postMessage({ type: "history-data", history: [] });
+      }
+      break;
+    }
+    case "save-input-values": {
+      try {
+        await figma.clientStorage.setAsync(STORAGE_KEYS.inputValues, msg.values || null);
+      } catch (e) {
+        console.error("Failed to save input values", e);
+      }
+      break;
+    }
+    case "get-input-values": {
+      try {
+        const values = await figma.clientStorage.getAsync(STORAGE_KEYS.inputValues);
+        figma.ui.postMessage({ type: "input-values-data", values: values || null });
+      } catch (e) {
+        console.error("Failed to load input values", e);
+        figma.ui.postMessage({ type: "input-values-data", values: null });
+      }
+      break;
+    }
+    case "clear-history": {
+      try {
+        await figma.clientStorage.deleteAsync("scanHistory");
+        await figma.clientStorage.deleteAsync("lastReport");
+        await figma.clientStorage.deleteAsync("inputValues");
+        figma.notify("✅ History and settings cleared");
+      } catch (error) {
+        console.error("Error clearing history:", error);
       }
       break;
     }

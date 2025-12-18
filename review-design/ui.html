@@ -57,7 +57,7 @@ body {
 }
 
 .controls {
-  padding: 15px 20px;
+  padding: 10px 20px;
   background: white;
   border-bottom: 1px solid #e5e5e7;
   display: flex;
@@ -81,7 +81,10 @@ body {
   cursor: pointer;
   user-select: none;
 }
-
+.option-scan label{
+  /* font-weight: 700; */
+  font-size: 18px;
+}
 .controls-group input[type="radio"] {
   margin: 0;
   cursor: pointer;
@@ -100,7 +103,6 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-  margin-left: auto;
 }
 #btn-extract-tokens{
     margin-left: 0;
@@ -429,6 +431,27 @@ body {
 }
 
 .btn-select:active {
+  transform: scale(0.98);
+}
+
+.btn-add-scale {
+  padding: 6px 12px;
+  border: 1px solid #667eea;
+  background: rgba(102, 126, 234, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #667eea;
+  white-space: nowrap;
+}
+
+.btn-add-scale:hover {
+  background: rgba(102, 126, 234, 0.14);
+}
+
+.btn-add-scale:active {
   transform: scale(0.98);
 }
 
@@ -797,10 +820,131 @@ body {
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+/* Common utility classes */
+.flex-1 {
+  flex: 1;
+}
+
+.flex-80 {
+  flex: 0 0 80px;
+}
+
+.flex-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+}
+
+.flex-row-start {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.control-label {
+  font-size: 12px;
+  color: #86868b;
+  white-space: nowrap;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.control-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e5e5e7;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.control-input-mono {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e5e5e7;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.controls-group-spacing {
+  padding: 5px 20px;
+}
+
+.controls-group-padding {
+  padding: 10px 20px;
+}
+
+/* Color Swatch Components */
+.color-swatch-container {
+  position: relative;
+  display: inline-block;
+}
+
+.color-swatch {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid #e5e5e7;
+  cursor: default;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.color-swatch-close {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff3b30;
+  color: white;
+  border: 1px solid white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  font-weight: bold;
+  transition: transform 0.1s;
+}
+
+.color-swatch-close:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 1000;
+}
+
+.btn-full-height {
+  width: 100%;
+  height: 34px;
+}
+
 /* Tooltips */
 .tooltip {
   position: relative;
-  display: inline-block;
+  /* display: inline-block; */
 }
 
 .tooltip .tooltiptext {
@@ -838,6 +982,76 @@ body {
 .tooltip:hover .tooltiptext {
   visibility: visible;
   opacity: 1;
+}
+
+#btn-cancel-scan{
+  padding: 10px 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+    margin-left: auto;
+    color: #fff;
+}
+
+/* Report Tabs */
+.report-tabs {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #e5e5e7;
+  padding: 0 16px;
+}
+
+.report-tab {
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #86868b;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  margin-bottom: -2px;
+}
+
+.report-tab:hover {
+  color: #1d1d1f;
+}
+
+.report-tab.active {
+  color: #0071e3;
+  border-bottom-color: #0071e3;
+}
+
+.report-tab .tab-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #e5e5e7;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.report-tab.active .tab-badge {
+  background: #0071e3;
+  color: white;
+}
+
+.report-content {
+  display: none;
+  padding: 10px 20px;
+}
+
+.report-content.active {
+  display: block;
 }
 
 .tooltip-right .tooltiptext {
@@ -1024,6 +1238,171 @@ body {
   flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
+
+/* Typography Settings Panel */
+.typography-panel {
+  margin: 10px 20px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e5e7;
+}
+
+.typography-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+  background: #fafafa;
+}
+
+.typography-panel-header:hover {
+  background: #f5f5f7;
+}
+
+.typography-panel.collapsed .typography-panel-content {
+  display: none;
+}
+
+.typography-panel-content {
+  padding: 16px;
+  border-top: 1px solid #e5e5e7;
+}
+
+.typography-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.typography-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.typography-table th {
+  background: #f5f5f7;
+  padding: 5px 6px;
+  text-align: left;
+  font-weight: 600;
+  color: #1d1d1f;
+  border-bottom: 2px solid #e5e5e7;
+  white-space: nowrap;
+}
+
+.typography-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #e5e5e7;
+  color: #1d1d1f;
+}
+
+.typography-table tbody tr:hover {
+  background: #fafafa;
+}
+
+.typography-table input,
+.typography-table select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #d1d1d6;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'SF Mono', Monaco, monospace;
+  min-width: 70px;
+}
+
+.typography-table input:focus,
+.typography-table select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.typography-table-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.btn-table-action {
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.btn-table-action:hover {
+  background: #e5e5e7;
+}
+
+.btn-table-action.delete:hover {
+  background: #fee;
+  color: #dc2626;
+}
+
+.btn-add-typo-style {
+  padding: 8px 16px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-typo-style:hover {
+  background: #5568d3;
+}
+
+.typography-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.typography-rules-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 4px;
+}
+
+.typography-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typography-rule-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.typography-rule-item label {
+  font-size: 12px;
+  color: #1d1d1f;
+  cursor: pointer;
+  user-select: none;
+}
+
+.typography-empty-message {
+  text-align: center;
+  padding: 20px;
+  color: #86868b;
+  font-size: 12px;
+  font-style: italic;
+}
 /* 
 .issue-group-header-left{
     display: flex;
@@ -1065,19 +1444,18 @@ body {
       </div>
 
       <div class="controls">
-        <div class="controls-group">
+        <div class="controls-group option-scan">
           <label class="tooltip">
             <input id="scan-page" type="radio" name="scope" value="page" checked>
             <span>Scan Page</span>
-            <span class="tooltiptext">Scan the entire current page to check design issues</span>
           </label>
           <label class="tooltip">
             <input id="scan-selection" type="radio" name="scope" value="selection">
             <span>Scan Selection</span>
-            <span class="tooltiptext">Scan only the selected elements in Figma</span>
           </label>
         </div>
-     
+        </div>
+        <div class="controls">
         <button id="btn-scan" class="tooltip">
           🔍 Run Scan Design
           <span class="tooltiptext tooltip-right">Check design according to the standards: naming, auto-layout, spacing, typography, components...</span>
@@ -1086,115 +1464,268 @@ body {
           🎨 Extract Design Tokens
           <span class="tooltiptext tooltip-right">Extract all design tokens: colors, gradients, fonts, spacing, border-radius...</span>
         </button>
+        <button id="btn-cancel-scan" class="tooltip" style="display: none; background: #b93129;">
+          ⛔ Cancel Scan
+          <span class="tooltiptext tooltip-right">Stop the current scan operation</span>
+        </button>
+        <div id="scan-progress" style="display: none; padding: 8px 16px; background: #f5f5f7; border-radius: 8px; margin: 8px 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 12px; color: #1d1d1f; font-weight: 500;">Scanning...</span>
+            <span id="scan-progress-text" style="font-size: 12px; color: #86868b;">0%</span>
+          </div>
+          <div style="width: 100%; height: 4px; background: #e5e5e7; border-radius: 2px; overflow: hidden;">
+            <div id="scan-progress-bar" style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: 0%; transition: width 0.3s;"></div>
+          </div>
+        </div>
+     
       </div>
 
-      <div class="controls-group " style="padding: 10px 20px;">
-        <div class="" style="display: flex; gap: 12px; align-items: center; width: 100%;">
-          <div class="tooltip" style="flex: 1;">
-            <label for="spacing-scale" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Spacing Scale:</label>
-            <input 
+      <div class="controls-group controls-group-padding">
+        <div class="flex-row">
+          <div class="tooltip flex-1">
+            <label for="spacing-scale" class="control-label">Spacing Scale:</label>
+            <div class="tooltip">
+              <input 
               type="text" 
               id="spacing-scale" 
               placeholder="0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96" 
               value="0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Enter the spacing scale values separated by commas. Leave empty to skip spacing check.</span>
+            <span class="tooltiptext" >Enter the spacing scale values separated by commas. Leave empty to skip spacing check.</span>
+            </div>
+          
           </div>
-          <div class="tooltip" style="flex: 0 0 80px;">
-            <label for="spacing-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
-            <input 
+          <div class="tooltip flex-80">
+            <label class="control-label">&nbsp;</label>
+            <button id="btn-fill-spacing-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Spacing Scale input with all extracted spacing tokens (unique + sorted). Run “Extract Design Tokens” first.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <label for="spacing-threshold" class="control-label">Threshold:</label>
+            <div class="tooltip"> <input 
               type="number" 
               id="spacing-threshold" 
               placeholder="100" 
               value="100"
               min="0"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
+            <span class="tooltiptext" style="left: 25%;">Threshold: values greater than threshold will pass (special case).</span></div>
+           
           </div>
         </div>
        
       </div>
 
-      <div class="controls-group " style="padding: 5px 20px;">
-        <div class="" style="display: flex; gap: 12px; align-items: center; width: 100%;">
-          <div class="tooltip" style="flex: 1;">
-            <label for="font-size-scale" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Font Size Scale:</label>
-            <input 
+      <div class="controls-group controls-group-spacing">
+        <div class="flex-row">
+          <div class="flex-1">
+            <label for="color-scale" class="control-label">Color Scale:</label>
+            <div class="tooltip">
+              <input 
+              type="text" 
+              id="color-scale" 
+              placeholder="#000000, #FFFFFF, #FF0000" 
+              value=""
+              class="control-input-mono tooltip"
+            >
+            <span class="tooltiptext">Enter the color scale values (hex format only, e.g., #000000) separated by commas. Leave empty to skip color check.</span>
+            </div>
+          
+            <!-- Color Preview Swatches -->
+            <div id="color-preview" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 20px;"></div>
+          </div>
+          <div class="tooltip flex-80">
+            <label class="control-label">&nbsp;</label>
+            <button id="btn-fill-color-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Color Scale input with all extracted color tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+          </div>
+        </div>
+       
+      </div>
+
+      <div class="controls-group controls-group-spacing">
+        <div class="flex-row-start">
+          <div class="tooltip flex-1">
+            <label for="font-size-scale" class="control-label">Font Size Scale:</label>
+            <div class="tooltip">
+              <input 
               type="text" 
               id="font-size-scale" 
               placeholder="32, 24, 20, 18, 16, 14, 12" 
               value="32, 24, 20, 18, 16, 14, 12"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Enter the font-size scale values separated by commas. Leave empty to skip font-size check.</span>
+            <span class="tooltiptext" >Enter the font-size scale values separated by commas. Leave empty to skip font-size check.</span>
           </div>
-          <div class="tooltip" style="flex: 0 0 80px;">
-            <label for="font-size-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
-            <input 
+            </div>
+           
+          <div class="tooltip flex-80">
+            <label class="control-label">&nbsp;</label>
+            <button id="btn-fill-font-size-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Font Size Scale input with all extracted font size tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <label for="font-size-threshold" class="control-label">Threshold:</label>
+            <div class="tooltip">
+              <input 
               type="number" 
               id="font-size-threshold" 
               placeholder="100" 
               value="100"
               min="0"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
+            <span class="tooltiptext" style="left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
+            </div>
+          
           </div>
         </div>
        
       </div>
 
-      <div class="controls-group " style="padding: 10px 20px;">
-        <div class="" style="display: flex; gap: 12px; align-items: center; width: 100%;">
-          <div class="tooltip" style="flex: 1;">
-            <label for="line-height-scale" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Line Height Scale (%):</label>
-            <input 
+      <div class="controls-group controls-group-padding">
+        <div class="flex-row-start">
+          <div class="tooltip flex-1">
+            <label for="line-height-scale" class="control-label">Line Height Scale (%):</label>
+            <div class="tooltip">
+              <input 
               type="text" 
               id="line-height-scale" 
               placeholder="auto, 100, 120, 140, 150, 160, 180, 200" 
               value="auto, 100, 120, 140, 150, 160, 180, 200"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;">Enter the line-height scale values separated by commas. Leave empty to skip line-height check. The value "auto" is always accepted.</span>
+            <span class="tooltiptext" >Enter the line-height scale values separated by commas. Leave empty to skip line-height check. The value "auto" is always accepted.</span>
+            </div>
+            
           </div>
-          <div class="tooltip" style="flex: 0 0 80px;">
-            <label for="line-height-baseline-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Baseline Min (%):</label>
-            <input 
+          <div class="tooltip flex-80">
+            <label class="control-label">&nbsp;</label>
+            <button id="btn-fill-line-height-scale" class="btn-add-scale tooltip btn-full-height" disabled>
+              Use tokens
+            </button>
+            <span class="tooltiptext" style=" left: 15%;">Replace Line Height Scale input with all extracted line height tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <label for="line-height-baseline-threshold" class="control-label">Baseline Min (%):</label>
+            <div class="tooltip">
+              <input 
               type="number" 
               id="line-height-baseline-threshold" 
               placeholder="120" 
               value="120"
               min="0"
               step="1"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Baseline threshold: line-height &lt; threshold% will show a warning (e.g. 120% = 1.2x font-size).</span>
+            <span class="tooltiptext" style="left: 25%;">Baseline threshold: line-height &lt; threshold% will show a warning (e.g. 120% = 1.2x font-size).</span>
+            </div>
+           
           </div>
-          <div class="tooltip" style="flex: 0 0 80px;">
-            <label for="line-height-threshold" style="font-size: 12px; color: #86868b; white-space: nowrap; display: block; margin-bottom: 4px;">Threshold:</label>
-            <input 
+          <div class="tooltip flex-80">
+            <label for="line-height-threshold" class="control-label">Threshold:</label>
+            <div class="tooltip">
+              <input 
               type="number" 
               id="line-height-threshold" 
               placeholder="300" 
               value="300"
               min="0"
-              style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e7; border-radius: 6px; font-size: 12px; font-family: 'SF Mono', Monaco, monospace;"
+              class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" style="bottom: 65%;left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
+            <span class="tooltiptext" style="left: 25%;">Threshold: values greater than threshold will pass (special case).</span>
+            </div>
+           
           </div>
         
         </div>
        
       </div>
+
+      <!-- Typography Settings Panel -->
+      <div class="typography-panel collapsed" id="typography-panel">
+        <div class="typography-panel-header" id="typography-panel-header">
+          <button class="issue-group-toggle" type="button" id="typography-panel-toggle">
+            <span class="issue-group-toggle-icon">▶</span>
+          </button>
+          <h4 style="font-size: 14px; font-weight: 600; margin: 0;">✍️ Typography Settings</h4>
+          <span style="font-size: 11px; color: #86868b; margin-left: auto;">(Click to expand)</span>
+        </div>
+        <div class="typography-panel-content">
+          <!-- Rule Toggles -->
+          <div class="typography-rules">
+            <div class="typography-rules-title">Check Rules:</div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-typo-style" checked>
+              <label for="rule-typo-style">Check Typography Style (match 100% with defined styles)</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-font-family" checked>
+              <label for="rule-font-family">Check Font Family</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-font-size" checked>
+              <label for="rule-font-size">Check Font Size</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-font-weight" checked>
+              <label for="rule-font-weight">Check Font Weight</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-line-height" checked>
+              <label for="rule-line-height">Check Line Height</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-letter-spacing">
+              <label for="rule-letter-spacing">Check Letter Spacing</label>
+            </div>
+            <div class="typography-rule-item">
+              <input type="checkbox" id="rule-word-spacing">
+              <label for="rule-word-spacing">Check Word Spacing</label>
+            </div>
+          </div>
+
+          <!-- Typography Styles Table -->
+          <div class="typography-table-wrapper">
+            <table class="typography-table" id="typography-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px;">Style Name</th>
+                  <th style="width: 140px;">Font Family</th>
+                  <th style="width: 80px;">Size (px)</th>
+                  <th style="width: 100px;">Weight</th>
+                  <th style="width: 100px;">Line Height</th>
+                  <th style="width: 100px;">Letter Spacing</th>
+                  <th style="width: 80px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="typography-table-body">
+                <!-- Rows will be rendered here -->
+              </tbody>
+            </table>
+          </div>
+
+          <button class="btn-add-typo-style" id="btn-add-typo-style">
+            ➕ Add Typography Style
+          </button>
+        </div>
+      </div>
+
       <div class="filter-controls" id="filter-controls" style="display: none;">
         <div class="search-box tooltip">
           <input type="text" id="search-input" placeholder="🔍 Search issues/tokens..." class="search-input">
@@ -1227,10 +1758,31 @@ body {
         </div>
       </div>
 
-      <div id="results">
+      <!-- Report Tabs -->
+      <div class="report-tabs">
+        <button class="report-tab active" data-tab="issues">
+          📋 Issues
+          <span class="tab-badge" id="issues-count">0</span>
+        </button>
+        <button class="report-tab" data-tab="tokens">
+          🎨 Design Tokens
+          <span class="tab-badge" id="tokens-count">0</span>
+        </button>
+      </div>
+
+      <!-- Issues Report -->
+      <div id="results-issues" class="report-content active">
         <div class="empty-state">
           <div class="icon">📋</div>
-          <p>No report yet — press Run Scan to start checking</p>
+          <p>No issues report yet — press Run Scan to start checking</p>
+        </div>
+      </div>
+
+      <!-- Tokens Report -->
+      <div id="results-tokens" class="report-content">
+        <div class="empty-state">
+          <div class="icon">🎨</div>
+          <p>No tokens report yet — press Extract Tokens to start</p>
         </div>
       </div>
 
@@ -1239,6 +1791,10 @@ body {
           <button id="btn-history" class="btn-history tooltip">
             📚 History
             <span class="tooltiptext tooltip-right">View last 10 scans</span>
+          </button>
+          <button id="btn-reset-all" class="btn-history tooltip" style="background: #ff9500; margin-left: 8px;">
+            🔄 Reset All
+            <span class="tooltiptext tooltip-right">Reset all settings to default and clear history</span>
           </button>
         </div>
         <div class="footer-right">
@@ -1272,15 +1828,30 @@ console.log("ui.js loaded");
 (function() {
   console.log("Initializing ui.js...");
   const btnScan = document.getElementById("btn-scan");
+        const btnCancelScan = document.getElementById("btn-cancel-scan");
+        const scanProgress = document.getElementById("scan-progress");
+        const scanProgressBar = document.getElementById("scan-progress-bar");
+        const scanProgressText = document.getElementById("scan-progress-text");
         const btnExtractTokens = document.getElementById("btn-extract-tokens");
+        const btnFillSpacingScale = document.getElementById("btn-fill-spacing-scale");
+        const btnFillColorScale = document.getElementById("btn-fill-color-scale");
+        const btnFillFontSizeScale = document.getElementById("btn-fill-font-size-scale");
+        const btnFillLineHeightScale = document.getElementById("btn-fill-line-height-scale");
         const btnExport = document.getElementById("btn-export");
         const btnHistory = document.getElementById("btn-history");
         const btnCloseHistory = document.getElementById("btn-close-history");
-  const results = document.getElementById("results");
+        const btnResetAll = document.getElementById("btn-reset-all");
+  const resultsIssues = document.getElementById("results-issues");
+  const resultsTokens = document.getElementById("results-tokens");
   const btnClose = document.getElementById("btn-close");
+  
+  // Report tabs
+  const reportTabs = document.querySelectorAll(".report-tab");
+  const reportContents = document.querySelectorAll(".report-content");
+  let activeTab = "issues";
 
-        if (!btnScan || !btnExtractTokens || !results || !btnClose || !btnExport || !btnHistory) {
-          console.error("Required elements not found", { btnScan, btnExtractTokens, results, btnClose, btnExport, btnHistory });
+        if (!btnScan || !btnExtractTokens || !resultsIssues || !resultsTokens || !btnClose || !btnExport || !btnHistory || !btnFillSpacingScale || !btnFillColorScale || !btnFillFontSizeScale || !btnFillLineHeightScale) {
+          console.error("Required elements not found", { btnScan, btnExtractTokens, btnFillSpacingScale, btnFillColorScale, btnFillFontSizeScale, btnFillLineHeightScale, resultsIssues, resultsTokens, btnClose, btnExport, btnHistory });
     return;
   }
 
@@ -1290,8 +1861,22 @@ console.log("ui.js loaded");
           tokens: null,
           scanMode: null,
           timestamp: null,
+          tokensTimestamp: null,
           context: null
         };
+
+        // Typography Styles Storage
+        let typographyStyles = [
+          // Default styles
+          { id: 1, name: "H1", fontFamily: "Inter", fontSize: 48, fontWeight: "Bold", lineHeight: "120%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 2, name: "H2", fontFamily: "Inter", fontSize: 36, fontWeight: "Bold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 3, name: "H3", fontFamily: "Inter", fontSize: 28, fontWeight: "SemiBold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 4, name: "H4", fontFamily: "Inter", fontSize: 24, fontWeight: "SemiBold", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 5, name: "H5", fontFamily: "Inter", fontSize: 20, fontWeight: "Medium", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 6, name: "H6", fontFamily: "Inter", fontSize: 18, fontWeight: "Medium", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 7, name: "Body", fontFamily: "Inter", fontSize: 16, fontWeight: "Regular", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" }
+        ];
+        let nextTypoStyleId = 8;
 
         function saveLastReport(report) {
           if (!report) return;
@@ -1302,8 +1887,84 @@ console.log("ui.js loaded");
           parent.postMessage({ pluginMessage: { type: "get-last-report" } }, "*");
         }
 
+        function saveInputValues() {
+          const values = {
+            spacingScale: document.getElementById("spacing-scale")?.value || "",
+            spacingThreshold: document.getElementById("spacing-threshold")?.value || "100",
+            colorScale: document.getElementById("color-scale")?.value || "",
+            fontSizeScale: document.getElementById("font-size-scale")?.value || "",
+            fontSizeThreshold: document.getElementById("font-size-threshold")?.value || "100",
+            lineHeightScale: document.getElementById("line-height-scale")?.value || "",
+            lineHeightThreshold: document.getElementById("line-height-threshold")?.value || "300",
+            lineHeightBaselineThreshold: document.getElementById("line-height-baseline-threshold")?.value || "120",
+            typographyStyles: typographyStyles,
+            typographyRules: {
+              checkStyle: document.getElementById("rule-typo-style")?.checked || true,
+              checkFontFamily: document.getElementById("rule-font-family")?.checked || true,
+              checkFontSize: document.getElementById("rule-font-size")?.checked || true,
+              checkFontWeight: document.getElementById("rule-font-weight")?.checked || true,
+              checkLineHeight: document.getElementById("rule-line-height")?.checked || true,
+              checkLetterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
+              checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
+            }
+          };
+          parent.postMessage({ pluginMessage: { type: "save-input-values", values } }, "*");
+        }
+
+        function restoreInputValues() {
+          parent.postMessage({ pluginMessage: { type: "get-input-values" } }, "*");
+        }
+
+        function applyInputValues(values) {
+          if (!values) return;
+          
+          const spacingScaleInput = document.getElementById("spacing-scale");
+          const spacingThresholdInput = document.getElementById("spacing-threshold");
+          const colorScaleInput = document.getElementById("color-scale");
+          const fontSizeScaleInput = document.getElementById("font-size-scale");
+          const fontSizeThresholdInput = document.getElementById("font-size-threshold");
+          const lineHeightScaleInput = document.getElementById("line-height-scale");
+          const lineHeightThresholdInput = document.getElementById("line-height-threshold");
+          const lineHeightBaselineThresholdInput = document.getElementById("line-height-baseline-threshold");
+
+          if (spacingScaleInput && values.spacingScale !== undefined) spacingScaleInput.value = values.spacingScale;
+          if (spacingThresholdInput && values.spacingThreshold !== undefined) spacingThresholdInput.value = values.spacingThreshold;
+          if (colorScaleInput && values.colorScale !== undefined) {
+            colorScaleInput.value = values.colorScale;
+            // Render color preview after loading saved colors
+            if (typeof renderColorPreview === "function") renderColorPreview();
+          }
+          if (fontSizeScaleInput && values.fontSizeScale !== undefined) fontSizeScaleInput.value = values.fontSizeScale;
+          if (fontSizeThresholdInput && values.fontSizeThreshold !== undefined) fontSizeThresholdInput.value = values.fontSizeThreshold;
+          if (lineHeightScaleInput && values.lineHeightScale !== undefined) lineHeightScaleInput.value = values.lineHeightScale;
+          if (lineHeightThresholdInput && values.lineHeightThreshold !== undefined) lineHeightThresholdInput.value = values.lineHeightThreshold;
+          if (lineHeightBaselineThresholdInput && values.lineHeightBaselineThreshold !== undefined) lineHeightBaselineThresholdInput.value = values.lineHeightBaselineThreshold;
+          
+          // Restore Typography Styles
+          if (values.typographyStyles && Array.isArray(values.typographyStyles)) {
+            typographyStyles = values.typographyStyles;
+            nextTypoStyleId = Math.max(...typographyStyles.map(s => s.id || 0), 0) + 1;
+            renderTypographyTable();
+          }
+          
+          // Restore Typography Rules
+          if (values.typographyRules) {
+            const rules = values.typographyRules;
+            if (document.getElementById("rule-typo-style")) document.getElementById("rule-typo-style").checked = rules.checkStyle !== false;
+            if (document.getElementById("rule-font-family")) document.getElementById("rule-font-family").checked = rules.checkFontFamily !== false;
+            if (document.getElementById("rule-font-size")) document.getElementById("rule-font-size").checked = rules.checkFontSize !== false;
+            if (document.getElementById("rule-font-weight")) document.getElementById("rule-font-weight").checked = rules.checkFontWeight !== false;
+            if (document.getElementById("rule-line-height")) document.getElementById("rule-line-height").checked = rules.checkLineHeight !== false;
+            if (document.getElementById("rule-letter-spacing")) document.getElementById("rule-letter-spacing").checked = rules.checkLetterSpacing === true;
+            if (document.getElementById("rule-word-spacing")) document.getElementById("rule-word-spacing").checked = rules.checkWordSpacing === true;
+            
+            // Re-render table after restoring checkbox states
+            renderTypographyTable();
+          }
+        }
+
         function applySavedReport(saved) {
-          if (!saved || !saved.type) {
+          if (!saved) {
             console.log("No last report to apply");
             return;
           }
@@ -1318,12 +1979,25 @@ console.log("ui.js loaded");
           currentReportData.scanMode = saved.scanMode || currentReportData.scanMode;
           currentReportData.context = saved.context || currentReportData.context;
 
-          if (saved.type === "issues" && Array.isArray(saved.issues)) {
+          // Restore issues if available
+          if (saved.issues && Array.isArray(saved.issues)) {
             console.log("Applying saved issues report");
-            renderResults(saved.issues, true, { skipSave: true, restoreTimestamp: saved.timestamp });
-          } else if (saved.type === "tokens" && saved.tokens) {
+            renderResults(saved.issues, true, { skipSave: true, restoreTimestamp: saved.issuesTimestamp });
+          }
+          
+          // Restore tokens if available
+          if (saved.tokens) {
             console.log("Applying saved tokens report");
-            renderTokens(saved.tokens, true, { skipSave: true, restoreTimestamp: saved.timestamp });
+            renderTokens(saved.tokens, true, { skipSave: true, restoreTimestamp: saved.tokensTimestamp });
+          }
+          
+          // Switch to the last active tab
+          if (saved.lastActiveTab) {
+            switchToTab(saved.lastActiveTab);
+          } else if (saved.issues) {
+            switchToTab("issues");
+          } else if (saved.tokens) {
+            switchToTab("tokens");
           }
         }
 
@@ -1335,8 +2009,61 @@ console.log("ui.js loaded");
 
   console.log("All elements found, setting up event listeners");
 
-  function clearResults() {
-    results.innerHTML = "";
+  // Tab switching
+  reportTabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      const tabName = tab.dataset.tab;
+      
+      // Update tabs
+      reportTabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      
+      // Update content
+      reportContents.forEach(c => c.classList.remove("active"));
+      document.getElementById(`results-${tabName}`).classList.add("active");
+      
+      activeTab = tabName;
+      
+      // Save last active tab when user manually switches
+      if (currentReportData.issues || currentReportData.tokens) {
+        saveLastReport({
+          issues: currentReportData.issues,
+          issuesTimestamp: currentReportData.timestamp,
+          tokens: currentReportData.tokens,
+          tokensTimestamp: currentReportData.tokensTimestamp,
+          lastActiveTab: tabName,
+          scanMode: currentReportData.scanMode || null,
+          context: currentReportData.context || null
+        });
+      }
+    });
+  });
+
+  function clearResults(tabName = null) {
+    const target = tabName ? document.getElementById(`results-${tabName}`) : resultsIssues;
+    if (target) {
+      target.innerHTML = "";
+    }
+  }
+  
+  function switchToTab(tabName) {
+    reportTabs.forEach(tab => {
+      if (tab.dataset.tab === tabName) {
+        tab.classList.add("active");
+      } else {
+        tab.classList.remove("active");
+      }
+    });
+    
+    reportContents.forEach(content => {
+      if (content.id === `results-${tabName}`) {
+        content.classList.add("active");
+      } else {
+        content.classList.remove("active");
+      }
+    });
+    
+    activeTab = tabName;
   }
 
         function getSeverityIcon(severity) {
@@ -1350,8 +2077,12 @@ console.log("ui.js loaded");
             naming: "🏷️",
             autolayout: "📐",
             spacing: "📏",
+            color: "🎨",
             typography: "✍️",
             "typography-style": "🎨",
+            "typography-check": "📝",
+            "typography-pass": "✅",
+            "typography-info": "✅",
             "line-height": "📝",
             position: "📍",
             duplicate: "🔄",
@@ -1359,7 +2090,7 @@ console.log("ui.js loaded");
             component: "🧩",
             "empty-frame": "📭",
             "nested-group": "📚",
-            contrast: "🎨",
+            contrast: "🌈",
             "text-size-mobile": "📱"
           };
           return icons[type] || "🔍";
@@ -1370,8 +2101,11 @@ console.log("ui.js loaded");
             naming: "Naming Layer",
             autolayout: "Auto Layout",
             spacing: "Spacing",
+            color: "Color Scale",
             typography: "Font Size",
             "typography-style": "Text Style (variable)",
+            "typography-check": "Typography Style Match",
+            "typography-pass": "Typography ✓ Matched",
             "line-height": "Line Height",
             position: "Position Layer",
             duplicate: "Duplicate Layer",
@@ -1388,25 +2122,61 @@ console.log("ui.js loaded");
         function addIssueEl(issue) {
     const el = document.createElement("div");
           el.className = `issue ${issue.severity}`;
+    
+    // Build detailed info for typography issues
+    let detailsHtml = "";
+    if (issue.type === "typography-check" && issue.nodeProps) {
+      detailsHtml = '<div class="typography-details" style="margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; font-size: 11px;">';
+      
+      // Current properties
+      detailsHtml += '<div style="margin-bottom: 6px;"><strong>Current Properties:</strong></div>';
+      detailsHtml += '<div style="padding-left: 12px; line-height: 1.6;">';
+      if (issue.nodeProps.fontFamily) detailsHtml += `• Font Family: <code>${escapeHtml(issue.nodeProps.fontFamily)}</code><br>`;
+      if (issue.nodeProps.fontSize !== null && issue.nodeProps.fontSize !== undefined) detailsHtml += `• Font Size: <code>${issue.nodeProps.fontSize}px</code><br>`;
+      if (issue.nodeProps.fontWeight) detailsHtml += `• Font Weight: <code>${escapeHtml(issue.nodeProps.fontWeight)}</code><br>`;
+      if (issue.nodeProps.lineHeight) detailsHtml += `• Line Height: <code>${escapeHtml(issue.nodeProps.lineHeight)}</code><br>`;
+      if (issue.nodeProps.letterSpacing !== null && issue.nodeProps.letterSpacing !== undefined) detailsHtml += `• Letter Spacing: <code>${escapeHtml(issue.nodeProps.letterSpacing)}</code><br>`;
+      detailsHtml += '</div>';
+      
+      // Best match suggestion (for errors) or show matched style (for pass with severity info)
+      if (issue.bestMatch && issue.severity === "error") {
+        detailsHtml += `<div style="margin-top: 8px; margin-bottom: 4px;"><strong>Closest Match: "${escapeHtml(issue.bestMatch.name)}" (${issue.bestMatch.percentage}%)</strong></div>`;
+        detailsHtml += '<div style="padding-left: 12px; line-height: 1.6;">';
+        issue.bestMatch.differences.forEach(diff => {
+          const icon = diff.matches ? '✓' : '✗';
+          const color = diff.matches ? 'green' : 'red';
+          detailsHtml += `<span style="color: ${color}">${icon} ${diff.property}: <code>${escapeHtml(diff.current)}</code> → <code>${escapeHtml(diff.expected)}</code></span><br>`;
+        });
+        detailsHtml += '</div>';
+      } else if (issue.severity === "info" && issue.styleName) {
+        // Show matched style for info/pass cases
+        detailsHtml += `<div style="margin-top: 8px; color: green;"><strong>✓ All properties match style "${escapeHtml(issue.styleName)}"</strong></div>`;
+      }
+      
+      detailsHtml += '</div>';
+    }
+    
     el.innerHTML = `
       <div class="issue-header">
               <div>
                 <span class="issue-type">${getTypeIcon(issue.type)} ${getTypeDisplayName(issue.type)}</span>
       <div class="issue-body">${escapeHtml(issue.message)}</div>
                 ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
+                ${detailsHtml}
               </div>
               <div class="issue-actions">
                 <button class="btn-select" data-id="${issue.id}">Select</button>
               </div>
       </div>
     `;
-    results.appendChild(el);
-          const btn = el.querySelector("button.btn-select");
+    const btn = el.querySelector("button.btn-select");
     if (btn) {
       btn.onclick = () => {
         parent.postMessage({ pluginMessage: { type: "select-node", id: issue.id } }, "*");
       };
     }
+    
+    return el;
   }
 
   function escapeHtml(s) {
@@ -1463,10 +2233,16 @@ console.log("ui.js loaded");
 
         function renderResults(issues = [], resetFilters = false, options = {}) {
           const { skipSave = false, restoreTimestamp = null } = options;
+          
+          // Switch to issues tab and update badge
+          switchToTab("issues");
+          document.getElementById("issues-count").textContent = issues.length;
+          
           // Store report data
           const isNewData = currentReportData.issues !== issues;
           currentReportData.issues = issues;
-          currentReportData.tokens = null;
+          // Don't clear tokens - keep it
+          // currentReportData.tokens = null;
           const timestamp = restoreTimestamp || new Date().toISOString();
           currentReportData.timestamp = timestamp;
           isViewingTokens = false;
@@ -1508,11 +2284,11 @@ console.log("ui.js loaded");
           console.log("About to filter with:", { currentFilter, currentSearch });
           const filteredIssues = filterAndSearchIssues(issues);
           
-          clearResults();
+          clearResults("issues");
 
           if (filteredIssues.length === 0) {
             if (issues.length === 0) {
-              results.innerHTML = `
+              resultsIssues.innerHTML = `
                 <div class="empty-state success">
                   <div class="icon">✅</div>
                   <p><strong>No issues found!</strong></p>
@@ -1520,7 +2296,7 @@ console.log("ui.js loaded");
                 </div>
               `;
             } else {
-              results.innerHTML = `
+              resultsIssues.innerHTML = `
                 <div class="empty-state">
                   <div class="icon">🔍</div>
                   <p><strong>No results found</strong></p>
@@ -1551,7 +2327,7 @@ console.log("ui.js loaded");
               ${stats.originalTotal !== stats.total ? `<span class="stat" style="opacity: 0.6;">(${stats.originalTotal} total)</span>` : ""}
             </div>
           `;
-          results.appendChild(header);
+          resultsIssues.appendChild(header);
 
           // Group filtered issues by type
           const grouped = filteredIssues.reduce((acc, i) => {
@@ -1562,8 +2338,8 @@ console.log("ui.js loaded");
 
           // Define all possible issue types (to show even when count = 0)
           const allIssueTypes = [
-            "naming", "autolayout", "spacing", "typography", "typography-style", 
-            "line-height", "position", "duplicate", "group", "component", 
+            "naming", "autolayout", "spacing", "color", "typography", "typography-style", "typography-check",
+            "line-height", "position", "duplicate", "group", "component",
             "empty-frame", "nested-group", "contrast", "text-size-mobile"
           ];
 
@@ -1645,6 +2421,28 @@ console.log("ui.js loaded");
               // Render issues
               grouped[type].forEach((issue, index) => {
               const issueNumber = index + 1;
+              
+              // Use addIssueEl for typography issues to get detailed rendering
+              if (issue.type === "typography-check") {
+                const tempDiv = document.createElement("div");
+                groupContent.appendChild(tempDiv);
+                
+                // Call addIssueEl and move the created element into groupContent
+                const issueEl = addIssueEl(issue);
+                if (issueEl) {
+                  // Add issue number
+                  const numberSpan = document.createElement("span");
+                  numberSpan.className = "issue-number";
+                  numberSpan.textContent = `#${issueNumber}`;
+                  numberSpan.style.cssText = "position: absolute; left: 8px; top: 8px; font-weight: bold; opacity: 0.5; font-size: 11px;";
+                  issueEl.style.position = "relative";
+                  issueEl.style.paddingLeft = "40px";
+                  issueEl.insertBefore(numberSpan, issueEl.firstChild);
+                  groupContent.replaceChild(issueEl, tempDiv);
+                }
+                return;
+              }
+              
               const issueEl = document.createElement("div");
               issueEl.className = `issue ${issue.severity}`;
               // Build issue body with additional info for contrast issues
@@ -1707,14 +2505,17 @@ console.log("ui.js loaded");
             }
 
             groupEl.appendChild(groupContent);
-            results.appendChild(groupEl);
+            resultsIssues.appendChild(groupEl);
           }
 
           if (!skipSave) {
+            // Save both reports together
             saveLastReport({
-              type: "issues",
               issues,
-              timestamp,
+              issuesTimestamp: timestamp,
+              tokens: currentReportData.tokens,
+              tokensTimestamp: currentReportData.tokensTimestamp,
+              lastActiveTab: "issues",
               scanMode: currentReportData.scanMode || null,
               context: currentReportData.context || null
             });
@@ -1789,14 +2590,47 @@ console.log("ui.js loaded");
           return { tokens: filtered, hasMatches };
         }
 
+        function replaceSpacingScaleWithTokens(tokens) {
+          const input = document.getElementById("spacing-scale");
+          if (!input) return;
+          const list = (tokens && Array.isArray(tokens.spacing)) ? tokens.spacing : [];
+          const values = list
+            .map(t => {
+              const num = parseInt(String(t && t.value !== undefined ? t.value : "").trim(), 10);
+              // Always use absolute value (convert negative to positive)
+              return isNaN(num) ? null : Math.abs(num);
+            })
+            .filter(n => n !== null);
+
+          if (!values.length) return;
+          // Remove duplicates and sort ascending
+          const next = Array.from(new Set(values)).sort((a, b) => a - b);
+          input.value = next.join(", ");
+
+          // Visual feedback
+          try {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          } catch (e) {
+            // ignore
+          }
+        }
+
         function renderTokens(tokens, resetFilters = false, options = {}) {
           const { skipSave = false, restoreTimestamp = null } = options;
+          
+          // Switch to tokens tab and update badge
+          switchToTab("tokens");
+          let totalTokensCount = Object.values(tokens || {}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+          document.getElementById("tokens-count").textContent = totalTokensCount;
+          
           // Store report data
           const isNewData = currentReportData.tokens !== tokens;
-          currentReportData.issues = null;
+          // Don't clear issues - keep it
+          // currentReportData.issues = null;
           currentReportData.tokens = tokens;
           const timestamp = restoreTimestamp || new Date().toISOString();
-          currentReportData.timestamp = timestamp;
+          currentReportData.tokensTimestamp = timestamp;
           isViewingTokens = true;
           
           // Only reset filters if this is new data or explicitly requested
@@ -1839,10 +2673,10 @@ console.log("ui.js loaded");
           console.log("About to filter tokens with:", { currentColorTypeFilter, currentSearch });
           const filterResult = filterAndSearchTokens(tokens);
           
-          clearResults();
+          clearResults("tokens");
 
           if (!tokens || Object.keys(tokens).length === 0) {
-            results.innerHTML = `
+            resultsTokens.innerHTML = `
               <div class="empty-state">
                 <div class="icon">📋</div>
                 <p>No design tokens found</p>
@@ -1852,7 +2686,7 @@ console.log("ui.js loaded");
           }
 
           if (!filterResult) {
-            results.innerHTML = `
+            resultsTokens.innerHTML = `
               <div class="empty-state">
                 <div class="icon">🔍</div>
                 <p><strong>No results found</strong></p>
@@ -1867,7 +2701,7 @@ console.log("ui.js loaded");
           const isSearchActive = currentSearch.trim() || currentColorTypeFilter !== "all";
 
           if (isSearchActive && !hasTokenMatches) {
-            results.innerHTML = `
+            resultsTokens.innerHTML = `
               <div class="empty-state">
                 <div class="icon">🔍</div>
                 <p><strong>No results found</strong></p>
@@ -1880,6 +2714,7 @@ console.log("ui.js loaded");
             const tokenGroups = {
               colors: { icon: "🎨", label: "Colors", values: filteredTokens.colors || [] },
               gradients: { icon: "🌈", label: "Gradients", values: filteredTokens.gradients || [] },
+              spacing: { icon: "↔️", label: "Spacing (px)", values: filteredTokens.spacing || [] },
               borderRadius: { icon: "⭕", label: "Border Radius", values: filteredTokens.borderRadius || [] },
               fontWeight: { icon: "💪", label: "Font Weight", values: filteredTokens.fontWeight || [] },
               lineHeight: { icon: "📏", label: "Line Height (%)", values: filteredTokens.lineHeight || [] },
@@ -1897,7 +2732,7 @@ console.log("ui.js loaded");
               <span class="stat">${totalTokens} Tokens</span>
             </div>
           `;
-          results.appendChild(header);
+          resultsTokens.appendChild(header);
 
           // Render token groups
           for (const [key, group] of Object.entries(tokenGroups)) {
@@ -2066,7 +2901,7 @@ console.log("ui.js loaded");
                   parent.postMessage({ pluginMessage: { type: "select-node", id: firstNode.id } }, "*");
                 };
               }
-              
+
                 tokenList.appendChild(tokenEl);
               });
 
@@ -2078,27 +2913,45 @@ console.log("ui.js loaded");
               groupContent.appendChild(emptyMsg);
             }
             groupEl.appendChild(groupContent);
-            results.appendChild(groupEl);
+            resultsTokens.appendChild(groupEl);
           }
 
           if (!skipSave) {
+            // Save both reports together
             saveLastReport({
-              type: "tokens",
+              issues: currentReportData.issues,
+              issuesTimestamp: currentReportData.timestamp,
               tokens,
-              timestamp,
+              tokensTimestamp: timestamp,
+              lastActiveTab: "tokens",
               scanMode: currentReportData.scanMode || null,
               context: currentReportData.context || null
             });
           }
-  }
+        }
 
   btnScan.onclick = () => {
     console.log("btnScan clicked");
     try {
-      clearResults();
+      // Show cancel button and progress, hide scan button
+      btnScan.style.display = "none";
+      btnCancelScan.style.display = "block";
+      scanProgress.style.display = "block";
+      // Force reset progress bar
+      scanProgressBar.style.transition = "none";
+      scanProgressBar.style.width = "0%";
+      scanProgressText.textContent = "0%";
+      // Re-enable transition after reset
+      setTimeout(() => {
+        scanProgressBar.style.transition = "width 0.3s";
+      }, 10);
+      
+      // Don't clear - keep both tabs' content
+      // clearResults();
       const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
       const spacingScaleInput = document.getElementById("spacing-scale");
       const spacingThresholdInput = document.getElementById("spacing-threshold");
+      const colorScaleInput = document.getElementById("color-scale");
       const fontSizeScaleInput = document.getElementById("font-size-scale");
       const fontSizeThresholdInput = document.getElementById("font-size-threshold");
       const lineHeightScaleInput = document.getElementById("line-height-scale");
@@ -2107,6 +2960,7 @@ console.log("ui.js loaded");
       
       let spacingScaleValue = spacingScaleInput ? spacingScaleInput.value.trim() : "";
       const spacingThreshold = spacingThresholdInput ? parseInt(spacingThresholdInput.value, 10) : 100;
+      let colorScaleValue = colorScaleInput ? colorScaleInput.value.trim() : "";
       let fontSizeScaleValue = fontSizeScaleInput ? fontSizeScaleInput.value.trim() : "";
       const fontSizeThreshold = fontSizeThresholdInput ? parseInt(fontSizeThresholdInput.value, 10) : 100;
       let lineHeightScaleValue = lineHeightScaleInput ? lineHeightScaleInput.value.trim() : "";
@@ -2117,7 +2971,21 @@ console.log("ui.js loaded");
       if (spacingScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(spacingScaleValue)) {
-          results.innerHTML = `<div class="error-message">Error: Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)</div>`;
+          resultsIssues.innerHTML = `<div class="error-message">Error: Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)</div>`;
+      switchToTab("issues");
+          return;
+        }
+      }
+      
+      // Validate color scale format if not empty (allow hex only)
+      if (colorScaleValue) {
+        // Split by comma and validate each color
+        const colors = colorScaleValue.split(",").map(c => c.trim()).filter(c => c);
+        const colorRegex = /^#[0-9a-fA-F]{3,8}$/;
+        const invalidColors = colors.filter(c => !colorRegex.test(c));
+        if (invalidColors.length > 0) {
+          resultsIssues.innerHTML = `<div class="error-message">Error: Color scale format is incorrect. Invalid colors: ${escapeHtml(invalidColors.join(", "))}. Please use hex format only (e.g., #000000, #FFFFFF).</div>`;
+      switchToTab("issues");
           return;
         }
       }
@@ -2126,7 +2994,8 @@ console.log("ui.js loaded");
       if (fontSizeScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(fontSizeScaleValue)) {
-          results.innerHTML = `<div class="error-message">Error: Font-size scale format is incorrect. Please enter the numbers separated by commas (e.g. 32, 24, 20, 18)</div>`;
+          resultsIssues.innerHTML = `<div class="error-message">Error: Font-size scale format is incorrect. Please enter the numbers separated by commas (e.g. 32, 24, 20, 18)</div>`;
+      switchToTab("issues");
           return;
         }
       }
@@ -2135,60 +3004,85 @@ console.log("ui.js loaded");
       if (lineHeightScaleValue) {
         const formatRegex = /^(\s*auto\s*,?\s*)?(\d+(\s*,\s*\d+)*)?$/i;
         if (!formatRegex.test(lineHeightScaleValue)) {
-          results.innerHTML = `<div class="error-message">Error: Line-height scale format is incorrect. Please enter "auto" (if you want to accept) and the numbers separated by commas (e.g. auto, 100, 120, 140, 150)</div>`;
+          resultsIssues.innerHTML = `<div class="error-message">Error: Line-height scale format is incorrect. Please enter "auto" (if you want to accept) and the numbers separated by commas (e.g. auto, 100, 120, 140, 150)</div>`;
+      switchToTab("issues");
           return;
         }
       }
       
       // Validate thresholds
       if (isNaN(spacingThreshold) || spacingThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Error: Spacing threshold must be a number >= 0</div>`;
+        resultsIssues.innerHTML = `<div class="error-message">Error: Spacing threshold must be a number >= 0</div>`;
+      switchToTab("issues");
         return;
       }
       
       if (isNaN(fontSizeThreshold) || fontSizeThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Error: Font-size threshold must be a number >= 0</div>`;
+        resultsIssues.innerHTML = `<div class="error-message">Error: Font-size threshold must be a number >= 0</div>`;
+      switchToTab("issues");
         return;
       }
       
       if (isNaN(lineHeightThreshold) || lineHeightThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Error: Line-height threshold must be a number >= 0</div>`;
+        resultsIssues.innerHTML = `<div class="error-message">Error: Line-height threshold must be a number >= 0</div>`;
+      switchToTab("issues");
         return;
       }
       
       if (isNaN(lineHeightBaselineThreshold) || lineHeightBaselineThreshold < 0) {
-        results.innerHTML = `<div class="error-message">Error: Line-height baseline threshold must be a number >= 0</div>`;
+        resultsIssues.innerHTML = `<div class="error-message">Error: Line-height baseline threshold must be a number >= 0</div>`;
+      switchToTab("issues");
         return;
       }
       
       // Don't save to history here - wait for actual results
       
-      results.innerHTML = `
+      resultsIssues.innerHTML = `
         <div class="scanning">
           <div class="spinner"></div>
           <p>Scanning design... Please wait</p>
         </div>
       `;
+      switchToTab("issues");
       btnScan.disabled = true;
       btnExtractTokens.disabled = true;
       currentReportData.scanMode = scope;
+      
+      // Save input values before scanning
+      saveInputValues();
+      
+      // Get Typography settings
+      const typographyRules = {
+        checkStyle: document.getElementById("rule-typo-style")?.checked || false,
+        checkFontFamily: document.getElementById("rule-font-family")?.checked || false,
+        checkFontSize: document.getElementById("rule-font-size")?.checked || false,
+        checkFontWeight: document.getElementById("rule-font-weight")?.checked || false,
+        checkLineHeight: document.getElementById("rule-line-height")?.checked || false,
+        checkLetterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
+        checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
+      };
+      
       parent.postMessage({ 
         pluginMessage: { 
           type: "scan", 
           mode: scope, 
           spacingScale: spacingScaleValue, 
           spacingThreshold: spacingThreshold,
+          colorScale: colorScaleValue,
           fontSizeScale: fontSizeScaleValue,
           fontSizeThreshold: fontSizeThreshold,
           lineHeightScale: lineHeightScaleValue,
           lineHeightThreshold: lineHeightThreshold,
-          lineHeightBaselineThreshold: lineHeightBaselineThreshold
+          lineHeightBaselineThreshold: lineHeightBaselineThreshold,
+          typographyStyles: typographyStyles,
+          typographyRules: typographyRules
         } 
       }, "*");
       console.log("Message sent:", { type: "scan", mode: scope });
     } catch (error) {
       console.error("Error in btnScan.onclick:", error);
-      results.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
+      resultsIssues.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
+      switchToTab("issues");
       btnScan.disabled = false;
       btnExtractTokens.disabled = false;
     }
@@ -2197,17 +3091,32 @@ console.log("ui.js loaded");
   btnExtractTokens.onclick = () => {
     console.log("btnExtractTokens clicked");
     try {
-      clearResults();
+      // Show cancel button and progress, hide extract button
+      btnExtractTokens.style.display = "none";
+      btnCancelScan.style.display = "block";
+      scanProgress.style.display = "block";
+      // Force reset progress bar
+      scanProgressBar.style.transition = "none";
+      scanProgressBar.style.width = "0%";
+      scanProgressText.textContent = "0%";
+      // Re-enable transition after reset
+      setTimeout(() => {
+        scanProgressBar.style.transition = "width 0.3s";
+      }, 10);
+      
+      // Don't clear - keep both tabs' content
+      // clearResults();
       const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
-      
+
       // Don't save to history here - wait for actual results
-      
-      results.innerHTML = `
+
+      resultsTokens.innerHTML = `
         <div class="scanning">
           <div class="spinner"></div>
           <p>Extracting design tokens... Please wait</p>
         </div>
       `;
+      switchToTab("tokens");
       btnScan.disabled = true;
       btnExtractTokens.disabled = true;
       currentReportData.scanMode = scope;
@@ -2215,11 +3124,415 @@ console.log("ui.js loaded");
       console.log("Message sent:", { type: "extract-tokens", mode: scope });
     } catch (error) {
       console.error("Error in btnExtractTokens.onclick:", error);
-      results.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
+      resultsTokens.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
+      switchToTab("tokens");
       btnScan.disabled = false;
       btnExtractTokens.disabled = false;
     }
   };
+
+  btnFillSpacingScale.onclick = () => {
+    try {
+      replaceSpacingScaleWithTokens(currentReportData.tokens);
+    } catch (e) {
+      console.error("Failed to fill spacing scale from tokens", e);
+    }
+  };
+
+  // Helper function to calculate color brightness (0 = dark, 255 = bright)
+  function getColorBrightness(hex) {
+    // Remove # if present
+    const cleanHex = hex.replace('#', '');
+    
+    // Parse RGB values
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    
+    // Calculate perceived brightness using standard formula
+    // Human eye is more sensitive to green, then red, then blue
+    return (r * 299 + g * 587 + b * 114) / 1000;
+  }
+
+  btnFillColorScale.onclick = () => {
+    try {
+      const tokens = currentReportData.tokens;
+      if (!tokens || !Array.isArray(tokens.colors) || !tokens.colors.length) {
+        alert("No color tokens found. Please run 'Extract Design Tokens' first.");
+        return;
+      }
+
+      const input = document.getElementById("color-scale");
+      if (!input) return;
+
+      const list = tokens.colors || [];
+      // Extract hex values and ensure uppercase for consistency
+      const values = list
+        .map(t => String(t && t.value !== undefined ? t.value : "").trim().toUpperCase())
+        .filter(v => v && v.startsWith("#"));
+
+      if (!values.length) return;
+      
+      // Remove duplicates and sort by brightness (dark to light: #000000 → #FFFFFF)
+      const uniqueValues = Array.from(new Set(values)).sort((a, b) => {
+        return getColorBrightness(a) - getColorBrightness(b);
+      });
+      input.value = uniqueValues.join(", ");
+
+      // Render color preview after filling
+      if (typeof renderColorPreview === "function") renderColorPreview();
+
+      // Visual feedback
+      try {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      } catch (e) {
+        // ignore
+      }
+    } catch (e) {
+      console.error("Failed to fill color scale from tokens", e);
+    }
+  };
+
+  btnFillFontSizeScale.onclick = () => {
+    try {
+      const tokens = currentReportData.tokens;
+      if (!tokens || !Array.isArray(tokens.fontSize) || !tokens.fontSize.length) {
+        alert("No font size tokens found. Please run 'Extract Design Tokens' first.");
+        return;
+      }
+
+      const input = document.getElementById("font-size-scale");
+      if (!input) return;
+
+      // Extract unique font sizes and sort
+      const values = tokens.fontSize
+        .map(t => parseInt(String(t && t.value !== undefined ? t.value : "").trim(), 10))
+        .filter(n => !isNaN(n));
+
+      if (!values.length) return;
+
+      const uniqueSorted = Array.from(new Set(values)).sort((a, b) => b - a); // Descending for font sizes
+      input.value = uniqueSorted.join(", ");
+
+      // Visual feedback
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    } catch (e) {
+      console.error("Failed to fill font size scale from tokens", e);
+    }
+  };
+
+  btnFillLineHeightScale.onclick = () => {
+    try {
+      const tokens = currentReportData.tokens;
+      if (!tokens || !Array.isArray(tokens.lineHeight) || !tokens.lineHeight.length) {
+        alert("No line height tokens found. Please run 'Extract Design Tokens' first.");
+        return;
+      }
+
+      const input = document.getElementById("line-height-scale");
+      if (!input) return;
+
+      // Extract unique line heights and sort
+      const values = [];
+      tokens.lineHeight.forEach(t => {
+        const value = String(t && t.value !== undefined ? t.value : "").trim();
+        if (value === "auto") {
+          values.push("auto");
+        } else {
+          const numValue = parseFloat(value);
+          if (!isNaN(numValue)) {
+            values.push(numValue);
+          }
+        }
+      });
+
+      if (!values.length) return;
+
+      // Separate auto and numeric values
+      const hasAuto = values.includes("auto");
+      const numericValues = values.filter(v => v !== "auto");
+      const uniqueSorted = Array.from(new Set(numericValues)).sort((a, b) => a - b); // Ascending
+
+      // Combine: auto first, then sorted numeric
+      const finalValues = hasAuto ? ["auto", ...uniqueSorted] : uniqueSorted;
+      input.value = finalValues.join(", ");
+
+      // Visual feedback
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    } catch (e) {
+      console.error("Failed to fill line height scale from tokens", e);
+    }
+  };
+
+  // Typography Panel Toggle
+  const typographyPanel = document.getElementById("typography-panel");
+  const typographyPanelHeader = document.getElementById("typography-panel-header");
+  const typographyPanelToggle = document.getElementById("typography-panel-toggle");
+  
+  if (typographyPanelHeader && typographyPanel && typographyPanelToggle) {
+    typographyPanelHeader.onclick = () => {
+      const isCollapsed = typographyPanel.classList.contains("collapsed");
+      typographyPanel.classList.toggle("collapsed");
+      
+      // Update icon
+      const icon = typographyPanelToggle.querySelector(".issue-group-toggle-icon");
+      if (icon) {
+        icon.textContent = isCollapsed ? "▼" : "▶";
+      }
+    };
+  }
+
+  // Render Color Preview Swatches
+  function renderColorPreview() {
+    const colorInput = document.getElementById("color-scale");
+    const colorPreview = document.getElementById("color-preview");
+    
+    if (!colorInput || !colorPreview) return;
+    
+    const value = colorInput.value.trim();
+    colorPreview.innerHTML = "";
+    
+    if (!value) return;
+    
+    // Parse colors (split by comma)
+    const colors = value.split(",").map(c => c.trim()).filter(c => c);
+    
+    colors.forEach((color, index) => {
+      // Validate color format (basic hex or rgba)
+      const isValidHex = /^#[0-9A-Fa-f]{3,8}$/.test(color);
+      const isValidRgba = /^rgba?\(/.test(color);
+      
+      if (!isValidHex && !isValidRgba) return; // Skip invalid colors
+      
+      // Create color swatch container
+      const swatchContainer = document.createElement("div");
+      swatchContainer.className = "color-swatch-container";
+      
+      // Create color swatch
+      const swatch = document.createElement("div");
+      swatch.className = "color-swatch";
+      swatch.style.background = color; // Only set the dynamic background color
+      
+      // Add close button
+      const closeBtn = document.createElement("button");
+      closeBtn.innerHTML = "×";
+      closeBtn.className = "color-swatch-close";
+      
+      closeBtn.onclick = function(e) {
+        e.stopPropagation();
+        // Remove this color from input
+        const allColors = colorInput.value.split(",").map(c => c.trim()).filter(c => c);
+        const newColors = allColors.filter((c, i) => i !== index);
+        colorInput.value = newColors.join(", ");
+        
+        // Re-render and save
+        renderColorPreview();
+        if (typeof saveInputValues === "function") saveInputValues();
+      };
+      
+      // Add tooltip with color value (only show on swatch hover, not close button)
+      const tooltip = document.createElement("div");
+      tooltip.textContent = color;
+      tooltip.className = "color-swatch-tooltip";
+      
+      swatch.onmouseenter = function() {
+        tooltip.style.opacity = "1";
+      };
+      
+      swatch.onmouseleave = function() {
+        tooltip.style.opacity = "0";
+      };
+      
+      swatch.appendChild(closeBtn);
+      swatch.appendChild(tooltip);
+      swatchContainer.appendChild(swatch);
+      colorPreview.appendChild(swatchContainer);
+    });
+  }
+
+  // Get active rules
+  function getActiveRules() {
+    return {
+      fontFamily: document.getElementById("rule-font-family")?.checked || false,
+      fontSize: document.getElementById("rule-font-size")?.checked || false,
+      fontWeight: document.getElementById("rule-font-weight")?.checked || false,
+      lineHeight: document.getElementById("rule-line-height")?.checked || false,
+      letterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
+      wordSpacing: document.getElementById("rule-word-spacing")?.checked || false
+    };
+  }
+
+  // Render Typography Table
+  function renderTypographyTable() {
+    const tbody = document.getElementById("typography-table-body");
+    const thead = document.querySelector("#typography-table thead tr");
+    if (!tbody || !thead) return;
+
+    const activeRules = getActiveRules();
+
+    // Build table headers based on active rules
+    let headers = '<th style="width: 120px;">Style Name</th>';
+    if (activeRules.fontFamily) headers += '<th style="width: 140px;">Font Family</th>';
+    if (activeRules.fontSize) headers += '<th style="width: 80px;">Size (px)</th>';
+    if (activeRules.fontWeight) headers += '<th style="width: 100px;">Weight</th>';
+    if (activeRules.lineHeight) headers += '<th style="width: 100px;">Line Height</th>';
+    if (activeRules.letterSpacing) headers += '<th style="width: 100px;">Letter Spacing</th>';
+    if (activeRules.wordSpacing) headers += '<th style="width: 100px;">Word Spacing</th>';
+    headers += '<th style="width: 80px;">Actions</th>';
+    thead.innerHTML = headers;
+
+    if (typographyStyles.length === 0) {
+      const colspanCount = Object.values(activeRules).filter(v => v).length + 2; // +2 for name and actions
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="${colspanCount}" class="typography-empty-message">
+            No typography styles defined. Click "Add Typography Style" to create one.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = typographyStyles.map(style => {
+      let row = `<tr data-id="${style.id}">`;
+      row += `<td><input type="text" value="${escapeHtml(style.name)}" data-field="name"></td>`;
+      
+      if (activeRules.fontFamily) {
+        row += `<td><input type="text" value="${escapeHtml(style.fontFamily)}" data-field="fontFamily"></td>`;
+      }
+      
+      if (activeRules.fontSize) {
+        row += `<td><input type="number" value="${style.fontSize}" data-field="fontSize" min="1"></td>`;
+      }
+      
+      if (activeRules.fontWeight) {
+        row += `<td>
+          <select data-field="fontWeight">
+            <option value="Thin" ${style.fontWeight === "Thin" ? "selected" : ""}>Thin (100)</option>
+            <option value="ExtraLight" ${style.fontWeight === "ExtraLight" ? "selected" : ""}>ExtraLight (200)</option>
+            <option value="Light" ${style.fontWeight === "Light" ? "selected" : ""}>Light (300)</option>
+            <option value="Regular" ${style.fontWeight === "Regular" ? "selected" : ""}>Regular (400)</option>
+            <option value="Medium" ${style.fontWeight === "Medium" ? "selected" : ""}>Medium (500)</option>
+            <option value="SemiBold" ${style.fontWeight === "SemiBold" ? "selected" : ""}>SemiBold (600)</option>
+            <option value="Bold" ${style.fontWeight === "Bold" ? "selected" : ""}>Bold (700)</option>
+            <option value="ExtraBold" ${style.fontWeight === "ExtraBold" ? "selected" : ""}>ExtraBold (800)</option>
+            <option value="Black" ${style.fontWeight === "Black" ? "selected" : ""}>Black (900)</option>
+          </select>
+        </td>`;
+      }
+      
+      if (activeRules.lineHeight) {
+        row += `<td><input type="text" value="${escapeHtml(style.lineHeight)}" data-field="lineHeight" placeholder="120% or auto"></td>`;
+      }
+      
+      if (activeRules.letterSpacing) {
+        row += `<td><input type="text" value="${escapeHtml(style.letterSpacing || "0")}" data-field="letterSpacing" placeholder="0 or 0.5px"></td>`;
+      }
+      
+      if (activeRules.wordSpacing) {
+        row += `<td><input type="text" value="${escapeHtml(style.wordSpacing || "0")}" data-field="wordSpacing" placeholder="0"></td>`;
+      }
+      
+      row += `<td class="typography-table-actions">
+          <button class="btn-table-action delete" onclick="deleteTypographyStyle(${style.id})" title="Delete">🗑</button>
+        </td>
+      </tr>`;
+      
+      return row;
+    }).join("");
+
+    // Add change listeners to auto-save
+    tbody.querySelectorAll("input, select").forEach(input => {
+      input.addEventListener("change", (e) => {
+        const row = e.target.closest("tr");
+        const id = parseInt(row.dataset.id);
+        const field = e.target.dataset.field;
+        const value = e.target.value;
+        
+        updateTypographyStyle(id, field, value);
+      });
+    });
+  }
+
+  // Add Typography Style
+  window.addTypographyStyle = function() {
+    const newStyle = {
+      id: nextTypoStyleId++,
+      name: "New Style",
+      fontFamily: "Inter",
+      fontSize: 16,
+      fontWeight: "Regular",
+      lineHeight: "150%",
+      letterSpacing: "0",
+      wordSpacing: "0"
+    };
+    typographyStyles.push(newStyle);
+    renderTypographyTable();
+    saveInputValues();
+  };
+
+  // Update Typography Style
+  function updateTypographyStyle(id, field, value) {
+    const style = typographyStyles.find(s => s.id === id);
+    if (style) {
+      if (field === "fontSize") {
+        style[field] = parseInt(value) || 16;
+      } else {
+        style[field] = value;
+      }
+      saveInputValues();
+    }
+  }
+
+  // Delete Typography Style
+  window.deleteTypographyStyle = function(id) {
+    if (!confirm("Delete this typography style?")) return;
+    typographyStyles = typographyStyles.filter(s => s.id !== id);
+    renderTypographyTable();
+    saveInputValues();
+  };
+
+  // Add button handler
+  const btnAddTypoStyle = document.getElementById("btn-add-typo-style");
+  if (btnAddTypoStyle) {
+    btnAddTypoStyle.onclick = () => addTypographyStyle();
+  }
+
+  // Initial render
+  renderTypographyTable();
+
+  // Add event listeners to rule checkboxes to re-render table
+  const ruleCheckboxes = [
+    "rule-font-family",
+    "rule-font-size", 
+    "rule-font-weight",
+    "rule-line-height",
+    "rule-letter-spacing",
+    "rule-word-spacing"
+  ];
+
+  ruleCheckboxes.forEach(id => {
+    const checkbox = document.getElementById(id);
+    if (checkbox) {
+      checkbox.addEventListener("change", () => {
+        renderTypographyTable();
+        saveInputValues();
+      });
+    }
+  });
+
+  // Add event listener for color-scale input to render color preview
+  const colorScaleInputEl = document.getElementById("color-scale");
+  if (colorScaleInputEl) {
+    colorScaleInputEl.addEventListener("input", () => {
+      renderColorPreview();
+    });
+    // Render initial preview
+    renderColorPreview();
+  }
 
         // Export functions
         function generateHTMLReport() {
@@ -3171,6 +4484,7 @@ console.log("ui.js loaded");
       setupFilterHandlers();
       loadLastScanMode(); // Load last scan mode
       restoreLastReport(); // Restore last report if available
+      restoreInputValues(); // Restore input values
       requestScanHistory(); // Fetch persisted history
     });
   } else {
@@ -3178,11 +4492,89 @@ console.log("ui.js loaded");
     setupFilterHandlers();
     loadLastScanMode(); // Load last scan mode
     restoreLastReport(); // Restore last report if available
+    restoreInputValues(); // Restore input values
     requestScanHistory(); // Fetch persisted history
   }
 
   // History panel handlers
   if (btnHistory) {
+    // Cancel Scan button
+    btnCancelScan.onclick = () => {
+      console.log("Cancel operation clicked");
+      parent.postMessage({ pluginMessage: { type: "cancel-scan" } }, "*");
+      // Reset UI state immediately (show both buttons, hide cancel/progress)
+      btnScan.style.display = "block";
+      btnScan.disabled = false;
+      btnExtractTokens.style.display = "block";
+      btnExtractTokens.disabled = false;
+      btnCancelScan.style.display = "none";
+      scanProgress.style.display = "none";
+    };
+
+    // Reset All button
+    btnResetAll.onclick = () => {
+      if (confirm("⚠️ Are you sure you want to reset all settings to default and clear history?\n\nThis will:\n• Reset all input values to default\n• Clear scan history\n• Clear current reports\n\nThis action cannot be undone.")) {
+        // Reset all inputs to default
+        document.getElementById("spacing-scale").value = "0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96";
+        document.getElementById("spacing-threshold").value = "100";
+        document.getElementById("color-scale").value = "";
+        document.getElementById("font-size-scale").value = "32, 24, 20, 18, 16, 14, 12";
+        document.getElementById("font-size-threshold").value = "100";
+        document.getElementById("line-height-scale").value = "auto, 100, 110, 120, 130, 140, 150, 160, 170";
+        document.getElementById("line-height-threshold").value = "300";
+        document.getElementById("line-height-baseline-threshold").value = "120";
+        
+        // Reset typography styles to default
+        typographyStyles = [
+          { id: 1, name: "H1", fontFamily: "Inter", fontSize: 48, fontWeight: "Bold", lineHeight: "120%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 2, name: "H2", fontFamily: "Inter", fontSize: 36, fontWeight: "Bold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 3, name: "H3", fontFamily: "Inter", fontSize: 30, fontWeight: "Semi Bold", lineHeight: "130%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 4, name: "H4", fontFamily: "Inter", fontSize: 24, fontWeight: "Semi Bold", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 5, name: "H5", fontFamily: "Inter", fontSize: 20, fontWeight: "Semi Bold", lineHeight: "140%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 6, name: "H6", fontFamily: "Inter", fontSize: 16, fontWeight: "Semi Bold", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" },
+          { id: 7, name: "Body", fontFamily: "Inter", fontSize: 14, fontWeight: "Regular", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" }
+        ];
+        nextTypoStyleId = 8;
+        renderTypographyTable();
+        
+        // Reset typography rules
+        document.getElementById("rule-typo-style").checked = true;
+        document.getElementById("rule-font-family").checked = true;
+        document.getElementById("rule-font-size").checked = true;
+        document.getElementById("rule-font-weight").checked = true;
+        document.getElementById("rule-line-height").checked = true;
+        document.getElementById("rule-letter-spacing").checked = false;
+        document.getElementById("rule-word-spacing").checked = false;
+        renderTypographyTable();
+        
+        // Render color preview after reset
+        renderColorPreview();
+        
+        // Clear reports
+        currentReportData = {
+          issues: null,
+          tokens: null,
+          scanMode: null,
+          timestamp: null,
+          context: null,
+          lastActiveTab: "issues"
+        };
+        clearResults("issues");
+        clearResults("tokens");
+        switchToTab("issues");
+        
+        // Clear history
+        scanHistoryMemory = [];
+        parent.postMessage({ pluginMessage: { type: "clear-history" } }, "*");
+        
+        // Save reset state
+        saveInputValues();
+        saveLastReport();
+        
+        alert("✅ All settings have been reset to default and history has been cleared!");
+      }
+    };
+
     btnHistory.onclick = () => {
       const historyPanel = document.getElementById("history-panel");
       if (historyPanel) {
@@ -3213,6 +4605,15 @@ console.log("ui.js loaded");
     console.log("Received message:", event.data);
     const msg = event.data.pluginMessage;
 
+    if (msg && msg.type === "scan-progress") {
+      // Update progress bar
+      if (scanProgressBar && scanProgressText) {
+        scanProgressBar.style.width = msg.progress + "%";
+        scanProgressText.textContent = msg.progress + "%" + " (" + msg.current + "/" + msg.total + ")";
+      }
+      return;
+    }
+
     if (msg && msg.type === "last-report") {
       if (msg.report) {
         applySavedReport(msg.report);
@@ -3236,10 +4637,25 @@ console.log("ui.js loaded");
       return;
     }
 
+    if (msg && msg.type === "input-values-data") {
+      if (msg.values) {
+        applyInputValues(msg.values);
+        console.log("Restored input values:", msg.values);
+      } else {
+        console.log("No saved input values to restore");
+      }
+      return;
+    }
+
     if (msg && msg.type === "report") {
+            // Reset UI state
+            btnScan.style.display = "block";
             btnScan.disabled = false;
+            btnCancelScan.style.display = "none";
+            scanProgress.style.display = "none";
             btnExtractTokens.disabled = false;
       const issues = msg.issues || [];
+            
             currentReportData.context = msg.context || null;
             renderResults(issues);
             
@@ -3248,13 +4664,22 @@ console.log("ui.js loaded");
             saveScanHistory(scope, "issues", { issues: issues }, msg.context || null);
           }
           if (msg && msg.type === "tokens-report") {
-            btnScan.disabled = false;
+            // Reset UI state
+            btnExtractTokens.style.display = "block";
             btnExtractTokens.disabled = false;
+            btnCancelScan.style.display = "none";
+            scanProgress.style.display = "none";
+            btnScan.disabled = false;
             if (msg.error) {
-              results.innerHTML = `<div class="error-message">Error: ${escapeHtml(msg.error)}</div>`;
+              resultsTokens.innerHTML = `<div class="error-message">Error: ${escapeHtml(msg.error)}</div>`;
+              switchToTab("tokens");
             } else {
               currentReportData.context = msg.context || null;
               renderTokens(msg.tokens);
+              btnFillSpacingScale.disabled = !(msg.tokens && Array.isArray(msg.tokens.spacing) && msg.tokens.spacing.length > 0);
+              btnFillColorScale.disabled = !(msg.tokens && Array.isArray(msg.tokens.colors) && msg.tokens.colors.length > 0);
+              btnFillFontSizeScale.disabled = !(msg.tokens && Array.isArray(msg.tokens.fontSize) && msg.tokens.fontSize.length > 0);
+              btnFillLineHeightScale.disabled = !(msg.tokens && Array.isArray(msg.tokens.lineHeight) && msg.tokens.lineHeight.length > 0);
               
               // Save to history after successful extract (with full data)
               const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
