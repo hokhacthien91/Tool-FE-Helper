@@ -224,6 +224,28 @@ body {
   margin-bottom: 12px;
 }
 
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -431,6 +453,280 @@ body {
 }
 
 .btn-select:active {
+  transform: scale(0.98);
+}
+
+.btn-fix {
+  padding: 6px 12px;
+  border: 1px solid #28a745;
+  background: #28a745;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: white;
+}
+
+.btn-fix:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
+.btn-fix:active {
+  transform: scale(0.98);
+}
+
+.btn-create-style {
+  padding: 6px 12px;
+  border: 1px solid #0071e3;
+  background: #0071e3;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: white;
+}
+
+.btn-create-style:hover {
+  background: #0051a2;
+  border-color: #0051a2;
+}
+
+.btn-create-style:active {
+  transform: scale(0.98);
+}
+
+.btn-suggest-apply {
+  padding: 6px 12px;
+  border: 1px solid #28a745;
+  background: #28a745;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: white;
+}
+
+.btn-suggest-apply:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
+.btn-suggest-apply:active {
+  transform: scale(0.98);
+}
+
+.btn-style-dropdown {
+  padding: 6px 12px;
+  border: 1px solid #0071e3;
+  background: white;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #0071e3;
+}
+
+.btn-style-dropdown:hover {
+  background: #f0f7ff;
+  border-color: #0051a2;
+  color: #0051a2;
+}
+
+.btn-style-dropdown:active {
+  transform: scale(0.98);
+}
+
+.style-dropdown-menu {
+  font-size: 12px;
+}
+
+.style-dropdown-item {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.style-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 400px;
+  padding: 0;
+  position: relative;
+  animation: slideInModal 0.3s ease-out;
+}
+
+@keyframes slideInModal {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  padding: 20px 20px 8px 20px;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+  padding-right: 30px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin: 4px 0 0 0;
+  padding-right: 30px;
+}
+
+.modal-body {
+  padding: 16px 20px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #0071e3;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.modal-input:focus {
+  border-color: #0051a2;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.modal-input::placeholder {
+  color: #999;
+}
+
+.modal-footer {
+  padding: 12px 20px 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
+}
+
+.modal-btn-cancel {
+  background: white;
+  border-color: #ddd;
+  color: #333;
+}
+
+.modal-btn-cancel:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.modal-btn-create {
+  background: #0071e3;
+  border-color: #0071e3;
+  color: white;
+}
+
+.modal-btn-create:hover {
+  background: #0051a2;
+  border-color: #0051a2;
+}
+
+.modal-btn:active {
+  transform: scale(0.98);
+}
+
+.btn-fix-all {
+  padding: 6px 12px;
+  border: 1px solid #28a745;
+  background: #28a745;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: white;
+  margin-left: auto;
+}
+
+.btn-fix-all:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
+.btn-fix-all:active {
   transform: scale(0.98);
 }
 
@@ -881,14 +1177,15 @@ body {
 /* Color Swatch Components */
 .color-swatch-container {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .color-swatch {
   position: relative;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 75px;
+  height: 30px;
   border: 1px solid #e5e5e7;
   cursor: default;
   flex-shrink: 0;
@@ -921,21 +1218,29 @@ body {
   transform: scale(1.1);
 }
 
-.color-swatch-tooltip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+.color-swatch-label {
+  text-align: center;
+  width: 100%;
+  max-width: 75px;
+  overflow: hidden;
+}
+
+.color-swatch-label-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: #1d1d1f;
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.color-swatch-label-hex {
+  font-size: 8px;
+  color: #86868b;
+  line-height: 1.2;
+  font-family: monospace;
   white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 1000;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-full-height {
@@ -1495,7 +1800,7 @@ body {
       <div class="controls-group controls-group-padding">
         <div class="flex-row">
           <div class="tooltip flex-1">
-            <label for="spacing-scale" class="control-label">Spacing Scale:</label>
+            <label for="spacing-scale" class="control-label">Spacing (Px):</label>
             <div class="tooltip">
               <input 
               type="text" 
@@ -1505,7 +1810,7 @@ body {
               class="control-input-mono"
               class="tooltip"
             >
-            <span class="tooltiptext" >Enter the spacing scale values separated by commas. Leave empty to skip spacing check.</span>
+            <span class="tooltiptext" >Enter the spacing guidelines values separated by commas. Leave empty to skip spacing check.</span>
             </div>
           
           </div>
@@ -1530,7 +1835,7 @@ body {
             <button id="btn-fill-spacing-scale" class="btn-add-scale tooltip btn-full-height" disabled>
               Use tokens
             </button>
-            <span class="tooltiptext left-style">Replace Spacing Scale input with all extracted spacing tokens (unique + sorted). Run “Extract Design Tokens” first.</span>
+            <span class="tooltiptext left-style">Replace Spacing Guidelines input with all extracted spacing tokens (unique + sorted). Run “Extract Design Tokens” first.</span>
           </div>
         </div>
        
@@ -1539,7 +1844,7 @@ body {
       <div class="controls-group controls-group-spacing">
         <div class="flex-row">
           <div class="flex-1">
-            <label for="color-scale" class="control-label">Color Scale:</label>
+            <label for="color-scale" class="control-label">Color:</label>
             <div class="tooltip">
               <input 
               type="text" 
@@ -1548,7 +1853,7 @@ body {
               value=""
               class="control-input-mono tooltip"
             >
-            <span class="tooltiptext">Enter the color scale values (hex format only, e.g., #000000) separated by commas. Leave empty to skip color check.</span>
+            <span class="tooltiptext">Enter the color values (hex format only, e.g., #000000) separated by commas. Leave empty to skip color check.</span>
             </div>
           
             <!-- Color Preview Swatches -->
@@ -1561,13 +1866,19 @@ body {
             <button id="btn-fill-color-scale" class="btn-add-scale tooltip btn-full-height" disabled>
               Use tokens
             </button>
-            <span class="tooltiptext left-style">Replace Color Scale input with all extracted color tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+            <span class="tooltiptext left-style">Replace Color input with all extracted color tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
           </div>
           <div class="tooltip flex-80">
             <button id="btn-extract-color-styles" class="btn-add-scale tooltip btn-full-height">
-              📥 Extract from Figma
+              📥 Extract Styles
             </button>
-            <span class="tooltiptext" style=" left: 15%;">Extract all Color Styles (Paint Styles) from Figma and fill into Color Scale input.</span>
+            <span class="tooltiptext">Extract all Color Styles (Paint Styles) from Figma and fill into Color input.</span>
+          </div>
+          <div class="tooltip flex-80">
+            <button id="btn-extract-color-variables" class="btn-add-scale tooltip btn-full-height">
+              📊 Extract Variables
+            </button>
+            <span class="tooltiptext">Extract all Color Variables from Figma and fill into Color input.</span>
           </div>
           </div>
       </div>
@@ -1575,7 +1886,7 @@ body {
       <div class="controls-group controls-group-spacing">
         <div class="flex-row-start">
           <div class="tooltip flex-1">
-            <label for="font-size-scale" class="control-label">Font Size Scale:</label>
+            <label for="font-size-scale" class="control-label">Font Size (Px):</label>
             <div class="tooltip">
               <input 
               type="text" 
@@ -1612,13 +1923,13 @@ body {
             <button id="btn-fill-font-size-scale" class="btn-add-scale tooltip btn-full-height" disabled>
               Use tokens
             </button>
-            <span class="tooltiptext left-style">Replace Font Size Scale input with all extracted font size tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+            <span class="tooltiptext left-style">Replace Font Size input with all extracted font size tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
           </div>
           <div class="tooltip flex-80">
             <button id="btn-fill-font-size-from-typo" class="btn-add-scale tooltip btn-full-height">
               Use Typography
             </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Font Size Scale input with all font sizes from Typography table (unique + sorted).</span>
+            <span class="tooltiptext">Replace Font Size input with all font sizes from Typography table (unique + sorted).</span>
           </div>
         </div>
        
@@ -1627,7 +1938,7 @@ body {
       <div class="controls-group controls-group-padding">
         <div class="flex-row-start">
           <div class="tooltip flex-1">
-            <label for="line-height-scale" class="control-label">Line Height Scale (%):</label>
+            <label for="line-height-scale" class="control-label">Line Height (%):</label>
             <div class="tooltip">
               <input 
               type="text" 
@@ -1681,13 +1992,13 @@ body {
             <button id="btn-fill-line-height-scale" class="btn-add-scale tooltip btn-full-height" disabled>
               Use tokens
             </button>
-            <span class="tooltiptext left-style">Replace Line Height Scale input with all extracted line height tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
+            <span class="tooltiptext left-style">Replace Line Height input with all extracted line height tokens (unique + sorted). Run "Extract Design Tokens" first.</span>
           </div>
           <div class="tooltip flex-80">
             <button id="btn-fill-line-height-from-typo" class="btn-add-scale tooltip btn-full-height">
               Use Typography
             </button>
-            <span class="tooltiptext" style=" left: 15%;">Replace Line Height Scale input with all line heights from Typography table (unique + sorted).</span>
+            <span class="tooltiptext">Replace Line Height input with all line heights from Typography table (unique + sorted).</span>
           </div>
         </div>
        
@@ -1919,6 +2230,9 @@ console.log("ui.js loaded");
   }
 
         // Store current report data
+        // Color name mapping (hex -> name) for tooltips
+        let colorNameMap = {};
+        
         let currentReportData = {
           issues: null,
           tokens: null,
@@ -1955,6 +2269,7 @@ console.log("ui.js loaded");
             spacingScale: document.getElementById("spacing-scale")?.value || "",
             spacingThreshold: document.getElementById("spacing-threshold")?.value || "100",
             colorScale: document.getElementById("color-scale")?.value || "",
+            colorNameMap: colorNameMap, // Save color name mapping
             fontSizeScale: document.getElementById("font-size-scale")?.value || "",
             fontSizeThreshold: document.getElementById("font-size-threshold")?.value || "100",
             lineHeightScale: document.getElementById("line-height-scale")?.value || "",
@@ -1992,9 +2307,17 @@ console.log("ui.js loaded");
 
           if (spacingScaleInput && values.spacingScale !== undefined) spacingScaleInput.value = values.spacingScale;
           if (spacingThresholdInput && values.spacingThreshold !== undefined) spacingThresholdInput.value = values.spacingThreshold;
+          
+          // Restore color name map before rendering color preview
+          if (values.colorNameMap && typeof values.colorNameMap === "object") {
+            colorNameMap = values.colorNameMap;
+          } else {
+            colorNameMap = {};
+          }
+          
           if (colorScaleInput && values.colorScale !== undefined) {
             colorScaleInput.value = values.colorScale;
-            // Render color preview after loading saved colors
+            // Render color preview after loading saved colors and name map
             if (typeof renderColorPreview === "function") renderColorPreview();
           }
           if (fontSizeScaleInput && values.fontSizeScale !== undefined) fontSizeScaleInput.value = values.fontSizeScale;
@@ -2164,7 +2487,7 @@ console.log("ui.js loaded");
             naming: "Naming Layer",
             autolayout: "Auto Layout",
             spacing: "Spacing",
-            color: "Color Scale",
+            color: "Color",
             typography: "Font Size",
             "typography-style": "Text Style (variable)",
             "typography-check": "Typography Style Match",
@@ -2219,6 +2542,7 @@ console.log("ui.js loaded");
       detailsHtml += '</div>';
     }
     
+    el.setAttribute("data-issue-id", issue.id);
     el.innerHTML = `
       <div class="issue-header">
               <div>
@@ -2229,6 +2553,7 @@ console.log("ui.js loaded");
               </div>
               <div class="issue-actions">
                 <button class="btn-select" data-id="${issue.id}">Select</button>
+                ${(issue.bestMatch && issue.type === "typography-check") ? `<button class="btn-fix" data-id="${issue.id}">Fix now</button>` : ""}
               </div>
       </div>
     `;
@@ -2239,14 +2564,1294 @@ console.log("ui.js loaded");
       };
     }
     
+    const btnFix = el.querySelector("button.btn-fix");
+    if (btnFix) {
+      btnFix.onclick = () => {
+        handleFixIssue(issue);
+      };
+    }
+    
     return el;
   }
 
   function escapeHtml(s) {
-    if (!s) return "";
-    return s.replace(/[&<>"']/g, function (m) {
+    if (s === null || s === undefined) return "";
+    // Convert to string if not already
+    const str = String(s);
+    return str.replace(/[&<>"']/g, function (m) {
       return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m];
     });
+  }
+
+  // Show fix message under issue item
+  function showFixMessage(issueId, message, isSuccess) {
+    const issueEl = document.querySelector(`.issue[data-issue-id="${issueId}"]`);
+    if (!issueEl) {
+      // Try to find by button data-id
+      const btn = document.querySelector(`button.btn-fix[data-id="${issueId}"]`);
+      if (btn) {
+        issueEl = btn.closest(".issue");
+      }
+    }
+    
+    if (!issueEl) return;
+    
+    // Remove existing message if any
+    const existingMsg = issueEl.querySelector(".fix-message");
+    if (existingMsg) existingMsg.remove();
+    
+    // Create message element
+    const msgEl = document.createElement("div");
+    msgEl.className = "fix-message";
+    msgEl.style.cssText = `
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      background: ${isSuccess ? "#d4edda" : "#f8d7da"};
+      color: ${isSuccess ? "#155724" : "#721c24"};
+      border: 1px solid ${isSuccess ? "#c3e6cb" : "#f5c6cb"};
+      animation: slideIn 0.3s ease-out;
+    `;
+    msgEl.textContent = message;
+    
+    // Insert after issue-header
+    const issueHeader = issueEl.querySelector(".issue-header");
+    if (issueHeader) {
+      issueHeader.parentNode.insertBefore(msgEl, issueHeader.nextSibling);
+    } else {
+      issueEl.appendChild(msgEl);
+    }
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      msgEl.style.animation = "slideOut 0.3s ease-out";
+      setTimeout(() => {
+        if (msgEl.parentNode) {
+          msgEl.remove();
+        }
+      }, 300);
+    }, 5000);
+  }
+
+  // Show typography fix confirmation modal
+  function showTypographyFixModal(issue) {
+    if (!issue || !issue.bestMatch) {
+      console.error("showTypographyFixModal: missing issue or bestMatch");
+      return;
+    }
+    
+    const currentNode = issue.nodeProps || {};
+    const bestMatch = issue.bestMatch;
+    
+    // Get current values
+    const currentFamily = currentNode.fontFamily || "";
+    const currentSize = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? currentNode.fontSize : "";
+    const currentWeight = currentNode.fontWeight || "";
+    const currentLineHeight = currentNode.lineHeight || "";
+    const currentLetterSpacing = currentNode.letterSpacing !== null && currentNode.letterSpacing !== undefined ? currentNode.letterSpacing : "";
+    
+    // Get suggested values from bestMatch differences
+    let suggestedFamily = currentFamily;
+    let suggestedSize = currentSize;
+    let suggestedWeight = currentWeight;
+    let suggestedLineHeight = currentLineHeight;
+    let suggestedLetterSpacing = currentLetterSpacing;
+    
+    if (bestMatch.differences) {
+      bestMatch.differences.forEach(diff => {
+        if (diff.property === "Font Family" && diff.expected) {
+          suggestedFamily = diff.expected;
+        } else if (diff.property === "Font Size" && diff.expected) {
+          suggestedSize = diff.expected.replace("px", "");
+        } else if (diff.property === "Font Weight" && diff.expected) {
+          suggestedWeight = diff.expected;
+        } else if (diff.property === "Line Height" && diff.expected) {
+          suggestedLineHeight = diff.expected;
+        } else if (diff.property === "Letter Spacing" && diff.expected) {
+          suggestedLetterSpacing = diff.expected;
+        }
+      });
+    }
+    
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "typography-fix-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "500px";
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Fix Typography Style</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")} → Suggested: ${escapeHtml(bestMatch.name)}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">
+            Edit values below and click Apply to fix:
+          </div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #333; margin-bottom: 4px;">Font Family</label>
+            <input type="text" class="modal-input" id="fix-font-family" value="${escapeHtml(suggestedFamily)}" style="width: 100%;" />
+          </div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #333; margin-bottom: 4px;">Font Size (px)</label>
+            <input type="number" class="modal-input" id="fix-font-size" value="${escapeHtml(suggestedSize)}" style="width: 100%;" />
+          </div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #333; margin-bottom: 4px;">Font Weight</label>
+            <select class="modal-input" id="fix-font-weight" style="width: 100%;">
+              <option value="Regular" ${suggestedWeight === "Regular" ? "selected" : ""}>Regular</option>
+              <option value="Medium" ${suggestedWeight === "Medium" ? "selected" : ""}>Medium</option>
+              <option value="SemiBold" ${suggestedWeight === "SemiBold" || suggestedWeight === "Semi Bold" ? "selected" : ""}>SemiBold</option>
+              <option value="Bold" ${suggestedWeight === "Bold" ? "selected" : ""}>Bold</option>
+            </select>
+          </div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #333; margin-bottom: 4px;">Line Height (% or px or auto)</label>
+            <input type="text" class="modal-input" id="fix-line-height" value="${escapeHtml(suggestedLineHeight)}" style="width: 100%;" placeholder="e.g. 120%, 24px, auto" />
+          </div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #333; margin-bottom: 4px;">Letter Spacing (px or %)</label>
+            <input type="text" class="modal-input" id="fix-letter-spacing" value="${escapeHtml(suggestedLetterSpacing)}" style="width: 100%;" placeholder="e.g. 0, 0.5px, 1%" />
+          </div>
+          
+          <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
+            <button class="modal-btn modal-btn-cancel" id="choose-typo-style-btn" style="width: 100%; margin-bottom: 8px; background: #0071e3; border-color: #0071e3; color: white;">
+              Choose Typography Style
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="typography-fix-modal-cancel-btn">Cancel</button>
+        <button class="modal-btn modal-btn-create" id="typography-fix-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const fontFamilyInput = dialog.querySelector("#fix-font-family");
+    const fontSizeInput = dialog.querySelector("#fix-font-size");
+    const fontWeightSelect = dialog.querySelector("#fix-font-weight");
+    const lineHeightInput = dialog.querySelector("#fix-line-height");
+    const letterSpacingInput = dialog.querySelector("#fix-letter-spacing");
+    const chooseStyleBtn = dialog.querySelector("#choose-typo-style-btn");
+    const cancelBtn = dialog.querySelector("#typography-fix-modal-cancel-btn");
+    const applyBtn = dialog.querySelector("#typography-fix-modal-apply-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    
+    // Focus first input
+    setTimeout(() => {
+      fontFamilyInput.focus();
+    }, 100);
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Choose Typography Style button
+    chooseStyleBtn.onclick = () => {
+      // Show dropdown for typography styles
+      showTypographyStylePicker((selectedStyle) => {
+        // Fill inputs with selected style values
+        if (selectedStyle) {
+          fontFamilyInput.value = selectedStyle.fontFamily || "";
+          fontSizeInput.value = selectedStyle.fontSize || "";
+          fontWeightSelect.value = selectedStyle.fontWeight || "Regular";
+          lineHeightInput.value = selectedStyle.lineHeight || "";
+          letterSpacingInput.value = selectedStyle.letterSpacing || "0";
+        }
+      });
+    };
+    
+    // Apply button
+    applyBtn.onclick = () => {
+      // Collect values
+      const fixData = {
+        fontFamily: fontFamilyInput.value.trim(),
+        fontSize: fontSizeInput.value.trim(),
+        fontWeight: fontWeightSelect.value,
+        lineHeight: lineHeightInput.value.trim(),
+        letterSpacing: letterSpacingInput.value.trim()
+      };
+      
+      // Validate
+      if (!fixData.fontFamily) {
+        fontFamilyInput.focus();
+        fontFamilyInput.style.borderColor = "#ff3b30";
+        setTimeout(() => {
+          fontFamilyInput.style.borderColor = "#0071e3";
+        }, 2000);
+        return;
+      }
+      
+      if (!fixData.fontSize || isNaN(parseFloat(fixData.fontSize))) {
+        fontSizeInput.focus();
+        fontSizeInput.style.borderColor = "#ff3b30";
+        setTimeout(() => {
+          fontSizeInput.style.borderColor = "#0071e3";
+        }, 2000);
+        return;
+      }
+      
+      closeModal();
+      
+      // Show loading message
+      showFixMessage(issue.id, "⏳ Fixing...", true);
+      
+      // Send fix request with custom values
+      parent.postMessage({
+        pluginMessage: {
+          type: "fix-issue",
+          issue: issue,
+          fixData: fixData
+        }
+      }, "*");
+    };
+  }
+
+  // Show typography style picker dropdown
+  function showTypographyStylePicker(onSelect) {
+    if (!typographyStyles || typographyStyles.length === 0) {
+      alert("No typography styles available. Please add styles in Typography Settings.");
+      return;
+    }
+    
+    // Create dropdown overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.style.zIndex = "10001";
+    
+    const dropdown = document.createElement("div");
+    dropdown.className = "modal-dialog";
+    dropdown.style.maxWidth = "300px";
+    dropdown.style.padding = "0";
+    
+    dropdown.innerHTML = `
+      <div class="modal-header" style="padding: 16px;">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title" style="font-size: 14px;">Choose Typography Style</h2>
+      </div>
+      <div style="max-height: 300px; overflow-y: auto;">
+        ${typographyStyles.map(style => {
+          const name = escapeHtml(style.name || "");
+          const fontFamily = escapeHtml(style.fontFamily || "");
+          const fontSize = escapeHtml(style.fontSize || "");
+          const fontWeight = escapeHtml(style.fontWeight || "");
+          return `
+          <div class="style-dropdown-item" data-style-id="${style.id}" style="padding: 12px 16px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f0f0f0;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">
+            <div style="font-weight: 600; color: #333;">${name}</div>
+            <div style="font-size: 11px; color: #666; margin-top: 4px;">
+              ${fontFamily} ${fontSize}px ${fontWeight}
+            </div>
+          </div>
+        `;
+        }).join('')}
+      </div>
+    `;
+    
+    overlay.appendChild(dropdown);
+    document.body.appendChild(overlay);
+    
+    // Close function
+    const closeDropdown = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Close button
+    dropdown.querySelector(".modal-close").onclick = closeDropdown;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeDropdown();
+      }
+    };
+    
+    // Item clicks
+    dropdown.querySelectorAll(".style-dropdown-item").forEach(item => {
+      item.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const styleId = parseInt(item.getAttribute("data-style-id"));
+        const style = typographyStyles.find(s => s.id === styleId);
+        if (style && onSelect) {
+          onSelect(style);
+          closeDropdown();
+        }
+      };
+    });
+  }
+
+  // Handle fix spacing issue
+  function handleFixSpacingIssue(issue) {
+    // Extract property name and current value from message
+    const message = issue.message || "";
+    // Match: "Padding paddingLeft (64px)" or "Padding paddingRight (32px)" etc.
+    const match = message.match(/Padding\s+(\w+)\s+\((\d+)px\)/);
+    if (!match) {
+      alert("Cannot determine spacing property from issue message");
+      return;
+    }
+    
+    const propertyName = match[1]; // paddingLeft, paddingRight, paddingTop, paddingBottom
+    const currentValue = parseInt(match[2]); // 64
+    
+    // Get spacing scale from input
+    const spacingScaleInput = document.getElementById("spacing-scale");
+    if (!spacingScaleInput || !spacingScaleInput.value.trim()) {
+      alert("No spacing scale defined. Please add spacing values to the Spacing input.");
+      return;
+    }
+    
+    // Parse spacing values from input
+    const spacingValues = spacingScaleInput.value.split(",")
+      .map(v => parseInt(v.trim(), 10))
+      .filter(v => !isNaN(v) && v >= 0)
+      .sort((a, b) => a - b); // Sort ascending
+    
+    if (spacingValues.length === 0) {
+      alert("No valid spacing values found in Spacing input.");
+      return;
+    }
+    
+    // Show spacing picker modal
+    showSpacingPickerModal(issue, propertyName, currentValue, spacingValues);
+  }
+
+  // Show spacing picker modal
+  function showSpacingPickerModal(issue, propertyName, currentValue, availableValues) {
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "spacing-picker-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "400px";
+    
+    // Build spacing list HTML
+    const spacingListHtml = availableValues.map(value => {
+      return `
+        <div class="spacing-picker-item" data-value="${value}" style="
+          padding: 12px;
+          margin-bottom: 8px;
+          border: 2px solid ${currentValue === value ? '#0071e3' : '#ddd'};
+          border-radius: 8px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: white;
+          transition: all 0.2s;
+        " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='${currentValue === value ? '#0071e3' : '#ddd'}'; this.style.boxShadow='none'">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="
+              width: 40px;
+              height: 40px;
+              border-radius: 4px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 12px;
+              font-weight: 600;
+              color: #666;
+            ">${value}px</div>
+            <div style="font-weight: 600; font-size: 14px; color: #333;">
+              ${value}px
+            </div>
+          </div>
+          ${currentValue === value ? '<div style="color: #0071e3; font-weight: 600;">Current</div>' : ''}
+        </div>
+      `;
+    }).join('');
+    
+    // Format property name for display
+    const propertyDisplayName = propertyName
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Choose Spacing Value</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")} - ${escapeHtml(propertyDisplayName)}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Value:</div>
+          <div style="font-size: 16px; font-weight: 600; color: #333;">${currentValue}px</div>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto;">
+          ${spacingListHtml}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="spacing-picker-modal-cancel-btn">Cancel</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const cancelBtn = dialog.querySelector("#spacing-picker-modal-cancel-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    const spacingItems = dialog.querySelectorAll(".spacing-picker-item");
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Spacing item clicks
+    spacingItems.forEach(item => {
+      item.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const selectedValue = parseInt(item.getAttribute("data-value"));
+        closeModal();
+        // Show confirm modal
+        showSpacingFixConfirmModal(issue, propertyName, currentValue, selectedValue);
+      };
+    });
+  }
+
+  // Show spacing fix confirm modal
+  function showSpacingFixConfirmModal(issue, propertyName, currentValue, selectedValue) {
+    // Format property name for display
+    const propertyDisplayName = propertyName
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+    
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "spacing-fix-confirm-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "400px";
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Confirm Spacing Change</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Change ${escapeHtml(propertyDisplayName)} from:</div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
+            <div style="
+              width: 60px;
+              height: 60px;
+              border-radius: 6px;
+              background: #f0f0f0;
+              border: 2px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 18px;
+              font-weight: 600;
+              color: #333;
+            ">${currentValue}px</div>
+            <div>
+              <div style="font-weight: 600; font-size: 16px; color: #333;">${currentValue}px</div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
+            <div style="
+              width: 60px;
+              height: 60px;
+              border-radius: 6px;
+              background: #e3f2fd;
+              border: 2px solid #0071e3;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 18px;
+              font-weight: 600;
+              color: #0071e3;
+            ">${selectedValue}px</div>
+            <div>
+              <div style="font-weight: 600; font-size: 16px; color: #333;">${selectedValue}px</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="spacing-fix-confirm-cancel-btn">Cancel</button>
+        <button class="modal-btn modal-btn-create" id="spacing-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const cancelBtn = dialog.querySelector("#spacing-fix-confirm-cancel-btn");
+    const applyBtn = dialog.querySelector("#spacing-fix-confirm-apply-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Apply button
+    applyBtn.onclick = () => {
+      closeModal();
+      
+      // Show loading message
+      showFixMessage(issue.id, "⏳ Fixing spacing...", true);
+      
+      // Send fix spacing request
+      parent.postMessage({
+        pluginMessage: {
+          type: "fix-spacing-issue",
+          issue: issue,
+          propertyName: propertyName,
+          value: selectedValue
+        }
+      }, "*");
+    };
+  }
+
+  // Handle fix color issue
+  function handleFixColorIssue(issue) {
+    // Extract current color from message
+    const message = issue.message || "";
+    const colorMatch = message.match(/Color (#[0-9A-Fa-f]{6})/);
+    const currentColor = colorMatch ? colorMatch[1].toUpperCase() : null;
+    
+    if (!currentColor) {
+      alert("Cannot determine current color from issue message");
+      return;
+    }
+    
+    // Get color scale from input
+    const colorScaleInput = document.getElementById("color-scale");
+    if (!colorScaleInput || !colorScaleInput.value.trim()) {
+      alert("No color scale defined. Please add colors to the Color input.");
+      return;
+    }
+    
+    // Parse colors from input
+    const colors = colorScaleInput.value.split(",")
+      .map(c => c.trim().toUpperCase())
+      .filter(c => c && c.startsWith("#"));
+    
+    if (colors.length === 0) {
+      alert("No valid colors found in Color input.");
+      return;
+    }
+    
+    // Show color picker modal
+    showColorPickerModal(issue, currentColor, colors);
+  }
+
+  // Show color picker modal
+  function showColorPickerModal(issue, currentColor, availableColors) {
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "color-picker-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "400px";
+    
+    // Build color list HTML
+    const colorListHtml = availableColors.map(color => {
+      const colorName = colorNameMap[color] || "";
+      const textColor = getContrastTextColor(color);
+      return `
+        <div class="color-picker-item" data-color="${escapeHtml(color)}" style="
+          padding: 12px;
+          margin-bottom: 8px;
+          border: 2px solid ${currentColor === color ? '#0071e3' : '#ddd'};
+          border-radius: 8px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: white;
+          transition: all 0.2s;
+        " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='${currentColor === color ? '#0071e3' : '#ddd'}'; this.style.boxShadow='none'">
+          <div style="
+            width: 48px;
+            height: 48px;
+            border-radius: 6px;
+            background: ${escapeHtml(color)};
+            border: 2px solid #ddd;
+            flex-shrink: 0;
+          "></div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px;">
+              ${escapeHtml(colorName || color)}
+            </div>
+            <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">
+              ${escapeHtml(color)}
+            </div>
+          </div>
+          ${currentColor === color ? '<div style="color: #0071e3; font-weight: 600;">Current</div>' : ''}
+        </div>
+      `;
+    }).join('');
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Choose Color</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Color:</div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
+            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
+          </div>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto;">
+          ${colorListHtml}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="color-picker-modal-cancel-btn">Cancel</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const cancelBtn = dialog.querySelector("#color-picker-modal-cancel-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    const colorItems = dialog.querySelectorAll(".color-picker-item");
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Color item clicks
+    colorItems.forEach(item => {
+      item.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const selectedColor = item.getAttribute("data-color");
+        closeModal();
+        // Show confirm modal
+        showColorFixConfirmModal(issue, currentColor, selectedColor);
+      };
+    });
+  }
+
+  // Show color fix confirm modal
+  function showColorFixConfirmModal(issue, currentColor, selectedColor) {
+    const colorName = colorNameMap[selectedColor] || selectedColor;
+    
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "color-fix-confirm-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "400px";
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Confirm Color Change</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Change color from:</div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
+            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd;"></div>
+            <div>
+              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
+            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
+            <div>
+              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
+              <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="color-fix-confirm-cancel-btn">Cancel</button>
+        <button class="modal-btn modal-btn-create" id="color-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const cancelBtn = dialog.querySelector("#color-fix-confirm-cancel-btn");
+    const applyBtn = dialog.querySelector("#color-fix-confirm-apply-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Apply button
+    applyBtn.onclick = () => {
+      closeModal();
+      
+      // Show loading message
+      showFixMessage(issue.id, "⏳ Fixing color...", true);
+      
+      // Send fix color request
+      parent.postMessage({
+        pluginMessage: {
+          type: "fix-color-issue",
+          issue: issue,
+          color: selectedColor
+        }
+      }, "*");
+    };
+  }
+
+  // Handle fix single issue
+  function handleFixIssue(issue) {
+    // For typography-check issues, show confirmation modal
+    if (issue.type === "typography-check" && issue.bestMatch) {
+      showTypographyFixModal(issue);
+      return;
+    }
+    
+    // Show loading message immediately
+    showFixMessage(issue.id, "⏳ Fixing...", true);
+    
+    if (!issue.bestMatch && issue.type !== "typography-check") {
+      // Show popup for manual fix
+      const userInput = prompt(`Cannot auto-fix this issue.\n\nIssue: ${issue.message}\n\nPlease provide fix instructions or press Cancel.`);
+      if (userInput) {
+        // Send manual fix request
+        parent.postMessage({ 
+          pluginMessage: { 
+            type: "fix-issue", 
+            issue: issue,
+            manualFix: userInput
+          } 
+        }, "*");
+      } else {
+        // Remove loading message if cancelled
+        const issueEl = document.querySelector(`.issue[data-issue-id="${issue.id}"]`) || 
+                       document.querySelector(`button.btn-fix[data-id="${issue.id}"]`)?.closest(".issue");
+        if (issueEl) {
+          const msg = issueEl.querySelector(".fix-message");
+          if (msg) msg.remove();
+        }
+      }
+      return;
+    }
+
+    // Auto-fix with bestMatch
+    parent.postMessage({ 
+      pluginMessage: { 
+        type: "fix-issue", 
+        issue: issue
+      } 
+    }, "*");
+  }
+
+  // Show create style modal
+  function showCreateStyleModal(issue, onConfirm) {
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "create-style-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    
+    // Get subtitle text
+    let subtitleText = issue.nodeName || "Unnamed";
+    if (issue.message && issue.message.includes("(") && issue.message.includes("nodes")) {
+      // Extract node count if available
+      const match = issue.message.match(/\((\d+) nodes\)/);
+      if (match) {
+        subtitleText = `${subtitleText} (${match[1]} nodes)`;
+      }
+    }
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Create Style</h2>
+        <p class="modal-subtitle">${escapeHtml(subtitleText)}</p>
+      </div>
+      <div class="modal-body">
+        <input 
+          type="text" 
+          class="modal-input" 
+          id="style-name-input" 
+          placeholder="Style Name" 
+          value="${escapeHtml(issue.nodeName || "New Style")}"
+          autofocus
+        />
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
+        <button class="modal-btn modal-btn-create" id="modal-create-btn">Create</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const input = dialog.querySelector("#style-name-input");
+    const cancelBtn = dialog.querySelector("#modal-cancel-btn");
+    const createBtn = dialog.querySelector("#modal-create-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    
+    // Focus input
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
+    
+    // Handle Enter key
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        createBtn.click();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancelBtn.click();
+      }
+    };
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Create button
+    createBtn.onclick = () => {
+      const styleName = input.value.trim();
+      if (!styleName) {
+        input.focus();
+        input.style.borderColor = "#ff3b30";
+        setTimeout(() => {
+          input.style.borderColor = "#0071e3";
+        }, 2000);
+        return;
+      }
+      
+      closeModal();
+      if (onConfirm) {
+        onConfirm(styleName);
+      }
+    };
+  }
+
+  // Show suggest apply modal
+  function showSuggestApplyModal(issue, styleName) {
+    if (!issue || !styleName) {
+      console.error("showSuggestApplyModal: missing issue or styleName");
+      return;
+    }
+    
+    // Find the style
+    const style = typographyStyles.find(s => s.name === styleName);
+    if (!style) {
+      alert(`Style "${styleName}" not found`);
+      return;
+    }
+    
+    // Get current node properties
+    const currentNode = issue.nodeProps || {};
+    const currentFamily = currentNode.fontFamily || "Unknown";
+    const currentSize = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? `${currentNode.fontSize}px` : "Unknown";
+    const currentWeight = currentNode.fontWeight || "Unknown";
+    const currentLineHeight = currentNode.lineHeight || "Unknown";
+    const currentLetterSpacing = currentNode.letterSpacing !== null && currentNode.letterSpacing !== undefined ? currentNode.letterSpacing : "Unknown";
+    
+    // Get suggested style properties
+    const suggestedFamily = style.fontFamily || "Unknown";
+    const suggestedSize = style.fontSize ? `${style.fontSize}px` : "Unknown";
+    const suggestedWeight = style.fontWeight || "Unknown";
+    const suggestedLineHeight = style.lineHeight || "Unknown";
+    const suggestedLetterSpacing = style.letterSpacing !== null && style.letterSpacing !== undefined ? style.letterSpacing : "Unknown";
+    
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "suggest-apply-modal-overlay";
+    
+    // Create modal dialog
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "500px";
+    
+    // Build comparison HTML
+    const comparisonHtml = `
+      <div style="margin-top: 16px; font-size: 13px;">
+        <div style="margin-bottom: 12px; font-weight: 600; color: #333;">Comparison:</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="border-bottom: 1px solid #ddd;">
+              <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Property</th>
+              <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Current</th>
+              <th style="text-align: left; padding: 8px; font-weight: 600; color: #28a745;">Suggested</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+              <td style="padding: 8px; color: #666;">Font Family</td>
+              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentFamily)}</code></td>
+              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedFamily)}</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+              <td style="padding: 8px; color: #666;">Font Size</td>
+              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentSize)}</code></td>
+              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedSize)}</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+              <td style="padding: 8px; color: #666;">Font Weight</td>
+              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentWeight)}</code></td>
+              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedWeight)}</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+              <td style="padding: 8px; color: #666;">Line Height</td>
+              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentLineHeight)}</code></td>
+              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedLineHeight)}</code></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; color: #666;">Letter Spacing</td>
+              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentLetterSpacing)}</code></td>
+              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedLetterSpacing)}</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+    
+    dialog.innerHTML = `
+      <div class="modal-header">
+        <button class="modal-close" aria-label="Close">×</button>
+        <h2 class="modal-title">Apply Suggested Style</h2>
+        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">
+            Suggested Style: <span style="color: #28a745;">${escapeHtml(styleName)}</span>
+          </div>
+          ${issue.bestMatch && issue.bestMatch.percentage ? `
+            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+              Match: <strong>${issue.bestMatch.percentage}%</strong>
+            </div>
+          ` : ''}
+        </div>
+        ${comparisonHtml}
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="suggest-modal-cancel-btn">Cancel</button>
+        <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply Style</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Get elements
+    const cancelBtn = dialog.querySelector("#suggest-modal-cancel-btn");
+    const applyBtn = dialog.querySelector("#suggest-modal-apply-btn");
+    const closeBtn = dialog.querySelector(".modal-close");
+    
+    // Close function
+    const closeModal = () => {
+      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.remove();
+        }
+      }, 200);
+    };
+    
+    // Cancel button
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick = closeModal;
+    
+    // Click overlay to close
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    };
+    
+    // Apply button
+    applyBtn.onclick = () => {
+      closeModal();
+      // Show loading message
+      showFixMessage(issue.id, "⏳ Applying style...", true);
+      
+      // Send apply style request
+      parent.postMessage({
+        pluginMessage: {
+          type: "apply-typography-style",
+          issue: issue,
+          style: style
+        }
+      }, "*");
+    };
+  }
+
+  // Handle apply Figma text style to node
+  function handleApplyFigmaTextStyle(issue, style) {
+    if (!issue || !style) {
+      console.error("handleApplyFigmaTextStyle: missing issue or style");
+      return;
+    }
+    
+    // Show loading message
+    showFixMessage(issue.id, "⏳ Applying style...", true);
+    
+    // Send apply Figma text style request
+    parent.postMessage({
+      pluginMessage: {
+        type: "apply-figma-text-style",
+        issue: issue,
+        styleId: style.id,
+        styleName: style.name
+      }
+    }, "*");
+  }
+
+  // Handle apply typography style to node (from typography table)
+  function handleApplyTypographyStyle(issue, styleName) {
+    if (!issue || !styleName) {
+      console.error("handleApplyTypographyStyle: missing issue or styleName");
+      return;
+    }
+    
+    // Show suggest modal first
+    showSuggestApplyModal(issue, styleName);
+  }
+
+  // Handle create text style for typography-style issue
+  function handleCreateTextStyle(issue) {
+    console.log("handleCreateTextStyle called", issue);
+    
+    if (!issue) {
+      console.error("handleCreateTextStyle: issue is null/undefined");
+      return;
+    }
+    
+    // Show custom modal
+    showCreateStyleModal(issue, (styleName) => {
+      console.log("handleCreateTextStyle: sending message", { type: "create-text-style", issueId: issue.id, styleName: styleName });
+      
+      // Show loading message
+      showFixMessage(issue.id, "⏳ Creating style...", true);
+      
+      // Send create style request
+      parent.postMessage({
+        pluginMessage: {
+          type: "create-text-style",
+          issue: issue,
+          styleName: styleName
+        }
+      }, "*");
+    });
+  }
+
+  // Handle fix all issues in a group
+  function handleFixAllIssues(type, issues) {
+    // Handle typography-style: create styles for all
+    if (type === "typography-style") {
+      // Create a fake issue object for the modal
+      const fakeIssue = {
+        nodeName: `${issues.length} text node(s)`,
+        message: `Found ${issues.length} text node(s) without text style`
+      };
+      
+      showCreateStyleModal(fakeIssue, (styleName) => {
+        // Show loading for all issues
+        issues.forEach(issue => {
+          showFixMessage(issue.id, "⏳ Creating style...", true);
+        });
+        
+        // Send create style for all request
+        parent.postMessage({
+          pluginMessage: {
+            type: "create-text-style-all",
+            issues: issues,
+            styleName: styleName
+          }
+        }, "*");
+      });
+      return;
+    }
+    
+    // Handle typography-check: fix with bestMatch
+    const fixableIssues = issues.filter(i => i.bestMatch && i.type === "typography-check");
+    const nonFixableIssues = issues.filter(i => !i.bestMatch || i.type !== "typography-check");
+
+    if (fixableIssues.length === 0) {
+      alert(`No auto-fixable issues found in ${getTypeDisplayName(type)}.\n\nAll ${issues.length} issues require manual intervention.`);
+      return;
+    }
+
+    if (nonFixableIssues.length > 0) {
+      const proceed = confirm(
+        `Found ${fixableIssues.length} auto-fixable issues and ${nonFixableIssues.length} issues that require manual fix.\n\n` +
+        `Do you want to auto-fix the ${fixableIssues.length} issues now?\n\n` +
+        `The ${nonFixableIssues.length} issues will need to be fixed manually.`
+      );
+      if (!proceed) return;
+    }
+
+    // Send fix all request
+    parent.postMessage({ 
+      pluginMessage: { 
+        type: "fix-all-issues", 
+        issues: fixableIssues,
+        issueType: type
+      } 
+    }, "*");
   }
 
   function getContrastTextColor(hexColor) {
@@ -2432,6 +4037,7 @@ console.log("ui.js loaded");
                 <h4>${getTypeIcon(type)} ${getTypeDisplayName(type)}</h4>
                 <span class="badge">${issueCount}</span>
               </div>
+              ${issueCount > 0 ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
             `;
             
             // Add click handler for collapse/expand
@@ -2513,6 +4119,7 @@ console.log("ui.js loaded");
               
               const issueEl = document.createElement("div");
               issueEl.className = `issue ${issue.severity}`;
+              issueEl.setAttribute("data-issue-id", issue.id);
               // Build issue body with additional info for contrast issues
               let issueBody = escapeHtml(issue.message);
               if (issue.type === "contrast") {
@@ -2558,16 +4165,150 @@ console.log("ui.js loaded");
                   </div>
                   <div class="issue-actions">
                     <button class="btn-select" data-id="${issue.id}">Select</button>
+                    ${issue.type === "color" ? `<button class="btn-fix" data-id="${issue.id}">Fix now</button>` : ""}
+                    ${issue.type === "spacing" ? `<button class="btn-fix" data-id="${issue.id}">Fix now</button>` : ""}
+                    ${issue.type === "typography-style" ? `
+                      ${issue.bestMatch ? `
+                        <div class="style-suggest-container" style="display: inline-flex; gap: 6px; align-items: center;">
+                          <button class="btn-suggest-apply" data-id="${issue.id}" data-style-name="${escapeHtml(issue.bestMatch.name)}">Suggest Apply</button>
+                          <div class="style-dropdown-wrapper" style="position: relative;">
+                            <button class="btn-style-dropdown" data-id="${issue.id}" data-issue-id="${issue.id}">Choose Style ▼</button>
+                            <div class="style-dropdown-menu" data-issue-id="${issue.id}" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; min-width: 150px; max-height: 200px; overflow-y: auto;">
+                              <div style="padding: 8px 12px; color: #999; font-size: 12px; text-align: center;">Loading...</div>
+                            </div>
+                          </div>
+                        </div>
+                      ` : `
+                        <div class="style-dropdown-wrapper" style="position: relative; display: inline-block;">
+                          <button class="btn-style-dropdown" data-id="${issue.id}" data-issue-id="${issue.id}">Choose Style ▼</button>
+                          <div class="style-dropdown-menu" data-issue-id="${issue.id}" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; min-width: 150px; max-height: 200px; overflow-y: auto;">
+                            <div style="padding: 8px 12px; color: #999; font-size: 12px; text-align: center;">Loading...</div>
+                          </div>
+                        </div>
+                      `}
+                      <button class="btn-create-style" data-id="${issue.id}" data-issue-type="${issue.type}">Create Style</button>
+                    ` : ""}
                   </div>
                 </div>
               `;
               groupContent.appendChild(issueEl);
+              
+              // Store issue data on element for later access
+              issueEl.setAttribute("data-issue-id", issue.id);
+              issueEl.setAttribute("data-issue-type", issue.type);
               
               const btn = issueEl.querySelector("button.btn-select");
               if (btn) {
                 btn.onclick = () => {
                   parent.postMessage({ pluginMessage: { type: "select-node", id: issue.id } }, "*");
                 };
+              }
+              
+              const btnFix = issueEl.querySelector("button.btn-fix");
+              if (btnFix) {
+                if (issue.type === "color") {
+                  btnFix.onclick = () => {
+                    handleFixColorIssue(issue);
+                  };
+                } else if (issue.type === "spacing") {
+                  btnFix.onclick = () => {
+                    handleFixSpacingIssue(issue);
+                  };
+                } else {
+                  btnFix.onclick = () => {
+                    handleFixIssue(issue);
+                  };
+                }
+              }
+              
+              // Handle Create Style button for typography-style issues
+              if (issue.type === "typography-style") {
+                const btnCreateStyle = issueEl.querySelector("button.btn-create-style");
+                if (btnCreateStyle) {
+                  console.log("Attaching create style handler to button", { issueId: issue.id, issueType: issue.type, nodeName: issue.nodeName });
+                  // Create a closure to capture the issue
+                  (function(issueData) {
+                    btnCreateStyle.onclick = (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log("Create Style button clicked", issueData);
+                      if (typeof handleCreateTextStyle === "function") {
+                        handleCreateTextStyle(issueData);
+                      } else {
+                        console.error("handleCreateTextStyle is not a function");
+                        alert("Error: handleCreateTextStyle function not found");
+                      }
+                    };
+                  })(issue);
+                } else {
+                  console.error("Create Style button not found in DOM", { 
+                    issueId: issue.id, 
+                    issueType: issue.type, 
+                    hasIssueEl: !!issueEl,
+                    innerHTML: issueEl.innerHTML.substring(0, 200)
+                  });
+                }
+                
+                // Handle Suggest Apply button
+                const btnSuggestApply = issueEl.querySelector("button.btn-suggest-apply");
+                if (btnSuggestApply && issue.bestMatch) {
+                  (function(issueData) {
+                    btnSuggestApply.onclick = (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const styleName = btnSuggestApply.getAttribute("data-style-name");
+                      handleApplyTypographyStyle(issueData, styleName);
+                    };
+                  })(issue);
+                }
+                
+                // Handle Style Dropdown
+                const btnStyleDropdown = issueEl.querySelector("button.btn-style-dropdown");
+                const dropdownMenu = issueEl.querySelector(".style-dropdown-menu");
+                if (btnStyleDropdown && dropdownMenu) {
+                  let stylesLoaded = false;
+                  
+                  // Toggle dropdown
+                  btnStyleDropdown.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isVisible = dropdownMenu.style.display !== "none";
+                    
+                    // Close all other dropdowns
+                    document.querySelectorAll(".style-dropdown-menu").forEach(menu => {
+                      if (menu !== dropdownMenu) {
+                        menu.style.display = "none";
+                      }
+                    });
+                    
+                    if (!isVisible) {
+                      // Open dropdown
+                      dropdownMenu.style.display = "block";
+                      
+                      // Load styles if not loaded yet
+                      if (!stylesLoaded) {
+                        dropdownMenu.innerHTML = '<div style="padding: 8px 12px; color: #999; font-size: 12px; text-align: center;">Loading...</div>';
+                        
+                        // Request text styles from Figma
+                        parent.postMessage({
+                          pluginMessage: {
+                            type: "get-figma-text-styles",
+                            issueId: issue.id
+                          }
+                        }, "*");
+                      }
+                    } else {
+                      dropdownMenu.style.display = "none";
+                    }
+                  };
+                  
+                  // Close dropdown when clicking outside
+                  document.addEventListener("click", function closeDropdown(e) {
+                    if (!issueEl.contains(e.target)) {
+                      dropdownMenu.style.display = "none";
+                    }
+                  });
+                }
               }
               });
             }
@@ -3074,23 +4815,23 @@ console.log("ui.js loaded");
       const lineHeightThreshold = lineHeightThresholdInput ? parseInt(lineHeightThresholdInput.value, 10) : 300;
       const lineHeightBaselineThreshold = lineHeightBaselineThresholdInput ? parseInt(lineHeightBaselineThresholdInput.value, 10) : 120;
       
-      // Validate spacing scale format if not empty
+      // Validate spacing guidelines format if not empty
       if (spacingScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(spacingScaleValue)) {
-          showValidationError("Spacing scale format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)");
+          showValidationError("Spacing guidelines format is incorrect. Please enter the numbers separated by commas (e.g. 4, 8, 12, 16)");
           return;
         }
       }
       
-      // Validate color scale format if not empty (allow hex only)
+      // Validate color format if not empty (allow hex only)
       if (colorScaleValue) {
         // Split by comma and validate each color
         const colors = colorScaleValue.split(",").map(c => c.trim()).filter(c => c);
         const colorRegex = /^#[0-9a-fA-F]{3,8}$/;
         const invalidColors = colors.filter(c => !colorRegex.test(c));
         if (invalidColors.length > 0) {
-          showValidationError(`Color scale format is incorrect. Invalid colors: ${invalidColors.join(", ")}. Please use hex format only (e.g., #000000, #FFFFFF).`);
+          showValidationError(`Color format is incorrect. Invalid colors: ${invalidColors.join(", ")}. Please use hex format only (e.g., #000000, #FFFFFF).`);
           return;
         }
       }
@@ -3239,7 +4980,7 @@ console.log("ui.js loaded");
     try {
       replaceSpacingScaleWithTokens(currentReportData.tokens);
     } catch (e) {
-      console.error("Failed to fill spacing scale from tokens", e);
+      console.error("Failed to fill spacing guidelines from tokens", e);
     }
   };
 
@@ -3294,7 +5035,7 @@ console.log("ui.js loaded");
         // ignore
       }
     } catch (e) {
-      console.error("Failed to fill color scale from tokens", e);
+      console.error("Failed to fill color from tokens", e);
     }
   };
 
@@ -3303,6 +5044,14 @@ console.log("ui.js loaded");
     // Request color styles from Figma
     parent.postMessage({ pluginMessage: { type: "extract-color-styles" } }, "*");
   };
+
+  const btnExtractColorVariables = document.getElementById("btn-extract-color-variables");
+  if (btnExtractColorVariables) {
+    btnExtractColorVariables.onclick = () => {
+      // Request color variables from Figma
+      parent.postMessage({ pluginMessage: { type: "extract-color-variables" } }, "*");
+    };
+  }
 
   btnFillFontSizeScale.onclick = () => {
     try {
@@ -3329,7 +5078,7 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     } catch (e) {
-      console.error("Failed to fill font size scale from tokens", e);
+      console.error("Failed to fill font size from tokens", e);
     }
   };
 
@@ -3373,11 +5122,11 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     } catch (e) {
-      console.error("Failed to fill line height scale from tokens", e);
+      console.error("Failed to fill line height from tokens", e);
     }
   };
 
-  // Use Typography for Font Size Scale
+  // Use Typography for Font Size
   btnFillFontSizeFromTypo.onclick = () => {
     try {
       if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
@@ -3409,13 +5158,13 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       
-      console.log("Filled font size scale from typography:", uniqueSorted);
+      console.log("Filled font size from typography:", uniqueSorted);
     } catch (e) {
-      console.error("Failed to fill font size scale from typography", e);
+      console.error("Failed to fill font size from typography", e);
     }
   };
 
-  // Use Typography for Line Height Scale
+  // Use Typography for Line Height
   btnFillLineHeightFromTypo.onclick = () => {
     try {
       if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
@@ -3460,9 +5209,9 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       
-      console.log("Filled line height scale from typography:", finalValues);
+      console.log("Filled line height from typography:", finalValues);
     } catch (e) {
-      console.error("Failed to fill line height scale from typography", e);
+      console.error("Failed to fill line height from typography", e);
     }
   };
 
@@ -3532,22 +5281,26 @@ console.log("ui.js loaded");
         if (typeof saveInputValues === "function") saveInputValues();
       };
       
-      // Add tooltip with color value (only show on swatch hover, not close button)
-      const tooltip = document.createElement("div");
-      tooltip.textContent = color;
-      tooltip.className = "color-swatch-tooltip";
+      // Add label below swatch with color name and value (always visible)
+      const colorHex = color.toUpperCase();
+      const colorName = colorNameMap[colorHex];
       
-      swatch.onmouseenter = function() {
-        tooltip.style.opacity = "1";
-      };
+      const label = document.createElement("div");
+      label.className = "color-swatch-label";
       
-      swatch.onmouseleave = function() {
-        tooltip.style.opacity = "0";
-      };
+      // Show "Name (Hex)" if name exists, otherwise just "Hex"
+      if (colorName) {
+        label.innerHTML = `
+          <div class="color-swatch-label-name">${escapeHtml(colorName)}</div>
+          <div class="color-swatch-label-hex">${escapeHtml(colorHex)}</div>
+        `;
+      } else {
+        label.innerHTML = `<div class="color-swatch-label-hex">${escapeHtml(colorHex)}</div>`;
+      }
       
       swatch.appendChild(closeBtn);
-      swatch.appendChild(tooltip);
       swatchContainer.appendChild(swatch);
+      swatchContainer.appendChild(label);
       colorPreview.appendChild(swatchContainer);
     });
   }
@@ -4877,6 +6630,177 @@ console.log("ui.js loaded");
     console.log("Received message:", event.data);
     const msg = event.data.pluginMessage;
 
+    if (msg && msg.type === "fix-issue-result") {
+      // Show fix result message
+      showFixMessage(msg.issueId, msg.message, msg.success);
+      
+      // If successful, hide the issue after 5 seconds
+      if (msg.success) {
+        setTimeout(() => {
+          const issueEl = document.querySelector(`.issue[data-issue-id="${msg.issueId}"]`) ||
+                         document.querySelector(`button.btn-fix[data-id="${msg.issueId}"]`)?.closest(".issue");
+          if (issueEl) {
+            issueEl.style.transition = "opacity 0.5s ease-out";
+            issueEl.style.opacity = "0";
+            setTimeout(() => {
+              if (issueEl.parentNode) {
+                issueEl.remove();
+                // Update badge count
+                const groupEl = issueEl.closest(".issue-group");
+                if (groupEl) {
+                  const badge = groupEl.querySelector(".badge");
+                  if (badge) {
+                    const currentCount = parseInt(badge.textContent) || 0;
+                    const newCount = Math.max(0, currentCount - 1);
+                    badge.textContent = newCount;
+                    // Hide group if no issues left
+                    if (newCount === 0) {
+                      groupEl.style.display = "none";
+                    }
+                  }
+                }
+              }
+            }, 500);
+          }
+        }, 5000);
+      }
+      return;
+    }
+
+    if (msg && msg.type === "create-text-style-result") {
+      // Show create style result message
+      showFixMessage(msg.issueId, msg.message, msg.success);
+      
+      // If successful, hide the issue after 5 seconds
+      if (msg.success) {
+        setTimeout(() => {
+          const issueEl = document.querySelector(`.issue[data-issue-id="${msg.issueId}"]`) ||
+                         document.querySelector(`button.btn-create-style[data-id="${msg.issueId}"]`)?.closest(".issue");
+          if (issueEl) {
+            issueEl.style.transition = "opacity 0.5s ease-out";
+            issueEl.style.opacity = "0";
+            setTimeout(() => {
+              if (issueEl.parentNode) {
+                issueEl.remove();
+                // Update badge count
+                const groupEl = issueEl.closest(".issue-group");
+                if (groupEl) {
+                  const badge = groupEl.querySelector(".badge");
+                  if (badge) {
+                    const currentCount = parseInt(badge.textContent) || 0;
+                    const newCount = Math.max(0, currentCount - 1);
+                    badge.textContent = newCount;
+                    // Hide group if no issues left
+                    if (newCount === 0) {
+                      groupEl.style.display = "none";
+                    }
+                  }
+                }
+              }
+            }, 500);
+          }
+        }, 5000);
+      }
+      return;
+    }
+
+    if (msg && msg.type === "figma-text-styles-loaded") {
+      // Update dropdown menu with loaded styles
+      const dropdownMenu = document.querySelector(`.style-dropdown-menu[data-issue-id="${msg.issueId}"]`);
+      if (dropdownMenu) {
+        if (msg.error) {
+          dropdownMenu.innerHTML = `<div style="padding: 8px 12px; color: #dc3545; font-size: 12px;">Error: ${escapeHtml(msg.error)}</div>`;
+        } else if (msg.styles && msg.styles.length > 0) {
+          // Find the issue to get bestMatch
+          const issueEl = dropdownMenu.closest(".issue");
+          const issueId = issueEl ? issueEl.getAttribute("data-issue-id") : null;
+          let bestMatchName = null;
+          if (issueId) {
+            // Try to find bestMatch from current report data
+            if (currentReportData && currentReportData.issues) {
+              const issue = currentReportData.issues.find(i => i.id === issueId);
+              if (issue && issue.bestMatch) {
+                bestMatchName = issue.bestMatch.name;
+              }
+            }
+          }
+          
+          dropdownMenu.innerHTML = msg.styles.map(style => `
+            <div class="style-dropdown-item" data-issue-id="${msg.issueId}" data-style-id="${style.id}" data-style-name="${escapeHtml(style.name)}" style="padding: 8px 12px; cursor: pointer; font-size: 12px; ${bestMatchName === style.name ? 'background: #e3f2fd; font-weight: 600;' : ''}" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='${bestMatchName === style.name ? '#e3f2fd' : 'white'}'">
+              ${escapeHtml(style.name)} ${bestMatchName === style.name ? '⭐' : ''}
+            </div>
+          `).join('');
+          
+          // Attach click handlers
+          dropdownMenu.querySelectorAll(".style-dropdown-item").forEach(item => {
+            item.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const styleId = item.getAttribute("data-style-id");
+              const styleName = item.getAttribute("data-style-name");
+              
+              // Find issue
+              const issueEl = dropdownMenu.closest(".issue");
+              if (issueEl) {
+                const issueId = issueEl.getAttribute("data-issue-id");
+                if (currentReportData && currentReportData.issues) {
+                  const issue = currentReportData.issues.find(i => i.id === issueId);
+                  if (issue) {
+                    // Create style object from Figma text style
+                    const style = msg.styles.find(s => s.id === styleId);
+                    if (style) {
+                      dropdownMenu.style.display = "none";
+                      handleApplyFigmaTextStyle(issue, style);
+                    }
+                  }
+                }
+              }
+            };
+          });
+        } else {
+          dropdownMenu.innerHTML = '<div style="padding: 8px 12px; color: #999; font-size: 12px;">No text styles found in Figma</div>';
+        }
+      }
+      return;
+    }
+
+    if (msg && msg.type === "apply-typography-style-result") {
+      // Show apply style result message
+      showFixMessage(msg.issueId, msg.message, msg.success);
+      
+      // If successful, hide the issue after 5 seconds
+      if (msg.success) {
+        setTimeout(() => {
+          const issueEl = document.querySelector(`.issue[data-issue-id="${msg.issueId}"]`) ||
+                         document.querySelector(`button.btn-suggest-apply[data-id="${msg.issueId}"]`)?.closest(".issue");
+          if (issueEl) {
+            issueEl.style.transition = "opacity 0.5s ease-out";
+            issueEl.style.opacity = "0";
+            setTimeout(() => {
+              if (issueEl.parentNode) {
+                issueEl.remove();
+                // Update badge count
+                const groupEl = issueEl.closest(".issue-group");
+                if (groupEl) {
+                  const badge = groupEl.querySelector(".badge");
+                  if (badge) {
+                    const currentCount = parseInt(badge.textContent) || 0;
+                    const newCount = Math.max(0, currentCount - 1);
+                    badge.textContent = newCount;
+                    // Hide group if no issues left
+                    if (newCount === 0) {
+                      groupEl.style.display = "none";
+                    }
+                  }
+                }
+              }
+            }, 500);
+          }
+        }, 5000);
+      }
+      return;
+    }
+
     if (msg && msg.type === "scan-progress") {
       // Update progress bar
       if (scanProgressBar && scanProgressText) {
@@ -5018,6 +6942,14 @@ console.log("ui.js loaded");
           return getColorBrightness(a) - getColorBrightness(b);
         });
 
+        // Build color name map for tooltips
+        colorNameMap = {};
+        msg.colors.forEach(c => {
+          if (c.hex && c.name) {
+            colorNameMap[c.hex.toUpperCase()] = c.name;
+          }
+        });
+
         input.value = sortedColors.join(", ");
 
         // Render color preview
@@ -5037,6 +6969,57 @@ console.log("ui.js loaded");
         alert(`✅ Successfully imported ${msg.colors.length} color styles from Figma!\n\nColors: ${msg.colors.map(c => c.name + " (" + c.hex + ")").join(", ")}`);
       } else {
         alert("⚠️ No color styles found in this Figma file.\n\nMake sure you have defined color styles (paint styles) in your design system.");
+      }
+    }
+
+    if (msg && msg.type === "color-variables-extracted") {
+      if (msg.colors && Array.isArray(msg.colors) && msg.colors.length > 0) {
+        const input = document.getElementById("color-scale");
+        if (!input) return;
+
+        // Extract unique hex colors
+        const uniqueColors = Array.from(new Set(msg.colors.map(c => c.hex)));
+
+        // Sort by brightness (dark to light)
+        function getColorBrightness(hex) {
+          const cleanHex = hex.replace("#", "");
+          const r = parseInt(cleanHex.substring(0, 2), 16);
+          const g = parseInt(cleanHex.substring(2, 4), 16);
+          const b = parseInt(cleanHex.substring(4, 6), 16);
+          return (r * 299 + g * 587 + b * 114) / 1000;
+        }
+
+        const sortedColors = uniqueColors.sort((a, b) => {
+          return getColorBrightness(a) - getColorBrightness(b);
+        });
+
+        // Build color name map for tooltips
+        colorNameMap = {};
+        msg.colors.forEach(c => {
+          if (c.hex && c.name) {
+            colorNameMap[c.hex.toUpperCase()] = c.name;
+          }
+        });
+
+        input.value = sortedColors.join(", ");
+
+        // Render color preview
+        if (typeof renderColorPreview === "function") renderColorPreview();
+
+        // Save to storage
+        saveInputValues();
+
+        // Visual feedback
+        try {
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        } catch (e) {
+          // ignore
+        }
+
+        alert(`✅ Successfully imported ${msg.colors.length} color variables from Figma!\n\nColors: ${msg.colors.map(c => c.name + " (" + c.hex + ")").join(", ")}`);
+      } else {
+        alert("⚠️ No color variables found in this Figma file.\n\nMake sure you have defined color variables in your design system.");
       }
     }
   };

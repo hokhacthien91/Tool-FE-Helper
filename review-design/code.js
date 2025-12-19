@@ -1813,7 +1813,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           // Auto-layout is enabled - no need to check preferred layout mode
           // User can use HORIZONTAL or VERTICAL as needed
           
-          // Check itemSpacing (gap) - only if spacing scale is provided
+          // Check itemSpacing (gap) - only if spacing guidelines is provided
           if (customSpacingScale !== null) {
           if (typeof node.itemSpacing === "number") {
               // If value exceeds threshold, pass (special case)
@@ -1830,19 +1830,19 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             }
           }
           } else {
-            // If spacing scale is empty, show skipped message
+            // If spacing guidelines is empty, show skipped message
             if (typeof node.itemSpacing === "number") {
               addIssue({
                 severity: "info",
                 type: "spacing",
-                message: `Gap (itemSpacing: ${node.itemSpacing}px) - Check spacing is skipped (spacing scale is empty).`,
+                message: `Gap (itemSpacing: ${node.itemSpacing}px) - Check spacing is skipped (spacing guidelines is empty).`,
                 id: node.id,
                 nodeName: nodeName
               });
             }
           }
           
-          // Check padding - only if spacing scale is provided
+          // Check padding - only if spacing guidelines is provided
           const paddings = [
             { name: "paddingLeft", value: node.paddingLeft },
             { name: "paddingRight", value: node.paddingRight },
@@ -1870,13 +1870,13 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
               }
             }
           } else {
-            // If spacing scale is empty, show skipped message for padding
+            // If spacing guidelines is empty, show skipped message for padding
             const hasPadding = paddings.some(p => typeof p.value === "number" && p.value !== 0);
             if (hasPadding) {
               addIssue({
                 severity: "info",
                 type: "spacing",
-                message: `Padding - Check spacing is skipped (spacing scale is empty).`,
+                message: `Padding - Check spacing is skipped (spacing guidelines is empty).`,
                 id: node.id,
                 nodeName: nodeName
               });
@@ -1899,7 +1899,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         }
       }
 
-      // 4.5) Color check - Check fills/strokes/effects against color scale
+      // 4.5) Color check - Check fills/strokes/effects against color
       if (customColorScale !== null && Array.isArray(customColorScale) && customColorScale.length > 0) {
         // Check fills
         if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
@@ -1994,12 +1994,55 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         if (RULES.requireTextStyleKey) {
           const styleId = node.textStyleId;
           if (!styleId || styleId === figma.mixed) {
+            // Check if there's a matching typography style
+            let bestMatch = null;
+            if (typographyStyles && typographyStyles.length > 0) {
+              const matchResult = checkTypographyStyleMatch(node, typographyStyles, typographyRules);
+              if (matchResult && matchResult.bestMatch) {
+                bestMatch = matchResult.bestMatch;
+              }
+            }
+            
+            // Get node properties for UI
+            const nodeFontSize = (node.fontSize && typeof node.fontSize === "number") ? Math.round(node.fontSize) : null;
+            const nodeFontFamily = (node.fontName && typeof node.fontName === "object") ? node.fontName.family : null;
+            const nodeFontWeight = (node.fontName && typeof node.fontName === "object") ? node.fontName.style : null;
+            
+            let nodeLineHeight = null;
+            if (node.lineHeight && node.lineHeight.unit === "PERCENT") {
+              nodeLineHeight = `${Math.round(node.lineHeight.value)}%`;
+            } else if (node.lineHeight && node.lineHeight.unit === "AUTO") {
+              nodeLineHeight = "auto";
+            } else if (node.lineHeight && node.lineHeight.unit === "PIXELS" && nodeFontSize) {
+              const percent = Math.round((node.lineHeight.value / nodeFontSize) * 100);
+              nodeLineHeight = `${percent}%`;
+            }
+            
+            let nodeLetterSpacing = null;
+            if (node.letterSpacing && typeof node.letterSpacing === "object") {
+              if (node.letterSpacing.unit === "PERCENT") {
+                nodeLetterSpacing = `${node.letterSpacing.value}%`;
+              } else if (node.letterSpacing.unit === "PIXELS") {
+                nodeLetterSpacing = `${node.letterSpacing.value}px`;
+              }
+            } else if (typeof node.letterSpacing === "number") {
+              nodeLetterSpacing = `${node.letterSpacing}`;
+            }
+            
             addIssue({
               severity: "warn",
               type: "typography-style",
               message: `Text does not use Text Style (variable) — difficult to manage and not consistent. Should create and use Text Style Variable.`,
               id: node.id,
-              nodeName: nodeName
+              nodeName: nodeName,
+              nodeProps: {
+                fontFamily: nodeFontFamily,
+                fontSize: nodeFontSize,
+                fontWeight: nodeFontWeight,
+                lineHeight: nodeLineHeight,
+                letterSpacing: nodeLetterSpacing
+              },
+              bestMatch: bestMatch
             });
           }
         } else if (RULES.allowedTextStyleIds.length > 0) {
@@ -2603,6 +2646,212 @@ async function extractDesignTokens(target) {
 }
 
 // Listen for UI commands
+// Helper function to apply typography fix
+async function applyTypographyFix(node, bestMatch) {
+  if (node.type !== "TEXT") {
+    throw new Error("Node is not a text node");
+  }
+
+  // Get current font info
+  const currentFontName = node.fontName;
+  const currentFontFamily = currentFontName ? currentFontName.family : "Inter";
+  const currentFontStyle = currentFontName ? currentFontName.style : "Regular";
+  
+  // Collect all changes first, then apply in correct order
+  const changes = {
+    fontFamily: null,
+    fontWeight: null,
+    fontSize: null,
+    lineHeight: null,
+    letterSpacing: null
+  };
+  
+  // Parse all differences
+  if (bestMatch.differences) {
+    for (const diff of bestMatch.differences) {
+      if (!diff.matches && diff.expected) {
+        if (diff.property === "Font Family") {
+          changes.fontFamily = diff.expected;
+        } else if (diff.property === "Font Weight") {
+          changes.fontWeight = diff.expected;
+        } else if (diff.property === "Font Size") {
+          changes.fontSize = diff.expected;
+        } else if (diff.property === "Line Height") {
+          changes.lineHeight = diff.expected;
+        } else if (diff.property === "Letter Spacing") {
+          changes.letterSpacing = diff.expected;
+        }
+      }
+    }
+  }
+  
+  // Apply changes in correct order: Family -> Weight -> Size -> Line Height -> Letter Spacing
+  // 1. Font Family (must be first)
+  let targetFamily = currentFontFamily;
+  let targetStyle = currentFontStyle;
+  
+  if (changes.fontFamily) {
+    targetFamily = changes.fontFamily;
+    try {
+      // Load font with current style first
+      await figma.loadFontAsync({ family: targetFamily, style: targetStyle });
+      node.fontName = { family: targetFamily, style: targetStyle };
+    } catch (fontError) {
+      // If font doesn't exist, try with Regular style
+      try {
+        await figma.loadFontAsync({ family: targetFamily, style: "Regular" });
+        node.fontName = { family: targetFamily, style: "Regular" };
+        targetStyle = "Regular";
+      } catch (fallbackError) {
+        console.error(`Failed to load font ${targetFamily}:`, fallbackError);
+        throw new Error(`Font "${targetFamily}" not available. Please install it first.`);
+      }
+    }
+  }
+  
+  // 2. Font Weight (must be after family)
+  if (changes.fontWeight) {
+    const weightMap = {
+      "Regular": "Regular",
+      "Medium": "Medium",
+      "Semi Bold": "SemiBold",
+      "SemiBold": "SemiBold",
+      "Bold": "Bold"
+    };
+    const newStyle = weightMap[changes.fontWeight] || changes.fontWeight;
+    
+    // Only change if different from current
+    if (newStyle !== targetStyle) {
+      try {
+        // Load font with new style
+        await figma.loadFontAsync({ family: targetFamily, style: newStyle });
+        node.fontName = { family: targetFamily, style: newStyle };
+        targetStyle = newStyle;
+      } catch (styleError) {
+        console.error(`Failed to load font style ${targetFamily} ${newStyle}:`, styleError);
+        // Continue with current style instead of failing
+        console.warn(`Using current style ${targetStyle} instead of ${newStyle}`);
+      }
+    }
+  }
+  
+  // Ensure font is loaded before setting any other properties
+  // Re-load font with current targetFamily and targetStyle to ensure it's ready
+  try {
+    await figma.loadFontAsync({ family: targetFamily, style: targetStyle });
+    // Verify fontName is set
+    if (!node.fontName || node.fontName.family !== targetFamily || node.fontName.style !== targetStyle) {
+      node.fontName = { family: targetFamily, style: targetStyle };
+    }
+  } catch (fontLoadError) {
+    console.error("Failed to ensure font is loaded:", fontLoadError);
+    throw new Error(`Cannot load font "${targetFamily}" ${targetStyle}. Please ensure the font is installed.`);
+  }
+  
+  // 3. Font Size (can be set independently, but after fontName is set)
+  if (changes.fontSize) {
+    const size = parseFloat(changes.fontSize.replace("px", ""));
+    if (!isNaN(size) && size > 0 && size <= 1000) { // Reasonable limit
+      try {
+        node.fontSize = size;
+      } catch (sizeError) {
+        console.error("Failed to set font size:", sizeError);
+        throw new Error(`Cannot set font size to ${size}px: ${sizeError.message}`);
+      }
+    }
+  }
+  
+  // 4. Line Height (must be after font is fully loaded)
+  if (changes.lineHeight) {
+    try {
+      const lh = changes.lineHeight;
+      if (lh === "auto") {
+        node.lineHeight = { unit: "AUTO" };
+      } else if (lh.includes("%")) {
+        const percent = parseFloat(lh.replace("%", ""));
+        if (!isNaN(percent)) {
+          node.lineHeight = { unit: "PERCENT", value: percent };
+        }
+      } else {
+        const px = parseFloat(lh.replace("px", ""));
+        if (!isNaN(px)) {
+          node.lineHeight = { unit: "PIXELS", value: px };
+        }
+      }
+    } catch (lineHeightError) {
+      if (lineHeightError.message && lineHeightError.message.includes("unloaded")) {
+        // Font not loaded, try to reload
+        try {
+          await figma.loadFontAsync({ family: targetFamily, style: targetStyle });
+          node.fontName = { family: targetFamily, style: targetStyle };
+          // Retry lineHeight
+          const lh = changes.lineHeight;
+          if (lh === "auto") {
+            node.lineHeight = { unit: "AUTO" };
+          } else if (lh.includes("%")) {
+            const percent = parseFloat(lh.replace("%", ""));
+            if (!isNaN(percent)) {
+              node.lineHeight = { unit: "PERCENT", value: percent };
+            }
+          } else {
+            const px = parseFloat(lh.replace("px", ""));
+            if (!isNaN(px)) {
+              node.lineHeight = { unit: "PIXELS", value: px };
+            }
+          }
+        } catch (retryError) {
+          throw new Error(`Cannot set line height: Font "${targetFamily}" ${targetStyle} is not loaded. ${retryError.message}`);
+        }
+      } else {
+        throw lineHeightError;
+      }
+    }
+  }
+  
+  // 5. Letter Spacing (must be after font is fully loaded)
+  if (changes.letterSpacing) {
+    try {
+      const ls = changes.letterSpacing;
+      if (ls.includes("%")) {
+        const percent = parseFloat(ls.replace("%", ""));
+        if (!isNaN(percent)) {
+          node.letterSpacing = { unit: "PERCENT", value: percent };
+        }
+      } else {
+        const px = parseFloat(ls.replace("px", ""));
+        if (!isNaN(px)) {
+          node.letterSpacing = { unit: "PIXELS", value: px };
+        }
+      }
+    } catch (letterSpacingError) {
+      if (letterSpacingError.message && letterSpacingError.message.includes("unloaded")) {
+        // Font not loaded, try to reload
+        try {
+          await figma.loadFontAsync({ family: targetFamily, style: targetStyle });
+          node.fontName = { family: targetFamily, style: targetStyle };
+          // Retry letterSpacing
+          const ls = changes.letterSpacing;
+          if (ls.includes("%")) {
+            const percent = parseFloat(ls.replace("%", ""));
+            if (!isNaN(percent)) {
+              node.letterSpacing = { unit: "PERCENT", value: percent };
+            }
+          } else {
+            const px = parseFloat(ls.replace("px", ""));
+            if (!isNaN(px)) {
+              node.letterSpacing = { unit: "PIXELS", value: px };
+            }
+          }
+        } catch (retryError) {
+          throw new Error(`Cannot set letter spacing: Font "${targetFamily}" ${targetStyle} is not loaded. ${retryError.message}`);
+        }
+      } else {
+        throw letterSpacingError;
+      }
+    }
+  }
+}
+
 figma.ui.onmessage = async msg => {
   switch (msg.type) {
     case "cancel-scan": {
@@ -2625,7 +2874,7 @@ figma.ui.onmessage = async msg => {
     const typographyStyles = msg.typographyStyles || [];
     const typographyRules = msg.typographyRules || {};
     
-    // Parse spacing scale from input
+    // Parse spacing guidelines from input
     let customSpacingScale = null;
     if (spacingScaleInput.trim()) {
       try {
@@ -2639,11 +2888,11 @@ figma.ui.onmessage = async msg => {
           customSpacingScale = values;
         }
       } catch (e) {
-        console.error("Error parsing spacing scale:", e);
+        console.error("Error parsing spacing guidelines:", e);
       }
     }
     
-    // Parse color scale from input
+    // Parse color from input
     let customColorScale = null;
     if (colorScaleInput.trim()) {
       try {
@@ -2657,7 +2906,7 @@ figma.ui.onmessage = async msg => {
           customColorScale = values;
         }
       } catch (e) {
-        console.error("Error parsing color scale:", e);
+        console.error("Error parsing color:", e);
       }
     }
     
@@ -3009,6 +3258,893 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "fix-issue": {
+      const issue = msg.issue;
+      const issueId = issue ? issue.id : null;
+      
+      try {
+        if (!issue) {
+          throw new Error("No issue provided");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+
+        // Check if node is in read-only mode
+        try {
+          if (node.type === "TEXT") {
+            const testFontSize = node.fontSize;
+            if (node.parent && "locked" in node.parent && node.parent.locked) {
+              throw new Error("Node is locked");
+            }
+          }
+        } catch (readOnlyError) {
+          figma.notify("⚠️ Cannot fix: Node is in read-only mode. Please switch to Design Mode or unlock the node.");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Cannot fix: Node is in read-only mode. Please switch to Design Mode."
+          });
+          break;
+        }
+
+        // Handle typography fix
+        if (issue.type === "typography-check" && issue.bestMatch) {
+          // Check if custom fixData is provided
+          if (msg.fixData) {
+            // Apply custom fix data
+            const fixData = msg.fixData;
+            
+            // Get font family and weight
+            const fontFamily = fixData.fontFamily || "Inter";
+            const fontWeight = fixData.fontWeight || "Regular";
+            
+            // Load font
+            try {
+              await figma.loadFontAsync({ family: fontFamily, style: fontWeight });
+            } catch (fontError) {
+              // Try Regular as fallback
+              try {
+                await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+              } catch (fallbackError) {
+                throw new Error(`Font "${fontFamily}" could not be loaded. Please ensure it's installed.`);
+              }
+            }
+            
+            // Apply properties
+            node.fontName = { family: fontFamily, style: fontWeight };
+            node.fontSize = parseFloat(fixData.fontSize) || 16;
+            
+            // Set line height
+            if (fixData.lineHeight === "auto") {
+              node.lineHeight = { unit: "AUTO" };
+            } else if (fixData.lineHeight.includes("%")) {
+              const percent = parseFloat(fixData.lineHeight.replace("%", ""));
+              if (!isNaN(percent)) {
+                node.lineHeight = { unit: "PERCENT", value: percent };
+              }
+            } else if (fixData.lineHeight.includes("px")) {
+              const px = parseFloat(fixData.lineHeight.replace("px", ""));
+              if (!isNaN(px)) {
+                node.lineHeight = { unit: "PIXELS", value: px };
+              }
+            }
+            
+            // Set letter spacing
+            if (fixData.letterSpacing && fixData.letterSpacing !== "0") {
+              if (fixData.letterSpacing.includes("%")) {
+                const percent = parseFloat(fixData.letterSpacing.replace("%", ""));
+                if (!isNaN(percent)) {
+                  node.letterSpacing = { unit: "PERCENT", value: percent };
+                }
+              } else if (fixData.letterSpacing.includes("px")) {
+                const px = parseFloat(fixData.letterSpacing.replace("px", ""));
+                if (!isNaN(px)) {
+                  node.letterSpacing = { unit: "PIXELS", value: px };
+                }
+              }
+            }
+            
+            figma.notify(`✅ Fixed typography with custom values`);
+            
+            // Send success message to UI
+            figma.ui.postMessage({
+              type: "fix-issue-result",
+              issueId: issueId,
+              success: true,
+              message: `✅ Fixed typography with custom values`
+            });
+          } else {
+            // Use bestMatch (original behavior)
+            await applyTypographyFix(node, issue.bestMatch);
+            
+            figma.notify(`✅ Fixed typography to match "${issue.bestMatch.name}"`);
+            
+            // Send success message to UI
+            figma.ui.postMessage({
+              type: "fix-issue-result",
+              issueId: issueId,
+              success: true,
+              message: `✅ Fixed typography to match "${issue.bestMatch.name}"`
+            });
+          }
+        } else if (msg.manualFix) {
+          // Manual fix - show notification
+          figma.notify(`⚠️ Manual fix required: ${msg.manualFix}`);
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: `⚠️ Manual fix required: ${msg.manualFix}`
+          });
+        } else {
+          figma.notify("⚠️ Cannot auto-fix this issue type");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Cannot auto-fix this issue type"
+          });
+        }
+      } catch (error) {
+        figma.notify(`❌ Error fixing issue: ${error.message}`);
+        console.error("Error fixing issue:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${error.message}`
+        });
+      }
+      break;
+    }
+    case "fix-all-issues": {
+      try {
+        const issues = msg.issues || [];
+        const issueType = msg.issueType || "unknown";
+        let fixedCount = 0;
+        let errorCount = 0;
+
+        for (const issue of issues) {
+          try {
+            const nodeId = issue.id;
+            const node = figma.getNodeById(nodeId);
+            
+            if (!node) {
+              errorCount++;
+              continue;
+            }
+
+            // Check if node is in read-only mode
+            try {
+              if (node.type === "TEXT") {
+                const testFontSize = node.fontSize;
+                if (node.parent && "locked" in node.parent && node.parent.locked) {
+                  throw new Error("Node is locked");
+                }
+              }
+            } catch (readOnlyError) {
+              errorCount++;
+              continue; // Skip this node
+            }
+
+            // Handle typography fix
+            if (issue.type === "typography-check" && issue.bestMatch) {
+              await applyTypographyFix(node, issue.bestMatch);
+              fixedCount++;
+            }
+          } catch (error) {
+            console.error("Error fixing issue:", error);
+            errorCount++;
+          }
+        }
+
+        if (fixedCount > 0) {
+          const errorMsg = errorCount > 0 ? ` (${errorCount} failed - may be in read-only mode)` : "";
+          figma.notify(`✅ Fixed ${fixedCount} issue(s) in ${issueType}${errorMsg}`);
+        } else {
+          figma.notify(`⚠️ No issues could be fixed. ${errorCount > 0 ? "Nodes may be in read-only mode. Please switch to Design Mode." : ""}`);
+        }
+      } catch (error) {
+        figma.notify(`❌ Error fixing issues: ${error.message}`);
+        console.error("Error fixing all issues:", error);
+      }
+      break;
+    }
+    case "create-text-style": {
+      console.log("create-text-style handler called", msg);
+      
+      // Store issueId at the beginning to ensure it's available in catch block
+      const issue = msg.issue;
+      const issueId = issue ? issue.id : null;
+      const styleName = msg.styleName;
+      
+      try {
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!styleName || !styleName.trim()) {
+          throw new Error("Style name is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        console.log("create-text-style: node found", { nodeId, nodeType: node ? node.type : "null" });
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "create-text-style-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        if (node.type !== "TEXT") {
+          figma.notify("⚠️ Node is not a text node");
+          figma.ui.postMessage({
+            type: "create-text-style-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a text node"
+          });
+          break;
+        }
+        
+        // Get current text properties
+        const fontName = node.fontName;
+        const fontSize = node.fontSize;
+        const lineHeight = node.lineHeight;
+        const letterSpacing = node.letterSpacing;
+        
+        if (!fontName || typeof fontName !== "object" || !fontName.family) {
+          throw new Error("Font information is missing or invalid");
+        }
+        
+        // Load font first - handle font loading errors with fallback
+        const fontFamily = fontName.family;
+        const fontStyle = fontName.style || "Regular";
+        let loadedFontName = fontName;
+        
+        // Map common style names that might not match exactly
+        const styleMap = {
+          "Semi Bold": "SemiBold",
+          "SemiBold": "SemiBold",
+          "Semi-Bold": "SemiBold",
+          "Semi": "SemiBold"
+        };
+        const mappedStyle = styleMap[fontStyle] || fontStyle;
+        
+        try {
+          // Try to load with the exact style from the node
+          await figma.loadFontAsync(fontName);
+        } catch (fontError) {
+          // If exact style fails, try with mapped style name
+          if (mappedStyle !== fontStyle) {
+            try {
+              console.warn(`Font style "${fontFamily} ${fontStyle}" not available, trying "${mappedStyle}"...`);
+              await figma.loadFontAsync({ family: fontFamily, style: mappedStyle });
+              loadedFontName = { family: fontFamily, style: mappedStyle };
+            } catch (mappedError) {
+              // If mapped style also fails, try Regular
+              try {
+                console.warn(`Font style "${fontFamily} ${mappedStyle}" not available, trying Regular...`);
+                await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+                loadedFontName = { family: fontFamily, style: "Regular" };
+              } catch (fallbackError) {
+                const errorMsg = fallbackError && fallbackError.message ? fallbackError.message : `Font "${fontFamily}" could not be loaded`;
+                throw new Error(`${errorMsg}. Please ensure the font "${fontFamily}" is installed in Figma.`);
+              }
+            }
+          } else {
+            // If no mapping, try Regular directly
+            try {
+              console.warn(`Font style "${fontFamily} ${fontStyle}" not available, trying Regular...`);
+              await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+              loadedFontName = { family: fontFamily, style: "Regular" };
+            } catch (fallbackError) {
+              const errorMsg = fallbackError && fallbackError.message ? fallbackError.message : `Font "${fontFamily}" could not be loaded`;
+              throw new Error(`${errorMsg}. Please ensure the font "${fontFamily}" is installed in Figma.`);
+            }
+          }
+        }
+        
+        // Create text style
+        const textStyle = figma.createTextStyle();
+        textStyle.name = styleName.trim();
+        // Use loaded font (may be different from original if fallback was used)
+        textStyle.fontName = loadedFontName;
+        textStyle.fontSize = fontSize;
+        textStyle.lineHeight = lineHeight;
+        textStyle.letterSpacing = letterSpacing;
+        
+        // Apply the style to the node
+        node.textStyleId = textStyle.id;
+        
+        figma.notify(`✅ Created and applied text style "${styleName.trim()}"`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "create-text-style-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Created and applied text style "${styleName.trim()}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error creating text style: ${errorMessage}`);
+        console.error("Error creating text style:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "create-text-style-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "create-text-style-all": {
+      try {
+        const issues = msg.issues || [];
+        const styleName = msg.styleName;
+        let createdCount = 0;
+        let errorCount = 0;
+        const styleMap = new Map(); // Map to reuse styles for nodes with same properties
+        
+        for (const issue of issues) {
+          const issueId = issue ? issue.id : null; // Store issueId for error handling
+          
+          try {
+            if (!issue || !issue.id) {
+              errorCount++;
+              continue;
+            }
+            
+            const nodeId = issue.id;
+            const node = figma.getNodeById(nodeId);
+            
+            if (!node || node.type !== "TEXT") {
+              errorCount++;
+              figma.ui.postMessage({
+                type: "create-text-style-result",
+                issueId: issueId,
+                success: false,
+                message: "⚠️ Node is not a text node"
+              });
+              continue;
+            }
+            
+            // Get current text properties
+            const fontName = node.fontName;
+            const fontSize = node.fontSize;
+            const lineHeight = node.lineHeight;
+            const letterSpacing = node.letterSpacing;
+            
+            if (!fontName || typeof fontName !== "object" || !fontName.family) {
+              throw new Error("Font information is missing or invalid");
+            }
+            
+            // Create a key for grouping nodes with same properties
+            const styleKey = JSON.stringify({
+              family: fontName.family,
+              style: fontName.style,
+              fontSize: fontSize,
+              lineHeight: lineHeight ? JSON.stringify(lineHeight) : null,
+              letterSpacing: letterSpacing ? JSON.stringify(letterSpacing) : null
+            });
+            
+            // Get or create style for this property set
+            let textStyle = styleMap.get(styleKey);
+            if (!textStyle) {
+              // Load font first - handle font loading errors with fallback
+              const fontFamily = fontName.family;
+              const fontStyle = fontName.style || "Regular";
+              let loadedFontName = fontName;
+              
+              // Map common style names that might not match exactly
+              const styleMap = {
+                "Semi Bold": "SemiBold",
+                "SemiBold": "SemiBold",
+                "Semi-Bold": "SemiBold",
+                "Semi": "SemiBold"
+              };
+              const mappedStyle = styleMap[fontStyle] || fontStyle;
+              
+              try {
+                // Try to load with the exact style from the node
+                await figma.loadFontAsync(fontName);
+              } catch (fontError) {
+                // If exact style fails, try with mapped style name
+                if (mappedStyle !== fontStyle) {
+                  try {
+                    console.warn(`Font style "${fontFamily} ${fontStyle}" not available, trying "${mappedStyle}"...`);
+                    await figma.loadFontAsync({ family: fontFamily, style: mappedStyle });
+                    loadedFontName = { family: fontFamily, style: mappedStyle };
+                  } catch (mappedError) {
+                    // If mapped style also fails, try Regular
+                    try {
+                      console.warn(`Font style "${fontFamily} ${mappedStyle}" not available, trying Regular...`);
+                      await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+                      loadedFontName = { family: fontFamily, style: "Regular" };
+                    } catch (fallbackError) {
+                      const errorMsg = fallbackError && fallbackError.message ? fallbackError.message : `Font "${fontFamily}" could not be loaded`;
+                      throw new Error(`${errorMsg}. Please ensure the font "${fontFamily}" is installed in Figma.`);
+                    }
+                  }
+                } else {
+                  // If no mapping, try Regular directly
+                  try {
+                    console.warn(`Font style "${fontFamily} ${fontStyle}" not available, trying Regular...`);
+                    await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+                    loadedFontName = { family: fontFamily, style: "Regular" };
+                  } catch (fallbackError) {
+                    const errorMsg = fallbackError && fallbackError.message ? fallbackError.message : `Font "${fontFamily}" could not be loaded`;
+                    throw new Error(`${errorMsg}. Please ensure the font "${fontFamily}" is installed in Figma.`);
+                  }
+                }
+              }
+              
+              // Create text style
+              textStyle = figma.createTextStyle();
+              // If multiple property sets, append suffix
+              const finalStyleName = styleMap.size > 0 ? `${styleName.trim()} ${styleMap.size + 1}` : styleName.trim();
+              textStyle.name = finalStyleName;
+              // Use loaded font (may be different from original if fallback was used)
+              textStyle.fontName = loadedFontName;
+              textStyle.fontSize = fontSize;
+              textStyle.lineHeight = lineHeight;
+              textStyle.letterSpacing = letterSpacing;
+              
+              styleMap.set(styleKey, textStyle);
+            }
+            
+            // Apply the style to the node
+            node.textStyleId = textStyle.id;
+            createdCount++;
+            
+            // Send success message for each node
+            figma.ui.postMessage({
+              type: "create-text-style-result",
+              issueId: issueId,
+              success: true,
+              message: `✅ Applied text style "${textStyle.name}"`
+            });
+          } catch (error) {
+            console.error("Error creating text style for node:", error);
+            errorCount++;
+            
+            const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+            
+            // Send error message
+            figma.ui.postMessage({
+              type: "create-text-style-result",
+              issueId: issueId,
+              success: false,
+              message: `❌ Error: ${errorMessage}`
+            });
+          }
+        }
+        
+        const stylesCreated = styleMap.size;
+        if (createdCount > 0) {
+          const styleMsg = stylesCreated > 1 ? `${stylesCreated} text styles` : `text style "${styleName.trim()}"`;
+          figma.notify(`✅ Created ${styleMsg} and applied to ${createdCount} node(s)${errorCount > 0 ? ` (${errorCount} failed)` : ""}`);
+        } else {
+          figma.notify(`⚠️ No text styles could be created (${errorCount} errors)`);
+        }
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error creating text styles: ${errorMessage}`);
+        console.error("Error creating text styles:", error);
+      }
+      break;
+    }
+    case "apply-typography-style": {
+      try {
+        const issue = msg.issue;
+        const style = msg.style;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!style) {
+          throw new Error("Style data is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || node.type !== "TEXT") {
+          figma.notify("⚠️ Node is not a text node");
+          figma.ui.postMessage({
+            type: "apply-typography-style-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a text node"
+          });
+          break;
+        }
+        
+        // Map style properties to Figma format
+        const fontFamily = style.fontFamily || "Inter";
+        const fontSize = style.fontSize || 16;
+        const fontWeight = style.fontWeight || "Regular";
+        const lineHeight = style.lineHeight || "150%";
+        const letterSpacing = style.letterSpacing || "0";
+        
+        // Map font weight to style
+        const weightMap = {
+          "Regular": "Regular",
+          "Medium": "Medium",
+          "Semi Bold": "SemiBold",
+          "SemiBold": "SemiBold",
+          "Bold": "Bold"
+        };
+        const fontStyle = weightMap[fontWeight] || fontWeight;
+        
+        // Load font
+        try {
+          await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+        } catch (fontError) {
+          // Try Regular as fallback
+          try {
+            await figma.loadFontAsync({ family: fontFamily, style: "Regular" });
+          } catch (fallbackError) {
+            throw new Error(`Font "${fontFamily}" could not be loaded. Please ensure it's installed.`);
+          }
+        }
+        
+        // Apply style properties
+        node.fontName = { family: fontFamily, style: fontStyle };
+        node.fontSize = fontSize;
+        
+        // Set line height
+        if (lineHeight === "auto") {
+          node.lineHeight = { unit: "AUTO" };
+        } else if (lineHeight.includes("%")) {
+          const percent = parseFloat(lineHeight.replace("%", ""));
+          if (!isNaN(percent)) {
+            node.lineHeight = { unit: "PERCENT", value: percent };
+          }
+        } else {
+          const px = parseFloat(lineHeight.replace("px", ""));
+          if (!isNaN(px)) {
+            node.lineHeight = { unit: "PIXELS", value: px };
+          }
+        }
+        
+        // Set letter spacing
+        if (letterSpacing && letterSpacing !== "0") {
+          if (letterSpacing.includes("%")) {
+            const percent = parseFloat(letterSpacing.replace("%", ""));
+            if (!isNaN(percent)) {
+              node.letterSpacing = { unit: "PERCENT", value: percent };
+            }
+          } else {
+            const px = parseFloat(letterSpacing.replace("px", ""));
+            if (!isNaN(px)) {
+              node.letterSpacing = { unit: "PIXELS", value: px };
+            }
+          }
+        }
+        
+        figma.notify(`✅ Applied typography style "${style.name}"`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "apply-typography-style-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Applied typography style "${style.name}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error applying style: ${errorMessage}`);
+        console.error("Error applying typography style:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "apply-typography-style-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "get-figma-text-styles": {
+      try {
+        const textStyles = figma.getLocalTextStyles();
+        const stylesList = [];
+        
+        for (const style of textStyles) {
+          stylesList.push({
+            id: style.id,
+            name: style.name,
+            fontFamily: style.fontName ? style.fontName.family : "Inter",
+            fontWeight: style.fontName ? style.fontName.style : "Regular",
+            fontSize: typeof style.fontSize === "number" ? Math.round(style.fontSize) : 16,
+            lineHeight: style.lineHeight ? (style.lineHeight.unit === "PERCENT" ? `${Math.round(style.lineHeight.value)}%` : 
+                                           style.lineHeight.unit === "AUTO" ? "auto" : 
+                                           style.lineHeight.unit === "PIXELS" && style.fontSize ? `${Math.round((style.lineHeight.value / style.fontSize) * 100)}%` : "150%") : "150%",
+            letterSpacing: style.letterSpacing ? (style.letterSpacing.unit === "PIXELS" ? `${Math.round(style.letterSpacing.value * 100) / 100}px` : 
+                                                  style.letterSpacing.unit === "PERCENT" ? `${style.letterSpacing.value}%` : "0") : "0"
+          });
+        }
+        
+        // Sort by name
+        stylesList.sort((a, b) => a.name.localeCompare(b.name));
+        
+        figma.ui.postMessage({
+          type: "figma-text-styles-loaded",
+          issueId: msg.issueId,
+          styles: stylesList
+        });
+      } catch (error) {
+        console.error("Error getting text styles:", error);
+        figma.ui.postMessage({
+          type: "figma-text-styles-loaded",
+          issueId: msg.issueId,
+          styles: [],
+          error: error.message
+        });
+      }
+      break;
+    }
+    case "apply-figma-text-style": {
+      try {
+        const issue = msg.issue;
+        const styleId = msg.styleId;
+        const styleName = msg.styleName;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!styleId) {
+          throw new Error("Style ID is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || node.type !== "TEXT") {
+          figma.notify("⚠️ Node is not a text node");
+          figma.ui.postMessage({
+            type: "apply-typography-style-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a text node"
+          });
+          break;
+        }
+        
+        // Get the text style from Figma
+        const textStyle = figma.getStyleById(styleId);
+        if (!textStyle) {
+          throw new Error(`Text style "${styleName}" not found`);
+        }
+        
+        // Apply the text style directly
+        node.textStyleId = styleId;
+        
+        figma.notify(`✅ Applied text style "${styleName}"`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "apply-typography-style-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Applied text style "${styleName}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error applying style: ${errorMessage}`);
+        console.error("Error applying Figma text style:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "apply-typography-style-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-color-issue": {
+      try {
+        const issue = msg.issue;
+        const color = msg.color;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!color || !color.startsWith("#")) {
+          throw new Error("Invalid color format");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // Parse color hex to RGB
+        const hex = color.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+        
+        const newColor = { r: r, g: g, b: b };
+        
+        // Apply color to fills
+        if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+          const fills = node.fills.map(fill => {
+            if (fill.type === "SOLID" && fill.visible !== false) {
+              return {
+                type: "SOLID",
+                color: newColor,
+                opacity: fill.opacity !== undefined ? fill.opacity : 1,
+                visible: fill.visible !== undefined ? fill.visible : true
+              };
+            }
+            return fill;
+          });
+          node.fills = fills;
+        }
+        
+        // Apply color to strokes
+        if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
+          const strokes = node.strokes.map(stroke => {
+            if (stroke.type === "SOLID" && stroke.visible !== false) {
+              return {
+                type: "SOLID",
+                color: newColor,
+                opacity: stroke.opacity !== undefined ? stroke.opacity : 1,
+                visible: stroke.visible !== undefined ? stroke.visible : true
+              };
+            }
+            return stroke;
+          });
+          node.strokes = strokes;
+        }
+        
+        figma.notify(`✅ Changed color to ${color}`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Changed color to ${color}`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing color: ${errorMessage}`);
+        console.error("Error fixing color:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-spacing-issue": {
+      try {
+        const issue = msg.issue;
+        const propertyName = msg.propertyName;
+        const value = msg.value;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!propertyName || !["paddingLeft", "paddingRight", "paddingTop", "paddingBottom"].includes(propertyName)) {
+          throw new Error("Invalid property name");
+        }
+        
+        if (typeof value !== "number" || value < 0) {
+          throw new Error("Invalid spacing value");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // Check if node supports padding (FRAME, COMPONENT, INSTANCE)
+        if (node.type !== "FRAME" && node.type !== "COMPONENT" && node.type !== "INSTANCE") {
+          throw new Error("Node does not support padding properties");
+        }
+        
+        // Check if auto-layout is enabled
+        if (!node.layoutMode || node.layoutMode === "NONE") {
+          throw new Error("Auto-layout is not enabled. Please enable auto-layout first.");
+        }
+        
+        // Apply spacing value
+        if (propertyName === "paddingLeft") {
+          node.paddingLeft = value;
+        } else if (propertyName === "paddingRight") {
+          node.paddingRight = value;
+        } else if (propertyName === "paddingTop") {
+          node.paddingTop = value;
+        } else if (propertyName === "paddingBottom") {
+          node.paddingBottom = value;
+        }
+        
+        figma.notify(`✅ Changed ${propertyName} to ${value}px`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Changed ${propertyName} to ${value}px`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing spacing: ${errorMessage}`);
+        console.error("Error fixing spacing:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
     case "extract-color-styles": {
       try {
         const paintStyles = figma.getLocalPaintStyles();
@@ -3049,6 +4185,84 @@ figma.ui.onmessage = async msg => {
       } catch (error) {
         figma.notify(`❌ Error extracting color styles: ${error.message}`);
         console.error("Error extracting color styles:", error);
+      }
+      break;
+    }
+    case "extract-color-variables": {
+      try {
+        const variables = figma.variables.getLocalVariables();
+        const extractedColors = [];
+        const processedIds = new Set(); // Track processed variables to avoid duplicates
+        
+        // Helper function to resolve color value from variable
+        function resolveColorValue(variable, modeId) {
+          try {
+            const value = variable.valuesByMode[modeId];
+            
+            // If value is a reference to another variable (alias)
+            if (value && typeof value === "object" && "type" in value && value.type === "VARIABLE_ALIAS") {
+              const referencedVar = figma.variables.getVariableById(value.id);
+              if (referencedVar && referencedVar.resolvedType === "COLOR") {
+                // Recursively resolve the referenced variable
+                return resolveColorValue(referencedVar, modeId);
+              }
+              return null;
+            }
+            
+            // If value is a direct color (RGBA object)
+            if (value && typeof value === "object" && "r" in value && "g" in value && "b" in value) {
+              return value;
+            }
+            
+            return null;
+          } catch (e) {
+            return null;
+          }
+        }
+        
+        for (const variable of variables) {
+          // Only process COLOR type variables
+          if (variable.resolvedType === "COLOR" && !processedIds.has(variable.id)) {
+            processedIds.add(variable.id);
+            
+            // Get all modes (e.g., light, dark)
+            const modeIds = variable.valuesByMode ? Object.keys(variable.valuesByMode) : [];
+            
+            if (modeIds.length > 0) {
+              // Use the first available mode (usually "default" or first mode)
+              const firstModeId = modeIds[0];
+              const colorValue = resolveColorValue(variable, firstModeId);
+              
+              if (colorValue) {
+                const r = Math.round(colorValue.r * 255);
+                const g = Math.round(colorValue.g * 255);
+                const b = Math.round(colorValue.b * 255);
+                const hex = "#" + r.toString(16).padStart(2, "0") + 
+                                 g.toString(16).padStart(2, "0") + 
+                                 b.toString(16).padStart(2, "0");
+                
+                extractedColors.push({
+                  name: variable.name,
+                  hex: hex.toUpperCase()
+                });
+              }
+            }
+          }
+        }
+        
+        figma.ui.postMessage({ 
+          type: "color-variables-extracted", 
+          colors: extractedColors 
+        });
+        
+        if (extractedColors.length === 0) {
+          figma.notify("⚠️ No color variables found in this file");
+        } else {
+          figma.notify(`✅ Extracted ${extractedColors.length} color variables`);
+        }
+      } catch (error) {
+        figma.notify(`❌ Error extracting color variables: ${error.message}`);
+        console.error("Error extracting color variables:", error);
       }
       break;
     }
