@@ -4,6 +4,122 @@ figma.showUI(__html__, { width: 600, height: 700 });
 // Global cancel flag
 let cancelRequested = false;
 
+// Global component cache
+let componentCache = {
+  components: [],
+  timestamp: 0,
+  pageName: null
+};
+
+// Function to collect all components from document (with caching)
+function collectAllComponents(forceRefresh = false) {
+  const currentPageName = figma.currentPage.name;
+  const now = Date.now();
+  const cacheAge = now - componentCache.timestamp;
+  const cacheValid = !forceRefresh && 
+                     componentCache.components.length > 0 && 
+                     componentCache.pageName === currentPageName &&
+                     cacheAge < 300000; // Cache valid for 5 minutes
+  
+  if (cacheValid) {
+    console.log("[component-cache] Using cached components:", componentCache.components.length, "components");
+    return componentCache.components;
+  }
+  
+  console.log("[component-cache] Collecting components (cache miss or expired)");
+  
+  const allComponents = [];
+  
+  function collectComponents(n, depth = 0) {
+    // Limit depth to avoid infinite recursion and improve performance
+    if (depth > 100) {
+      console.warn("[component-cache] Max depth reached, stopping traversal");
+      return;
+    }
+    
+    try {
+      if (n.type === "COMPONENT") {
+        allComponents.push({
+          id: n.id,
+          name: n.name,
+          description: n.description || ""
+        });
+      }
+      
+      // Only traverse children if node has children property
+      if ("children" in n && Array.isArray(n.children)) {
+        for (const child of n.children) {
+          try {
+            collectComponents(child, depth + 1);
+          } catch (childError) {
+            // Skip children that can't be accessed
+            console.warn(`[component-cache] Could not access child:`, childError);
+          }
+        }
+      }
+    } catch (nodeError) {
+      // Skip nodes that can't be accessed
+      console.warn(`[component-cache] Could not access node:`, nodeError);
+    }
+  }
+  
+  // Only scan current page instead of entire document to avoid freezing
+  console.log("[component-cache] Scanning current page:", currentPageName);
+  collectComponents(figma.currentPage);
+  
+  // Also check if there are components in other pages (but limit to first 10 pages to avoid freezing)
+  const allPages = figma.root.children.filter(child => child.type === "PAGE");
+  const pagesToScan = allPages.slice(0, 10); // Limit to first 10 pages
+  
+  if (pagesToScan.length > 1) {
+    console.log(`[component-cache] Also scanning ${pagesToScan.length - 1} additional page(s)`);
+    for (let i = 1; i < pagesToScan.length; i++) {
+      try {
+        collectComponents(pagesToScan[i]);
+      } catch (pageError) {
+        console.warn(`[component-cache] Could not scan page ${pagesToScan[i].name}:`, pageError);
+      }
+    }
+  }
+  
+  // Sort by name
+  allComponents.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  
+  // Update cache
+  componentCache = {
+    components: allComponents,
+    timestamp: now,
+    pageName: currentPageName
+  };
+  
+  console.log("[component-cache] Cached", allComponents.length, "components");
+  return allComponents;
+}
+
+// Function to add component to cache
+function addComponentToCache(component) {
+  if (!component || !component.id) return;
+  
+  // Check if component already exists in cache
+  const exists = componentCache.components.some(c => c.id === component.id);
+  if (!exists) {
+    componentCache.components.push(component);
+    // Re-sort
+    componentCache.components.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    console.log("[component-cache] Added new component to cache:", component.name);
+  }
+}
+
+// Function to invalidate cache
+function invalidateComponentCache() {
+  componentCache = {
+    components: [],
+    timestamp: 0,
+    pageName: null
+  };
+  console.log("[component-cache] Cache invalidated");
+}
+
 // Utility: traverse nodes (skip hidden nodes, Sticky Notes, and "Not check design")
 function traverse(node, cb, skipHidden = true) {
   // Skip hidden nodes if skipHidden is true
@@ -662,7 +778,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
     } else {
       // Auto is not in scale, show warning
       return {
-        severity: "error",
+        severity: "warn",
         type: "line-height",
         message: `Line-height is set to "AUTO" — set an explicit value to ensure spacing calculations are accurate.`,
         id: node.id,
@@ -712,7 +828,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
     }
     
     return {
-      severity: "error",
+      severity: "warn",
       type: "line-height",
       message: `Line-height ${lineHeightPercent}%${detailInfo} không theo scale. Scale: ${scaleDisplay}%`,
       id: node.id,
@@ -731,7 +847,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
       // Use configurable baseline threshold (default 120% = 1.2x)
       if (ratioPercent < lineHeightBaselineThreshold) {
         return {
-          severity: "error",
+          severity: "warn",
           type: "line-height",
           message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightValue}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
@@ -743,7 +859,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
       if (lineHeightPercent < lineHeightBaselineThreshold) {
         const lineHeightPx = lineHeightPixels !== null ? lineHeightPixels : Math.round((lineHeightPercent / 100) * fontSize);
         return {
-          severity: "error",
+          severity: "warn",
           type: "line-height",
           message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightPx}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
@@ -1971,7 +2087,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             // Check against custom font-size scale
             if (!customFontSizeScale.includes(Math.round(fs))) {
           addIssue({
-            severity: "error",
+            severity: "warn",
             type: "typography",
                 message: `fontSize ${fs}px does not follow scale on text "${node.characters.slice(0, 30)}". Scale: ${customFontSizeScale.join(", ")}`,
                 id: node.id,
@@ -1981,7 +2097,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           } else if (!isValidTypographySize(fs)) {
             // Check against default scale
             addIssue({
-              severity: "error",
+              severity: "warn",
               type: "typography",
               message: `fontSize ${fs}px does not follow scale on text "${node.characters.slice(0, 30)}". Scale: ${RULES.allTypographySizes.join(", ")}`,
               id: node.id,
@@ -2070,6 +2186,9 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         if (RULES.checkTextContrast) {
           const contrastIssue = checkTextContrast(node);
           if (contrastIssue) {
+            // Store additional info for fix functionality
+            contrastIssue.textColorHex = contrastIssue.textColor;
+            contrastIssue.backgroundColorHex = contrastIssue.backgroundColor;
             // Group similar contrast issues: same ratio, text color, background color, and background node name
             const contrastKey = `${contrastIssue.contrast.toFixed(2)}|${contrastIssue.textColor}|${contrastIssue.backgroundColor}|${contrastIssue.backgroundColorNode}`;
             if (!contrastGroups.has(contrastKey)) {
@@ -2083,6 +2202,10 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         if (RULES.checkTextSizeMobile) {
           const mobileSizeIssue = checkTextSizeMobile(node);
           if (mobileSizeIssue) {
+            // Store font info for fix functionality
+            if (node.fontName) {
+              mobileSizeIssue.fontName = node.fontName;
+            }
             addIssue(mobileSizeIssue);
           }
         }
@@ -2854,6 +2977,11 @@ async function applyTypographyFix(node, bestMatch) {
 
 figma.ui.onmessage = async msg => {
   switch (msg.type) {
+    case "notify": {
+      const message = msg.message || "Notification";
+      figma.notify(message);
+      break;
+    }
     case "cancel-scan": {
       cancelRequested = true;
       figma.notify("Cancelling scan...");
@@ -2873,6 +3001,7 @@ figma.ui.onmessage = async msg => {
     const lineHeightBaselineThreshold = msg.lineHeightBaselineThreshold || 120;
     const typographyStyles = msg.typographyStyles || [];
     const typographyRules = msg.typographyRules || {};
+    const ignoredIssuesFromUI = msg.ignoredIssues || {}; // Get ignored issues from UI
     
     // Parse spacing guidelines from input
     let customSpacingScale = null;
@@ -2960,7 +3089,28 @@ figma.ui.onmessage = async msg => {
     
     try {
       const issues = await scan(mode, customSpacingScale, spacingThreshold, customColorScale, customFontSizeScale, fontSizeThreshold, customLineHeightScale, lineHeightThreshold, lineHeightBaselineThreshold, typographyStyles, typographyRules);
-    figma.ui.postMessage({ type: "report", issues, context });
+      
+      // Mark ignored issues
+      if (ignoredIssuesFromUI && typeof ignoredIssuesFromUI === "object") {
+        issues.forEach(issue => {
+          if (ignoredIssuesFromUI[issue.id] === true) {
+            issue.ignored = true;
+            issue.severity = "info"; // Change to info for ignored issues
+          }
+        });
+      }
+      
+      // Limit issues array size to prevent memory errors
+      // Figma has a limit on postMessage data size (typically ~8MB)
+      // Each issue is roughly 1-2KB, so limit to ~3000 issues per message
+      const MAX_ISSUES_PER_MESSAGE = 3000;
+      const issuesToSend = issues.slice(0, MAX_ISSUES_PER_MESSAGE);
+      
+      if (issues.length > MAX_ISSUES_PER_MESSAGE) {
+        figma.notify(`⚠️ Found ${issues.length} issues, but only showing first ${MAX_ISSUES_PER_MESSAGE} to prevent memory errors.`);
+      }
+      
+      figma.ui.postMessage({ type: "report", issues: issuesToSend, context, totalIssues: issues.length });
     } catch (error) {
       figma.notify(`Scan failed: ${error.message}`);
       figma.ui.postMessage({ type: "report", issues: [], error: error.message, context });
@@ -4078,7 +4228,7 @@ figma.ui.onmessage = async msg => {
           throw new Error("Invalid issue data");
         }
         
-        if (!propertyName || !["paddingLeft", "paddingRight", "paddingTop", "paddingBottom"].includes(propertyName)) {
+        if (!propertyName || !["paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing"].includes(propertyName)) {
           throw new Error("Invalid property name");
         }
         
@@ -4100,12 +4250,12 @@ figma.ui.onmessage = async msg => {
           break;
         }
         
-        // Check if node supports padding (FRAME, COMPONENT, INSTANCE)
+        // Check if node supports spacing properties (FRAME, COMPONENT, INSTANCE)
         if (node.type !== "FRAME" && node.type !== "COMPONENT" && node.type !== "INSTANCE") {
-          throw new Error("Node does not support padding properties");
+          throw new Error("Node does not support spacing properties");
         }
         
-        // Check if auto-layout is enabled
+        // Check if auto-layout is enabled (required for both padding and itemSpacing)
         if (!node.layoutMode || node.layoutMode === "NONE") {
           throw new Error("Auto-layout is not enabled. Please enable auto-layout first.");
         }
@@ -4119,6 +4269,8 @@ figma.ui.onmessage = async msg => {
           node.paddingTop = value;
         } else if (propertyName === "paddingBottom") {
           node.paddingBottom = value;
+        } else if (propertyName === "itemSpacing") {
+          node.itemSpacing = value;
         }
         
         figma.notify(`✅ Changed ${propertyName} to ${value}px`);
@@ -4136,6 +4288,766 @@ figma.ui.onmessage = async msg => {
         console.error("Error fixing spacing:", error);
         
         // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-text-size-issue": {
+      try {
+        const issue = msg.issue;
+        const fontSize = msg.fontSize;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (typeof fontSize !== "number" || fontSize < 14) {
+          throw new Error("Font size must be at least 14px for ADA compliance");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || node.type !== "TEXT") {
+          figma.notify("⚠️ Node is not a text node");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a text node"
+          });
+          break;
+        }
+        
+        // Get current font info
+        const fontName = issue.fontName || node.fontName || { family: "Inter", style: "Regular" };
+        
+        // Load font
+        try {
+          await figma.loadFontAsync(fontName);
+        } catch (fontError) {
+          // Try Regular as fallback
+          try {
+            await figma.loadFontAsync({ family: fontName.family, style: "Regular" });
+            fontName.style = "Regular";
+          } catch (fallbackError) {
+            throw new Error(`Font "${fontName.family}" could not be loaded. Please ensure it's installed.`);
+          }
+        }
+        
+        // Apply font size
+        node.fontSize = fontSize;
+        node.fontName = fontName;
+        
+        figma.notify(`✅ Changed font size to ${fontSize}px`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Changed font size to ${fontSize}px`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing text size: ${errorMessage}`);
+        console.error("Error fixing text size:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "get-contrast-colors": {
+      try {
+        const issue = msg.issue;
+        const colors = [];
+        
+        // Helper function to resolve color value from variable (reuse from extract-color-variables)
+        function resolveColorValueForContrast(variable) {
+          try {
+            const modes = variable.valuesByMode;
+            if (!modes || Object.keys(modes).length === 0) return null;
+            
+            const firstMode = Object.keys(modes)[0];
+            let value = modes[firstMode];
+            
+            // Handle aliases
+            if (value && typeof value === "object" && "type" in value && value.type === "VARIABLE_ALIAS") {
+              const referencedVar = figma.variables.getVariableById(value.id);
+              if (referencedVar) {
+                return resolveColorValueForContrast(referencedVar);
+              }
+              return null;
+            }
+            
+            // Handle direct color
+            if (value && typeof value === "object" && "r" in value && "g" in value && "b" in value) {
+              const r = Math.round(value.r * 255);
+              const g = Math.round(value.g * 255);
+              const b = Math.round(value.b * 255);
+              return "#" + r.toString(16).padStart(2, "0") + 
+                         g.toString(16).padStart(2, "0") + 
+                         b.toString(16).padStart(2, "0");
+            }
+            
+            return null;
+          } catch (e) {
+            console.warn("Error resolving color value:", e);
+            return null;
+          }
+        }
+        
+        // 1. Get from Variables (COLOR type)
+        try {
+          const variables = figma.variables.getLocalVariables();
+          for (const variable of variables) {
+            if (variable.resolvedType === "COLOR") {
+              const colorValue = resolveColorValueForContrast(variable);
+              if (colorValue) {
+                colors.push({
+                  source: "variable",
+                  id: variable.id,
+                  name: variable.name,
+                  hex: colorValue.toUpperCase(),
+                  variable: variable
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Error getting variables:", e);
+        }
+        
+        // 2. Get from Paint Styles
+        try {
+          const paintStyles = figma.getLocalPaintStyles();
+          for (const style of paintStyles) {
+            if (style.paints && style.paints.length > 0) {
+              const firstPaint = style.paints[0];
+              if (firstPaint.type === "SOLID" && firstPaint.color) {
+                const color = firstPaint.color;
+                const r = Math.round(color.r * 255);
+                const g = Math.round(color.g * 255);
+                const b = Math.round(color.b * 255);
+                const hex = "#" + r.toString(16).padStart(2, "0") + 
+                                 g.toString(16).padStart(2, "0") + 
+                                 b.toString(16).padStart(2, "0");
+                colors.push({
+                  source: "style",
+                  id: style.id,
+                  name: style.name,
+                  hex: hex.toUpperCase(),
+                  style: style
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Error getting paint styles:", e);
+        }
+        
+        // 3. Get from input (will be added in UI)
+        
+        figma.ui.postMessage({
+          type: "contrast-colors-loaded",
+          issueId: issue.id,
+          colors: colors
+        });
+      } catch (error) {
+        console.error("Error getting contrast colors:", error);
+        figma.ui.postMessage({
+          type: "contrast-colors-loaded",
+          issueId: msg.issue.id,
+          colors: [],
+          error: error.message
+        });
+      }
+      break;
+    }
+    case "fix-contrast-issue": {
+      try {
+        const issue = msg.issue;
+        const color = msg.color;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!color || !color.startsWith("#")) {
+          throw new Error("Invalid color format");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || node.type !== "TEXT") {
+          figma.notify("⚠️ Node is not a text node");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a text node"
+          });
+          break;
+        }
+        
+        // Parse color hex to RGB
+        const hex = color.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+        
+        const newColor = { r: r, g: g, b: b };
+        
+        // Apply color to text fills
+        if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+          const fills = node.fills.map(fill => {
+            if (fill.type === "SOLID" && fill.visible !== false) {
+              return {
+                type: "SOLID",
+                color: newColor,
+                opacity: fill.opacity !== undefined ? fill.opacity : 1,
+                visible: fill.visible !== undefined ? fill.visible : true
+              };
+            }
+            return fill;
+          });
+          node.fills = fills;
+        } else {
+          // If no fills, create one
+          node.fills = [{
+            type: "SOLID",
+            color: newColor,
+            opacity: 1,
+            visible: true
+          }];
+        }
+        
+        figma.notify(`✅ Changed text color to ${color}`);
+        
+        // Send success message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Changed text color to ${color}`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing contrast: ${errorMessage}`);
+        console.error("Error fixing contrast:", error);
+        
+        // Send error message to UI
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-empty-frame-issue": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || (node.type !== "FRAME" && node.type !== "COMPONENT")) {
+          figma.notify("⚠️ Node is not a frame or component");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a frame or component"
+          });
+          break;
+        }
+        
+        // Check if frame has only one child
+        if (!("children" in node) || node.children.length !== 1) {
+          figma.notify("⚠️ Frame does not have exactly one child");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Frame does not have exactly one child"
+          });
+          break;
+        }
+        
+        const child = node.children[0];
+        const frameName = node.name || "";
+        const childName = child.name || "";
+        
+        // Check if frame has meaningful name (not default Figma naming)
+        const hasMeaningfulName = frameName && !/frame|group/i.test(frameName);
+        
+        // Check if frame has style config (fills, effects, etc.)
+        const hasStyleConfig = hasVisualContent(node);
+        
+        // Check if frame has padding
+        const hasPadding = (node.paddingLeft && node.paddingLeft > 0) ||
+                          (node.paddingRight && node.paddingRight > 0) ||
+                          (node.paddingTop && node.paddingTop > 0) ||
+                          (node.paddingBottom && node.paddingBottom > 0);
+        
+        // Decision: Keep frame if it has meaningful name AND (style config OR padding)
+        // Otherwise, remove frame and keep child
+        if (hasMeaningfulName && (hasStyleConfig || hasPadding)) {
+          figma.notify("✅ Frame kept (has meaningful name and style config)");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: "✅ Frame kept (has meaningful name and style config)"
+          });
+          break;
+        }
+        
+        // Remove frame and keep child
+        // Preserve meaningful name on child if frame has it
+        if (hasMeaningfulName && !childName) {
+          child.name = frameName;
+        } else if (hasMeaningfulName && childName && childName !== frameName) {
+          // If both have names, combine them intelligently
+          child.name = `${frameName} ${childName}`;
+        }
+        
+        // Move child to parent of frame
+        const parent = node.parent;
+        if (!parent || !("appendChild" in parent)) {
+          throw new Error("Cannot remove frame: parent is not a valid container");
+        }
+        
+        // Check if parent is an instance or inside an instance
+        // Cannot modify instances or nodes inside instances
+        let currentParent = parent;
+        let instanceParent = null;
+        while (currentParent && currentParent.type !== "PAGE") {
+          if (currentParent.type === "INSTANCE") {
+            instanceParent = currentParent;
+            break;
+          }
+          if (currentParent.type === "COMPONENT") {
+            instanceParent = currentParent;
+            break;
+          }
+          currentParent = currentParent.parent;
+        }
+        
+        if (instanceParent) {
+          const parentName = instanceParent.name || "Unknown";
+          throw new Error(`Cannot modify frame: The frame is inside a ${instanceParent.type === "INSTANCE" ? "component instance" : "component"} "${parentName}". To fix this, you need to edit the main component directly. Right-click the component and select "Edit Component" to enter Design Mode.`);
+        }
+        
+        // Check if node itself is inside an instance
+        if (isChildOfComponent(node)) {
+          throw new Error("Cannot modify frame: The frame is inside a component instance. To fix this, right-click the component instance and select 'Edit Component' to enter Design Mode, then try again.");
+        }
+        
+        try {
+          // Calculate absolute position of child
+          const absoluteX = node.x + (child.x || 0);
+          const absoluteY = node.y + (child.y || 0);
+          
+          // Clone child to preserve it (since we'll remove the frame)
+          const clonedChild = child.clone();
+          
+          // Set position relative to parent
+          clonedChild.x = absoluteX;
+          clonedChild.y = absoluteY;
+          
+          // Insert cloned child before frame in parent
+          const frameIndex = parent.children.indexOf(node);
+          parent.insertChild(frameIndex, clonedChild);
+          
+          // Remove frame (original child will be removed with frame)
+          node.remove();
+          
+          figma.notify(`✅ Removed redundant frame, kept child "${clonedChild.name}"`);
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: `✅ Removed redundant frame, kept child "${clonedChild.name}"`
+          });
+        } catch (insertError) {
+          // If insertChild fails, it might be because parent is read-only
+          if (insertError.message && insertError.message.includes("instance")) {
+            throw new Error("Cannot modify frame: The frame's parent is a component instance. To fix this, right-click the component instance and select 'Edit Component' to enter Design Mode, then try again.");
+          }
+          throw insertError;
+        }
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing empty frame: ${errorMessage}`);
+        console.error("Error fixing empty frame:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-autolayout-issue": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node || (node.type !== "FRAME" && node.type !== "COMPONENT" && node.type !== "INSTANCE")) {
+          figma.notify("⚠️ Node is not a frame, component, or instance");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a frame, component, or instance"
+          });
+          break;
+        }
+        
+        // If node is an INSTANCE, or node is inside an INSTANCE, we need to enable auto-layout on the main component
+        let targetNode = node;
+        if (node.type === "INSTANCE" && node.mainComponent) {
+          targetNode = node.mainComponent;
+          console.log(`[fix-autolayout] Node is instance, using main component: ${targetNode.id}`);
+        } else if (node.parent && node.parent.type === "INSTANCE" && node.parent.mainComponent) {
+          // Node is inside an instance, need to find corresponding node in main component
+          const instanceParent = node.parent;
+          const mainComponent = instanceParent.mainComponent;
+          
+          // Try to find the corresponding node in main component by name or index
+          if (mainComponent && "children" in mainComponent) {
+            const nodeIndex = instanceParent.children.indexOf(node);
+            if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
+              targetNode = mainComponent.children[nodeIndex];
+              console.log(`[fix-autolayout] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
+            } else {
+              // Try to find by name
+              const nodeName = node.name;
+              const matchingNode = mainComponent.children.find(child => child.name === nodeName);
+              if (matchingNode) {
+                targetNode = matchingNode;
+                console.log(`[fix-autolayout] Node is inside instance, found by name in main component: ${targetNode.id}`);
+              } else {
+                throw new Error("Cannot enable auto-layout: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+              }
+            }
+          } else {
+            throw new Error("Cannot enable auto-layout: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+          }
+        }
+        
+        // Check if auto-layout is already enabled
+        if (targetNode.layoutMode && targetNode.layoutMode !== "NONE") {
+          figma.notify("✅ Auto-layout is already enabled");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: "✅ Auto-layout is already enabled"
+          });
+          break;
+        }
+        
+        // Determine layout direction based on children arrangement
+        // Use original node for calculation (to get correct positions)
+        let layoutMode = "HORIZONTAL"; // Default
+        if ("children" in node && node.children.length > 0) {
+          const children = node.children;
+          
+          // Check if children are arranged horizontally or vertically
+          if (children.length >= 2) {
+            const firstChild = children[0];
+            const secondChild = children[1];
+            
+            // Calculate distances
+            const horizontalDistance = Math.abs((secondChild.x || 0) - (firstChild.x || 0));
+            const verticalDistance = Math.abs((secondChild.y || 0) - (firstChild.y || 0));
+            
+            // If vertical distance is greater, use vertical layout
+            if (verticalDistance > horizontalDistance) {
+              layoutMode = "VERTICAL";
+            }
+          }
+        }
+        
+        // Try to enable auto-layout directly - let Figma API handle permissions
+        try {
+          console.log(`[fix-autolayout] Before enable - layoutMode: ${targetNode.layoutMode}, node type: ${targetNode.type}, node id: ${targetNode.id}`);
+          console.log(`[fix-autolayout] Node locked: ${targetNode.locked}, parent: ${targetNode.parent ? targetNode.parent.type : 'none'}`);
+          
+          // Check if node is locked
+          if (targetNode.locked) {
+            throw new Error("Cannot enable auto-layout: node is locked. Please unlock it first.");
+          }
+          
+          // Try to enable auto-layout on target node (component if instance, or original node)
+          try {
+            targetNode.layoutMode = layoutMode;
+          } catch (setError) {
+            console.error(`[fix-autolayout] Error setting layoutMode:`, setError);
+            throw new Error(`Cannot set layoutMode: ${setError.message || setError}. The node may be in read-only mode.`);
+          }
+          
+          // Verify that auto-layout was actually enabled
+          const verifyLayoutMode = targetNode.layoutMode;
+          console.log(`[fix-autolayout] After enable - layoutMode: ${verifyLayoutMode}, expected: ${layoutMode}`);
+          
+          if (verifyLayoutMode === "NONE" || !verifyLayoutMode) {
+            console.error(`[fix-autolayout] Failed to enable - layoutMode is still: ${verifyLayoutMode}`);
+            // Try to get more info about why it failed
+            console.error(`[fix-autolayout] Node info - type: ${targetNode.type}, locked: ${targetNode.locked}, parent type: ${targetNode.parent ? targetNode.parent.type : 'none'}`);
+            throw new Error("Failed to enable auto-layout. The node may be locked, in read-only mode, or inside an instance. Please ensure you're in Design Mode and the node is editable.");
+          }
+          
+          // Set default spacing (0) if not already set
+          if (typeof targetNode.itemSpacing !== "number") {
+            targetNode.itemSpacing = 0;
+          }
+          
+          // Set default padding (0) if not already set
+          if (typeof targetNode.paddingLeft !== "number") {
+            targetNode.paddingLeft = 0;
+          }
+          if (typeof targetNode.paddingRight !== "number") {
+            targetNode.paddingRight = 0;
+          }
+          if (typeof targetNode.paddingTop !== "number") {
+            targetNode.paddingTop = 0;
+          }
+          if (typeof targetNode.paddingBottom !== "number") {
+            targetNode.paddingBottom = 0;
+          }
+          
+          // Final verify
+          const finalLayoutMode = targetNode.layoutMode;
+          console.log(`[fix-autolayout] Final verify - layoutMode: ${finalLayoutMode}, itemSpacing: ${targetNode.itemSpacing}`);
+          
+          figma.notify(`✅ Enabled auto-layout (${finalLayoutMode.toLowerCase()})`);
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: `✅ Enabled auto-layout (${finalLayoutMode.toLowerCase()})`
+          });
+        } catch (apiError) {
+          // If Figma API throws error, it means we don't have permission
+          const errorMessage = apiError && apiError.message ? apiError.message : "Unknown error";
+          console.error("[fix-autolayout] Error enabling auto-layout:", apiError);
+          throw new Error(`Cannot enable auto-layout: ${errorMessage}. Please ensure you're in Design Mode and the node is editable.`);
+        }
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error enabling auto-layout: ${errorMessage}`);
+        console.error("Error enabling auto-layout:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "fix-group-issue": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        if (node.type !== "GROUP") {
+          figma.notify("⚠️ Node is not a Group");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node is not a Group"
+          });
+          break;
+        }
+        
+        // Check if node is locked
+        if (node.locked) {
+          throw new Error("Cannot convert group: node is locked. Please unlock it first.");
+        }
+        
+        // Check if node is inside an instance
+        if (node.parent && node.parent.type === "INSTANCE") {
+          throw new Error("Cannot convert group: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+        }
+        
+        // Store group properties
+        const groupName = node.name;
+        const groupChildren = node.children.slice(); // Copy array
+        const parent = node.parent;
+        const groupIndex = parent && "children" in parent ? parent.children.indexOf(node) : -1;
+        
+        // Get group bounds
+        const groupX = node.x;
+        const groupY = node.y;
+        
+        // Create a new Frame to replace the Group
+        const newFrame = figma.createFrame();
+        newFrame.name = groupName;
+        newFrame.x = groupX;
+        newFrame.y = groupY;
+        
+        // Enable auto-layout on the new Frame first
+        // Determine layout direction based on children arrangement
+        let layoutMode = "HORIZONTAL"; // Default
+        if (groupChildren.length > 0) {
+          // Check if children are arranged more vertically or horizontally
+          const firstChild = groupChildren[0];
+          const lastChild = groupChildren[groupChildren.length - 1];
+          const verticalDiff = Math.abs(lastChild.y - firstChild.y);
+          const horizontalDiff = Math.abs(lastChild.x - firstChild.x);
+          if (verticalDiff > horizontalDiff) {
+            layoutMode = "VERTICAL";
+          }
+        }
+        
+        newFrame.layoutMode = layoutMode;
+        newFrame.primaryAxisSizingMode = "AUTO";
+        newFrame.counterAxisSizingMode = "AUTO";
+        
+        // Set default spacing
+        newFrame.itemSpacing = 0;
+        newFrame.paddingLeft = 0;
+        newFrame.paddingRight = 0;
+        newFrame.paddingTop = 0;
+        newFrame.paddingBottom = 0;
+        
+        // Insert Frame into parent BEFORE moving children (so it's in the right position)
+        if (parent && "children" in parent) {
+          if (groupIndex >= 0) {
+            parent.insertChild(groupIndex, newFrame);
+          } else {
+            parent.appendChild(newFrame);
+          }
+        }
+        
+        // Move children from Group to Frame
+        // When we appendChild, the child is automatically removed from the Group
+        for (const child of groupChildren) {
+          try {
+            newFrame.appendChild(child);
+          } catch (e) {
+            console.warn(`[fix-group] Could not append child ${child.name}:`, e);
+          }
+        }
+        
+        // Remove the old Group only if it still exists and has no children
+        // In Figma, when all children are moved out, the Group might be auto-removed
+        try {
+          // Check if node still exists
+          const nodeStillExists = figma.getNodeById(node.id);
+          if (nodeStillExists && nodeStillExists.type === "GROUP") {
+            // Check if Group has any children left
+            if ("children" in nodeStillExists && nodeStillExists.children.length === 0) {
+              try {
+                nodeStillExists.remove();
+                console.log("[fix-group] Successfully removed empty Group");
+              } catch (removeError) {
+                // Group might have been auto-removed, that's fine
+                console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
+              }
+            } else if ("children" in nodeStillExists && nodeStillExists.children.length > 0) {
+              // Some children couldn't be moved, try to move remaining ones
+              console.log(`[fix-group] Group still has ${nodeStillExists.children.length} children, trying to move them`);
+              const remainingChildren = nodeStillExists.children.slice();
+              for (const remainingChild of remainingChildren) {
+                try {
+                  newFrame.appendChild(remainingChild);
+                } catch (e) {
+                  console.warn(`[fix-group] Could not move remaining child ${remainingChild.name}:`, e);
+                }
+              }
+              // Try to remove again after moving remaining children
+              try {
+                const nodeCheck = figma.getNodeById(node.id);
+                if (nodeCheck && nodeCheck.type === "GROUP") {
+                  if ("children" in nodeCheck && nodeCheck.children.length === 0) {
+                    nodeCheck.remove();
+                    console.log("[fix-group] Successfully removed Group after moving remaining children");
+                  } else {
+                    console.warn(`[fix-group] Group still has ${nodeCheck.children.length} children, cannot remove`);
+                  }
+                }
+              } catch (removeError) {
+                // Group might have been auto-removed, that's fine
+                console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
+              }
+            }
+          } else {
+            console.log("[fix-group] Group was already removed or converted (node no longer exists or is not a GROUP)");
+          }
+        } catch (removeError) {
+          // Group might have been auto-removed when children were moved, that's fine
+          console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
+        }
+        
+        // Always send success message even if Group removal had issues
+        // The conversion to Frame is the main goal, and that was successful
+        figma.notify(`✅ Converted Group to Frame with Auto-layout (${layoutMode.toLowerCase()})`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Converted Group to Frame with Auto-layout (${layoutMode.toLowerCase()})`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error converting group: ${errorMessage}`);
+        console.error("Error converting group:", error);
+        
         figma.ui.postMessage({
           type: "fix-issue-result",
           issueId: issueId,
@@ -4269,6 +5181,540 @@ figma.ui.onmessage = async msg => {
     case "close":
       figma.closePlugin();
       break;
+    case "fix-position-issue": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // If node is inside an instance, try to find corresponding node in main component
+        let targetNode = node;
+        if (node.parent && node.parent.type === "INSTANCE" && node.parent.mainComponent) {
+          // Node is inside an instance, need to find corresponding node in main component
+          const instanceParent = node.parent;
+          const mainComponent = instanceParent.mainComponent;
+          
+          // Try to find the corresponding node in main component by name or index
+          if (mainComponent && "children" in mainComponent) {
+            const nodeIndex = instanceParent.children.indexOf(node);
+            if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
+              targetNode = mainComponent.children[nodeIndex];
+              console.log(`[fix-position] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
+            } else {
+              // Try to find by name
+              const nodeName = node.name;
+              const matchingNode = mainComponent.children.find(child => child.name === nodeName);
+              if (matchingNode) {
+                targetNode = matchingNode;
+                console.log(`[fix-position] Node is inside instance, found by name in main component: ${targetNode.id}`);
+              } else {
+                throw new Error("Cannot fix position: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+              }
+            }
+          } else {
+            throw new Error("Cannot fix position: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+          }
+        }
+        
+        // Check if target node is an INSTANCE - cannot override position in instances
+        if (targetNode.type === "INSTANCE") {
+          throw new Error("Cannot fix position: the node is an instance. Position properties cannot be overridden in instances. Please edit the main component directly.");
+        }
+        
+        // Check if target node is locked
+        if (targetNode.locked) {
+          throw new Error("Cannot fix position: node is locked. Please unlock it first.");
+        }
+        
+        // Try to set position to (0, 0) - wrap in try-catch to handle API errors
+        try {
+          targetNode.x = 0;
+          targetNode.y = 0;
+        } catch (apiError) {
+          const errorMessage = apiError && apiError.message ? apiError.message : "Unknown error";
+          console.error("[fix-position] Error setting position:", apiError);
+          throw new Error(`Cannot fix position: ${errorMessage}. The node may be inside an instance or have restricted properties.`);
+        }
+        
+        figma.notify(`✅ Fixed position to (0, 0) for "${targetNode.name}"`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Fixed position to (0, 0) for "${targetNode.name}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error fixing position: ${errorMessage}`);
+        console.error("Error fixing position:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: msg.issue ? msg.issue.id : null,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "remove-position-layer": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // If node is inside an instance, try to find corresponding node in main component
+        let targetNode = node;
+        if (node.parent && node.parent.type === "INSTANCE" && node.parent.mainComponent) {
+          // Node is inside an instance, need to find corresponding node in main component
+          const instanceParent = node.parent;
+          const mainComponent = instanceParent.mainComponent;
+          
+          // Try to find the corresponding node in main component by name or index
+          if (mainComponent && "children" in mainComponent) {
+            const nodeIndex = instanceParent.children.indexOf(node);
+            if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
+              targetNode = mainComponent.children[nodeIndex];
+              console.log(`[remove-position] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
+            } else {
+              // Try to find by name
+              const nodeName = node.name;
+              const matchingNode = mainComponent.children.find(child => child.name === nodeName);
+              if (matchingNode) {
+                targetNode = matchingNode;
+                console.log(`[remove-position] Node is inside instance, found by name in main component: ${targetNode.id}`);
+              } else {
+                throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+              }
+            }
+          } else {
+            throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+          }
+        }
+        
+        // Check if target node is an INSTANCE - cannot remove instances directly
+        if (targetNode.type === "INSTANCE") {
+          throw new Error("Cannot remove layer: the node is an instance. Please edit the main component directly to remove it.");
+        }
+        
+        // Check if target node is locked
+        if (targetNode.locked) {
+          throw new Error("Cannot remove layer: node is locked. Please unlock it first.");
+        }
+        
+        // Store node name for notification
+        const nodeName = targetNode.name;
+        
+        // Try to remove the node - wrap in try-catch to handle API errors
+        try {
+          targetNode.remove();
+        } catch (apiError) {
+          const errorMessage = apiError && apiError.message ? apiError.message : "Unknown error";
+          console.error("[remove-position] Error removing node:", apiError);
+          throw new Error(`Cannot remove layer: ${errorMessage}. The node may be inside an instance or have restricted properties.`);
+        }
+        
+        figma.notify(`✅ Removed layer "${nodeName}"`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Removed layer "${nodeName}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error removing layer: ${errorMessage}`);
+        console.error("Error removing layer:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: msg.issue ? msg.issue.id : null,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "get-components-for-issue": {
+      try {
+        console.log("[get-components-for-issue] Received request", msg);
+        const issue = msg.issue;
+        if (!issue || !issue.id) {
+          console.error("[get-components-for-issue] Invalid issue data", issue);
+          throw new Error("Invalid issue data");
+        }
+        
+        console.log("[get-components-for-issue] Issue ID:", issue.id);
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          console.warn("[get-components-for-issue] Node not found for ID:", nodeId);
+          figma.ui.postMessage({
+            type: "components-for-issue-loaded",
+            issueId: issue.id,
+            similarComponents: []
+          });
+          break;
+        }
+        
+        console.log("[get-components-for-issue] Node found:", node.name, node.type);
+        
+        // Get all components from cache (or collect if cache miss)
+        const allComponents = collectAllComponents();
+        
+        // Show loading notification only if we had to scan (cache miss)
+        if (componentCache.timestamp === Date.now() || componentCache.components.length === 0) {
+          figma.notify("⏳ Finding similar components...", { timeout: 1000 });
+        }
+        
+        console.log("[get-components-for-issue] Found", allComponents.length, "components in document");
+        
+        // Find similar components based on name and structure
+        // Simple matching: check if component name is similar to node name
+        const nodeName = (node.name || "").toLowerCase();
+        const similarComponents = allComponents
+          .filter(comp => {
+            const compName = (comp.name || "").toLowerCase();
+            // Check if names are similar (contain same words or substring)
+            return compName.includes(nodeName) || nodeName.includes(compName) || 
+                   compName.split(/[\s-_]+/).some(word => nodeName.includes(word)) ||
+                   nodeName.split(/[\s-_]+/).some(word => compName.includes(word));
+          })
+          .slice(0, 5); // Limit to 5 most similar
+        
+        console.log("[get-components-for-issue] Found", similarComponents.length, "similar components");
+        console.log("[get-components-for-issue] Sending response with issueId:", issue.id);
+        
+        figma.ui.postMessage({
+          type: "components-for-issue-loaded",
+          issueId: issue.id,
+          similarComponents: similarComponents
+        });
+      } catch (error) {
+        console.error("Error getting components for issue:", error);
+        figma.ui.postMessage({
+          type: "components-for-issue-loaded",
+          issueId: msg.issue ? msg.issue.id : null,
+          similarComponents: []
+        });
+      }
+      break;
+    }
+    case "get-all-components": {
+      try {
+        console.log("[get-all-components] Received request", msg);
+        const issue = msg.issue;
+        console.log("[get-all-components] Issue:", issue);
+        
+        // Get all components from cache (or collect if cache miss)
+        const allComponents = collectAllComponents();
+        
+        // Show loading notification only if we had to scan (cache miss)
+        if (componentCache.timestamp === Date.now() || componentCache.components.length === 0) {
+          figma.notify("⏳ Loading components...", { timeout: 1000 });
+        }
+        
+        const issueId = issue ? issue.id : null;
+        console.log("[get-all-components] Sending response with issueId:", issueId);
+        
+        figma.ui.postMessage({
+          type: "all-components-loaded",
+          issueId: issueId,
+          components: allComponents
+        });
+      } catch (error) {
+        console.error("Error getting all components:", error);
+        figma.notify(`❌ Error loading components: ${error.message}`, { timeout: 3000 });
+        figma.ui.postMessage({
+          type: "all-components-loaded",
+          issueId: msg.issue ? msg.issue.id : null,
+          components: []
+        });
+      }
+      break;
+    }
+    case "create-component-from-issue": {
+      try {
+        const issue = msg.issue;
+        const componentName = msg.componentName;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!componentName || !componentName.trim()) {
+          throw new Error("Component name is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          throw new Error("Node not found");
+        }
+        
+        if (node.type !== "FRAME") {
+          throw new Error("Only frames can be converted to components");
+        }
+        
+        // Convert frame to component
+        // Clone the frame first to preserve it
+        const clonedFrame = node.clone();
+        
+        // Create component from cloned frame
+        // Note: Figma API doesn't have direct convert, so we create new component and copy properties
+        const newComponent = figma.createComponent();
+        newComponent.name = componentName.trim();
+        
+        // Copy basic properties
+        newComponent.resize(node.width, node.height);
+        if ("fills" in node && "fills" in newComponent) {
+          newComponent.fills = node.fills;
+        }
+        if ("effects" in node && "effects" in newComponent) {
+          newComponent.effects = node.effects;
+        }
+        if ("layoutMode" in node && "layoutMode" in newComponent) {
+          newComponent.layoutMode = node.layoutMode;
+        }
+        if ("itemSpacing" in node && "itemSpacing" in newComponent) {
+          newComponent.itemSpacing = node.itemSpacing;
+        }
+        if ("paddingLeft" in node && "paddingLeft" in newComponent) {
+          newComponent.paddingLeft = node.paddingLeft;
+        }
+        if ("paddingRight" in node && "paddingRight" in newComponent) {
+          newComponent.paddingRight = node.paddingRight;
+        }
+        if ("paddingTop" in node && "paddingTop" in newComponent) {
+          newComponent.paddingTop = node.paddingTop;
+        }
+        if ("paddingBottom" in node && "paddingBottom" in newComponent) {
+          newComponent.paddingBottom = node.paddingBottom;
+        }
+        
+        // Clone and append children
+        for (const child of node.children) {
+          const cloned = child.clone();
+          newComponent.appendChild(cloned);
+        }
+        
+        // Get parent and index before removing
+        const parent = node.parent;
+        const index = parent.children.indexOf(node);
+        
+        // Insert new component in the same parent
+        parent.insertChild(index, newComponent);
+        
+        // Replace original node with instance of new component
+        const instance = newComponent.createInstance();
+        instance.x = node.x;
+        instance.y = node.y;
+        instance.name = node.name; // Keep original name
+        
+        // Insert instance after component
+        parent.insertChild(index + 1, instance);
+        
+        // Remove original node
+        node.remove();
+        
+        // Remove cloned frame (we don't need it)
+        clonedFrame.remove();
+        
+        // Add new component to cache
+        addComponentToCache({
+          id: newComponent.id,
+          name: newComponent.name,
+          description: newComponent.description || ""
+        });
+        
+        figma.notify(`✅ Created component "${componentName.trim()}" and replaced frame`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Created component "${componentName.trim()}" and replaced frame`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error creating component: ${errorMessage}`);
+        console.error("Error creating component:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: msg.issue ? msg.issue.id : null,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "apply-component-to-issue": {
+      try {
+        const issue = msg.issue;
+        const componentId = msg.componentId;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!componentId) {
+          throw new Error("Component ID is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        const component = figma.getNodeById(componentId);
+        
+        if (!node) {
+          throw new Error("Node not found");
+        }
+        
+        if (!component || component.type !== "COMPONENT") {
+          throw new Error("Component not found");
+        }
+        
+        if (node.type !== "FRAME") {
+          throw new Error("Only frames can be replaced with component instances");
+        }
+        
+        // Create instance of component
+        const instance = component.createInstance();
+        instance.x = node.x;
+        instance.y = node.y;
+        instance.name = node.name; // Keep original name
+        
+        // Insert instance in the same parent
+        const parent = node.parent;
+        const index = parent.children.indexOf(node);
+        parent.insertChild(index, instance);
+        
+        // Remove original node
+        node.remove();
+        
+        figma.notify(`✅ Replaced frame with component "${component.name}"`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Replaced frame with component "${component.name}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error applying component: ${errorMessage}`);
+        console.error("Error applying component:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: msg.issue ? msg.issue.id : null,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
+    case "rename-node": {
+      try {
+        const issue = msg.issue;
+        const newName = msg.newName;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        if (!newName || !newName.trim()) {
+          throw new Error("Name is required");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // Check if node is locked
+        if (node.locked) {
+          throw new Error("Cannot rename: node is locked. Please unlock it first.");
+        }
+        
+        // Check if node is inside an instance
+        if (node.parent && node.parent.type === "INSTANCE") {
+          throw new Error("Cannot rename: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+        }
+        
+        // Store old name
+        const oldName = node.name || "Unnamed";
+        
+        // Rename the node
+        node.name = newName.trim();
+        
+        figma.notify(`✅ Renamed "${oldName}" to "${newName.trim()}"`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Renamed to "${newName.trim()}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error renaming: ${errorMessage}`);
+        console.error("Error renaming node:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
     default:
       break;
   }
