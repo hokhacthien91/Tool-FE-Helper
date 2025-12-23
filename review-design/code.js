@@ -895,6 +895,16 @@ function isChildOfComponent(node) {
   return false;
 }
 
+// Check if node is inside a Component INSTANCE (not the main component definition)
+function isInsideInstance(node) {
+  let parent = node.parent;
+  while (parent && parent.type !== "PAGE") {
+    if (parent.type === "INSTANCE") return true;
+    parent = parent.parent;
+  }
+  return false;
+}
+
 // Check if frame should be a component
 function shouldBeComponent(node) {
   if (node.type !== "FRAME" && node.type !== "INSTANCE") return false;
@@ -2003,15 +2013,18 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
 
       // 4) Empty/Redundant frames
       if (RULES.checkEmptyFrames) {
-        const emptyCheck = isEmptyOrRedundant(node);
-        if (emptyCheck) {
-          addIssue({
-            severity: emptyCheck.type === "empty" ? "error" : "warn",
-            type: "empty-frame",
-            message: emptyCheck.message,
-            id: node.id,
-            nodeName: nodeName
-          });
+        // Skip frames inside component instances (read-only in normal mode; can't auto-fix)
+        if (!isInsideInstance(node)) {
+          const emptyCheck = isEmptyOrRedundant(node);
+          if (emptyCheck) {
+            addIssue({
+              severity: emptyCheck.type === "empty" ? "error" : "warn",
+              type: "empty-frame",
+              message: emptyCheck.message,
+              id: node.id,
+              nodeName: nodeName
+            });
+          }
         }
       }
 
@@ -2504,6 +2517,101 @@ function lineHeightToPercent(node) {
   return null;
 }
 
+// Figma plugin runtime has practical size limits for postMessage and clientStorage payloads.
+// Oversized payloads can crash the VM with errors like:
+// "jsvm-cpp.wasm.br Uncaught RuntimeError: memory access out of bounds"
+function shrinkTokensForTransport(tokens, opts) {
+  opts = opts || {};
+  const maxNodesPerToken = typeof opts.maxNodesPerToken === "number" ? opts.maxNodesPerToken : 25; // keep a small sample for UI previews
+  const maxTotalNodeRefs = typeof opts.maxTotalNodeRefs === "number" ? opts.maxTotalNodeRefs : 4000; // global cap across all tokens
+  const sampleNodesWhenOverLimit = typeof opts.sampleNodesWhenOverLimit === "number" ? opts.sampleNodesWhenOverLimit : 3;
+
+  if (!tokens || typeof tokens !== "object") return tokens;
+
+  const groups = ["colors", "gradients", "spacing", "borderRadius", "fontWeight", "lineHeight", "fontSize", "fontFamily"];
+  let totalRefs = 0;
+  let totalRefsSent = 0;
+
+  for (const groupKey of groups) {
+    const list = Array.isArray(tokens[groupKey]) ? tokens[groupKey] : [];
+    for (const t of list) {
+      const nodes = Array.isArray(t.nodes) ? t.nodes : [];
+      const total = typeof t.totalNodes === "number" ? t.totalNodes : nodes.length;
+      t.totalNodes = total;
+      totalRefs += total;
+
+      if (nodes.length > maxNodesPerToken) {
+        t.nodes = nodes.slice(0, maxNodesPerToken);
+        t.nodesTruncated = true;
+      }
+      totalRefsSent += Array.isArray(t.nodes) ? t.nodes.length : 0;
+    }
+  }
+
+  // If still too large overall, aggressively shrink node samples everywhere.
+  if (totalRefs > maxTotalNodeRefs) {
+    for (const groupKey of groups) {
+      const list = Array.isArray(tokens[groupKey]) ? tokens[groupKey] : [];
+      for (const t of list) {
+        const nodes = Array.isArray(t.nodes) ? t.nodes : [];
+        if (nodes.length > sampleNodesWhenOverLimit) {
+          t.nodes = nodes.slice(0, sampleNodesWhenOverLimit);
+          t.nodesTruncated = true;
+        }
+      }
+    }
+    // Recompute sent refs after aggressive shrink
+    totalRefsSent = 0;
+    for (const groupKey of groups) {
+      const list = Array.isArray(tokens[groupKey]) ? tokens[groupKey] : [];
+      for (const t of list) totalRefsSent += Array.isArray(t.nodes) ? t.nodes.length : 0;
+    }
+  }
+
+  tokens._meta = {
+    totalNodeRefs: totalRefs,
+    sentNodeRefs: totalRefsSent,
+    maxNodesPerToken,
+    maxTotalNodeRefs,
+    truncated: totalRefsSent < totalRefs
+  };
+
+  return tokens;
+}
+
+function sanitizeReportForStorage(report) {
+  if (!report || typeof report !== "object") return report;
+
+  const out = Object.assign({}, report);
+
+  // Issues can be huge; keep a reasonable slice for restoring UI state.
+  if (Array.isArray(out.issues) && out.issues.length > 1500) {
+    out.issues = out.issues.slice(0, 1500);
+    out.totalIssues = typeof out.totalIssues === "number" ? out.totalIssues : report.issues.length;
+    out._truncated = true;
+  }
+
+  if (out.tokens && typeof out.tokens === "object") {
+    out.tokens = shrinkTokensForTransport(out.tokens, { maxNodesPerToken: 10, maxTotalNodeRefs: 2000 });
+  }
+
+  return out;
+}
+
+function sanitizeHistoryEntryForStorage(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  const out = Object.assign({}, entry);
+  if (out.data && typeof out.data === "object") {
+    const data = Object.assign({}, out.data);
+    data.issues = Array.isArray(data.issues) ? data.issues.slice(0, 1500) : (data.issues || null);
+    data.tokens = (data.tokens && typeof data.tokens === "object")
+      ? shrinkTokensForTransport(data.tokens, { maxNodesPerToken: 10, maxTotalNodeRefs: 2000 })
+      : (data.tokens || null);
+    out.data = data;
+  }
+  return out;
+}
+
 // Extract design tokens from nodes
 async function extractDesignTokens(target) {
   const nodesToScan = [];
@@ -2765,7 +2873,7 @@ async function extractDesignTokens(target) {
   // Add font-family usage breakdown for each font-weight token
   result.fontWeight = enrichFontWeightTokens(result.fontWeight);
 
-  return result;
+  return shrinkTokensForTransport(result);
 }
 
 // Listen for UI commands
@@ -3123,7 +3231,9 @@ figma.ui.onmessage = async msg => {
       const context = buildScanContext(mode);
       try {
         const tokens = await extractDesignTokens(mode);
-        figma.ui.postMessage({ type: "tokens-report", tokens, context });
+        // extractDesignTokens already shrinks payload, but keep it defensive
+        const tokensToSend = shrinkTokensForTransport(tokens);
+        figma.ui.postMessage({ type: "tokens-report", tokens: tokensToSend, context });
       } catch (error) {
         figma.notify(`Token extraction failed: ${error.message}`);
         figma.ui.postMessage({ type: "tokens-report", tokens: null, error: error.message, context });
@@ -3200,7 +3310,7 @@ figma.ui.onmessage = async msg => {
   }
     case "save-last-report": {
       try {
-        await figma.clientStorage.setAsync(STORAGE_KEYS.lastReport, msg.report || null);
+        await figma.clientStorage.setAsync(STORAGE_KEYS.lastReport, sanitizeReportForStorage(msg.report || null));
       } catch (e) {
         console.error("Failed to save last report", e);
       }
@@ -3218,7 +3328,7 @@ figma.ui.onmessage = async msg => {
     }
     case "save-history-entry": {
       try {
-        const entry = msg.entry;
+        const entry = sanitizeHistoryEntryForStorage(msg.entry);
         if (entry) {
           let history = await figma.clientStorage.getAsync(STORAGE_KEYS.history) || [];
           history.unshift(entry);
@@ -4561,9 +4671,10 @@ figma.ui.onmessage = async msg => {
       break;
     }
     case "fix-empty-frame-issue": {
+      let issueId = null;
       try {
         const issue = msg.issue;
-        const issueId = issue ? issue.id : null;
+        issueId = issue ? issue.id : null;
         
         if (!issue || !issue.id) {
           throw new Error("Invalid issue data");
@@ -4648,21 +4759,31 @@ figma.ui.onmessage = async msg => {
             instanceParent = currentParent;
             break;
           }
-          if (currentParent.type === "COMPONENT") {
-            instanceParent = currentParent;
-            break;
-          }
           currentParent = currentParent.parent;
         }
         
         if (instanceParent) {
-          const parentName = instanceParent.name || "Unknown";
-          throw new Error(`Cannot modify frame: The frame is inside a ${instanceParent.type === "INSTANCE" ? "component instance" : "component"} "${parentName}". To fix this, you need to edit the main component directly. Right-click the component and select "Edit Component" to enter Design Mode.`);
+          // Silently skip: user asked to not show these in UI (treat as non-actionable).
+          figma.notify("⏭️ Skipped: frame is inside a component instance (read-only).");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: ""
+          });
+          break;
         }
         
         // Check if node itself is inside an instance
-        if (isChildOfComponent(node)) {
-          throw new Error("Cannot modify frame: The frame is inside a component instance. To fix this, right-click the component instance and select 'Edit Component' to enter Design Mode, then try again.");
+        if (isInsideInstance(node)) {
+          figma.notify("⏭️ Skipped: frame is inside a component instance (read-only).");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: true,
+            message: ""
+          });
+          break;
         }
         
         try {
@@ -4702,6 +4823,7 @@ figma.ui.onmessage = async msg => {
         const errorMessage = error && error.message ? error.message : "Unknown error occurred";
         figma.notify(`❌ Error fixing empty frame: ${errorMessage}`);
         console.error("Error fixing empty frame:", error);
+        console.error("Error fixing empty frame:", errorMessage);
         
         figma.ui.postMessage({
           type: "fix-issue-result",

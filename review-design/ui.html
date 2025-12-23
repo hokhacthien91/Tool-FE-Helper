@@ -2329,6 +2329,29 @@ console.log("ui.js loaded");
     return;
   }
 
+        // Auto jump to the node when user clicks an action button inside an issue item.
+        // Use capture phase so it runs before other onclick handlers that may stop propagation.
+        function autoSelectNodeFromIssueClick(e) {
+          try {
+            const btn = e.target && e.target.closest ? e.target.closest("button") : null;
+            if (!btn) return;
+            const issueEl = btn.closest ? btn.closest(".issue") : null;
+            if (!issueEl) return;
+            // Only run for buttons in the issue action area (avoid selecting when clicking in other places)
+            const inActions = btn.closest && btn.closest(".issue-actions");
+            if (!inActions) return;
+
+            const issueId = btn.getAttribute("data-id") || issueEl.getAttribute("data-issue-id");
+            if (!issueId) return;
+
+            parent.postMessage({ pluginMessage: { type: "select-node", id: issueId } }, "*");
+          } catch (err) {
+            // Never block the original click behavior
+            console.error("autoSelectNodeFromIssueClick error:", err);
+          }
+        }
+        document.addEventListener("click", autoSelectNodeFromIssueClick, true);
+
         // Store current report data
         // Color name mapping (hex -> name) for tooltips
         let colorNameMap = {};
@@ -2722,6 +2745,7 @@ console.log("ui.js loaded");
 
   // Show fix message under issue item
   function showFixMessage(issueId, message, isSuccess) {
+    if (!message) return;
     const issueEl = document.querySelector(`.issue[data-issue-id="${issueId}"]`);
     if (!issueEl) {
       // Try to find by button data-id
@@ -2774,15 +2798,19 @@ console.log("ui.js loaded");
 
   // Show error modal popup
   function showErrorModal(errorMessage) {
+    console.log("[showErrorModal] Called with message:", errorMessage);
+    
     // Remove any existing error modal
     const existingModal = document.getElementById("error-modal-overlay");
     if (existingModal) {
+      console.log("[showErrorModal] Removing existing modal");
       existingModal.remove();
     }
     
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "error-modal-overlay";
+    console.log("[showErrorModal] Created overlay element");
     
     const dialog = document.createElement("div");
     dialog.className = "modal-dialog";
@@ -2811,11 +2839,23 @@ console.log("ui.js loaded");
       </div>
     `;
     
-    document.body.appendChild(overlay);
     overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    console.log("[showErrorModal] Appended overlay to body, overlay visible:", overlay.offsetParent !== null);
+    
+    // Force display
+    overlay.style.display = "flex";
+    overlay.style.visibility = "visible";
+    overlay.style.opacity = "1";
     
     const okBtn = dialog.querySelector("#error-modal-ok-btn");
     const closeBtn = dialog.querySelector(".modal-close");
+    console.log("[showErrorModal] Found buttons:", { okBtn: !!okBtn, closeBtn: !!closeBtn });
+    
+    if (!okBtn) {
+      console.error("[showErrorModal] OK button not found!");
+      return;
+    }
     
     const closeModal = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -2827,7 +2867,9 @@ console.log("ui.js loaded");
     };
     
     okBtn.onclick = closeModal;
-    closeBtn.onclick = closeModal;
+    if (closeBtn) {
+      closeBtn.onclick = closeModal;
+    }
     overlay.onclick = (e) => {
       if (e.target === overlay) {
         closeModal();
@@ -2838,6 +2880,8 @@ console.log("ui.js loaded");
     setTimeout(() => {
       okBtn.focus();
     }, 100);
+    
+    console.log("[showErrorModal] Modal setup complete");
   }
 
   // Show typography fix confirmation modal
@@ -7535,7 +7579,7 @@ console.log("ui.js loaded");
               const tokenValue = token.value;
               const nodes = token.nodes || [];
               const firstNode = nodes.length > 0 ? nodes[0] : null;
-              const nodeCount = nodes.length;
+              const nodeCount = (typeof token.totalNodes === "number") ? token.totalNodes : nodes.length;
               const colorType = token.colorType || null;
               
               let valueHtml = "";
@@ -8789,7 +8833,9 @@ console.log("ui.js loaded");
 
               group.values.forEach(token => {
                 const tokenValue = token.value;
-                const nodeCount = token.nodes ? token.nodes.length : 0;
+                const nodeCount = (typeof token.totalNodes === "number")
+                  ? token.totalNodes
+                  : (token.nodes ? token.nodes.length : 0);
                 const colorType = token.colorType || "";
 
                 if (key === "colors") {
@@ -9555,12 +9601,24 @@ console.log("ui.js loaded");
     const msg = event.data.pluginMessage;
 
     if (msg && msg.type === "fix-issue-result") {
+      console.log("[fix-issue-result] Received:", { issueId: msg.issueId, success: msg.success, message: msg.message });
+      
       // Show fix result message
       showFixMessage(msg.issueId, msg.message, msg.success);
       
       // If error, show error popup
       if (!msg.success) {
-        showErrorModal(msg.message || "An error occurred while fixing the issue.");
+        console.log("[fix-issue-result] Error detected, showing error modal...");
+        const errorMsg = msg.message || "An error occurred while fixing the issue.";
+        console.log("[fix-issue-result] Error message:", errorMsg);
+        try {
+          showErrorModal(errorMsg);
+          console.log("[fix-issue-result] Error modal should be displayed");
+        } catch (error) {
+          console.error("[fix-issue-result] Error showing error modal:", error);
+          // Fallback to alert
+          alert("Error: " + errorMsg);
+        }
       }
       
       // If successful, remove the issue immediately and update counts
@@ -9955,6 +10013,15 @@ console.log("ui.js loaded");
             item.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
+              // Auto jump to the node for this issue before applying style
+              try {
+                const iid = item.getAttribute("data-issue-id");
+                if (iid) {
+                  parent.postMessage({ pluginMessage: { type: "select-node", id: iid } }, "*");
+                }
+              } catch (err) {
+                console.error("Failed to auto-select node for style dropdown item:", err);
+              }
               const styleId = item.getAttribute("data-style-id");
               const styleName = item.getAttribute("data-style-name");
               
