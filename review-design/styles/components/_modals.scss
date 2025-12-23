@@ -1,0 +1,231 @@
+@use "../variables" as *;
+
+/* Modal Styles */
+.modal {
+  &-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  &-dialog {
+    background: $color-surface;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    width: 90%;
+    max-width: 400px;
+    padding: 0;
+    position: relative;
+    animation: slideInModal 0.3s ease-out;
+  }
+
+  @keyframes slideInModal {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  &-header {
+    padding: 20px 20px 8px 20px;
+    position: relative;
+  }
+
+  &-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: $color-gray-500;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  &-close:hover {
+    background: $color-surface-subtle;
+    color: $color-gray-900;
+  }
+
+  &-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: $color-gray-800;
+    margin: 0;
+    padding-right: 30px;
+  }
+
+  &-subtitle {
+    font-size: 13px;
+    color: $color-gray-700;
+    margin: 4px 0 0 0;
+    padding-right: 30px;
+  }
+
+  &-body {
+    padding: 16px 20px;
+  }
+
+  &-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid $color-link;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  &-input:focus {
+    border-color: $color-link-hover;
+    box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  }
+
+  &-input::placeholder {
+    color: $color-gray-500;
+  }
+
+  &-footer {
+    padding: 12px 20px 20px 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  &-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid;
+  }
+
+  &-btn-create {
+    background: $color-link;
+    border-color: $color-link;
+    color: $color-surface;
+  }
+
+  &-btn-create:hover {
+    background: $color-link-hover;
+    border-color: $color-link-hover;
+  }
+
+  &-btn:active {
+    transform: scale(0.98);
+  }
+}
+
+.btn-fix-all {
+  padding: 6px 12px;
+  border: 1px solid $color-success;
+  background: $color-success;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: $color-surface;
+  margin-left: auto;
+}
+
+.btn-fix-all:hover {
+  background: $color-success-hover;
+  border-color: $color-success-hover;
+}
+
+.btn-fix-all:active {
+  transform: scale(0.98);
+}
+
+.btn-add-scale {
+  padding: 6px 12px;
+  border: 1px solid $color-primary;
+  background: rgba(102, 126, 234, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: $color-primary;
+  white-space: nowrap;
+}
+
+.btn-add-scale:hover {
+  background: rgba(102, 126, 234, 0.14);
+}
+
+.btn-add-scale:active {
+  transform: scale(0.98);
+}
+
+.footer {
+  padding: 15px 20px;
+  background: $color-surface;
+  border-top: 1px solid $color-border;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-left {
+  display: flex;
+  gap: 8px;
+}
+
+.footer-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-history {
+  padding: 6px 12px;
+  background: $color-bg;
+  color: $color-text;
+  border: 1px solid $color-border-strong;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-history:hover {
+  background: $color-border;
+  border-color: $color-border-hover;
+}

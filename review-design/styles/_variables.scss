@@ -1,0 +1,67 @@
+// Centralized design tokens (colors/gradients) for the plugin UI.
+// Keep these in one place so components can reuse them.
+
+$color-bg: #f5f5f7;
+$color-surface: #ffffff;
+$color-surface-muted: #fafafa;
+
+$color-text: #1d1d1f;
+$color-text-muted: #86868b;
+
+$color-border: #e5e5e7;
+$color-border-strong: #d1d1d6;
+$color-border-hover: #a1a1a6;
+$color-border-subtle: #f0f0f0;
+
+$color-primary: #667eea;
+$color-secondary: #764ba2;
+$color-link: #0071e3;
+$color-link-hover: #0051a2;
+
+$color-success: #28a745;
+$color-success-hover: #218838;
+
+$color-warning: #ff9800;
+$color-warning-hover: #f57c00;
+
+$color-danger: #dc2626;
+
+$gradient-primary: linear-gradient(
+  135deg,
+  $color-primary 0%,
+  $color-secondary 100%
+);
+
+// Extra neutrals used across components
+$color-gray-900: #333333;
+$color-gray-500: #999999;
+$color-surface-subtle: #f5f5f5;
+$color-gray-800: #1a1a1a;
+$color-gray-700: #666666;
+$color-gray-100: #9ca3af;
+$color-gray-600: #6b7280;
+$color-gray-650: #4b5563;
+
+$color-red-300: #fecaca;
+$color-red-500: #ff3b30; // iOS-style close X
+$color-indigo-100: #e0e7ff;
+$color-indigo-600: #5568d3;
+
+// Semantic status colors (issues/stats)
+$color-danger-500: #ef4444;
+$color-warning-500: #f59e0b;
+$color-warning-700: #d97706;
+$color-success-600: #059669;
+$color-teal-500: #10b981;
+
+$color-danger-bg: #fef2f2;
+$color-warning-bg: #fffbeb;
+$color-info-bg: #eff6ff;
+$color-error-pill-bg: #ffeeee; // legacy: #fee
+$color-error-pill-text: #cc3333; // legacy: #c33
+$color-warn-pill-bg: #fff4e6;
+$color-success-pill-bg: #e6f7f0;
+
+// Buttons
+$color-btn-muted: #6c757d;
+$color-btn-muted-hover: #5a6268;

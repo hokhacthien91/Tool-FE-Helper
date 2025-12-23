@@ -256,7 +256,8 @@ const RULES = {
 const STORAGE_KEYS = {
   lastReport: "design-qa-last-report",
   history: "design-qa-history",
-  inputValues: "design-qa-input-values"
+  inputValues: "design-qa-input-values",
+  savedSettings: "design-qa-saved-settings"
 };
 
 const MAX_HISTORY_ENTRIES = 10;
@@ -752,7 +753,7 @@ function checkTextSizeMobile(node) {
     return {
       severity: "error",
       type: "text-size-mobile",
-      message: `Text is too small on mobile (${fontSize}px) — ADA non-compliant. Font sizes of 12px or smaller are not allowed on mobile. Text: "${textPreview}"`,
+      message: `Text is too small (${fontSize}px) — ADA non-compliant. Font sizes of 12px or smaller are not allowed. Text: "${textPreview}"`,
       id: node.id,
       nodeName: node.name || "Unnamed",
       fontSize: fontSize,
@@ -2015,15 +2016,15 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       if (RULES.checkEmptyFrames) {
         // Skip frames inside component instances (read-only in normal mode; can't auto-fix)
         if (!isInsideInstance(node)) {
-          const emptyCheck = isEmptyOrRedundant(node);
-          if (emptyCheck) {
-            addIssue({
-              severity: emptyCheck.type === "empty" ? "error" : "warn",
-              type: "empty-frame",
-              message: emptyCheck.message,
-              id: node.id,
-              nodeName: nodeName
-            });
+        const emptyCheck = isEmptyOrRedundant(node);
+        if (emptyCheck) {
+          addIssue({
+            severity: emptyCheck.type === "empty" ? "error" : "warn",
+            type: "empty-frame",
+            message: emptyCheck.message,
+            id: node.id,
+            nodeName: nodeName
+          });
           }
         }
       }
@@ -5834,6 +5835,129 @@ figma.ui.onmessage = async msg => {
           success: false,
           message: `❌ Error: ${errorMessage}`
         });
+      }
+      break;
+    }
+    case "get-project-name": {
+      try {
+        const fileName = (figma.root && figma.root.name) ? figma.root.name : "Untitled";
+        figma.ui.postMessage({ type: "project-name", name: fileName });
+      } catch (e) {
+        console.error("Failed to get project name", e);
+        figma.ui.postMessage({ type: "project-name", name: "Untitled" });
+      }
+      break;
+    }
+    case "check-setting-name": {
+      try {
+        const { name } = msg;
+        if (!name) {
+          figma.ui.postMessage({ type: "check-setting-name-result", exists: false });
+          break;
+        }
+        
+        const savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        const exists = savedSettings.some(s => s.name === name);
+        
+        figma.ui.postMessage({ type: "check-setting-name-result", exists, name });
+      } catch (e) {
+        console.error("Failed to check setting name", e);
+        figma.ui.postMessage({ type: "check-setting-name-result", exists: false });
+      }
+      break;
+    }
+    case "save-settings": {
+      try {
+        const { name, values, forceReplace } = msg;
+        if (!name || !values) {
+          figma.ui.postMessage({ type: "save-settings-result", success: false, error: "Name and values are required" });
+          break;
+        }
+        
+        let savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        
+        // Check if name already exists, update it
+        const existingIndex = savedSettings.findIndex(s => s.name === name);
+        const newSetting = {
+          name,
+          values,
+          createdAt: existingIndex >= 0 ? savedSettings[existingIndex].createdAt : new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        if (existingIndex >= 0) {
+          savedSettings[existingIndex] = newSetting;
+        } else {
+          savedSettings.push(newSetting);
+        }
+        
+        // Sort by updatedAt (newest first)
+        savedSettings.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        
+        await figma.clientStorage.setAsync(STORAGE_KEYS.savedSettings, savedSettings);
+        figma.ui.postMessage({ type: "save-settings-result", success: true, settings: savedSettings });
+        figma.notify(`✅ Settings "${name}" saved successfully`);
+      } catch (e) {
+        console.error("Failed to save settings", e);
+        figma.ui.postMessage({ type: "save-settings-result", success: false, error: e.message });
+      }
+      break;
+    }
+    case "get-saved-settings": {
+      try {
+        const savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        // Sort by updatedAt (newest first)
+        savedSettings.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        figma.ui.postMessage({ type: "saved-settings-list", settings: savedSettings });
+      } catch (e) {
+        console.error("Failed to get saved settings", e);
+        figma.ui.postMessage({ type: "saved-settings-list", settings: [] });
+      }
+      break;
+    }
+    case "load-settings": {
+      try {
+        const { name } = msg;
+        if (!name) {
+          figma.ui.postMessage({ type: "load-settings-result", success: false, error: "Name is required" });
+          break;
+        }
+        
+        const savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        const setting = savedSettings.find(s => s.name === name);
+        
+        if (setting) {
+          figma.ui.postMessage({ type: "load-settings-result", success: true, values: setting.values });
+          figma.notify(`✅ Settings "${name}" loaded successfully`);
+        } else {
+          figma.ui.postMessage({ type: "load-settings-result", success: false, error: "Setting not found" });
+        }
+      } catch (e) {
+        console.error("Failed to load settings", e);
+        figma.ui.postMessage({ type: "load-settings-result", success: false, error: e.message });
+      }
+      break;
+    }
+    case "remove-settings": {
+      try {
+        const { name } = msg;
+        if (!name) {
+          figma.ui.postMessage({ type: "remove-settings-result", success: false, error: "Name is required" });
+          break;
+        }
+        
+        let savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        savedSettings = savedSettings.filter(s => s.name !== name);
+        
+        // Sort by updatedAt (newest first)
+        savedSettings.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        
+        await figma.clientStorage.setAsync(STORAGE_KEYS.savedSettings, savedSettings);
+        figma.ui.postMessage({ type: "remove-settings-result", success: true, settings: savedSettings });
+        figma.notify(`✅ Settings "${name}" removed successfully`);
+      } catch (e) {
+        console.error("Failed to remove settings", e);
+        figma.ui.postMessage({ type: "remove-settings-result", success: false, error: e.message });
       }
       break;
     }

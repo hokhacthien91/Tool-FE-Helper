@@ -1,0 +1,81 @@
+
+@use "../variables" as *;
+/* Tooltips */
+.tooltip {
+    position: relative;
+    /* display: inline-block; */
+}
+
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: 200px;
+    background-color: $color-text;
+    color: $color-surface;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 1000;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -100px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+}
+
+.tooltip .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: $color-text transparent transparent transparent;
+}
+
+.tooltip .tooltiptext.left-style {
+    left: 0;
+    margin-left: 0;
+}
+
+.tooltip .tooltiptext.left-style::after {
+    left: 45px;
+}
+
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+}
+
+#btn-cancel-scan {
+    padding: 10px 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+    margin-left: auto;
+    color: $color-surface;
+}
+
+.tooltip-right .tooltiptext {
+    left: 125%;
+    bottom: 50%;
+    margin-left: 0;
+    margin-bottom: -15px;
+}
+
+.tooltip-right .tooltiptext::after {
+    top: 50%;
+    left: -5px;
+    margin-top: -5px;
+    margin-left: 0;
+    border-color: transparent $color-text transparent transparent;
+}

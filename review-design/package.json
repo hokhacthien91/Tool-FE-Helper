@@ -4,13 +4,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "node ./scripts/build.mjs",
-    "watch": "node ./scripts/build.mjs --watch"
+    "build": "node ./build.mjs",
+    "demo": "npx http-server ./Plugin-check-design-Figma",
+    "watch": "node ./build.mjs --watch"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",
     "esbuild": "^0.25.0",
-    "html-minifier-terser": "^7.2.0"
+    "html-minifier-terser": "^7.2.0",
+    "sass": "^1.80.6"
   }
 }
 

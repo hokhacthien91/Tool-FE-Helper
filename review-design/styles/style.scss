@@ -1,0 +1,14 @@
+// Main stylesheet entry: only imports component styles (Sass module system).
+// Order matters for cascade; keep these `@use` statements in the same order as the legacy file.
+@use "variables";
+@use "components/layout";
+@use "components/results";
+@use "components/issues";
+@use "components/button";
+@use "components/modals";
+@use "components/panels";
+@use "components/tooltip";
+@use "components/history";
+@use "components/filter-search";
+@use "components/token";
+@use "components/typography";

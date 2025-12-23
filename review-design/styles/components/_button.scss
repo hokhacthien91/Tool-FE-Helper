@@ -1,0 +1,215 @@
+@use "../variables" as *;
+.btn-select {
+    padding: 6px 12px;
+    border: 1px solid $color-border-strong;
+    background: $color-surface;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-text;
+  
+    &:hover {
+      background: $color-bg;
+      border-color: $color-primary;
+      color: $color-primary;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-fix {
+    padding: 6px 12px;
+    border: 1px solid $color-success;
+    background: $color-success;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-success-hover;
+      border-color: $color-success-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-suggest-fix {
+    padding: 6px 12px;
+    border: 1px solid $color-warning;
+    background: $color-warning;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-warning-hover;
+      border-color: $color-warning-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-create-style,
+  .btn-rename,
+  #rename-apply-btn {
+    padding: 6px 12px;
+    border: 1px solid $color-link;
+    background: $color-link;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-link-hover;
+      border-color: $color-link-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-ignore {
+    padding: 6px 12px;
+    border: 1px solid $color-btn-muted;
+    background: $color-btn-muted;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-btn-muted-hover;
+      border-color: $color-btn-muted-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-suggest-apply {
+    padding: 6px 12px;
+    border: 1px solid $color-success;
+    background: $color-success;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-success-hover;
+      border-color: $color-success-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-style-dropdown {
+    padding: 6px 12px;
+    border: 1px solid $color-success;
+    background: $color-success;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-success-hover;
+      border-color: $color-success-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-remove-layer,
+  .modal-btn-cancel {
+    padding: 6px 12px;
+    border: 1px solid $color-border-strong;
+    background: $color-danger;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-bg;
+      border-color: $color-primary;
+      color: $color-primary;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-select-component {
+    padding: 6px 12px;
+    border: 1px solid $color-success;
+    background: $color-success;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-success-hover;
+      border-color: $color-success-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  
+  .btn-create-component {
+    padding: 6px 12px;
+    border: 1px solid $color-link;
+    background: $color-link;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: $color-surface;
+  
+    &:hover {
+      background: $color-link-hover;
+      border-color: $color-link-hover;
+    }
+  
+    &:active {
+      transform: scale(0.98);
+    }
+  }
