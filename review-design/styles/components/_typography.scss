@@ -16,7 +16,7 @@
     display: none;
 }
 
-.typography-panel:not(.collapsed) .issue-group-toggle-icon {
+.typography-panel:not(.collapsed) > .typography-panel-header .issue-group-toggle-icon {
     transform: rotate(90deg);
 }
 
