@@ -5492,6 +5492,101 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "remove-layer": {
+      try {
+        const issue = msg.issue;
+        const issueId = issue ? issue.id : null;
+        
+        if (!issue || !issue.id) {
+          throw new Error("Invalid issue data");
+        }
+        
+        const nodeId = issue.id;
+        const node = figma.getNodeById(nodeId);
+        
+        if (!node) {
+          figma.notify("⚠️ Node not found");
+          figma.ui.postMessage({
+            type: "fix-issue-result",
+            issueId: issueId,
+            success: false,
+            message: "⚠️ Node not found"
+          });
+          break;
+        }
+        
+        // If node is inside an instance, try to find corresponding node in main component
+        let targetNode = node;
+        if (node.parent && node.parent.type === "INSTANCE" && node.parent.mainComponent) {
+          // Node is inside an instance, need to find corresponding node in main component
+          const instanceParent = node.parent;
+          const mainComponent = instanceParent.mainComponent;
+          
+          // Try to find the corresponding node in main component by name or index
+          if (mainComponent && "children" in mainComponent) {
+            const nodeIndex = instanceParent.children.indexOf(node);
+            if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
+              targetNode = mainComponent.children[nodeIndex];
+              console.log(`[remove-layer] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
+            } else {
+              // Try to find by name
+              const nodeName = node.name;
+              const matchingNode = mainComponent.children.find(child => child.name === nodeName);
+              if (matchingNode) {
+                targetNode = matchingNode;
+                console.log(`[remove-layer] Node is inside instance, found by name in main component: ${targetNode.id}`);
+              } else {
+                throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+              }
+            }
+          } else {
+            throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
+          }
+        }
+        
+        // Check if target node is an INSTANCE - cannot remove instances directly
+        if (targetNode.type === "INSTANCE") {
+          throw new Error("Cannot remove layer: the node is an instance. Please edit the main component directly to remove it.");
+        }
+        
+        // Check if target node is locked
+        if (targetNode.locked) {
+          throw new Error("Cannot remove layer: node is locked. Please unlock it first.");
+        }
+        
+        // Store node name for notification
+        const nodeName = targetNode.name;
+        
+        // Try to remove the node - wrap in try-catch to handle API errors
+        try {
+          targetNode.remove();
+        } catch (apiError) {
+          const errorMessage = apiError && apiError.message ? apiError.message : "Unknown error";
+          console.error("[remove-layer] Error removing node:", apiError);
+          throw new Error(`Cannot remove layer: ${errorMessage}. The node may be inside an instance or have restricted properties.`);
+        }
+        
+        figma.notify(`✅ Removed layer "${nodeName}"`);
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: issueId,
+          success: true,
+          message: `✅ Removed layer "${nodeName}"`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error removing layer: ${errorMessage}`);
+        console.error("Error removing layer:", error);
+        
+        figma.ui.postMessage({
+          type: "fix-issue-result",
+          issueId: msg.issue ? msg.issue.id : null,
+          success: false,
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
     case "get-components-for-issue": {
       try {
         console.log("[get-components-for-issue] Received request", msg);
@@ -5958,6 +6053,64 @@ figma.ui.onmessage = async msg => {
       } catch (e) {
         console.error("Failed to remove settings", e);
         figma.ui.postMessage({ type: "remove-settings-result", success: false, error: e.message });
+      }
+      break;
+    }
+    case "import-settings": {
+      try {
+        const { settings, mode } = msg;
+        if (!settings || !Array.isArray(settings)) {
+          figma.ui.postMessage({ type: "import-settings-result", success: false, error: "Invalid settings format. Expected an array." });
+          break;
+        }
+
+        let savedSettings = await figma.clientStorage.getAsync(STORAGE_KEYS.savedSettings) || [];
+        let importedCount = 0;
+
+        if (mode === "replace") {
+          // Replace all existing settings
+          savedSettings = settings;
+          importedCount = settings.length;
+        } else {
+          // Merge mode: add new settings, update existing ones with same name
+          for (const importedSetting of settings) {
+            if (!importedSetting.name || !importedSetting.values) {
+              console.warn("Skipping invalid setting:", importedSetting);
+              continue;
+            }
+
+            const existingIndex = savedSettings.findIndex(s => s.name === importedSetting.name);
+            if (existingIndex >= 0) {
+              // Update existing setting
+              const updatedSetting = Object.assign({}, importedSetting);
+              updatedSetting.updatedAt = new Date().toISOString();
+              updatedSetting.createdAt = savedSettings[existingIndex].createdAt || new Date().toISOString();
+              savedSettings[existingIndex] = updatedSetting;
+            } else {
+              // Add new setting
+              const newSetting = Object.assign({}, importedSetting);
+              newSetting.createdAt = importedSetting.createdAt || new Date().toISOString();
+              newSetting.updatedAt = importedSetting.updatedAt || new Date().toISOString();
+              savedSettings.push(newSetting);
+            }
+            importedCount++;
+          }
+        }
+
+        // Sort by updatedAt (newest first)
+        savedSettings.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+        await figma.clientStorage.setAsync(STORAGE_KEYS.savedSettings, savedSettings);
+        figma.ui.postMessage({ 
+          type: "import-settings-result", 
+          success: true, 
+          settings: savedSettings,
+          importedCount: importedCount
+        });
+        figma.notify(`✅ Imported ${importedCount} setting(s) successfully`);
+      } catch (e) {
+        console.error("Failed to import settings", e);
+        figma.ui.postMessage({ type: "import-settings-result", success: false, error: e.message });
       }
       break;
     }

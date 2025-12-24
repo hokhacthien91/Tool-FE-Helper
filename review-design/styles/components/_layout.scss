@@ -119,3 +119,19 @@ body {
   cursor: not-allowed;
   transform: none;
 }
+
+.mode-development{
+  .btn-fix-all,
+  .btn-remove-layer,
+  .btn-suggest-fix,
+  .btn-select-component,
+  .btn-create-component,
+  .btn-create-style,
+  .btn-select-style,
+  .btn-fix,
+  .btn-ignore,
+  .btn-style-dropdown,
+  .btn-rename{
+    display: none;
+  }
+}

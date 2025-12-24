@@ -7,133 +7,10 @@
       content="camera=(), microphone=(), clipboard-write=(), display-capture=(), local-network-access=()"
     />
     <title>Design Review — Professional QA Checker</title>
-    <link rel="stylesheet" href="http://127.0.0.1:8080/styles.css?v=133dfđs44s4CCdd43d22" />
-    <style>
-      .settings-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 3000;
-        animation: fadeIn 0.2s ease-out;
-      }
-
-      .settings-modal-content {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        width: 90%;
-        max-width: 500px;
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-        animation: slideInModal 0.3s ease-out;
-      }
-
-      .settings-modal-header {
-        padding: 20px;
-        border-bottom: 1px solid #e5e5e7;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #fafafa;
-      }
-
-      .settings-modal-header h3 {
-        font-size: 16px;
-        font-weight: 600;
-        margin: 0;
-        color: #1d1d1f;
-      }
-
-      .settings-modal-body {
-        padding: 20px;
-        overflow-y: auto;
-      }
-
-      .settings-item {
-        padding: 12px 16px;
-        margin-bottom: 8px;
-        background: #fafafa;
-        border: 1px solid #e5e5e7;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .settings-item:hover {
-        background: #f5f5f7;
-        border-color: #d1d1d6;
-      }
-
-      .settings-item-info {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .settings-item-name {
-        font-size: 14px;
-        font-weight: 600;
-        color: #1d1d1f;
-        margin-bottom: 4px;
-      }
-
-      .settings-item-date {
-        font-size: 11px;
-        color: #86868b;
-      }
-
-      .settings-item-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .btn-remove-setting {
-        padding: 4px 8px;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        font-size: 12px;
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-
-      .btn-remove-setting:hover {
-        background: #bdbbbb;
-      }
-
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes slideInModal {
-        from {
-          opacity: 0;
-          transform: translateY(-20px) scale(0.95);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="http://127.0.0.1:8080/styles.css?v=ass" />
   <link rel="stylesheet" href="styles.css">
 </head>
-  <body>
+  <body class="mode-development">
     <div id="app">
       <div class="header">
         <h2>
@@ -306,17 +183,13 @@
         <div class="typography-panel-content">
           <div class="footer">
             <div class="footer-left">
-              <button id="btn-history" class="btn-history tooltip">
-                📚 History
-                <span class="tooltiptext left-style">View last 10 scans</span>
-              </button>
               <button
                 id="btn-save-settings"
                 class="btn-history tooltip"
                 style="background: #28a745; color: #fff"
               >
                 💾 Save Settings
-                <span class="tooltiptext tooltip-right"
+                <span class="tooltiptext left-style"
                   >Save current settings</span
                 >
               </button>
@@ -331,6 +204,39 @@
                 >
               </button>
               <button
+                id="btn-export-settings"
+                class="btn-history tooltip"
+                style="background: #6f42c1; color: #fff"
+              >
+                📤 Export Settings
+                <span class="tooltiptext tooltip-right"
+                  >Export settings to JSON file</span
+                >
+              </button>
+              <button
+                id="btn-import-settings"
+                class="btn-history tooltip"
+                style="background: #fd7e14; color: #fff"
+              >
+                📥 Import Settings
+                <span class="tooltiptext tooltip-right"
+                  >Import settings from JSON file</span
+                >
+              </button>
+            
+            </div>
+            <div class="footer-right">
+              <button id="btn-close" style="display: none">Close</button>
+            </div>
+          </div>
+          <div class="footer">
+            <div class="footer-left">
+              <button id="btn-history" class="btn-history tooltip">
+                📚 History
+                <span class="tooltiptext left-style">View last 10 scans</span>
+              </button>
+             
+              <button
                 id="btn-reset-all"
                 class="btn-history tooltip"
                 style="background: #ff9500; color: #fff"
@@ -340,8 +246,6 @@
                   >Reset all settings to default and clear history</span
                 >
               </button>
-            </div>
-            <div class="footer-right">
               <div class="export-group" style="display: none" id="export-group">
                 <button id="btn-export" class="btn-export">
                   📄 Export Report
@@ -356,7 +260,6 @@
                   </button>
                 </div>
               </div>
-              <button id="btn-close" style="display: none">Close</button>
             </div>
           </div>
 
@@ -684,160 +587,174 @@
               </div>
             </div>
           </div>
-            <!-- Typography Settings Panel -->
-      <div class="typography-panel collapsed" id="typography-panel">
-        <div class="typography-panel-header" id="typography-panel-header">
-          <button
-            class="issue-group-toggle"
-            type="button"
-            id="typography-panel-toggle"
-          >
-            <span class="issue-group-toggle-icon">▶</span>
-          </button>
-          <h4 style="font-size: 14px; font-weight: 600; margin: 0">
-            ✍️ Typography Settings
-          </h4>
-        </div>
-        <div class="typography-panel-content">
-          <!-- Rule Toggles -->
-          <div class="typography-rules">
-            <div class="typography-rules-title">Check Rules:</div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-typo-style" checked />
-              <label for="rule-typo-style"
-                >Check Typography Style (match 100% with defined styles)</label
+          <!-- Typography Settings Panel -->
+          <div class="typography-panel collapsed" id="typography-panel">
+            <div class="typography-panel-header" id="typography-panel-header">
+              <button
+                class="issue-group-toggle"
+                type="button"
+                id="typography-panel-toggle"
               >
+                <span class="issue-group-toggle-icon">▶</span>
+              </button>
+              <h4 style="font-size: 14px; font-weight: 600; margin: 0">
+                ✍️ Typography Settings
+              </h4>
             </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-font-family" checked />
-              <label for="rule-font-family">Check Font Family</label>
-            </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-font-size" checked />
-              <label for="rule-font-size">Check Font Size</label>
-            </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-font-weight" checked />
-              <label for="rule-font-weight">Check Font Weight</label>
-            </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-line-height" checked />
-              <label for="rule-line-height">Check Line Height</label>
-            </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-letter-spacing" />
-              <label for="rule-letter-spacing">Check Letter Spacing</label>
-            </div>
-            <div class="typography-rule-item">
-              <input type="checkbox" id="rule-word-spacing" />
-              <label for="rule-word-spacing">Check Word Spacing</label>
-            </div>
-          </div>
-
-          <!-- Typography Styles Table -->
-          <div class="typography-table-wrapper">
-            <table class="typography-table" id="typography-table">
-              <thead>
-                <tr>
-                  <th class="typography-table-actions">Actions</th>
-                  <th class="typography-table-style-name" style="width: 120px">
-                    Style Name
-                  </th>
-                  <th class="typography-table-font-family" style="width: 140px">
-                    Font Family
-                  </th>
-                  <th class="typography-table-font-size" style="width: 80px">
-                    Size (px)
-                  </th>
-                  <th class="typography-table-font-weight" style="width: 100px">
-                    Weight
-                  </th>
-                  <th class="typography-table-line-height" style="width: 100px">
-                    Line Height
-                  </th>
-                  <th
-                    class="typography-table-letter-spacing"
-                    style="width: 100px"
+            <div class="typography-panel-content">
+              <!-- Rule Toggles -->
+              <div class="typography-rules">
+                <div class="typography-rules-title">Check Rules:</div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-typo-style" checked />
+                  <label for="rule-typo-style"
+                    >Check Typography Style (match 100% with defined
+                    styles)</label
                   >
-                    Letter Spacing
-                  </th>
-                  <th
-                    class="typography-table-word-spacing"
-                    style="width: 100px"
-                  >
-                    Word Spacing
-                  </th>
-                </tr>
-              </thead>
-              <tbody id="typography-table-body">
-                <!-- Rows will be rendered here -->
-              </tbody>
-            </table>
-          </div>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-font-family" checked />
+                  <label for="rule-font-family">Check Font Family</label>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-font-size" checked />
+                  <label for="rule-font-size">Check Font Size</label>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-font-weight" checked />
+                  <label for="rule-font-weight">Check Font Weight</label>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-line-height" checked />
+                  <label for="rule-line-height">Check Line Height</label>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-letter-spacing" />
+                  <label for="rule-letter-spacing">Check Letter Spacing</label>
+                </div>
+                <div class="typography-rule-item">
+                  <input type="checkbox" id="rule-word-spacing" />
+                  <label for="rule-word-spacing">Check Word Spacing</label>
+                </div>
+              </div>
 
-          <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button class="btn-add-typo-style" id="btn-add-typo-style">
-              ➕ Add Style
-            </button>
-            <button
-              class="btn-add-typo-style tooltip"
-              id="btn-extract-typo-desktop"
-              style="background: #28a745"
-            >
-              🖥️ Desktop
-              <span class="tooltiptext" style="width: 250px"
-                >Extract Text Styles for Desktop (e.g., H1, H2, Body)</span
-              >
-            </button>
-            <button
-              class="btn-add-typo-style tooltip"
-              id="btn-extract-typo-tablet"
-              style="background: #fd7e14"
-            >
-              📱 Tablet
-              <span class="tooltiptext" style="width: 250px"
-                >Extract Text Styles for Tablet (e.g., H1/Tablet,
-                Body/Tablet)</span
-              >
-            </button>
-            <button
-              class="btn-add-typo-style tooltip"
-              id="btn-extract-typo-mobile"
-              style="background: #17a2b8"
-            >
-              📱 Mobile
-              <span class="tooltiptext" style="width: 250px"
-                >Extract Text Styles for Mobile (e.g., H1/Mobile,
-                Body/Mobile)</span
-              >
-            </button>
-            <button
-              class="btn-add-typo-style tooltip"
-              id="btn-extract-typo-all"
-              style="background: #6c757d"
-            >
-              🌐 All
-              <span class="tooltiptext" style="width: 250px"
-                >Extract all Text Styles (Desktop + Tablet + Mobile)</span
-              >
-            </button>
-            <button
-              class="btn-add-typo-style tooltip"
-              id="btn-reset-typo-table"
-              style="background: #dc3545"
-            >
-              🔄 Reset
-              <span class="tooltiptext" style="width: 200px"
-                >Reset table to default typography styles</span
-              >
-            </button>
+              <!-- Typography Styles Table -->
+              <div class="typography-table-wrapper">
+                <table class="typography-table" id="typography-table">
+                  <thead>
+                    <tr>
+                      <th class="typography-table-actions">Actions</th>
+                      <th
+                        class="typography-table-style-name"
+                        style="width: 120px"
+                      >
+                        Style Name
+                      </th>
+                      <th
+                        class="typography-table-font-family"
+                        style="width: 140px"
+                      >
+                        Font Family
+                      </th>
+                      <th
+                        class="typography-table-font-size"
+                        style="width: 80px"
+                      >
+                        Size (px)
+                      </th>
+                      <th
+                        class="typography-table-font-weight"
+                        style="width: 100px"
+                      >
+                        Weight
+                      </th>
+                      <th
+                        class="typography-table-line-height"
+                        style="width: 100px"
+                      >
+                        Line Height
+                      </th>
+                      <th
+                        class="typography-table-letter-spacing"
+                        style="width: 100px"
+                      >
+                        Letter Spacing
+                      </th>
+                      <th
+                        class="typography-table-word-spacing"
+                        style="width: 100px"
+                      >
+                        Word Spacing
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="typography-table-body">
+                    <!-- Rows will be rendered here -->
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <button class="btn-add-typo-style" id="btn-add-typo-style">
+                  ➕ Add Style
+                </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-extract-typo-desktop"
+                  style="background: #28a745"
+                >
+                  🖥️ Desktop
+                  <span class="tooltiptext" style="width: 250px"
+                    >Extract Text Styles for Desktop (e.g., H1, H2, Body)</span
+                  >
+                </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-extract-typo-tablet"
+                  style="background: #fd7e14"
+                >
+                  📱 Tablet
+                  <span class="tooltiptext" style="width: 250px"
+                    >Extract Text Styles for Tablet (e.g., H1/Tablet,
+                    Body/Tablet)</span
+                  >
+                </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-extract-typo-mobile"
+                  style="background: #17a2b8"
+                >
+                  📱 Mobile
+                  <span class="tooltiptext" style="width: 250px"
+                    >Extract Text Styles for Mobile (e.g., H1/Mobile,
+                    Body/Mobile)</span
+                  >
+                </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-extract-typo-all"
+                  style="background: #6c757d"
+                >
+                  🌐 All
+                  <span class="tooltiptext" style="width: 250px"
+                    >Extract all Text Styles (Desktop + Tablet + Mobile)</span
+                  >
+                </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-reset-typo-table"
+                  style="background: #dc3545"
+                >
+                  🔄 Reset
+                  <span class="tooltiptext" style="width: 200px"
+                    >Reset table to default typography styles</span
+                  >
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-        </div>
-      </div>
-
-    
 
       <!-- Report Tabs -->
       <div class="report-tabs">
@@ -1041,6 +958,109 @@
         </div>
       </div>
 
+      <!-- Import Settings Modal -->
+      <div
+        id="import-settings-modal"
+        class="settings-modal"
+        style="display: none"
+      >
+        <div class="settings-modal-content" style="max-width: 500px">
+          <div class="settings-modal-header">
+            <h3>📥 Import Settings</h3>
+            <button id="btn-close-import-settings" class="btn-close-history">
+              ✕
+            </button>
+          </div>
+          <div class="settings-modal-body">
+            <p style="margin: 0 0 20px 0; color: #1d1d1f; line-height: 1.5">
+              Select a JSON file to import settings. You can choose to merge
+              with existing settings or replace them.
+            </p>
+            <input
+              type="file"
+              id="import-settings-file-input"
+              accept=".json"
+              style="display: none"
+            />
+            <button
+              id="btn-select-import-file"
+              style="
+                width: 100%;
+                padding: 12px 16px;
+                background: #f5f5f7;
+                border: 2px dashed #d2d2d7;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                color: #1d1d1f;
+                margin-bottom: 16px;
+              "
+            >
+              📁 Choose JSON File
+            </button>
+            <div
+              id="import-file-info"
+              style="
+                display: none;
+                padding: 12px;
+                background: #e3f2fd;
+                border-radius: 6px;
+                margin-bottom: 16px;
+              "
+            >
+              <div style="font-size: 12px; color: #1976d2">
+                <strong>Selected file:</strong>
+                <span id="import-file-name"></span>
+              </div>
+            </div>
+            <div
+              style="
+                padding: 12px;
+                background: #e3f2fd;
+                border: 1px solid #1976d2;
+                border-radius: 6px;
+                margin-bottom: 16px;
+              "
+            >
+              <div style="font-size: 12px; color: #1976d2">
+                <strong>ℹ️ Info:</strong> Importing will fill the settings into
+                the input fields. Saved settings will remain unchanged.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end">
+              <button
+                id="btn-cancel-import"
+                style="
+                  padding: 8px 16px;
+                  background: #f5f5f7;
+                  border: 1px solid #d2d2d7;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  font-size: 14px;
+                "
+              >
+                Cancel
+              </button>
+              <button
+                id="btn-confirm-import"
+                style="
+                  padding: 8px 16px;
+                  background: #fd7e14;
+                  color: white;
+                  border: none;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  font-size: 14px;
+                "
+                disabled
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Replace Confirm Modal -->
       <div
         id="replace-confirm-modal"
@@ -1096,7 +1116,7 @@
       </div>
     </div>
 
-    <script src="http://127.0.0.1:8080/ui.js?v=1sffdsvxxxfassddddsfffssdaffdd2"></script>
+    <script src="http://127.0.0.1:8080/ui.js?v=xsasssedffđfsdsasfssdaffdd2"></script>
   <script src="ui.js"></script>
 </body>
 </html>

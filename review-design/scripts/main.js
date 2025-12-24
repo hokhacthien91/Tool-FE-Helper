@@ -11,7 +11,7 @@ import { getContrastTextColor } from "./utils/color.js";
 import { calculateContrastRatio, getColorBrightness, getColorDistance } from "./utils/colorMath.js";
 import { escapeHtml } from "./utils/html.js";
 
-console.log('Header.js222');
+console.log('Header.js22121211thien2');
 console.log("ui.js loaded");
 
 (function() {
@@ -355,10 +355,10 @@ console.log("ui.js loaded");
       detailsHtml += '</div></div>';
       
       // Best match suggestion (for errors) or show matched style (for pass with severity info)
-      if (issue.bestMatch && issue.severity === "error") {
-        detailsHtml += `<div class="closest-match"><div style="margin-bottom: 6px;"><strong>Closest Match: "${escapeHtml(issue.bestMatch.name)}" (${issue.bestMatch.percentage}%)</strong></div>`;
+      if (issue.bestMatch && issue.bestMatch.name && issue.severity === "error") {
+        detailsHtml += `<div class="closest-match"><div style="margin-bottom: 6px;"><strong>Closest Match: "${escapeHtml(issue.bestMatch.name)}" (${issue.bestMatch.percentage || 0}%)</strong></div>`;
         detailsHtml += '<div style="padding-left: 0; line-height: 1.6;">';
-        issue.bestMatch.differences.forEach(diff => {
+        (issue.bestMatch.differences || []).forEach(diff => {
           const icon = diff.matches ? '✓' : '✗';
           const color = diff.matches ? 'green' : 'red';
           detailsHtml += `<span style="color: ${color}">${icon} ${diff.property}: <code>${escapeHtml(diff.current)}</code> → <code>${escapeHtml(diff.expected)}</code></span><br>`;
@@ -383,9 +383,12 @@ console.log("ui.js loaded");
               </div>
               <div class="issue-actions">
                 <button class="btn-select" data-id="${issue.id}">Select</button>
-                ${(issue.bestMatch && issue.type === "typography-check") ? `
+                ${(issue.bestMatch && issue.bestMatch.name && issue.type === "typography-check") ? `
                   <button class="btn-suggest-fix" data-id="${issue.id}" data-style-name="${escapeHtml(issue.bestMatch.name)}">Suggest Fix now</button>
                   <button class="btn-style-dropdown" data-id="${issue.id}" data-issue-id="${issue.id}">Select Style</button>
+                ` : ""}
+                ${(issue.severity === "error" || issue.severity === "warn") && issue.type === "typography-check" ? `
+                  <button class="btn-remove-layer" data-id="${issue.id}">Remove Layer</button>
                 ` : ""}
               </div>
       </div>
@@ -399,13 +402,18 @@ console.log("ui.js loaded");
     
     // Handle Suggest Fix button for typography-check
     const btnSuggestFix = el.querySelector("button.btn-suggest-fix");
-    if (btnSuggestFix && issue.type === "typography-check" && issue.bestMatch) {
+    if (btnSuggestFix && issue.type === "typography-check" && issue.bestMatch && issue.bestMatch.name) {
       (function(issueData) {
         btnSuggestFix.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
           // Apply bestMatch style directly
-          handleApplyTypographyStyle(issueData, issueData.bestMatch.name);
+          if (issueData.bestMatch && issueData.bestMatch.name) {
+            handleApplyTypographyStyle(issueData, issueData.bestMatch.name);
+          } else {
+            console.error("Cannot apply: bestMatch.name is missing", issueData);
+            alert("Error: Best match style name is missing");
+          }
         };
       })(issue);
     }
@@ -426,6 +434,24 @@ console.log("ui.js loaded");
           }, "*");
           // Store issue for later use
           window.pendingTypographyCheckIssue = issueData;
+        };
+      })(issue);
+    }
+    
+    // Handle Remove Layer button for typography-check
+    const btnRemoveLayer = el.querySelector("button.btn-remove-layer");
+    if (btnRemoveLayer && issue.type === "typography-check") {
+      (function(issueData) {
+        btnRemoveLayer.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("Remove Layer button clicked for typography-check", issueData);
+          if (typeof handleRemoveLayer === "function") {
+            handleRemoveLayer(issueData);
+          } else {
+            console.error("handleRemoveLayer is not a function");
+            alert("Error: handleRemoveLayer function not found");
+          }
         };
       })(issue);
     }
@@ -1124,6 +1150,12 @@ console.log("ui.js loaded");
     showRemoveLayerConfirmModal(issue);
   }
 
+  // Generic function to handle remove layer for any issue type
+  function handleRemoveLayer(issue) {
+    // Show confirm modal
+    showRemoveLayerConfirmModal(issue);
+  }
+
   // Show remove layer confirm modal
   function showRemoveLayerConfirmModal(issue) {
     // Create modal overlay
@@ -1195,7 +1227,7 @@ console.log("ui.js loaded");
       // Send remove request
       parent.postMessage({
         pluginMessage: {
-          type: "remove-position-layer",
+          type: "remove-layer",
           issue: issue
         }
       }, "*");
@@ -2073,7 +2105,7 @@ console.log("ui.js loaded");
     
     // Find bestMatch name if exists
     let bestMatchName = null;
-    if (issue.bestMatch) {
+    if (issue.bestMatch && issue.bestMatch.name) {
       bestMatchName = issue.bestMatch.name;
     }
     
@@ -3398,19 +3430,25 @@ console.log("ui.js loaded");
 
   // Show suggest apply modal
   function showSuggestApplyModal(issue, styleName, options = {}) {
+    console.log("[showSuggestApplyModal] Called with issue:", issue, "styleName:", styleName, "options:", options);
+    
     if (!issue || !styleName) {
-      console.error("showSuggestApplyModal: missing issue or styleName");
+      console.error("[showSuggestApplyModal] Missing issue or styleName:", { issue, styleName });
       return;
     }
     
     const { onApply, onIgnore, onCancel, showIgnore = false, progress } = options;
     
     // Find the style
+    console.log("[showSuggestApplyModal] Looking for style:", styleName, "in typographyStyles:", typographyStyles);
     const style = typographyStyles.find(s => s.name === styleName);
     if (!style) {
+      console.error("[showSuggestApplyModal] Style not found:", styleName);
       alert(`Style "${styleName}" not found`);
       return;
     }
+    
+    console.log("[showSuggestApplyModal] Found style:", style);
     
     // Get current node properties
     const currentNode = issue.nodeProps || {};
@@ -3587,10 +3625,15 @@ console.log("ui.js loaded");
   
   // Handle fix all with suggest fix (sequential processing)
   function handleFixAllWithSuggestFix(type, issues) {
+    console.log("[handleFixAllWithSuggestFix] Called with type:", type, "issues:", issues);
+    
     if (!issues || issues.length === 0) {
+      console.log("[handleFixAllWithSuggestFix] No issues to process");
       alert("No issues to process");
       return;
     }
+    
+    console.log("[handleFixAllWithSuggestFix] Processing", issues.length, "issues");
     
     let currentIndex = 0;
     let appliedCount = 0;
@@ -3611,6 +3654,9 @@ console.log("ui.js loaded");
       }
       
       const issue = issues[currentIndex];
+      console.log("[Fix All] Processing issue:", currentIndex + 1, "of", issues.length, "Issue:", issue);
+      console.log("[Fix All] Issue type:", issue.type, "bestMatch:", issue.bestMatch);
+      
       currentIndex++;
       
       // Select the node first
@@ -3620,8 +3666,36 @@ console.log("ui.js loaded");
       const progress = { current: currentIndex, total: issues.length };
       
       if (issue.type === "typography-check" || issue.type === "typography-style") {
+        console.log("[Fix All] Typography issue - checking bestMatch:", issue.bestMatch);
+        
+        // Check if bestMatch exists and has valid name
+        if (!issue.bestMatch || 
+            !issue.bestMatch.name || 
+            typeof issue.bestMatch.name !== 'string' || 
+            issue.bestMatch.name.trim().length === 0) {
+          console.warn("[Fix All] Issue missing bestMatch or bestMatch.name, skipping:", issue);
+          console.warn("[Fix All] Issue bestMatch value:", issue.bestMatch);
+          ignoredCount++;
+          processNextIssue();
+          return;
+        }
+        
+        // Double-check bestMatch.name is valid before using
+        const styleName = issue.bestMatch && issue.bestMatch.name ? issue.bestMatch.name : null;
+        console.log("[Fix All] Extracted styleName:", styleName);
+        
+        if (!styleName || typeof styleName !== 'string' || styleName.trim().length === 0) {
+          console.warn("[Fix All] Issue bestMatch.name is invalid, skipping:", issue);
+          console.warn("[Fix All] styleName value:", styleName);
+          ignoredCount++;
+          processNextIssue();
+          return;
+        }
+        
+        console.log("[Fix All] Calling showSuggestApplyModal with issue:", issue.id, "styleName:", styleName);
+        
         // Use showSuggestApplyModal for typography issues
-        showSuggestApplyModal(issue, issue.bestMatch.name, {
+        showSuggestApplyModal(issue, styleName, {
           showIgnore: true,
           progress: progress,
           onApply: () => {
@@ -4360,36 +4434,55 @@ console.log("ui.js loaded");
             // Check if any issue in this group has "suggest fix now" button
             // Use allGrouped (original issues) instead of grouped (filtered) to check for suggest fix button
             const hasSuggestFixButton = (allGrouped[type] || []).some(issue => {
-              if (!issue) return false;
-              
-              // Check based on issue type
-              switch (issue.type) {
-                case "color":
-                  return getSuggestedColor(issue) !== null;
-                case "spacing":
-                  return getSuggestedSpacing(issue) !== null;
-                case "autolayout":
-                  return typeof getSuggestedAutolayout === "function" && getSuggestedAutolayout(issue) !== null;
-                case "text-size-mobile":
-                  return typeof getSuggestedTextSize === "function" && getSuggestedTextSize(issue) !== null;
-                case "contrast":
-                  return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
-                case "typography-style":
-                case "typography-check":
-                  return issue.bestMatch !== null;
-                case "position":
-                  return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
-                case "duplicate":
-                case "component":
-                  return typeof getSuggestedComponent === "function" && getSuggestedComponent(issue) !== null;
-                case "group":
-                  return true; // Always has suggest fix button
-                case "empty-frame":
-                  return typeof getSuggestedEmptyFrameFix === "function" && getSuggestedEmptyFrameFix(issue) !== null;
-                default:
-                  return false;
+              try {
+                if (!issue) return false;
+                
+                // Check based on issue type
+                switch (issue.type) {
+                  case "color":
+                    return getSuggestedColor(issue) !== null;
+                  case "spacing":
+                    return getSuggestedSpacing(issue) !== null;
+                  case "autolayout":
+                    return typeof getSuggestedAutolayout === "function" && getSuggestedAutolayout(issue) !== null;
+                  case "text-size-mobile":
+                    return typeof getSuggestedTextSize === "function" && getSuggestedTextSize(issue) !== null;
+                  case "contrast":
+                    return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
+                  case "typography-style":
+                  case "typography-check":
+                    // Check both bestMatch and bestMatch.name
+                    const hasBestMatch = issue.bestMatch && 
+                                       issue.bestMatch !== null && 
+                                       issue.bestMatch !== undefined && 
+                                       issue.bestMatch.name && 
+                                       typeof issue.bestMatch.name === 'string' && 
+                                       issue.bestMatch.name.trim().length > 0;
+                    if (type === "typography-style") {
+                      console.log("[hasSuggestFixButton] Typography-style issue", issue.id, "hasBestMatch:", hasBestMatch, "bestMatch:", issue.bestMatch);
+                    }
+                    return hasBestMatch;
+                  case "position":
+                    return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
+                  case "duplicate":
+                  case "component":
+                    return typeof getSuggestedComponent === "function" && getSuggestedComponent(issue) !== null;
+                  case "group":
+                    return true; // Always has suggest fix button
+                  case "empty-frame":
+                    return typeof getSuggestedEmptyFrameFix === "function" && getSuggestedEmptyFrameFix(issue) !== null;
+                  default:
+                    return false;
+                }
+              } catch (error) {
+                console.error("[hasSuggestFixButton] Error checking issue:", issue, error);
+                return false;
               }
             });
+            
+            if (type === "typography-style") {
+              console.log("[hasSuggestFixButton] Type:", type, "hasSuggestFixButton:", hasSuggestFixButton, "allGrouped[type]:", allGrouped[type]);
+            }
             
             groupHeader.innerHTML = `
               <div class="issue-group-header-left">
@@ -4434,13 +4527,27 @@ console.log("ui.js loaded");
             
             // Add click handler for "Fix all now" button
             const btnFixAll = groupHeader.querySelector(".btn-fix-all");
+            console.log("[Fix All] Setting up button for type:", type, "btnFixAll found:", !!btnFixAll);
             if (btnFixAll) {
               btnFixAll.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // Get all issues with suggest fix button in this group (use original issues, not filtered)
-                const issuesWithSuggestFix = (allGrouped[type] || []).filter(issue => {
-                  if (!issue) return false;
+                try {
+                  console.log("[Fix All] ========== BUTTON CLICKED ==========");
+                  console.log("[Fix All] Button clicked for type:", type);
+                  console.log("[Fix All] Event:", e);
+                  e.preventDefault();
+                  e.stopPropagation();
+                  
+                  console.log("[Fix All] All issues in group:", allGrouped[type]);
+                  console.log("[Fix All] allGrouped[type] length:", (allGrouped[type] || []).length);
+                  
+                  // Get all issues with suggest fix button in this group (use original issues, not filtered)
+                  const issuesWithSuggestFix = (allGrouped[type] || []).filter(issue => {
+                  if (!issue) {
+                    console.log("[Fix All] Filter: issue is null/undefined");
+                    return false;
+                  }
+                  
+                  console.log("[Fix All] Filter: checking issue", issue.id, "type:", issue.type, "bestMatch:", issue.bestMatch);
                   
                   // Check based on issue type
                   switch (issue.type) {
@@ -4456,7 +4563,14 @@ console.log("ui.js loaded");
                       return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
                     case "typography-style":
                     case "typography-check":
-                      return issue.bestMatch !== null;
+                      const hasValidBestMatch = issue.bestMatch && 
+                             issue.bestMatch !== null && 
+                             issue.bestMatch !== undefined && 
+                             issue.bestMatch.name && 
+                             typeof issue.bestMatch.name === 'string' && 
+                             issue.bestMatch.name.trim().length > 0;
+                      console.log("[Fix All] Filter: typography issue", issue.id, "hasValidBestMatch:", hasValidBestMatch, "bestMatch:", issue.bestMatch);
+                      return hasValidBestMatch;
                     case "position":
                       return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
                     case "duplicate":
@@ -4471,14 +4585,28 @@ console.log("ui.js loaded");
                   }
                 });
                 
-                if (issuesWithSuggestFix.length === 0) {
-                  alert("No issues with suggest fix available");
-                  return;
-                }
+                console.log("[Fix All] Filtered issues with suggest fix:", issuesWithSuggestFix);
+                console.log("[Fix All] Issues count:", issuesWithSuggestFix.length);
                 
-                // Start sequential processing
-                handleFixAllWithSuggestFix(type, issuesWithSuggestFix);
+                  console.log("[Fix All] Filtered issues count:", issuesWithSuggestFix.length);
+                  
+                  if (issuesWithSuggestFix.length === 0) {
+                    console.log("[Fix All] No issues with suggest fix available");
+                    alert("No issues with suggest fix available");
+                    return;
+                  }
+                  
+                  console.log("[Fix All] Starting handleFixAllWithSuggestFix with", issuesWithSuggestFix.length, "issues");
+                  // Start sequential processing
+                  handleFixAllWithSuggestFix(type, issuesWithSuggestFix);
+                } catch (error) {
+                  console.error("[Fix All] ERROR in button onclick:", error);
+                  console.error("[Fix All] Error stack:", error.stack);
+                  alert("Error: " + error.message);
+                }
               };
+            } else {
+              console.log("[Fix All] Button not found for type:", type);
             }
             
             groupEl.appendChild(groupHeader);
@@ -4619,7 +4747,7 @@ console.log("ui.js loaded");
                       <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #28a745; border-color: #28a745;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
                     ` : ""}
                     ${issue.type === "typography-style" ? `
-                      ${issue.bestMatch ? `
+                      ${(issue.bestMatch && issue.bestMatch.name) ? `
                         <button class="btn-suggest-fix" data-id="${issue.id}" data-style-name="${escapeHtml(issue.bestMatch.name)}">Suggest Fix now</button>
                       ` : ""}
                       <button class="btn-fix" data-id="${issue.id}">Select Style</button>
@@ -4627,6 +4755,9 @@ console.log("ui.js loaded");
                     ` : ""}
                     ${issue.type === "position" ? `
                       ${getSuggestedPositionFix(issue) ? `<button class="btn-suggest-fix" data-id="${issue.id}">Suggest Fix now</button>` : ""}
+                      <button class="btn-remove-layer" data-id="${issue.id}">Remove Layer</button>
+                    ` : ""}
+                    ${(issue.severity === "error" || issue.severity === "warn") && issue.type !== "position" ? `
                       <button class="btn-remove-layer" data-id="${issue.id}">Remove Layer</button>
                     ` : ""}
                     ${issue.type === "duplicate" ? `
@@ -4857,19 +4988,19 @@ console.log("ui.js loaded");
                 })(issue);
               }
               
-              // Handle Remove Layer button for position
+              // Handle Remove Layer button for all issue types (error/warning)
               const btnRemoveLayer = issueEl.querySelector("button.btn-remove-layer");
-              if (btnRemoveLayer && issue.type === "position") {
+              if (btnRemoveLayer) {
                 (function(issueData) {
                   btnRemoveLayer.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     console.log("Remove Layer button clicked", issueData);
-                    if (typeof handleRemovePositionLayer === "function") {
-                      handleRemovePositionLayer(issueData);
+                    if (typeof handleRemoveLayer === "function") {
+                      handleRemoveLayer(issueData);
                     } else {
-                      console.error("handleRemovePositionLayer is not a function");
-                      alert("Error: handleRemovePositionLayer function not found");
+                      console.error("handleRemoveLayer is not a function");
+                      alert("Error: handleRemoveLayer function not found");
                     }
                   };
                 })(issue);
@@ -4928,25 +5059,35 @@ console.log("ui.js loaded");
                 
                 // Handle Suggest Fix button (for typography-style)
                 const btnSuggestFix = issueEl.querySelector("button.btn-suggest-fix");
-                if (btnSuggestFix && issue.bestMatch && issue.type === "typography-style") {
+                if (btnSuggestFix && issue.bestMatch && issue.bestMatch.name && issue.type === "typography-style") {
                   (function(issueData) {
                     btnSuggestFix.onclick = (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       const styleName = btnSuggestFix.getAttribute("data-style-name");
-                      handleApplyTypographyStyle(issueData, styleName);
+                      if (styleName) {
+                        handleApplyTypographyStyle(issueData, styleName);
+                      } else {
+                        console.error("Cannot apply: styleName is missing from button", issueData);
+                        alert("Error: Style name is missing");
+                      }
                     };
                   })(issue);
                 }
                 
                 // Handle Suggest Fix button (for typography-check)
-                if (btnSuggestFix && issue.bestMatch && issue.type === "typography-check") {
+                if (btnSuggestFix && issue.bestMatch && issue.bestMatch.name && issue.type === "typography-check") {
                   (function(issueData) {
                     btnSuggestFix.onclick = (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       // Apply bestMatch style directly
-                      handleApplyTypographyStyle(issueData, issueData.bestMatch.name);
+                      if (issueData.bestMatch && issueData.bestMatch.name) {
+                        handleApplyTypographyStyle(issueData, issueData.bestMatch.name);
+                      } else {
+                        console.error("Cannot apply: bestMatch.name is missing", issueData);
+                        alert("Error: Best match style name is missing");
+                      }
                     };
                   })(issue);
                 }
@@ -6893,6 +7034,233 @@ console.log("ui.js loaded");
     };
   }
 
+  // Export Settings functionality
+  const btnExportSettings = document.getElementById("btn-export-settings");
+  
+  if (btnExportSettings) {
+    btnExportSettings.onclick = () => {
+      // Get current settings values (same as save settings)
+      const values = {
+        spacingScale: document.getElementById("spacing-scale")?.value || "",
+        spacingThreshold: document.getElementById("spacing-threshold")?.value || "100",
+        colorScale: document.getElementById("color-scale")?.value || "",
+        colorNameMap: colorNameMap,
+        ignoredIssues: ignoredIssues,
+        fontSizeScale: document.getElementById("font-size-scale")?.value || "",
+        fontSizeThreshold: document.getElementById("font-size-threshold")?.value || "100",
+        lineHeightScale: document.getElementById("line-height-scale")?.value || "",
+        lineHeightThreshold: document.getElementById("line-height-threshold")?.value || "300",
+        lineHeightBaselineThreshold: document.getElementById("line-height-baseline-threshold")?.value || "120",
+        typographyStyles: typographyStyles,
+        typographyRules: {
+          checkStyle: document.getElementById("rule-typo-style")?.checked || true,
+          checkFontFamily: document.getElementById("rule-font-family")?.checked || true,
+          checkFontSize: document.getElementById("rule-font-size")?.checked || true,
+          checkFontWeight: document.getElementById("rule-font-weight")?.checked || true,
+          checkLineHeight: document.getElementById("rule-line-height")?.checked || true,
+          checkLetterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
+          checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
+        }
+      };
+
+      // Get project name for file name
+      parent.postMessage({ pluginMessage: { type: "get-project-name" } }, "*");
+      
+      // Store values temporarily for export
+      window.pendingExportValues = values;
+    };
+  }
+
+  // Import Settings functionality
+  const btnImportSettings = document.getElementById("btn-import-settings");
+  const importSettingsModal = document.getElementById("import-settings-modal");
+  const importFileInput = document.getElementById("import-settings-file-input");
+  const btnSelectImportFile = document.getElementById("btn-select-import-file");
+  const importFileInfo = document.getElementById("import-file-info");
+  const importFileName = document.getElementById("import-file-name");
+  const btnConfirmImport = document.getElementById("btn-confirm-import");
+  const btnCancelImport = document.getElementById("btn-cancel-import");
+  const btnCloseImportSettings = document.getElementById("btn-close-import-settings");
+  
+  let selectedImportFile = null;
+  let importFileData = null;
+
+  if (btnImportSettings) {
+    btnImportSettings.onclick = () => {
+      // Reset state
+      selectedImportFile = null;
+      importFileData = null;
+      if (importFileInput) {
+        importFileInput.value = "";
+      }
+      if (importFileInfo) {
+        importFileInfo.style.display = "none";
+      }
+      if (btnConfirmImport) {
+        btnConfirmImport.disabled = true;
+      }
+      
+      // Show modal
+      if (importSettingsModal) {
+        importSettingsModal.style.display = "flex";
+      }
+    };
+  }
+
+  if (btnSelectImportFile && importFileInput) {
+    btnSelectImportFile.onclick = () => {
+      importFileInput.click();
+    };
+  }
+
+  if (importFileInput) {
+    importFileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) {
+        return;
+      }
+
+      if (!file.name.endsWith('.json')) {
+        alert("⚠️ Please select a JSON file");
+        return;
+      }
+
+      selectedImportFile = file;
+      if (importFileName) {
+        importFileName.textContent = file.name;
+      }
+      if (importFileInfo) {
+        importFileInfo.style.display = "block";
+      }
+      if (btnConfirmImport) {
+        btnConfirmImport.disabled = false;
+      }
+
+      // Read file content
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          importFileData = JSON.parse(event.target.result);
+          console.log("Imported settings data:", importFileData);
+        } catch (error) {
+          alert("❌ Error parsing JSON file: " + error.message);
+          selectedImportFile = null;
+          importFileData = null;
+          if (importFileInfo) {
+            importFileInfo.style.display = "none";
+          }
+          if (btnConfirmImport) {
+            btnConfirmImport.disabled = true;
+          }
+        }
+      };
+      reader.onerror = () => {
+        alert("❌ Error reading file");
+        selectedImportFile = null;
+        importFileData = null;
+      };
+      reader.readAsText(file);
+    };
+  }
+
+  if (btnConfirmImport) {
+    btnConfirmImport.onclick = () => {
+      if (!importFileData) {
+        alert("❌ No file data to import");
+        return;
+      }
+
+      console.log("Import file data:", importFileData);
+
+      // Parse imported data - can be array or single object
+      let values = null;
+      
+      if (Array.isArray(importFileData)) {
+        // Array format: [{name: "...", values: {...}, ...}]
+        if (importFileData.length === 0) {
+          alert("❌ No settings found in file");
+          return;
+        }
+        const firstSetting = importFileData[0];
+        values = firstSetting.values;
+        if (!values) {
+          alert("❌ Invalid settings format. No values found in setting object.");
+          return;
+        }
+      } else if (importFileData.values) {
+        // Single setting object: {name: "...", values: {...}, ...}
+        values = importFileData.values;
+      } else if (importFileData.spacingScale !== undefined || importFileData.colorScale !== undefined) {
+        // Direct values object: {spacingScale: "...", colorScale: "...", ...}
+        values = importFileData;
+      } else {
+        alert("❌ Invalid settings file format. Expected an array of settings, a single setting object, or a values object.");
+        console.error("Invalid import data structure:", importFileData);
+        return;
+      }
+
+      if (!values || typeof values !== "object") {
+        alert("❌ Invalid settings format. No values found.");
+        return;
+      }
+
+      console.log("Applying values:", values);
+
+      // Apply values to input fields (same as load settings)
+      // This only fills the input fields, does NOT affect saved settings
+      applyInputValues(values);
+      
+      // Save as current input values (this saves to localStorage, not to saved settings list)
+      saveInputValues();
+
+      // Close modal
+      if (importSettingsModal) {
+        importSettingsModal.style.display = "none";
+      }
+      
+      // Reset state
+      selectedImportFile = null;
+      importFileData = null;
+      if (importFileInput) {
+        importFileInput.value = "";
+      }
+      if (importFileInfo) {
+        importFileInfo.style.display = "none";
+      }
+      if (btnConfirmImport) {
+        btnConfirmImport.disabled = true;
+      }
+
+      alert("✅ Settings imported and applied to input fields successfully");
+    };
+  }
+
+  if (btnCancelImport || btnCloseImportSettings) {
+    const closeImportModal = () => {
+      if (importSettingsModal) {
+        importSettingsModal.style.display = "none";
+      }
+      selectedImportFile = null;
+      importFileData = null;
+      if (importFileInput) {
+        importFileInput.value = "";
+      }
+      if (importFileInfo) {
+        importFileInfo.style.display = "none";
+      }
+      if (btnConfirmImport) {
+        btnConfirmImport.disabled = true;
+      }
+    };
+
+    if (btnCancelImport) {
+      btnCancelImport.onclick = closeImportModal;
+    }
+    if (btnCloseImportSettings) {
+      btnCloseImportSettings.onclick = closeImportModal;
+    }
+  }
+
   // Close modals when clicking outside
   if (saveSettingsModal) {
     saveSettingsModal.onclick = (e) => {
@@ -7557,8 +7925,42 @@ console.log("ui.js loaded");
 
     // Settings management messages
     if (msg && msg.type === "project-name") {
+      const projectName = msg.name || "settings";
+      
+      // Handle export if pending
+      if (window.pendingExportValues) {
+        const values = window.pendingExportValues;
+        window.pendingExportValues = null;
+        
+        // Create setting object with current values
+        const setting = {
+          name: projectName,
+          values: values,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Create JSON string (single setting in array format)
+        const jsonStr = JSON.stringify([setting], null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        // Use project name for file name (sanitize for filename)
+        const sanitizedName = projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${sanitizedName}-settings.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log("✅ Settings exported successfully");
+        return;
+      }
+      
+      // Handle save settings modal
       if (settingNameInput) {
-        settingNameInput.value = msg.name || "";
+        settingNameInput.value = projectName;
       }
       return;
     }
@@ -7616,6 +8018,40 @@ console.log("ui.js loaded");
       return;
     }
 
+    if (msg && msg.type === "project-name") {
+      const projectName = msg.name || "settings";
+      // If we have pending export values, export now
+      if (window.pendingExportValues) {
+        const values = window.pendingExportValues;
+        window.pendingExportValues = null;
+        
+        // Create setting object with current values
+        const setting = {
+          name: projectName,
+          values: values,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Create JSON string (single setting in array format)
+        const jsonStr = JSON.stringify([setting], null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        // Use project name for file name (sanitize for filename)
+        const sanitizedName = projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${sanitizedName}-settings.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log("✅ Settings exported successfully");
+      }
+      return;
+    }
+
     if (msg && msg.type === "load-settings-result") {
       if (msg.success && msg.values) {
         applyInputValues(msg.values);
@@ -7636,6 +8072,7 @@ console.log("ui.js loaded");
       }
       return;
     }
+
 
     if (msg && msg.type === "report") {
             // Reset UI state

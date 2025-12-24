@@ -21,7 +21,6 @@
     top: 0;
     z-index: 1000;
     border-bottom: 1px solid #e1e1e1;
-    margin-bottom: 10px;
 
     &:hover {
       background: $color-bg;
@@ -88,6 +87,7 @@
   }
 
   &-content {
+    margin-top: 10px;
     padding: 0 16px 16px 16px;
     transition: opacity 0.2s ease-out;
   }

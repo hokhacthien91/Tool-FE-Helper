@@ -16,6 +16,10 @@
     display: none;
 }
 
+.typography-panel:not(.collapsed) .issue-group-toggle-icon {
+    transform: rotate(90deg);
+}
+
 .typography-table-wrapper {
     overflow-x: auto;
     margin-bottom: 16px;
