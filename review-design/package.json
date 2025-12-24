@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node ./build.mjs",
+    "prod": "node ./build-prod.mjs",
     "demo": "npx http-server ./Plugin-check-design-Figma",
     "watch": "node ./build.mjs --watch"
   },
