@@ -1,5 +1,5 @@
 {
-  "name": "Design QA Checker for Designer - development",
+  "name": "Design QA Checker",
   "id": "design-qa-checker",
   "api": "1.0.0",
   "main": "code.js",

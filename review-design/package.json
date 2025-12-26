@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node ./build.mjs",
-    "prod": "node ./build-prod.mjs",
+    "prod": "npm run build && node ./inject-assets.cjs",
     "demo": "npx http-server ./Plugin-check-design-Figma",
     "watch": "node ./build.mjs --watch"
   },
