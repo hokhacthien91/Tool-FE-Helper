@@ -5,7 +5,8 @@
   "main": "scan-elements.js",
   "type": "module",
   "scripts": {
-    "scan": "node scan-elements.js"
+    "scan": "node scan-elements.js",
+    "check-fetchpriority": "node check-fetchpriority.js"
   },
   "keywords": [
     "accessibility",
