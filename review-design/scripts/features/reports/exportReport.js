@@ -12,7 +12,21 @@ function buildDefaultFilename() {
   return `design-review-report-${year}-${month}-${day}-${hours}-${minutes}-${seconds}`;
 }
 
-export function exportReport({ format, reportData, getTypeDisplayName, filenameBase } = {}) {
+// Helper to enrich colors with name field
+function enrichColorsWithName(tokens, colorNameMap) {
+  if (!tokens || !Array.isArray(tokens.colors)) return tokens;
+
+  const nameMap = colorNameMap || {};
+  return {
+    ...tokens,
+    colors: tokens.colors.map(token => ({
+      ...token,
+      name: nameMap[String(token.value).toUpperCase()] || "No name"
+    }))
+  };
+}
+
+export function exportReport({ format, reportData, getTypeDisplayName, filenameBase, colorNameMap } = {}) {
   const data = reportData || {};
   if (!data.issues && !data.tokens) {
     alert("No data to export!");
@@ -87,7 +101,18 @@ export function exportReport({ format, reportData, getTypeDisplayName, filenameB
   }
 
   if (format === "json") {
-    const json = JSON.stringify(data, null, 2);
+    // Debug: log colorNameMap
+    console.log("Export JSON - colorNameMap:", colorNameMap);
+    console.log("Export JSON - tokens.colors:", data.tokens?.colors);
+
+    // Create export data with enriched colors (add name field)
+    const exportData = {
+      ...data,
+      tokens: enrichColorsWithName(data.tokens, colorNameMap)
+    };
+
+    console.log("Export JSON - enriched colors:", exportData.tokens?.colors);
+    const json = JSON.stringify(exportData, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

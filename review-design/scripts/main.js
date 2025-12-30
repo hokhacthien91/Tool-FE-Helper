@@ -6511,7 +6511,7 @@ console.log("ui.js loaded");
           btn.onclick = (e) => {
             e.stopPropagation();
             const format = btn.getAttribute("data-format");
-            exportReport({ format, reportData: currentReportData, getTypeDisplayName });
+            exportReport({ format, reportData: currentReportData, getTypeDisplayName, colorNameMap });
             exportDropdown.style.display = "none";
           };
         });
@@ -7039,12 +7039,27 @@ console.log("ui.js loaded");
   
   if (btnExportSettings) {
     btnExportSettings.onclick = () => {
+      // Ensure all colors in colorScale have a name in colorNameMap
+      const colorScaleValue = document.getElementById("color-scale")?.value || "";
+      const colorsInScale = colorScaleValue
+        .split(",")
+        .map(c => c.trim().toUpperCase())
+        .filter(c => c && c.startsWith("#"));
+
+      // Create enriched colorNameMap with "No name" for missing colors
+      const enrichedColorNameMap = { ...colorNameMap };
+      colorsInScale.forEach(hex => {
+        if (!enrichedColorNameMap[hex]) {
+          enrichedColorNameMap[hex] = "No name";
+        }
+      });
+
       // Get current settings values (same as save settings)
       const values = {
         spacingScale: document.getElementById("spacing-scale")?.value || "",
         spacingThreshold: document.getElementById("spacing-threshold")?.value || "100",
-        colorScale: document.getElementById("color-scale")?.value || "",
-        colorNameMap: colorNameMap,
+        colorScale: colorScaleValue,
+        colorNameMap: enrichedColorNameMap,
         ignoredIssues: ignoredIssues,
         fontSizeScale: document.getElementById("font-size-scale")?.value || "",
         fontSizeThreshold: document.getElementById("font-size-threshold")?.value || "100",

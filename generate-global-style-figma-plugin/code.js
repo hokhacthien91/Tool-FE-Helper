@@ -1,6 +1,6 @@
 console.clear();
 
-figma.showUI(__html__, { width: 600, height: 300 });
+figma.showUI(__html__, { width: 600, height: 330 });
 
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'generate') {
@@ -368,7 +368,7 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
   // Column headers
   const colHeader = figma.createText();
   colHeader.characters = "Standard text";
-  colHeader.fontSize = 14;
+  colHeader.fontSize = 18;
   colHeader.fontName = { family: "Inter", style: "Bold" };
   section.appendChild(colHeader);
 
@@ -408,7 +408,7 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
     label.name = "Label";
     label.fontName = { family: "Inter", style: "Regular" };
     label.characters = displayName;
-    label.fontSize = 12;
+    label.fontSize = 16;
     label.resize(150, label.height);
     label.layoutGrow = 0;
 
@@ -416,13 +416,13 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
     const sample = figma.createText();
     sample.name = "Preview Text"; // Meaningful name
     // Default Lorem Ipsum
-    let sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis blandit tempus odio varius tincidunt.";
+    let sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.sed do eiusmod tempor incididunt";
     
     // Customize text length based on font size
     if (s.fontSize > 65) {
         sampleText = "Lorem ipsum dolor sit amet";
     } else if (s.fontSize < 24) {
-      sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis blandit tempus odio varius tincidunt. Sed et dui id nisl mollis maximus. Morbi luctus, eros a sagittis condimentum.";
+       sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris";
     }
     else if (s.fontSize >= 40) {
         sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
@@ -628,7 +628,7 @@ function createSpacingSection(parent, spacingScale) {
      const cell = figma.createText();
      cell.characters = text;
      cell.fills = [{type: 'SOLID', color: {r:1, g:1, b:1}}];
-     cell.fontSize = 12;
+     cell.fontSize = 16;
      cell.fontName = { family: "Inter", style: "Bold" };
      cell.resize(100, cell.height); // Wider cells
      headerRow.appendChild(cell);
@@ -648,7 +648,7 @@ function createSpacingSection(parent, spacingScale) {
     const label = figma.createText();
     label.characters = index.toString();
     label.fills = [{type: 'SOLID', color: {r:1, g:1, b:1}}];
-    label.fontSize = 12;
+    label.fontSize = 16;
     label.fontName = { family: "Inter", style: "Regular" };
     label.resize(100, label.height);
     
@@ -658,7 +658,7 @@ function createSpacingSection(parent, spacingScale) {
         const valText = figma.createText();
         valText.characters = val.toString();
         valText.fills = [{type: 'SOLID', color: {r:1, g:1, b:1}}];
-        valText.fontSize = 12;
+        valText.fontSize = 16;
         valText.fontName = { family: "Inter", style: "Regular" };
         valText.resize(100, valText.height);
         row.appendChild(valText);
@@ -1035,16 +1035,16 @@ async function createTypographyFromStyles(parent, textStyles) {
       label.name = "Label";
       label.fontName = { family: "Inter", style: "Regular" };
       label.characters = displayName;
-      label.fontSize = 12;
+      label.fontSize = 16;
       label.resize(150, label.height);
       label.layoutGrow = 0;
 
       // Sample text based on size (define first)
-      let sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis blandit tempus odio varius tincidunt.";
+      let sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.sed do eiusmod tempor incididunt";
       if (style.fontSize > 65) {
         sampleText = "Lorem ipsum dolor sit amet";
       } else if (style.fontSize < 24) {
-        sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis blandit tempus odio varius tincidunt. Sed et dui id nisl mollis maximus.";
+        sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris";
       } else if (style.fontSize >= 40) {
         sampleText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
       }
@@ -1247,7 +1247,7 @@ async function createSpacingFromVariables(parent, numberVariables) {
     nameHeader.fontName = { family: "Inter", style: "Bold" };
     nameHeader.characters = 'Name';
     nameHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-    nameHeader.fontSize = 12;
+    nameHeader.fontSize = 16;
     nameHeader.resize(150, nameHeader.height);
     headerRow.appendChild(nameHeader);
 
@@ -1257,7 +1257,7 @@ async function createSpacingFromVariables(parent, numberVariables) {
       cell.fontName = { family: "Inter", style: "Bold" };
       cell.characters = mode.name;
       cell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-      cell.fontSize = 12;
+      cell.fontSize = 16;
       cell.resize(100, cell.height);
       headerRow.appendChild(cell);
     });
@@ -1304,7 +1304,7 @@ async function createSpacingFromVariables(parent, numberVariables) {
       nameCell.fontName = { family: "Inter", style: "Regular" };
       nameCell.characters = displayName;
       nameCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-      nameCell.fontSize = 12;
+      nameCell.fontSize = 16;
       nameCell.resize(150, nameCell.height);
       row.appendChild(nameCell);
 
@@ -1315,7 +1315,7 @@ async function createSpacingFromVariables(parent, numberVariables) {
         valueCell.fontName = { family: "Inter", style: "Regular" };
         valueCell.characters = String(value);
         valueCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-        valueCell.fontSize = 12;
+        valueCell.fontSize = 16;
         valueCell.resize(100, valueCell.height);
         row.appendChild(valueCell);
       });
