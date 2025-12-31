@@ -11,6 +11,10 @@ import { getContrastTextColor } from "./utils/color.js";
 import { calculateContrastRatio, getColorBrightness, getColorDistance } from "./utils/colorMath.js";
 import { escapeHtml } from "./utils/html.js";
 
+// Font-size threshold for typography suggestions (in pixels)
+// If font-size difference exceeds this value, the suggestion is considered invalid
+const FONT_SIZE_THRESHOLD_PX = 4;
+
 console.log('Header.js22121211thien2');
 console.log("ui.js loaded");
 
@@ -77,6 +81,41 @@ console.log("ui.js loaded");
           { id: 7, name: "Body", fontFamily: "Inter", fontSize: 16, fontWeight: "Regular", lineHeight: "150%", letterSpacing: "0", wordSpacing: "0" }
         ];
         let nextTypoStyleId = 8;
+
+        /**
+         * Check if a typography suggestion is valid based on font-size difference
+         * @param {Object} issue - The issue with nodeProps
+         * @returns {boolean} - True if suggestion is valid (font-size difference <= threshold)
+         */
+        function isValidTypographySuggestion(issue) {
+          if (!issue || !issue.bestMatch || !issue.bestMatch.name) {
+            return false;
+          }
+
+          // Get current font-size from issue
+          const currentFontSize = issue.nodeProps?.fontSize;
+          if (currentFontSize === null || currentFontSize === undefined) {
+            return true; // Can't validate without current font-size, allow suggestion
+          }
+
+          // Find the suggested style
+          const suggestedStyle = typographyStyles?.find(s => s.name === issue.bestMatch.name);
+          if (!suggestedStyle || !suggestedStyle.fontSize) {
+            return true; // Can't validate without suggested font-size, allow suggestion
+          }
+
+          // Calculate font-size difference
+          const fontSizeDiff = Math.abs(currentFontSize - suggestedStyle.fontSize);
+
+          // Check if difference exceeds threshold
+          if (fontSizeDiff > FONT_SIZE_THRESHOLD_PX) {
+            console.log(`[isValidTypographySuggestion] Font-size difference (${fontSizeDiff}px) exceeds threshold (${FONT_SIZE_THRESHOLD_PX}px) for issue:`, issue.id,
+              `Current: ${currentFontSize}px, Suggested: ${suggestedStyle.fontSize}px`);
+            return false;
+          }
+
+          return true;
+        }
 
         function saveLastReport(report) {
           if (!report) return;
@@ -383,8 +422,10 @@ console.log("ui.js loaded");
               </div>
               <div class="issue-actions">
                 <button class="btn-select" data-id="${issue.id}">Select</button>
-                ${(issue.bestMatch && issue.bestMatch.name && issue.type === "typography-check") ? `
+                ${(issue.bestMatch && issue.bestMatch.name && issue.type === "typography-check" && isValidTypographySuggestion(issue)) ? `
                   <button class="btn-suggest-fix" data-id="${issue.id}" data-style-name="${escapeHtml(issue.bestMatch.name)}">Suggest Fix now</button>
+                ` : ""}
+                ${issue.type === "typography-check" ? `
                   <button class="btn-style-dropdown" data-id="${issue.id}" data-issue-id="${issue.id}">Select Style</button>
                 ` : ""}
                 ${(issue.severity === "error" || issue.severity === "warn") && issue.type === "typography-check" ? `
@@ -2084,36 +2125,113 @@ console.log("ui.js loaded");
       alert("No text styles found in Figma. Please create text styles first.");
       return;
     }
-    
+
     // Create modal overlay
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "text-style-picker-typography-modal-overlay";
-    
+
     // Create modal dialog
     const dialog = document.createElement("div");
     dialog.className = "modal-dialog";
     dialog.style.maxWidth = "500px";
-    
+
     // Get current node properties for comparison
     const currentNode = issue.nodeProps || {};
     const currentFamily = currentNode.fontFamily || "Unknown";
-    const currentSize = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? `${currentNode.fontSize}px` : "Unknown";
+    const currentSizeNum = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? currentNode.fontSize : null;
+    const currentSize = currentSizeNum !== null ? `${currentSizeNum}px` : "Unknown";
     const currentWeight = currentNode.fontWeight || "Unknown";
     const currentLineHeight = currentNode.lineHeight || "Unknown";
     const currentLetterSpacing = currentNode.letterSpacing !== null && currentNode.letterSpacing !== undefined ? currentNode.letterSpacing : "Unknown";
-    
+
     // Find bestMatch name if exists
     let bestMatchName = null;
     if (issue.bestMatch && issue.bestMatch.name) {
       bestMatchName = issue.bestMatch.name;
     }
-    
-    // Build style list HTML with detail info
-    const styleListHtml = styles.map(style => {
+
+    // Helper to normalize values for comparison
+    const normalizeValue = (val) => {
+      if (val === null || val === undefined || val === "Unknown") return "";
+      return String(val).toLowerCase().trim();
+    };
+
+    // Calculate similarity score for sorting (higher = more similar)
+    const calculateSimilarity = (style) => {
+      let score = 0;
+      const maxScore = 100;
+
+      // Font family match (25 points)
+      if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
+        score += 25;
+      }
+
+      // Font size match (30 points) - also consider proximity
+      if (currentSizeNum !== null && style.fontSize) {
+        const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
+        if (sizeDiff === 0) {
+          score += 30;
+        } else if (sizeDiff <= 2) {
+          score += 25;
+        } else if (sizeDiff <= 4) {
+          score += 20;
+        } else if (sizeDiff <= 8) {
+          score += 10;
+        }
+      }
+
+      // Font weight match (20 points)
+      if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
+        score += 20;
+      }
+
+      // Line height match (15 points)
+      if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
+        score += 15;
+      }
+
+      // Letter spacing match (10 points)
+      if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
+        score += 10;
+      }
+
+      return score;
+    };
+
+    // Sort styles by similarity (highest first), bestMatch always first if exists
+    const sortedStyles = [...styles].sort((a, b) => {
+      // Best match always first
+      if (bestMatchName === a.name) return -1;
+      if (bestMatchName === b.name) return 1;
+
+      // Then sort by similarity score
+      return calculateSimilarity(b) - calculateSimilarity(a);
+    });
+
+    // Helper to check if value is different
+    const isDifferent = (current, styleVal) => {
+      return normalizeValue(current) !== normalizeValue(styleVal);
+    };
+
+    // Build style item HTML with highlighting
+    const buildStyleItemHtml = (style) => {
       const isBestMatch = bestMatchName === style.name;
+      const similarity = calculateSimilarity(style);
+
+      // Check which properties are different
+      const familyDiff = isDifferent(currentFamily, style.fontFamily);
+      const sizeDiff = isDifferent(currentSize, `${style.fontSize}px`);
+      const weightDiff = isDifferent(currentWeight, style.fontWeight);
+      const lineHeightDiff = isDifferent(currentLineHeight, style.lineHeight);
+      const letterSpacingDiff = isDifferent(currentLetterSpacing, style.letterSpacing || "0");
+
+      // Styles for matching and different values
+      const matchStyle = "color: #155724;";
+      const diffStyle = "color: #721c24; background: #f8d7da; padding: 1px 4px; border-radius: 3px; font-weight: 600;";
+
       return `
-        <div class="style-picker-item" data-style-id="${style.id}" data-font-size="${style.fontSize}" style="
+        <div class="style-picker-item" data-style-id="${style.id}" data-style-name="${escapeHtml(style.name)}" data-font-size="${style.fontSize}" data-similarity="${similarity}" style="
           padding: 12px;
           margin-bottom: 8px;
           border: 2px solid ${isBestMatch ? '#0071e3' : '#ddd'};
@@ -2129,22 +2247,28 @@ console.log("ui.js loaded");
                 ${escapeHtml(style.fontFamily)} ${style.fontSize}px ${escapeHtml(style.fontWeight)}
               </div>
             </div>
-            ${isBestMatch ? '<div style="color: #0071e3; font-weight: 600; font-size: 12px;">Best Match</div>' : ''}
+            <div style="text-align: right;">
+              ${isBestMatch ? '<div style="color: #0071e3; font-weight: 600; font-size: 11px;">Best Match</div>' : ''}
+              <div style="color: #666; font-size: 10px; margin-top: 2px;">${similarity}% match</div>
+            </div>
           </div>
           <div style="font-size: 11px; color: #666; padding-top: 8px; border-top: 1px solid #eee;">
             <div style="margin-bottom: 4px;"><strong>Details:</strong></div>
-            <div style="padding-left: 8px; line-height: 1.6;">
-              • Font Family: <code>${escapeHtml(style.fontFamily)}</code><br>
-              • Font Size: <code>${style.fontSize}px</code><br>
-              • Font Weight: <code>${escapeHtml(style.fontWeight)}</code><br>
-              • Line Height: <code>${escapeHtml(style.lineHeight)}</code><br>
-              • Letter Spacing: <code>${escapeHtml(style.letterSpacing || "0")}</code>
+            <div style="padding-left: 8px; line-height: 1.8;">
+              • Font Family: <code style="${familyDiff ? diffStyle : matchStyle}">${familyDiff ? '⚠ ' : '✓ '}${escapeHtml(style.fontFamily)}</code><br>
+              • Font Size: <code style="${sizeDiff ? diffStyle : matchStyle}">${sizeDiff ? '⚠ ' : '✓ '}${style.fontSize}px</code><br>
+              • Font Weight: <code style="${weightDiff ? diffStyle : matchStyle}">${weightDiff ? '⚠ ' : '✓ '}${escapeHtml(style.fontWeight)}</code><br>
+              • Line Height: <code style="${lineHeightDiff ? diffStyle : matchStyle}">${lineHeightDiff ? '⚠ ' : '✓ '}${escapeHtml(style.lineHeight)}</code><br>
+              • Letter Spacing: <code style="${letterSpacingDiff ? diffStyle : matchStyle}">${letterSpacingDiff ? '⚠ ' : '✓ '}${escapeHtml(style.letterSpacing || "0")}</code>
             </div>
           </div>
         </div>
       `;
-    }).join('');
-    
+    };
+
+    // Build style list HTML with sorted styles
+    const styleListHtml = sortedStyles.map(style => buildStyleItemHtml(style)).join('');
+
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
@@ -2162,7 +2286,19 @@ console.log("ui.js loaded");
             • Letter Spacing: <code>${escapeHtml(currentLetterSpacing)}</code>
           </div>
         </div>
-        <div style="max-height: 400px; overflow-y: auto;">
+        <!-- Search Input -->
+        <div style="margin-bottom: 12px;">
+          <input type="text" id="style-search-input" placeholder="🔍 Search styles by name..." style="
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            box-sizing: border-box;
+            outline: none;
+          " onfocus="this.style.borderColor='#0071e3'" onblur="this.style.borderColor='#ddd'" />
+        </div>
+        <div id="style-list-container" style="max-height: 280px; overflow-y: auto;">
           ${styleListHtml}
         </div>
       </div>
@@ -2170,15 +2306,16 @@ console.log("ui.js loaded");
         <button class="modal-btn modal-btn-cancel" id="text-style-picker-typography-modal-cancel-btn">Cancel</button>
       </div>
     `;
-    
+
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    
+
     // Get elements
     const cancelBtn = dialog.querySelector("#text-style-picker-typography-modal-cancel-btn");
     const closeBtn = dialog.querySelector(".modal-close");
-    const styleItems = dialog.querySelectorAll(".style-picker-item");
-    
+    const searchInput = dialog.querySelector("#style-search-input");
+    const styleListContainer = dialog.querySelector("#style-list-container");
+
     // Close function
     const closeModal = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -2188,33 +2325,56 @@ console.log("ui.js loaded");
         }
       }, 200);
     };
-    
+
     // Cancel button
     cancelBtn.onclick = closeModal;
     closeBtn.onclick = closeModal;
-    
+
     // Click overlay to close
     overlay.onclick = (e) => {
       if (e.target === overlay) {
         closeModal();
       }
     };
-    
-    // Style item clicks
-    styleItems.forEach(item => {
-      item.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const styleId = item.getAttribute("data-style-id");
-        const style = styles.find(s => s.id === styleId);
-        if (style) {
-          // Don't close picker modal, just hide it temporarily
-          overlay.style.display = "none";
-          // Show confirm modal with reference to picker modal
-          showTypographyStyleConfirmModal(issue, style, overlay);
-        }
-      };
-    });
+
+    // Search functionality
+    searchInput.oninput = (e) => {
+      const searchTerm = e.target.value.toLowerCase().trim();
+      const filteredStyles = sortedStyles.filter(style =>
+        style.name.toLowerCase().includes(searchTerm)
+      );
+      styleListContainer.innerHTML = filteredStyles.map(style => buildStyleItemHtml(style)).join('');
+
+      // Re-attach click handlers
+      attachStyleItemHandlers();
+    };
+
+    // Function to attach click handlers to style items
+    const attachStyleItemHandlers = () => {
+      const styleItems = dialog.querySelectorAll(".style-picker-item");
+      styleItems.forEach(item => {
+        item.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const styleId = item.getAttribute("data-style-id");
+          const style = styles.find(s => s.id === styleId);
+          if (style) {
+            // Don't close picker modal, just hide it temporarily
+            overlay.style.display = "none";
+            // Show confirm modal with reference to picker modal
+            showTypographyStyleConfirmModal(issue, style, overlay);
+          }
+        };
+      });
+    };
+
+    // Initial attach
+    attachStyleItemHandlers();
+
+    // Focus search input
+    setTimeout(() => {
+      searchInput.focus();
+    }, 100);
   }
 
   // Show typography style confirm modal
@@ -2622,50 +2782,137 @@ console.log("ui.js loaded");
 
   // Show text size fix confirm modal
   function showTextSizeFixConfirmModal(issue, currentSize, selectedSize, pickerModalOverlay, selectedStyle) {
+    // Helper function to calculate text size similarity
+    const calculateTextSizeSimilarity = (current, target) => {
+      if (current === target) return 100;
+      const maxDiff = 20; // Consider sizes more than 20px apart as 0% similar
+      const diff = Math.abs(current - target);
+      return Math.max(0, Math.round((1 - diff / maxDiff) * 100));
+    };
+
+    // Get available text sizes (ADA compliant sizes >= 14px)
+    const availableSizes = [14, 16, 18, 20, 24, 28, 32, 36, 40, 48];
+
+    // Calculate similarity and sort by closest match
+    const sortedSizes = availableSizes
+      .map(size => ({
+        size,
+        similarity: calculateTextSizeSimilarity(currentSize, size),
+        diff: Math.abs(currentSize - size)
+      }))
+      .sort((a, b) => {
+        // Put suggested size first if provided
+        if (selectedSize !== undefined && a.size === selectedSize) return -1;
+        if (selectedSize !== undefined && b.size === selectedSize) return 1;
+        // Sort by smallest difference (closest match)
+        return a.diff - b.diff;
+      })
+      .slice(0, 5);
+
+    // Track selected value (default to first one)
+    let selectedSizeValue = sortedSizes.length > 0 ? sortedSizes[0].size : selectedSize;
+
+    // Build size option HTML
+    const buildSizeOptionHtml = (sizeData, isSelected) => {
+      const isCompliant = sizeData.size >= 14;
+      return `
+        <div class="text-size-option-item" data-size="${sizeData.size}" style="
+          padding: 10px 12px;
+          margin-bottom: 6px;
+          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border-radius: 8px;
+          cursor: pointer;
+          background: ${isSelected ? '#e3f2fd' : 'white'};
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          transition: all 0.15s;
+        ">
+          <input type="radio" name="text-size-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer;" />
+          <div style="
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: ${isSelected ? '#e3f2fd' : '#f0f0f0'};
+            border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: ${isSelected ? '#0071e3' : '#666'};
+            flex-shrink: 0;
+          ">${sizeData.size}</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 13px; color: #333;">${sizeData.size}px</div>
+            <div style="font-size: 10px; color: ${isCompliant ? '#155724' : '#721c24'};">
+              ${isCompliant ? '✓ ADA compliant' : '⚠ Below minimum'}
+            </div>
+          </div>
+          <span style="font-size: 11px; color: #666; background: #f0f0f0; padding: 2px 8px; border-radius: 10px;">${sizeData.similarity}%</span>
+        </div>
+      `;
+    };
+
     // Create modal overlay
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "text-size-fix-confirm-modal-overlay";
-    
+
     // Create modal dialog
     const dialog = document.createElement("div");
     dialog.className = "modal-dialog";
-    dialog.style.maxWidth = "400px";
-    
+    dialog.style.maxWidth = "420px";
+
     // Check if called from fix all
     const fixAllCallbacks = window.pendingTextSizeFixAllCallbacks || null;
     const progressHtml = fixAllCallbacks && fixAllCallbacks.progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${fixAllCallbacks.progress.current}/${fixAllCallbacks.progress.total}</div>` : '';
-    
+
     // Build style info note if style is provided
     const styleNoteHtml = selectedStyle ? `
-      <div style="margin-top: 16px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
-        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Text Style sẽ được áp dụng:</div>
-        <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
-        <div style="font-size: 11px; color: #666; margin-top: 4px;">
+      <div style="margin-top: 12px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+        <div style="font-size: 11px; color: #666; margin-bottom: 4px;">📝 Text Style sẽ được áp dụng:</div>
+        <div style="font-weight: 600; font-size: 13px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
+        <div style="font-size: 10px; color: #666; margin-top: 4px;">
           ${escapeHtml(selectedStyle.fontFamily)} ${selectedStyle.fontSize}px ${escapeHtml(selectedStyle.fontWeight)}
         </div>
       </div>
     ` : '';
-    
+
+    const sizeOptionsHtml = sortedSizes.map((sizeData, index) => buildSizeOptionHtml(sizeData, index === 0)).join('');
+
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Confirm Text Size Change</h2>
+        <h2 class="modal-title">Apply Suggested Text Size</h2>
         <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
       </div>
       ${progressHtml}
       <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Change font size from:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
-            <div style="font-weight: 600; font-size: 18px; color: #333;">${currentSize}px</div>
-            <div style="font-size: 12px; color: #999;">(Too small)</div>
+        <div style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; display: flex; align-items: center; gap: 10px;">
+          <div style="
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+          ">${currentSize}</div>
+          <div>
+            <div style="font-size: 11px; color: #666;">Current Size:</div>
+            <div style="font-size: 14px; font-weight: 600;">${currentSize}px <span style="font-size: 11px; color: #dc3545;">(Too small)</span></div>
           </div>
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
-            <div style="font-weight: 600; font-size: 18px; color: #0071e3;">${selectedSize}px</div>
-            <div style="font-size: 12px; color: #28a745;">✓ ADA compliant (>= 14px)</div>
-          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px;">
+          Select a size to apply (Top 5 closest):
+        </div>
+        <div id="text-size-options-container" style="max-height: 280px; overflow-y: auto;">
+          ${sizeOptionsHtml}
         </div>
         ${styleNoteHtml}
       </div>
@@ -2675,17 +2922,45 @@ console.log("ui.js loaded");
         <button class="modal-btn modal-btn-create" id="text-size-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
       </div>
     `;
-    
+
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    
+
     // Get elements
     const cancelBtn = dialog.querySelector("#text-size-fix-confirm-cancel-btn");
     const applyBtn = dialog.querySelector("#text-size-fix-confirm-apply-btn");
     const ignoreBtn = dialog.querySelector("#text-size-fix-ignore-btn");
     const closeBtn = dialog.querySelector(".modal-close");
+    const sizeOptionsContainer = dialog.querySelector("#text-size-options-container");
     const callbacks = fixAllCallbacks;
-    
+
+    // Function to update selection UI
+    const updateSelection = (newSelectedSize) => {
+      selectedSizeValue = newSelectedSize;
+      const items = sizeOptionsContainer.querySelectorAll(".text-size-option-item");
+      items.forEach(item => {
+        const itemSize = parseInt(item.getAttribute("data-size"), 10);
+        const isSelected = itemSize === newSelectedSize;
+        item.style.border = isSelected ? "2px solid #0071e3" : "2px solid #e0e0e0";
+        item.style.background = isSelected ? "#e3f2fd" : "white";
+        const radio = item.querySelector('input[type="radio"]');
+        if (radio) radio.checked = isSelected;
+      });
+    };
+
+    // Attach click handlers to size options
+    const attachOptionHandlers = () => {
+      const items = sizeOptionsContainer.querySelectorAll(".text-size-option-item");
+      items.forEach(item => {
+        item.onclick = (e) => {
+          e.preventDefault();
+          const size = parseInt(item.getAttribute("data-size"), 10);
+          updateSelection(size);
+        };
+      });
+    };
+    attachOptionHandlers();
+
     // Close function
     const closeModal = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -2699,7 +2974,7 @@ console.log("ui.js loaded");
         }
       }, 200);
     };
-    
+
     // Close function that also closes picker modal
     const closeAllModals = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -2718,7 +2993,7 @@ console.log("ui.js loaded");
         }
       }, 200);
     };
-    
+
     // Cancel button - go back to picker or stop processing
     cancelBtn.onclick = () => {
       if (callbacks && callbacks.onCancel) {
@@ -2738,7 +3013,7 @@ console.log("ui.js loaded");
         closeModal();
       }
     };
-    
+
     // Click overlay to close
     overlay.onclick = (e) => {
       if (e.target === overlay) {
@@ -2751,7 +3026,7 @@ console.log("ui.js loaded");
         }
       }
     };
-    
+
     // Ignore button (only shown in fix all mode)
     if (ignoreBtn) {
       ignoreBtn.onclick = () => {
@@ -2762,14 +3037,14 @@ console.log("ui.js loaded");
         }
       };
     }
-    
+
     // Apply button
     applyBtn.onclick = () => {
       closeAllModals();
-      
+
       // Show loading message
       showFixMessage(issue.id, "⏳ Fixing text size...", true);
-      
+
       // If a text style is provided, apply the style instead of just font size
       if (selectedStyle && selectedStyle.id) {
         // Apply Figma text style
@@ -2782,16 +3057,16 @@ console.log("ui.js loaded");
           }
         }, "*");
       } else {
-        // Fallback to just changing font size
+        // Fallback to just changing font size (use selected value)
       parent.postMessage({
         pluginMessage: {
           type: "fix-text-size-issue",
           issue: issue,
-          fontSize: selectedSize
+          fontSize: selectedSizeValue
         }
       }, "*");
       }
-      
+
       if (callbacks && callbacks.onApply) {
         window.pendingTextSizeFixAllCallbacks = null;
         callbacks.onApply();
@@ -2828,73 +3103,189 @@ console.log("ui.js loaded");
 
   // Show contrast fix confirm modal
   function showContrastFixConfirmModal(issue, currentColor, selectedColor, pickerModalOverlay) {
-    const colorName = colorNameMap[selectedColor] || selectedColor;
     const bgColor = issue.backgroundColor || "#FFFFFF";
     const minContrast = issue.minContrast || 4.5;
-    const newContrast = calculateContrastRatio(selectedColor, bgColor);
-    
+
+    // Helper function to calculate color distance (simple RGB distance)
+    const calculateColorDistance = (color1, color2) => {
+      const hex1 = color1.replace('#', '');
+      const hex2 = color2.replace('#', '');
+      const r1 = parseInt(hex1.substr(0, 2), 16);
+      const g1 = parseInt(hex1.substr(2, 2), 16);
+      const b1 = parseInt(hex1.substr(4, 2), 16);
+      const r2 = parseInt(hex2.substr(0, 2), 16);
+      const g2 = parseInt(hex2.substr(2, 2), 16);
+      const b2 = parseInt(hex2.substr(4, 2), 16);
+      return Math.sqrt(Math.pow(r1 - r2, 2) + Math.pow(g1 - g2, 2) + Math.pow(b1 - b2, 2));
+    };
+
+    // Helper function to calculate similarity percentage
+    const calculateColorSimilarity = (color1, color2) => {
+      const maxDistance = 441.67; // sqrt(255^2 * 3)
+      const distance = calculateColorDistance(color1, color2);
+      return Math.round((1 - distance / maxDistance) * 100);
+    };
+
+    // Get available colors from colorNameMap that pass contrast
+    const availableColors = Object.keys(colorNameMap);
+
+    // Calculate contrast and similarity for each color, filter by passing contrast
+    const sortedColors = availableColors
+      .map(color => {
+        const contrast = calculateContrastRatio(color, bgColor);
+        return {
+          color,
+          name: colorNameMap[color] || color,
+          contrast,
+          passes: contrast >= minContrast,
+          similarity: calculateColorSimilarity(currentColor, color),
+          distance: calculateColorDistance(currentColor, color)
+        };
+      })
+      .filter(c => c.passes) // Only show colors that pass contrast
+      .sort((a, b) => {
+        // Put suggested color first if provided
+        if (selectedColor && a.color === selectedColor) return -1;
+        if (selectedColor && b.color === selectedColor) return 1;
+        // Sort by closest to current color (smallest distance)
+        return a.distance - b.distance;
+      })
+      .slice(0, 5);
+
+    // Track selected color (default to first one)
+    let selectedColorValue = sortedColors.length > 0 ? sortedColors[0].color : selectedColor;
+
+    // Build color option HTML
+    const buildColorOptionHtml = (colorData, isSelected) => {
+      return `
+        <div class="contrast-color-option-item" data-color="${escapeHtml(colorData.color)}" style="
+          padding: 10px 12px;
+          margin-bottom: 6px;
+          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border-radius: 8px;
+          cursor: pointer;
+          background: ${isSelected ? '#e3f2fd' : 'white'};
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          transition: all 0.15s;
+        ">
+          <input type="radio" name="contrast-color-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer;" />
+          <div style="
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: ${escapeHtml(colorData.color)};
+            border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+            flex-shrink: 0;
+          "></div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 13px; color: #333;">${escapeHtml(colorData.name)}</div>
+            <div style="font-size: 10px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(colorData.color)}</div>
+            <div style="font-size: 10px; color: #28a745; margin-top: 2px;">✓ ${colorData.contrast.toFixed(2)}:1</div>
+          </div>
+          <span style="font-size: 11px; color: #666; background: #f0f0f0; padding: 2px 8px; border-radius: 10px;">${colorData.similarity}%</span>
+        </div>
+      `;
+    };
+
     // Check if called from fix all
     const fixAllCallbacks = window.pendingContrastFixAllCallbacks || null;
     const progressHtml = fixAllCallbacks && fixAllCallbacks.progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${fixAllCallbacks.progress.current}/${fixAllCallbacks.progress.total}</div>` : '';
-    
+
     // Create modal overlay
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "contrast-fix-confirm-modal-overlay";
-    
+
     // Create modal dialog
     const dialog = document.createElement("div");
     dialog.className = "modal-dialog";
-    dialog.style.maxWidth = "400px";
-    
+    dialog.style.maxWidth = "420px";
+
+    const colorOptionsHtml = sortedColors.length > 0
+      ? sortedColors.map((colorData, index) => buildColorOptionHtml(colorData, index === 0)).join('')
+      : `<div style="padding: 20px; text-align: center; color: #666;">No colors available that pass contrast requirements (>= ${minContrast}:1)</div>`;
+
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Confirm Color Change</h2>
+        <h2 class="modal-title">Apply Suggested Contrast Color</h2>
         <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
       </div>
       ${progressHtml}
       <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Change text color from:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
-            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd;"></div>
+        <div style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <div style="
+              width: 32px;
+              height: 32px;
+              border-radius: 4px;
+              background: ${escapeHtml(currentColor)};
+              border: 1px solid #ddd;
+            "></div>
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
-              <div style="font-size: 11px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
+              <div style="font-size: 11px; color: #666;">Current:</div>
+              <div style="font-size: 12px; font-weight: 600; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(currentColor)}</div>
+              <div style="font-size: 10px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 ✗</div>
             </div>
           </div>
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px; margin-bottom: 12px;">
-            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
-            <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
-              <div style="font-size: 11px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
-              <div style="font-size: 11px; color: #28a745; margin-top: 4px;">Contrast: ${newContrast.toFixed(2)}:1 ✓ (passes >= ${minContrast}:1)</div>
-            </div>
+          <div style="font-size: 10px; color: #666; padding: 4px 8px; background: #e0e0e0; border-radius: 4px; display: inline-block;">
+            Background: ${escapeHtml(bgColor)} | Minimum: ${minContrast}:1
           </div>
-          <div style="padding: 8px; background: #f0f0f0; border-radius: 4px; font-size: 11px; color: #666;">
-            Background: ${escapeHtml(bgColor)}
-          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px;">
+          Select a color to apply (Top 5 passing contrast):
+        </div>
+        <div id="contrast-color-options-container" style="max-height: 280px; overflow-y: auto;">
+          ${colorOptionsHtml}
         </div>
       </div>
       <div class="modal-footer">
         ${window.pendingContrastFixAllCallbacks ? `<button class="modal-btn modal-btn-cancel" id="contrast-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ""}
         <button class="modal-btn modal-btn-cancel" id="contrast-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;" ${sortedColors.length === 0 ? 'disabled' : ''}>Apply</button>
       </div>
     `;
-    
+
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    
+
     // Get elements
     const cancelBtn = dialog.querySelector("#contrast-fix-confirm-cancel-btn");
     const applyBtn = dialog.querySelector("#contrast-fix-confirm-apply-btn");
     const ignoreBtn = dialog.querySelector("#contrast-fix-ignore-btn");
     const closeBtn = dialog.querySelector(".modal-close");
+    const colorOptionsContainer = dialog.querySelector("#contrast-color-options-container");
     const callbacks = fixAllCallbacks;
-    
+
+    // Function to update selection UI
+    const updateSelection = (newSelectedColor) => {
+      selectedColorValue = newSelectedColor;
+      const items = colorOptionsContainer.querySelectorAll(".contrast-color-option-item");
+      items.forEach(item => {
+        const itemColor = item.getAttribute("data-color");
+        const isSelected = itemColor === newSelectedColor;
+        item.style.border = isSelected ? "2px solid #0071e3" : "2px solid #e0e0e0";
+        item.style.background = isSelected ? "#e3f2fd" : "white";
+        const radio = item.querySelector('input[type="radio"]');
+        if (radio) radio.checked = isSelected;
+      });
+    };
+
+    // Attach click handlers to color options
+    const attachOptionHandlers = () => {
+      const items = colorOptionsContainer.querySelectorAll(".contrast-color-option-item");
+      items.forEach(item => {
+        item.onclick = (e) => {
+          e.preventDefault();
+          const color = item.getAttribute("data-color");
+          updateSelection(color);
+        };
+      });
+    };
+    attachOptionHandlers();
+
     // Close function
     const closeModal = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -2908,7 +3299,7 @@ console.log("ui.js loaded");
         }
       }, 200);
     };
-    
+
     // Cancel button - go back to picker or stop processing
     cancelBtn.onclick = () => {
       if (callbacks && callbacks.onCancel) {
@@ -2928,7 +3319,7 @@ console.log("ui.js loaded");
         closeModal();
       }
     };
-    
+
     // Click overlay to close
     overlay.onclick = (e) => {
       if (e.target === overlay) {
@@ -2941,7 +3332,7 @@ console.log("ui.js loaded");
         }
       }
     };
-    
+
     // Ignore button (only shown in fix all mode)
     if (ignoreBtn) {
       ignoreBtn.onclick = () => {
@@ -2952,23 +3343,25 @@ console.log("ui.js loaded");
         }
       };
     }
-    
+
     // Apply button
     applyBtn.onclick = () => {
+      if (sortedColors.length === 0) return;
+
       closeModal();
-      
+
       // Show loading message
       showFixMessage(issue.id, "⏳ Fixing contrast...", true);
-      
+
       // Send fix contrast request
       parent.postMessage({
         pluginMessage: {
           type: "fix-contrast-issue",
           issue: issue,
-          color: selectedColor
+          color: selectedColorValue
         }
       }, "*");
-      
+
       if (callbacks && callbacks.onApply) {
         window.pendingContrastFixAllCallbacks = null;
         callbacks.onApply();
@@ -3428,98 +3821,182 @@ console.log("ui.js loaded");
     };
   }
 
-  // Show suggest apply modal
+  // Show suggest apply modal with top 5 similar styles
   function showSuggestApplyModal(issue, styleName, options = {}) {
     console.log("[showSuggestApplyModal] Called with issue:", issue, "styleName:", styleName, "options:", options);
-    
-    if (!issue || !styleName) {
-      console.error("[showSuggestApplyModal] Missing issue or styleName:", { issue, styleName });
+
+    if (!issue) {
+      console.error("[showSuggestApplyModal] Missing issue:", { issue, styleName });
       return;
     }
-    
+
     const { onApply, onIgnore, onCancel, showIgnore = false, progress } = options;
-    
-    // Find the style
-    console.log("[showSuggestApplyModal] Looking for style:", styleName, "in typographyStyles:", typographyStyles);
-    const style = typographyStyles.find(s => s.name === styleName);
-    if (!style) {
-      console.error("[showSuggestApplyModal] Style not found:", styleName);
-      alert(`Style "${styleName}" not found`);
-      return;
-    }
-    
-    console.log("[showSuggestApplyModal] Found style:", style);
-    
+
     // Get current node properties
     const currentNode = issue.nodeProps || {};
     const currentFamily = currentNode.fontFamily || "Unknown";
-    const currentSize = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? `${currentNode.fontSize}px` : "Unknown";
+    const currentSizeNum = currentNode.fontSize !== null && currentNode.fontSize !== undefined ? currentNode.fontSize : null;
+    const currentSize = currentSizeNum !== null ? `${currentSizeNum}px` : "Unknown";
     const currentWeight = currentNode.fontWeight || "Unknown";
     const currentLineHeight = currentNode.lineHeight || "Unknown";
     const currentLetterSpacing = currentNode.letterSpacing !== null && currentNode.letterSpacing !== undefined ? currentNode.letterSpacing : "Unknown";
-    
-    // Get suggested style properties
-    const suggestedFamily = style.fontFamily || "Unknown";
-    const suggestedSize = style.fontSize ? `${style.fontSize}px` : "Unknown";
-    const suggestedWeight = style.fontWeight || "Unknown";
-    const suggestedLineHeight = style.lineHeight || "Unknown";
-    const suggestedLetterSpacing = style.letterSpacing !== null && style.letterSpacing !== undefined ? style.letterSpacing : "Unknown";
-    
+
+    // Helper function to normalize values for comparison
+    const normalizeValue = (val) => {
+      if (val === null || val === undefined || val === "Unknown") return "";
+      return String(val).toLowerCase().trim();
+    };
+
+    // Calculate similarity score for sorting (higher = more similar)
+    const calculateSimilarity = (style) => {
+      let score = 0;
+
+      // Font family match (25 points)
+      if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
+        score += 25;
+      }
+
+      // Font size match (30 points) - also consider proximity
+      if (currentSizeNum !== null && style.fontSize) {
+        const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
+        if (sizeDiff === 0) {
+          score += 30;
+        } else if (sizeDiff <= 2) {
+          score += 25;
+        } else if (sizeDiff <= 4) {
+          score += 20;
+        } else if (sizeDiff <= 8) {
+          score += 10;
+        }
+      }
+
+      // Font weight match (20 points)
+      if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
+        score += 20;
+      }
+
+      // Line height match (15 points)
+      if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
+        score += 15;
+      }
+
+      // Letter spacing match (10 points)
+      if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
+        score += 10;
+      }
+
+      return score;
+    };
+
+    // Sort styles by similarity and get top 5
+    const sortedStyles = [...typographyStyles]
+      .map(style => ({ ...style, similarity: calculateSimilarity(style) }))
+      .sort((a, b) => {
+        // If styleName provided, put it first
+        if (styleName && a.name === styleName) return -1;
+        if (styleName && b.name === styleName) return 1;
+        return b.similarity - a.similarity;
+      })
+      .slice(0, 5);
+
+    if (sortedStyles.length === 0) {
+      console.error("[showSuggestApplyModal] No typography styles available");
+      alert("No typography styles available");
+      return;
+    }
+
+    // Track selected style (default to first one)
+    let selectedStyleId = sortedStyles[0].id;
+
+    // Helper to check if value is different
+    const isDifferent = (current, styleVal) => {
+      return normalizeValue(current) !== normalizeValue(styleVal);
+    };
+
+    // Build style option HTML - detailed view like screenshot 2
+    const buildStyleOptionHtml = (style, isSelected, index) => {
+      const familyDiff = isDifferent(currentFamily, style.fontFamily);
+      const sizeDiff = isDifferent(currentSize, `${style.fontSize}px`);
+      const weightDiff = isDifferent(currentWeight, style.fontWeight);
+      const lineHeightDiff = isDifferent(currentLineHeight, style.lineHeight);
+      const letterSpacingDiff = isDifferent(currentLetterSpacing, style.letterSpacing || "0%");
+
+      const matchStyle = "color: #155724;";
+      const diffStyle = "color: #721c24; background: #f8d7da; padding: 2px 6px; border-radius: 4px; font-weight: 600;";
+      const isBestMatch = index === 0;
+
+      return `
+        <div class="style-option-item" data-style-id="${style.id}" style="
+          padding: 14px 16px;
+          margin-bottom: 10px;
+          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border-radius: 10px;
+          cursor: pointer;
+          background: ${isSelected ? '#f8fbff' : 'white'};
+          transition: all 0.15s;
+          border-left: 4px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+        ">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+              <input type="radio" name="style-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer; width: 18px; height: 18px;" />
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-weight: 700; font-size: 14px; color: #333;">${escapeHtml(style.name)}</span>
+                  ${isBestMatch ? '<span style="color: #f5a623;">⭐</span>' : ''}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                  ${escapeHtml(style.fontFamily)} ${style.fontSize}px ${escapeHtml(style.fontWeight)}
+                </div>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              ${isBestMatch ? '<div style="color: #0071e3; font-size: 11px; font-weight: 600;">Best Match</div>' : ''}
+              <div style="font-size: 12px; color: #666; background: #f0f0f0; padding: 3px 10px; border-radius: 12px; margin-top: 2px;">${style.similarity}% match</div>
+            </div>
+          </div>
+          <div style="margin-left: 28px; padding: 0 12px; background: #f8f9fa; border-radius: 6px;">
+            <div style="font-size: 11px; font-weight: 600; color: #333; margin-bottom: 8px;">Details:</div>
+            <div style="font-size: 11px; color: #555; line-height: 1.2;">
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <span style="color: #888; min-width: 90px;">• Font Family:</span>
+                <span style="${familyDiff ? diffStyle : matchStyle}">${familyDiff ? '⚠' : '✓'} ${escapeHtml(style.fontFamily)}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <span style="color: #888; min-width: 90px;">• Font Size:</span>
+                <span style="${sizeDiff ? diffStyle : matchStyle}">${sizeDiff ? '⚠' : '✓'} ${style.fontSize}px</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <span style="color: #888; min-width: 90px;">• Font Weight:</span>
+                <span style="${weightDiff ? diffStyle : matchStyle}">${weightDiff ? '⚠' : '✓'} ${escapeHtml(style.fontWeight)}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <span style="color: #888; min-width: 90px;">• Line Height:</span>
+                <span style="${lineHeightDiff ? diffStyle : matchStyle}">${lineHeightDiff ? '⚠' : '✓'} ${escapeHtml(style.lineHeight)}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: #888; min-width: 90px;">• Letter Spacing:</span>
+                <span style="${letterSpacingDiff ? diffStyle : matchStyle}">${letterSpacingDiff ? '⚠' : '✓'} ${escapeHtml(style.letterSpacing || "0%")}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
     // Create modal overlay
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "suggest-apply-modal-overlay";
-    
+
     // Create modal dialog
     const dialog = document.createElement("div");
     dialog.className = "modal-dialog";
-    dialog.style.maxWidth = "500px";
-    
-    // Build comparison HTML
-    const comparisonHtml = `
-      <div style="margin-top: 16px; font-size: 13px;">
-        <div style="margin-bottom: 12px; font-weight: 600; color: #333;">Comparison:</div>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-          <thead>
-            <tr style="border-bottom: 1px solid #ddd;">
-              <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Property</th>
-              <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Current</th>
-              <th style="text-align: left; padding: 8px; font-weight: 600; color: #28a745;">Suggested</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-              <td style="padding: 8px; color: #666;">Font Family</td>
-              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentFamily)}</code></td>
-              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedFamily)}</code></td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-              <td style="padding: 8px; color: #666;">Font Size</td>
-              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentSize)}</code></td>
-              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedSize)}</code></td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-              <td style="padding: 8px; color: #666;">Font Weight</td>
-              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentWeight)}</code></td>
-              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedWeight)}</code></td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-              <td style="padding: 8px; color: #666;">Line Height</td>
-              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentLineHeight)}</code></td>
-              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedLineHeight)}</code></td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; color: #666;">Letter Spacing</td>
-              <td style="padding: 8px;"><code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">${escapeHtml(currentLetterSpacing)}</code></td>
-              <td style="padding: 8px;"><code style="background: #d4edda; padding: 2px 6px; border-radius: 3px; color: #155724;">${escapeHtml(suggestedLetterSpacing)}</code></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-    
+    dialog.style.maxWidth = "480px";
+
     const progressHtml = progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${progress.current}/${progress.total}</div>` : '';
-    
+
+    const styleOptionsHtml = sortedStyles.map((style, index) => buildStyleOptionHtml(style, index === 0, index)).join('');
+
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
@@ -3528,17 +4005,19 @@ console.log("ui.js loaded");
       </div>
       ${progressHtml}
       <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">
-            Suggested Style: <span style="color: #28a745;">${escapeHtml(styleName)}</span>
+        <div style="margin-bottom: 12px; padding: 12px; background: #fff8e6; border-radius: 8px; border-left: 4px solid #f5a623;">
+          <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 6px;">Current Node Properties:</div>
+          <div style="font-size: 12px; color: #333; line-height: 1.6;">
+            <div><strong>Font:</strong> ${escapeHtml(currentFamily)} • ${escapeHtml(currentSize)} • ${escapeHtml(currentWeight)}</div>
+            <div><strong>Line Height:</strong> ${escapeHtml(currentLineHeight)} • <strong>Letter Spacing:</strong> ${escapeHtml(currentLetterSpacing)}</div>
           </div>
-          ${issue.bestMatch && issue.bestMatch.percentage ? `
-            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
-              Match: <strong>${issue.bestMatch.percentage}%</strong>
-            </div>
-          ` : ''}
         </div>
-        ${comparisonHtml}
+        <div style="font-size: 12px; font-weight: 600; color: #333; margin-bottom: 10px;">
+          Select a style to apply (Top 5 matches):
+        </div>
+        <div id="style-options-container" style="max-height: 400px; overflow-y: auto;">
+          ${styleOptionsHtml}
+        </div>
       </div>
       <div class="modal-footer">
         ${showIgnore ? `<button class="modal-btn modal-btn-cancel" id="suggest-modal-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ''}
@@ -3546,16 +4025,45 @@ console.log("ui.js loaded");
         <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply Style</button>
       </div>
     `;
-    
+
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    
+
     // Get elements
     const cancelBtn = dialog.querySelector("#suggest-modal-cancel-btn");
     const applyBtn = dialog.querySelector("#suggest-modal-apply-btn");
     const ignoreBtn = dialog.querySelector("#suggest-modal-ignore-btn");
     const closeBtn = dialog.querySelector(".modal-close");
-    
+    const styleOptionsContainer = dialog.querySelector("#style-options-container");
+
+    // Function to update selection UI
+    const updateSelection = (newSelectedId) => {
+      selectedStyleId = newSelectedId;
+      const items = styleOptionsContainer.querySelectorAll(".style-option-item");
+      items.forEach(item => {
+        const itemId = item.getAttribute("data-style-id");
+        const isSelected = itemId === String(newSelectedId);
+        item.style.border = isSelected ? "2px solid #0071e3" : "2px solid #e0e0e0";
+        item.style.borderLeft = isSelected ? "4px solid #0071e3" : "4px solid #e0e0e0";
+        item.style.background = isSelected ? "#f8fbff" : "white";
+        const radio = item.querySelector('input[type="radio"]');
+        if (radio) radio.checked = isSelected;
+      });
+    };
+
+    // Attach click handlers to style options
+    const attachOptionHandlers = () => {
+      const items = styleOptionsContainer.querySelectorAll(".style-option-item");
+      items.forEach(item => {
+        item.onclick = (e) => {
+          e.preventDefault();
+          const styleId = item.getAttribute("data-style-id");
+          updateSelection(styleId);
+        };
+      });
+    };
+    attachOptionHandlers();
+
     // Close function
     const closeModal = () => {
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
@@ -3565,8 +4073,8 @@ console.log("ui.js loaded");
         }
       }, 200);
     };
-    
-    // Cancel button - if showIgnore is true, treat cancel as stop (onCancel)
+
+    // Cancel button
     cancelBtn.onclick = () => {
       closeModal();
       if (showIgnore && options.onCancel && typeof options.onCancel === "function") {
@@ -3579,8 +4087,8 @@ console.log("ui.js loaded");
         options.onCancel();
       }
     };
-    
-    // Click overlay to close - if showIgnore is true, treat as stop (onCancel)
+
+    // Click overlay to close
     overlay.onclick = (e) => {
       if (e.target === overlay) {
         closeModal();
@@ -3589,33 +4097,51 @@ console.log("ui.js loaded");
         }
       }
     };
-    
+
     // Apply button
     applyBtn.onclick = () => {
+      const selectedStyle = sortedStyles.find(s => String(s.id) === String(selectedStyleId));
+      if (!selectedStyle) {
+        console.error("[showSuggestApplyModal] Selected style not found:", selectedStyleId);
+        return;
+      }
+
       closeModal();
       // Show loading message
       showFixMessage(issue.id, "⏳ Applying style...", true);
-      
-      // Send apply style request
-      parent.postMessage({
-        pluginMessage: {
-          type: "apply-typography-style",
-          issue: issue,
-          style: style
-        }
-      }, "*");
-      
+
+      // Check if style has a Figma styleId (extracted from Figma)
+      if (selectedStyle.styleId) {
+        // Apply actual Figma text style (node will be linked to the style)
+        parent.postMessage({
+          pluginMessage: {
+            type: "apply-figma-text-style",
+            issue: issue,
+            styleId: selectedStyle.styleId,
+            styleName: selectedStyle.name
+          }
+        }, "*");
+      } else {
+        // Fallback: Apply typography properties manually (for manually added styles)
+        parent.postMessage({
+          pluginMessage: {
+            type: "apply-typography-style",
+            issue: issue,
+            style: selectedStyle
+          }
+        }, "*");
+      }
+
       // Call onApply callback if provided
       if (onApply && typeof onApply === "function") {
         onApply();
       }
     };
-    
+
     // Ignore button
     if (ignoreBtn) {
       ignoreBtn.onclick = () => {
         closeModal();
-        // Call onIgnore callback if provided
         if (onIgnore && typeof onIgnore === "function") {
           onIgnore();
         }
@@ -3908,196 +4434,47 @@ console.log("ui.js loaded");
   
   // Wrapper for showColorFixConfirmModal with ignore support
   function showColorFixConfirmModalWithIgnore(issue, currentColor, selectedColor, callbacks = {}) {
-    const { onApply, onIgnore, onCancel, progress } = callbacks;
-    const progressHtml = progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${progress.current}/${progress.total}</div>` : '';
-    
-    // Create modal overlay
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    
-    const dialog = document.createElement("div");
-    dialog.className = "modal-dialog";
-    dialog.style.maxWidth = "450px";
-    
-    const colorName = colorNameMap[selectedColor] || selectedColor;
-    
-    dialog.innerHTML = `
-      <div class="modal-header">
-        <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Apply Suggested Color</h2>
-        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
-      </div>
-      ${progressHtml}
-      <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Color Change:</div>
-          <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px;">
-            <div style="text-align: center;">
-              <div style="width: 64px; height: 64px; border-radius: 8px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd; margin-bottom: 8px;"></div>
-              <div style="font-size: 11px; color: #666;">Current</div>
-              <div style="font-size: 12px; font-weight: 600; color: #333; font-family: 'SF Mono', Monaco, monospace; margin-top: 4px;">${escapeHtml(currentColor)}</div>
-            </div>
-            <div style="font-size: 24px; color: #666;">→</div>
-            <div style="text-align: center;">
-              <div style="width: 64px; height: 64px; border-radius: 8px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
-              <div style="font-size: 11px; color: #666;">Suggested</div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
-              <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="color-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
-        <button class="modal-btn modal-btn-cancel" id="color-fix-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="color-fix-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
-      </div>
-    `;
-    
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-    
-    const cancelBtn = dialog.querySelector("#color-fix-cancel-btn");
-    const applyBtn = dialog.querySelector("#color-fix-apply-btn");
-    const ignoreBtn = dialog.querySelector("#color-fix-ignore-btn");
-    const closeBtn = dialog.querySelector(".modal-close");
-    
-    const closeModal = () => {
-      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
-      setTimeout(() => {
-        if (overlay.parentNode) {
-          overlay.remove();
-        }
-      }, 200);
-    };
-    
-    cancelBtn.onclick = () => {
-      closeModal();
-      if (onCancel) onCancel();
-    };
-    closeBtn.onclick = () => {
-      closeModal();
-      if (onCancel) onCancel();
-    };
-    overlay.onclick = (e) => {
-      if (e.target === overlay) {
-        closeModal();
-        if (onCancel) onCancel();
+    // Use the imported showColorFixConfirmModal with callbacks
+    // Get available colors from colorNameMap
+    const availableColors = Object.keys(colorNameMap);
+    showColorFixConfirmModal(
+      issue,
+      currentColor,
+      selectedColor,
+      colorNameMap,
+      availableColors,
+      {
+        ...callbacks,
+        showIgnore: true
       }
-    };
-    
-    ignoreBtn.onclick = () => {
-      closeModal();
-      if (onIgnore) onIgnore();
-    };
-    
-    applyBtn.onclick = () => {
-      closeModal();
-      showFixMessage(issue.id, "⏳ Fixing color...", true);
-      parent.postMessage({
-        pluginMessage: {
-          type: "fix-color-issue",
-          issue: issue,
-          color: selectedColor
-        }
-      }, "*");
-      if (onApply) onApply();
-    };
+    );
   }
   
   // Wrapper for showSpacingFixConfirmModal with ignore support
   function showSpacingFixConfirmModalWithIgnore(issue, propertyName, currentValue, selectedValue, callbacks = {}) {
-    const { onApply, onIgnore, onCancel, progress } = callbacks;
-    const progressHtml = progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${progress.current}/${progress.total}</div>` : '';
-    
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    
-    const dialog = document.createElement("div");
-    dialog.className = "modal-dialog";
-    dialog.style.maxWidth = "450px";
-    
-    dialog.innerHTML = `
-      <div class="modal-header">
-        <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Apply Suggested Spacing</h2>
-        <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
-      </div>
-      ${progressHtml}
-      <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Spacing Change:</div>
-          <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px;">
-            <div style="text-align: center;">
-              <div style="font-weight: 600; font-size: 18px; color: #333;">${currentValue}px</div>
-              <div style="font-size: 11px; color: #666; margin-top: 4px;">Current</div>
-            </div>
-            <div style="font-size: 24px; color: #666;">→</div>
-            <div style="text-align: center;">
-              <div style="font-weight: 600; font-size: 18px; color: #333;">${selectedValue}px</div>
-              <div style="font-size: 11px; color: #666; margin-top: 4px;">Suggested</div>
-            </div>
-          </div>
-          <div style="font-size: 12px; color: #666; margin-top: 8px;">Property: <strong>${escapeHtml(propertyName)}</strong></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="spacing-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
-        <button class="modal-btn modal-btn-cancel" id="spacing-fix-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="spacing-fix-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
-      </div>
-    `;
-    
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-    
-    const cancelBtn = dialog.querySelector("#spacing-fix-cancel-btn");
-    const applyBtn = dialog.querySelector("#spacing-fix-apply-btn");
-    const ignoreBtn = dialog.querySelector("#spacing-fix-ignore-btn");
-    const closeBtn = dialog.querySelector(".modal-close");
-    
-    const closeModal = () => {
-      overlay.style.animation = "fadeIn 0.2s ease-out reverse";
-      setTimeout(() => {
-        if (overlay.parentNode) {
-          overlay.remove();
-        }
-      }, 200);
-    };
-    
-    cancelBtn.onclick = () => {
-      closeModal();
-      if (onCancel) onCancel();
-    };
-    closeBtn.onclick = () => {
-      closeModal();
-      if (onCancel) onCancel();
-    };
-    overlay.onclick = (e) => {
-      if (e.target === overlay) {
-        closeModal();
-        if (onCancel) onCancel();
+    // Use the imported showSpacingFixConfirmModal with callbacks
+    // Get available spacing values from spacing-scale input if available
+    const spacingScaleInput = document.getElementById("spacing-scale");
+    let availableValues = [0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96];
+    if (spacingScaleInput && spacingScaleInput.value.trim()) {
+      const parsedValues = spacingScaleInput.value.split(",")
+        .map(v => parseInt(v.trim(), 10))
+        .filter(v => !isNaN(v));
+      if (parsedValues.length > 0) {
+        availableValues = parsedValues;
       }
-    };
-    
-    ignoreBtn.onclick = () => {
-      closeModal();
-      if (onIgnore) onIgnore();
-    };
-    
-    applyBtn.onclick = () => {
-      closeModal();
-      showFixMessage(issue.id, "⏳ Fixing spacing...", true);
-      parent.postMessage({
-        pluginMessage: {
-          type: "fix-spacing-issue",
-          issue: issue,
-          propertyName: propertyName,
-          value: selectedValue
-        }
-      }, "*");
-      if (onApply) onApply();
-    };
+    }
+    showSpacingFixConfirmModal(
+      issue,
+      propertyName,
+      currentValue,
+      selectedValue,
+      availableValues,
+      {
+        ...callbacks,
+        showIgnore: true
+      }
+    );
   }
 
   // Handle apply Figma text style to node
@@ -4451,13 +4828,14 @@ console.log("ui.js loaded");
                     return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
                   case "typography-style":
                   case "typography-check":
-                    // Check both bestMatch and bestMatch.name
-                    const hasBestMatch = issue.bestMatch && 
-                                       issue.bestMatch !== null && 
-                                       issue.bestMatch !== undefined && 
-                                       issue.bestMatch.name && 
-                                       typeof issue.bestMatch.name === 'string' && 
-                                       issue.bestMatch.name.trim().length > 0;
+                    // Check both bestMatch and bestMatch.name, and validate font-size threshold
+                    const hasBestMatch = issue.bestMatch &&
+                                       issue.bestMatch !== null &&
+                                       issue.bestMatch !== undefined &&
+                                       issue.bestMatch.name &&
+                                       typeof issue.bestMatch.name === 'string' &&
+                                       issue.bestMatch.name.trim().length > 0 &&
+                                       isValidTypographySuggestion(issue); // Also check font-size threshold
                     if (type === "typography-style") {
                       console.log("[hasSuggestFixButton] Typography-style issue", issue.id, "hasBestMatch:", hasBestMatch, "bestMatch:", issue.bestMatch);
                     }
@@ -4492,7 +4870,7 @@ console.log("ui.js loaded");
                 <h4>${getTypeIcon(type)} ${getTypeDisplayName(type)}</h4>
                 <span class="badge">${nonIgnoredErrorWarnCount}</span>
               </div>
-              ${issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "typography-style" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
+              ${issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
             `;
             
             // Add click handler for collapse/expand
@@ -4563,12 +4941,13 @@ console.log("ui.js loaded");
                       return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
                     case "typography-style":
                     case "typography-check":
-                      const hasValidBestMatch = issue.bestMatch && 
-                             issue.bestMatch !== null && 
-                             issue.bestMatch !== undefined && 
-                             issue.bestMatch.name && 
-                             typeof issue.bestMatch.name === 'string' && 
-                             issue.bestMatch.name.trim().length > 0;
+                      const hasValidBestMatch = issue.bestMatch &&
+                             issue.bestMatch !== null &&
+                             issue.bestMatch !== undefined &&
+                             issue.bestMatch.name &&
+                             typeof issue.bestMatch.name === 'string' &&
+                             issue.bestMatch.name.trim().length > 0 &&
+                             isValidTypographySuggestion(issue); // Also check font-size threshold
                       console.log("[Fix All] Filter: typography issue", issue.id, "hasValidBestMatch:", hasValidBestMatch, "bestMatch:", issue.bestMatch);
                       return hasValidBestMatch;
                     case "position":
@@ -4747,7 +5126,7 @@ console.log("ui.js loaded");
                       <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #28a745; border-color: #28a745;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
                     ` : ""}
                     ${issue.type === "typography-style" ? `
-                      ${(issue.bestMatch && issue.bestMatch.name) ? `
+                      ${(issue.bestMatch && issue.bestMatch.name && isValidTypographySuggestion(issue)) ? `
                         <button class="btn-suggest-fix" data-id="${issue.id}" data-style-name="${escapeHtml(issue.bestMatch.name)}">Suggest Fix now</button>
                       ` : ""}
                       <button class="btn-fix" data-id="${issue.id}">Select Style</button>
@@ -5252,6 +5631,12 @@ console.log("ui.js loaded");
         function replaceSpacingScaleWithTokens(tokens) {
           const input = document.getElementById("spacing-scale");
           if (!input) return;
+
+          // Get threshold value
+          const thresholdInput = document.getElementById("spacing-threshold");
+          const threshold = thresholdInput ? parseInt(thresholdInput.value, 10) : 100;
+          const validThreshold = isNaN(threshold) ? 100 : threshold;
+
           const list = (tokens && Array.isArray(tokens.spacing)) ? tokens.spacing : [];
           const values = list
             .map(t => {
@@ -5259,7 +5644,7 @@ console.log("ui.js loaded");
               // Always use absolute value (convert negative to positive)
               return isNaN(num) ? null : Math.abs(num);
             })
-            .filter(n => n !== null);
+            .filter(n => n !== null && n <= validThreshold); // Filter by threshold
 
           if (!values.length) return;
           // Remove duplicates and sort ascending
@@ -6158,67 +6543,144 @@ console.log("ui.js loaded");
   function renderColorPreview() {
     const colorInput = document.getElementById("color-scale");
     const colorPreview = document.getElementById("color-preview");
-    
+
     if (!colorInput || !colorPreview) return;
-    
+
     const value = colorInput.value.trim();
     colorPreview.innerHTML = "";
-    
+
     if (!value) return;
-    
+
     // Parse colors (split by comma)
     const colors = value.split(",").map(c => c.trim()).filter(c => c);
-    
+
+    // Track "No name" counter for colors without names
+    let noNameCounter = 1;
+    // First pass: count existing "No name X" to find next available number
+    colors.forEach(color => {
+      const colorHex = color.toUpperCase();
+      const existingName = colorNameMap[colorHex];
+      if (existingName && /^No name \d+$/.test(existingName)) {
+        const num = parseInt(existingName.replace("No name ", ""), 10);
+        if (num >= noNameCounter) noNameCounter = num + 1;
+      }
+    });
+
+    // Reset counter for assignment
+    let assignCounter = 1;
+
     colors.forEach((color, index) => {
       // Validate color format (basic hex or rgba)
       const isValidHex = /^#[0-9A-Fa-f]{3,8}$/.test(color);
       const isValidRgba = /^rgba?\(/.test(color);
-      
+
       if (!isValidHex && !isValidRgba) return; // Skip invalid colors
-      
+
       // Create color swatch container
       const swatchContainer = document.createElement("div");
       swatchContainer.className = "color-swatch-container";
-      
+
       // Create color swatch
       const swatch = document.createElement("div");
       swatch.className = "color-swatch";
       swatch.style.background = color; // Only set the dynamic background color
-      
+
       // Add close button
       const closeBtn = document.createElement("button");
       closeBtn.innerHTML = "×";
       closeBtn.className = "color-swatch-close";
-      
+
       closeBtn.onclick = function(e) {
         e.stopPropagation();
-        // Remove this color from input
+        // Remove this color from input and colorNameMap
         const allColors = colorInput.value.split(",").map(c => c.trim()).filter(c => c);
+        const removedColor = allColors[index]?.toUpperCase();
         const newColors = allColors.filter((c, i) => i !== index);
         colorInput.value = newColors.join(", ");
-        
+
+        // Remove from colorNameMap
+        if (removedColor && colorNameMap[removedColor]) {
+          delete colorNameMap[removedColor];
+        }
+
         // Re-render and save
         renderColorPreview();
         if (typeof saveInputValues === "function") saveInputValues();
       };
-      
+
       // Add label below swatch with color name and value (always visible)
       const colorHex = color.toUpperCase();
-      const colorName = colorNameMap[colorHex];
-      
+      let colorName = colorNameMap[colorHex];
+
+      // Auto-assign "No name X" if no name exists
+      if (!colorName) {
+        // Find next available "No name X" number
+        while (Object.values(colorNameMap).includes(`No name ${assignCounter}`)) {
+          assignCounter++;
+        }
+        colorName = `No name ${assignCounter}`;
+        colorNameMap[colorHex] = colorName;
+        assignCounter++;
+        // Save after auto-assigning name
+        if (typeof saveInputValues === "function") saveInputValues();
+      }
+
       const label = document.createElement("div");
       label.className = "color-swatch-label";
-      
-      // Show "Name (Hex)" if name exists, otherwise just "Hex"
-      if (colorName) {
-        label.innerHTML = `
-          <div class="color-swatch-label-name">${escapeHtml(colorName)}</div>
-          <div class="color-swatch-label-hex">${escapeHtml(colorHex)}</div>
-        `;
-      } else {
-        label.innerHTML = `<div class="color-swatch-label-hex">${escapeHtml(colorHex)}</div>`;
-      }
-      
+
+      // Create editable name element
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "color-swatch-label-name";
+      nameDiv.textContent = colorName;
+      nameDiv.title = "Click to edit name";
+      nameDiv.style.cursor = "pointer";
+
+      // Make name editable on click
+      nameDiv.onclick = function(e) {
+        e.stopPropagation();
+
+        // Create input for editing
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = colorName;
+        input.className = "color-swatch-name-input";
+        input.style.cssText = "width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #667eea; border-radius: 4px; text-align: center; box-sizing: border-box;";
+
+        // Replace name with input
+        nameDiv.style.display = "none";
+        nameDiv.parentNode.insertBefore(input, nameDiv);
+        input.focus();
+        input.select();
+
+        // Save on blur or enter
+        const saveName = () => {
+          const newName = input.value.trim() || `No name ${assignCounter}`;
+          colorNameMap[colorHex] = newName;
+          nameDiv.textContent = newName;
+          nameDiv.style.display = "";
+          input.remove();
+          if (typeof saveInputValues === "function") saveInputValues();
+        };
+
+        input.onblur = saveName;
+        input.onkeydown = function(ev) {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            saveName();
+          } else if (ev.key === "Escape") {
+            nameDiv.style.display = "";
+            input.remove();
+          }
+        };
+      };
+
+      const hexDiv = document.createElement("div");
+      hexDiv.className = "color-swatch-label-hex";
+      hexDiv.textContent = colorHex;
+
+      label.appendChild(nameDiv);
+      label.appendChild(hexDiv);
+
       swatch.appendChild(closeBtn);
       swatchContainer.appendChild(swatch);
       swatchContainer.appendChild(label);
@@ -7046,11 +7508,20 @@ console.log("ui.js loaded");
         .map(c => c.trim().toUpperCase())
         .filter(c => c && c.startsWith("#"));
 
-      // Create enriched colorNameMap with "No name" for missing colors
+      // Create enriched colorNameMap with "No name X" for missing colors
       const enrichedColorNameMap = { ...colorNameMap };
+      let noNameExportCounter = 1;
+      // Find next available "No name X" number
+      Object.values(enrichedColorNameMap).forEach(name => {
+        if (name && /^No name \d+$/.test(name)) {
+          const num = parseInt(name.replace("No name ", ""), 10);
+          if (num >= noNameExportCounter) noNameExportCounter = num + 1;
+        }
+      });
       colorsInScale.forEach(hex => {
         if (!enrichedColorNameMap[hex]) {
-          enrichedColorNameMap[hex] = "No name";
+          enrichedColorNameMap[hex] = `No name ${noNameExportCounter}`;
+          noNameExportCounter++;
         }
       });
 

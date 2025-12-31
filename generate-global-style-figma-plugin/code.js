@@ -1,9 +1,10 @@
 console.clear();
 
-figma.showUI(__html__, { width: 600, height: 330 });
+figma.showUI(__html__, { width: 600, height: 430 });
 
 figma.ui.onmessage = async (msg) => {
-  if (msg.type === 'generate') {
+  if (msg.type === 'checkDuplicates') {
+    // Check for duplicate names before creating variables
     const data = msg.data;
     if (!data || !data.length) {
       figma.ui.postMessage({ type: 'status', message: 'No data found in JSON.', error: true });
@@ -11,10 +12,45 @@ figma.ui.onmessage = async (msg) => {
     }
 
     const globalStyle = data[0].values;
+    const prefix = msg.prefix || '';
 
     try {
-      await generateGlobalStyle(globalStyle);
-      figma.ui.postMessage({ type: 'status', message: 'Global Style generated successfully!' });
+      const duplicates = await checkForDuplicates(globalStyle, prefix);
+      const hasDuplicates = duplicates.colors.length > 0 || duplicates.spacing.length > 0 || duplicates.textStyles.length > 0;
+
+      if (hasDuplicates) {
+        figma.ui.postMessage({ type: 'duplicatesFound', duplicates: duplicates });
+      } else {
+        figma.ui.postMessage({ type: 'noDuplicates' });
+      }
+    } catch (error) {
+      console.error(error);
+      figma.ui.postMessage({ type: 'status', message: `Error checking duplicates: ${error.message}`, error: true });
+    }
+  } else if (msg.type === 'generate') {
+    const data = msg.data;
+    if (!data || !data.length) {
+      figma.ui.postMessage({ type: 'status', message: 'No data found in JSON.', error: true });
+      return;
+    }
+
+    const globalStyle = data[0].values;
+    const createVariables = msg.createVariables || false;
+    const prefix = msg.prefix || '';
+    const duplicateAction = msg.duplicateAction || 'skip'; // 'skip' or 'overwrite'
+
+    try {
+      // Create Variables and Text Styles if checkbox is checked
+      if (createVariables) {
+        await createVariablesAndStyles(globalStyle, prefix, duplicateAction);
+      }
+
+      await generateGlobalStyle(globalStyle, createVariables ? prefix : '');
+
+      const successMsg = createVariables
+        ? 'Global Style generated successfully! Variables & Text Styles created.'
+        : 'Global Style generated successfully!';
+      figma.ui.postMessage({ type: 'status', message: successMsg });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
@@ -30,7 +66,7 @@ figma.ui.onmessage = async (msg) => {
   }
 };
 
-async function generateGlobalStyle(values) {
+async function generateGlobalStyle(values, prefix = '') {
   // 0. Pre-load local variables and styles
   const localPaintStyles = figma.getLocalPaintStyles();
   const localTextStyles = figma.getLocalTextStyles();
@@ -140,13 +176,13 @@ async function generateGlobalStyle(values) {
     for (const breakpoint of breakpoints) {
       const hasStyles = styles.some(s => s.name.startsWith(breakpoint));
       if (hasStyles) {
-        await createTypographySection(mainFrame, styles, breakpoint, textStyleMap);
+        await createTypographySection(mainFrame, styles, breakpoint, textStyleMap, prefix);
       }
     }
   } else {
     // Render all typography styles in one section
     if (styles.length > 0) {
-      await createTypographySection(mainFrame, styles, null, textStyleMap);
+      await createTypographySection(mainFrame, styles, null, textStyleMap, prefix);
     }
   }
 
@@ -177,9 +213,11 @@ function createColorsSection(parent, colorMap, paintStyleMap, variableMap) {
   // If name contains '/', use it as separator (e.g., "Primary/Teal" -> group: "Primary", name: "Teal")
   // Otherwise, use first word as group (e.g., "NewQuest Navy" -> group: "NewQuest", name: "Navy")
   const groupedColors = {};
+  const seenColorKeys = new Set(); // Track unique colors globally by (colorName + hex) to prevent duplicates
+
   Object.entries(colorMap).forEach(([hex, fullName]) => {
     let groupName, colorName;
-    
+
     if (fullName.includes('/')) {
       // Use '/' as separator (e.g., "Primary/Teal")
       const parts = fullName.split('/');
@@ -191,7 +229,19 @@ function createColorsSection(parent, colorMap, paintStyleMap, variableMap) {
       groupName = parts[0] || 'Other';
       colorName = parts.slice(1).join(' ') || fullName;
     }
-    
+
+    // Dedupe: skip if same colorName + hex already seen (across all groups)
+    // This prevents rendering the same color twice even if it appears multiple times
+    const normalizedHex = hex.toUpperCase().trim();
+    const normalizedName = colorName.trim().toLowerCase();
+    const dedupeKey = `${normalizedName}|${normalizedHex}`;
+
+    if (seenColorKeys.has(dedupeKey)) {
+      console.log(`Skipping duplicate color: ${colorName} (${hex})`);
+      return; // Skip duplicate
+    }
+    seenColorKeys.add(dedupeKey);
+
     if (!groupedColors[groupName]) {
       groupedColors[groupName] = [];
     }
@@ -327,7 +377,7 @@ function createColorsSection(parent, colorMap, paintStyleMap, variableMap) {
   parent.appendChild(section);
 }
 
-async function createTypographySection(parent, styles, filterPrefix, textStyleMap) {
+async function createTypographySection(parent, styles, filterPrefix, textStyleMap, projectPrefix = '') {
   // Filter styles by prefix if provided, otherwise use all styles
   const filteredStyles = filterPrefix
     ? styles.filter(s => s.name.startsWith(filterPrefix))
@@ -337,8 +387,15 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
     return; // Don't create section if no styles exist
   }
 
+  // Build section title with project prefix
+  // e.g., filterPrefix="Desktop", projectPrefix="MG" -> "Desktop - MG | Typography"
+  let sectionTitle = filterPrefix || "Typography";
+  if (projectPrefix && filterPrefix) {
+    sectionTitle = `${filterPrefix} - ${projectPrefix}`;
+  }
+
   const section = figma.createFrame();
-  section.name = filterPrefix ? `${filterPrefix} Typography` : "Typography";
+  section.name = filterPrefix ? `${sectionTitle} Typography` : "Typography";
   section.layoutMode = "VERTICAL";
   section.itemSpacing = 24;
   section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }]; // White card
@@ -359,7 +416,7 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
   header.counterAxisSizingMode = "AUTO";
 
   const title = figma.createText();
-  title.characters = filterPrefix ? `${filterPrefix} | Typography` : "Typography";
+  title.characters = filterPrefix ? `${sectionTitle} | Typography` : "Typography";
   title.fontSize = 24;
   title.fontName = { family: "Inter", style: "Regular" };
   header.appendChild(title);
@@ -384,8 +441,18 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
   section.appendChild(listFrame);
   
   for (const s of filteredStyles) {
-    // Remove prefix from name for display
-    const displayName = filterPrefix ? s.name.replace(`${filterPrefix}/`, '') : s.name;
+    // Remove breakpoint prefix from name for display (e.g., "Desktop/H1" -> "H1")
+    // Also remove any project prefix pattern like "- MG/" or "MG/" from the name
+    let displayName = filterPrefix ? s.name.replace(`${filterPrefix}/`, '') : s.name;
+
+    // Strip any remaining prefix patterns: "- MG/H1" -> "H1" or "MG/H1" -> "H1"
+    if (displayName.includes('/')) {
+      displayName = displayName.split('/').pop();
+    }
+    // Also handle "- " prefix at the start
+    if (displayName.startsWith('- ')) {
+      displayName = displayName.substring(2);
+    }
 
     const row = figma.createFrame();
     row.name = displayName; // Meaningful name (e.g., "H1", "Body Copy")
@@ -437,8 +504,22 @@ async function createTypographySection(parent, styles, filterPrefix, textStyleMa
     
     // Apply styles BEFORE setting characters and textAutoResize
     try {
+        // Calculate the text style name with project prefix
+        // Text styles are created as "Desktop - MG/H1" when prefix is "MG"
+        // s.name is "Desktop/H1", displayName is "H1"
+        let textStyleName = s.name;
+        if (projectPrefix) {
+          if (filterPrefix) {
+            // "Desktop/H1" -> "Desktop - MG/H1"
+            textStyleName = `${filterPrefix} - ${projectPrefix}/${displayName}`;
+          } else {
+            // No breakpoint: "H1" -> "MG/H1"
+            textStyleName = `${projectPrefix}/${s.name}`;
+          }
+        }
+
         // Check for existing text style
-        const existingTextStyle = textStyleMap.get(s.name) || textStyleMap.get(displayName);
+        const existingTextStyle = textStyleMap.get(textStyleName) || textStyleMap.get(s.name) || textStyleMap.get(displayName);
         if (existingTextStyle) {
              // Load the font used by the text style first
              const originalFont = existingTextStyle.fontName;
@@ -794,194 +875,252 @@ async function generateFromFigmaVariablesAndStyles() {
 }
 
 async function createColorsFromVariables(parent, colorVariables) {
-  const section = figma.createFrame();
-  section.name = "Colors";
-  section.layoutMode = "VERTICAL";
-  section.itemSpacing = 40;
-  section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-  section.paddingLeft = 40;
-  section.paddingRight = 40;
-  section.paddingTop = 40;
-  section.paddingBottom = 40;
-  section.cornerRadius = 8;
-  section.counterAxisSizingMode = "FIXED";
-  section.resize(1200, 100);
-
-  // Group colors by their group (using '/' separator or first word)
-  const groupedColors = {};
+  // Group variables by their collection first
+  // Each collection becomes a separate page/section (e.g., "Colors - MG", "Colors - MG2")
+  const collectionMap = new Map(); // collectionId -> { name, variables }
 
   for (const variable of colorVariables) {
-    let groupName, colorName;
-    const fullName = variable.name;
-
-    if (fullName.includes('/')) {
-      const parts = fullName.split('/');
-      groupName = parts[0] || 'Other';
-      colorName = parts.slice(1).join('/') || fullName;
-    } else {
-      const parts = fullName.split(' ');
-      groupName = parts[0] || 'Other';
-      colorName = parts.slice(1).join(' ') || fullName;
-    }
-
-    if (!groupedColors[groupName]) {
-      groupedColors[groupName] = [];
-    }
-
-    // Get the color value from the first mode
-    const modes = Object.keys(variable.valuesByMode);
-    const firstMode = modes[0];
-    const colorValue = variable.valuesByMode[firstMode];
-
-    if (colorValue && typeof colorValue === 'object' && 'r' in colorValue) {
-      const hex = rgbToHex(colorValue.r, colorValue.g, colorValue.b);
-      groupedColors[groupName].push({
-        hex: hex,
-        name: colorName,
-        fullName: fullName,
-        variable: variable
+    const collectionId = variable.variableCollectionId;
+    if (!collectionMap.has(collectionId)) {
+      const collection = figma.variables.getVariableCollectionById(collectionId);
+      collectionMap.set(collectionId, {
+        name: collection ? collection.name : 'Colors',
+        variables: []
       });
     }
+    collectionMap.get(collectionId).variables.push(variable);
   }
 
-  // Define group order - Primary always first, Secondary second
-  const groupOrder = ['Primary', 'Secondary', 'Infra', 'Tint', 'Darker Hover State', 'Neutral', 'Other'];
-
-  // Sort groups by predefined order
-  const sortedGroups = Object.entries(groupedColors).sort((a, b) => {
-    const indexA = groupOrder.indexOf(a[0]);
-    const indexB = groupOrder.indexOf(b[0]);
-
-    // If both are in order list, sort by order
-    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-    // If only A is in order list, A comes first
-    if (indexA !== -1) return -1;
-    // If only B is in order list, B comes first
-    if (indexB !== -1) return 1;
-    // Otherwise sort alphabetically
-    return a[0].localeCompare(b[0]);
+  // Sort collections: "Colors" first, then alphabetically
+  const sortedCollections = [...collectionMap.entries()].sort((a, b) => {
+    if (a[1].name === 'Colors') return -1;
+    if (b[1].name === 'Colors') return 1;
+    return a[1].name.localeCompare(b[1].name);
   });
 
-  // Create a frame for each group
-  sortedGroups.forEach(([groupName, colors]) => {
-    // Sort colors within each group alphabetically by name
-    const sortedColors = [...colors].sort((a, b) => a.name.localeCompare(b.name));
-    const groupFrame = figma.createFrame();
-    groupFrame.name = groupName;
-    groupFrame.layoutMode = "VERTICAL";
-    groupFrame.itemSpacing = 20;
-    groupFrame.fills = [];
-    groupFrame.primaryAxisSizingMode = "AUTO";
-    groupFrame.counterAxisSizingMode = "FIXED";
-    groupFrame.resize(1200, 100);
+  // Create a section for each collection
+  for (const [collectionId, collectionData] of sortedCollections) {
+    const section = figma.createFrame();
+    section.name = collectionData.name;
+    section.layoutMode = "VERTICAL";
+    section.itemSpacing = 40;
+    section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    section.paddingLeft = 40;
+    section.paddingRight = 40;
+    section.paddingTop = 40;
+    section.paddingBottom = 40;
+    section.cornerRadius = 8;
+    section.counterAxisSizingMode = "FIXED";
+    section.resize(1200, 100);
 
-    // Group title
-    const title = figma.createText();
-    title.fontName = { family: "Inter", style: "Bold" };
-    title.characters = groupName;
-    title.fontSize = 28;
-    groupFrame.appendChild(title);
+    // Add section title
+    const sectionTitle = figma.createText();
+    sectionTitle.fontName = { family: "Inter", style: "Regular" };
+    sectionTitle.characters = collectionData.name;
+    sectionTitle.fontSize = 24;
+    section.appendChild(sectionTitle);
 
-    // Create rows of swatches (4 per row)
-    const swatchesPerRow = 4;
-    for (let i = 0; i < sortedColors.length; i += swatchesPerRow) {
-      const swatchesRow = figma.createFrame();
-      swatchesRow.name = "Swatches Row";
-      swatchesRow.layoutMode = "HORIZONTAL";
-      swatchesRow.itemSpacing = 20;
-      swatchesRow.fills = [];
-      swatchesRow.primaryAxisSizingMode = "AUTO";
-      swatchesRow.counterAxisSizingMode = "AUTO";
+    // Group colors within this collection by their group (using '/' separator or first word)
+    const groupedColors = {};
 
-      const rowColors = sortedColors.slice(i, i + swatchesPerRow);
-      rowColors.forEach(c => {
-        const swatchContainer = figma.createFrame();
-        swatchContainer.name = c.name;
-        swatchContainer.layoutMode = "VERTICAL";
-        swatchContainer.itemSpacing = 16;
-        swatchContainer.fills = [];
-        swatchContainer.primaryAxisSizingMode = "AUTO";
-        swatchContainer.counterAxisSizingMode = "AUTO";
+    for (const variable of collectionData.variables) {
+      let groupName, colorName;
+      const fullName = variable.name;
 
-        const rect = figma.createRectangle();
-        rect.name = "Swatch";
-        rect.resize(240, 240);
-        rect.cornerRadius = 8;
+      if (fullName.includes('/')) {
+        const parts = fullName.split('/');
+        groupName = parts[0] || 'Other';
+        colorName = parts.slice(1).join('/') || fullName;
+      } else {
+        const parts = fullName.split(' ');
+        groupName = parts[0] || 'Other';
+        colorName = parts.slice(1).join(' ') || fullName;
+      }
 
-        // Bind to variable
-        rect.fills = [
-          figma.variables.setBoundVariableForPaint(
-            { type: 'SOLID', color: hexToRgb(c.hex) },
-            'color',
-            c.variable
-          )
-        ];
+      // Get the color value from the first mode
+      const modes = Object.keys(variable.valuesByMode);
+      const firstMode = modes[0];
+      const colorValue = variable.valuesByMode[firstMode];
 
-        rect.strokeWeight = 1;
-        rect.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.1 }];
+      if (colorValue && typeof colorValue === 'object' && 'r' in colorValue) {
+        const hex = rgbToHex(colorValue.r, colorValue.g, colorValue.b);
 
-        const nameText = figma.createText();
-        nameText.name = "Color Name";
-        nameText.fontName = { family: "Inter", style: "Bold" };
-        nameText.characters = c.name;
-        nameText.fontSize = 24;
-        nameText.textAlignHorizontal = "CENTER";
-        nameText.resize(240, nameText.height);
+        if (!groupedColors[groupName]) {
+          groupedColors[groupName] = [];
+        }
 
-        const hexText = figma.createText();
-        hexText.name = "Hex Value";
-        hexText.fontName = { family: "Inter", style: "Regular" };
-        hexText.characters = c.hex;
-        hexText.fontSize = 24;
-        hexText.textAlignHorizontal = "CENTER";
-        hexText.resize(240, hexText.height);
-
-        swatchContainer.appendChild(rect);
-        swatchContainer.appendChild(nameText);
-        swatchContainer.appendChild(hexText);
-
-        swatchesRow.appendChild(swatchContainer);
-      });
-      groupFrame.appendChild(swatchesRow);
+        groupedColors[groupName].push({
+          hex: hex,
+          name: colorName,
+          fullName: fullName,
+          variable: variable
+        });
+      }
     }
 
-    section.appendChild(groupFrame);
-  });
+    // Define group order - Primary always first, Secondary second
+    const groupOrder = ['Primary', 'Secondary', 'Infra', 'Tint', 'Darker Hover State', 'Neutral', 'Other'];
 
-  parent.appendChild(section);
+    // Sort groups by predefined order
+    const sortedGroups = Object.entries(groupedColors).sort((a, b) => {
+      const indexA = groupOrder.indexOf(a[0]);
+      const indexB = groupOrder.indexOf(b[0]);
+
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return a[0].localeCompare(b[0]);
+    });
+
+    // Create a frame for each group within this collection
+    sortedGroups.forEach(([groupName, colors]) => {
+      const sortedColors = [...colors].sort((a, b) => a.name.localeCompare(b.name));
+      const groupFrame = figma.createFrame();
+      groupFrame.name = groupName;
+      groupFrame.layoutMode = "VERTICAL";
+      groupFrame.itemSpacing = 20;
+      groupFrame.fills = [];
+      groupFrame.primaryAxisSizingMode = "AUTO";
+      groupFrame.counterAxisSizingMode = "FIXED";
+      groupFrame.resize(1200, 100);
+
+      // Group title
+      const title = figma.createText();
+      title.fontName = { family: "Inter", style: "Bold" };
+      title.characters = groupName;
+      title.fontSize = 28;
+      groupFrame.appendChild(title);
+
+      // Create rows of swatches (4 per row)
+      const swatchesPerRow = 4;
+      for (let i = 0; i < sortedColors.length; i += swatchesPerRow) {
+        const swatchesRow = figma.createFrame();
+        swatchesRow.name = "Swatches Row";
+        swatchesRow.layoutMode = "HORIZONTAL";
+        swatchesRow.itemSpacing = 20;
+        swatchesRow.fills = [];
+        swatchesRow.primaryAxisSizingMode = "AUTO";
+        swatchesRow.counterAxisSizingMode = "AUTO";
+
+        const rowColors = sortedColors.slice(i, i + swatchesPerRow);
+        rowColors.forEach(c => {
+          const swatchContainer = figma.createFrame();
+          swatchContainer.name = c.name;
+          swatchContainer.layoutMode = "VERTICAL";
+          swatchContainer.itemSpacing = 16;
+          swatchContainer.fills = [];
+          swatchContainer.primaryAxisSizingMode = "AUTO";
+          swatchContainer.counterAxisSizingMode = "AUTO";
+
+          const rect = figma.createRectangle();
+          rect.name = "Swatch";
+          rect.resize(240, 240);
+          rect.cornerRadius = 8;
+
+          // Bind to variable
+          rect.fills = [
+            figma.variables.setBoundVariableForPaint(
+              { type: 'SOLID', color: hexToRgb(c.hex) },
+              'color',
+              c.variable
+            )
+          ];
+
+          rect.strokeWeight = 1;
+          rect.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.1 }];
+
+          const nameText = figma.createText();
+          nameText.name = "Color Name";
+          nameText.fontName = { family: "Inter", style: "Bold" };
+          nameText.characters = c.name;
+          nameText.fontSize = 24;
+          nameText.textAlignHorizontal = "CENTER";
+          nameText.resize(240, nameText.height);
+
+          const hexText = figma.createText();
+          hexText.name = "Hex Value";
+          hexText.fontName = { family: "Inter", style: "Regular" };
+          hexText.characters = c.hex;
+          hexText.fontSize = 24;
+          hexText.textAlignHorizontal = "CENTER";
+          hexText.resize(240, hexText.height);
+
+          swatchContainer.appendChild(rect);
+          swatchContainer.appendChild(nameText);
+          swatchContainer.appendChild(hexText);
+
+          swatchesRow.appendChild(swatchContainer);
+        });
+        groupFrame.appendChild(swatchesRow);
+      }
+
+      section.appendChild(groupFrame);
+    });
+
+    parent.appendChild(section);
+  }
 }
 
 async function createTypographyFromStyles(parent, textStyles) {
-  // Group text styles by breakpoint if they follow "Desktop/", "Tablet/", "Mobile/" pattern
+  // Group text styles by their full group prefix
+  // e.g., "Desktop", "Desktop - MG", "Desktop - MG2", "Mobile", "Mobile - MG", etc.
+  // Each group becomes a separate page/section
   const breakpoints = ["Desktop", "Tablet", "Mobile"];
-  const groupedStyles = { "All": [] };
+  const groupedStyles = {};
 
   textStyles.forEach(style => {
     const name = style.name;
-    let matched = false;
+    let groupKey = "All"; // Default group for unmatched styles
 
     for (const breakpoint of breakpoints) {
-      if (name.startsWith(breakpoint + '/') || name.startsWith(breakpoint + ' ')) {
-        if (!groupedStyles[breakpoint]) {
-          groupedStyles[breakpoint] = [];
-        }
-        groupedStyles[breakpoint].push(style);
-        matched = true;
+      // Match pattern: "Breakpoint - PREFIX/" (e.g., "Desktop - MG/H1")
+      const prefixMatch = name.match(new RegExp(`^(${breakpoint}\\s*-\\s*[^/]+)/`));
+      if (prefixMatch) {
+        // Use full prefix as group key: "Desktop - MG"
+        groupKey = prefixMatch[1].trim();
+        break;
+      }
+
+      // Match pattern: "Breakpoint/" (e.g., "Desktop/H1")
+      if (name.startsWith(breakpoint + '/')) {
+        groupKey = breakpoint;
+        break;
+      }
+
+      // Match pattern: "Breakpoint " (e.g., "Desktop H1")
+      if (name.startsWith(breakpoint + ' ') && !name.includes('/')) {
+        groupKey = breakpoint;
         break;
       }
     }
 
-    if (!matched) {
-      groupedStyles["All"].push(style);
+    if (!groupedStyles[groupKey]) {
+      groupedStyles[groupKey] = [];
     }
+    groupedStyles[groupKey].push(style);
+  });
+
+  // Sort groups: Desktop variants first, then Tablet, then Mobile, then others
+  const sortedGroupKeys = Object.keys(groupedStyles).sort((a, b) => {
+    const getOrder = (key) => {
+      if (key.startsWith('Desktop')) return 0;
+      if (key.startsWith('Tablet')) return 1;
+      if (key.startsWith('Mobile')) return 2;
+      if (key === 'All') return 3;
+      return 4;
+    };
+    const orderDiff = getOrder(a) - getOrder(b);
+    if (orderDiff !== 0) return orderDiff;
+    return a.localeCompare(b);
   });
 
   // Create sections for each group
-  for (const [breakpoint, styles] of Object.entries(groupedStyles)) {
+  for (const groupKey of sortedGroupKeys) {
+    const styles = groupedStyles[groupKey];
     if (styles.length === 0) continue;
 
     const section = figma.createFrame();
-    section.name = breakpoint === "All" ? "Typography" : `${breakpoint} Typography`;
+    section.name = groupKey === "All" ? "Typography" : `${groupKey} | Typography`;
     section.layoutMode = "VERTICAL";
     section.itemSpacing = 24;
     section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
@@ -995,7 +1134,7 @@ async function createTypographyFromStyles(parent, textStyles) {
 
     const title = figma.createText();
     title.fontName = { family: "Inter", style: "Regular" };
-    title.characters = breakpoint === "All" ? "Typography" : `${breakpoint} | Typography`;
+    title.characters = groupKey === "All" ? "Typography" : `${groupKey} | Typography`;
     title.fontSize = 24;
     section.appendChild(title);
 
@@ -1016,7 +1155,29 @@ async function createTypographyFromStyles(parent, textStyles) {
     section.appendChild(listFrame);
 
     for (const style of styles) {
-      const displayName = style.name.replace(`${breakpoint}/`, '').replace(`${breakpoint} `, '');
+      // Handle multiple name formats using groupKey:
+      // "Desktop/H1" -> "H1"
+      // "Desktop - MG/H1" -> "H1" (prefix format)
+      // "Desktop H1" -> "H1"
+      let displayName = style.name;
+
+      // Remove the groupKey prefix from the style name
+      // groupKey can be "Desktop", "Desktop - MG", "Mobile - MG2", etc.
+      if (groupKey !== "All") {
+        // Try removing "GroupKey/" pattern first
+        if (displayName.startsWith(groupKey + '/')) {
+          displayName = displayName.substring(groupKey.length + 1);
+        }
+        // Try removing "GroupKey " pattern (for styles like "Desktop H1")
+        else if (displayName.startsWith(groupKey + ' ')) {
+          displayName = displayName.substring(groupKey.length + 1);
+        }
+      }
+
+      // Final cleanup: if still has "/" (nested paths), take the last part
+      if (displayName.includes('/')) {
+        displayName = displayName.split('/').pop();
+      }
 
       const row = figma.createFrame();
       row.name = displayName;
@@ -1140,75 +1301,494 @@ async function createTypographyFromStyles(parent, textStyles) {
   }
 }
 
-async function createSpacingFromVariables(parent, numberVariables) {
-  // Filter spacing-related variables
-  const spacingVars = numberVariables.filter(v =>
-    v.name.toLowerCase().includes('spacing') ||
-    v.name.toLowerCase().includes('space') ||
-    v.name.toLowerCase().includes('gap') ||
-    v.name.toLowerCase().includes('padding') ||
-    v.name.toLowerCase().includes('margin')
-  );
+// ============================================
+// CHECK FOR DUPLICATES BEFORE CREATING
+// ============================================
 
-  if (spacingVars.length === 0) return;
-
-  // Get all available modes from the first variable's collection
-  const firstVariable = spacingVars[0];
-  const collection = figma.variables.getVariableCollectionById(firstVariable.variableCollectionId);
-
-  // Log collection info for debugging
-  console.log("Collection modes:", collection.modes);
-
-  // Create array of mode objects from collection
-  const modes = collection.modes.map(m => ({
-    id: m.modeId,
-    name: m.name
-  }));
-
-  console.log("All modes:", modes);
-  console.log("Collection defaultModeId:", collection.defaultModeId);
-
-  // Helper function to get value with fallback to default mode
-  const getVariableValue = (variable, modeId) => {
-    // First, try to get the value for the requested mode
-    if (variable.valuesByMode[modeId] !== undefined) {
-      return variable.valuesByMode[modeId];
-    }
-
-    // If not found, fallback to default mode
-    if (collection.defaultModeId && variable.valuesByMode[collection.defaultModeId] !== undefined) {
-      return variable.valuesByMode[collection.defaultModeId];
-    }
-
-    // If still not found, try the first available value
-    const firstValue = Object.values(variable.valuesByMode)[0];
-    return firstValue !== undefined ? firstValue : 0;
+async function checkForDuplicates(values, prefix) {
+  const duplicates = {
+    colors: [],
+    spacing: [],
+    textStyles: []
   };
 
-  // Group variables by category (Horizontal spacing / Vertical spacing)
-  const groupedVars = {};
-  spacingVars.forEach(v => {
-    const name = v.name;
-    let category;
+  // Check Color Variables
+  if (values.colorNameMap && Object.keys(values.colorNameMap).length > 0) {
+    const collectionName = prefix ? `Colors - ${prefix}` : 'Colors';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    const collection = existingCollections.find(c => c.name === collectionName);
 
-    if (name.toLowerCase().includes('horizontal')) {
-      category = 'Horizontal spacing';
-    } else if (name.toLowerCase().includes('vertical')) {
-      category = 'Vertical spacing';
-    } else {
-      category = 'Other spacing';
+    if (collection) {
+      const existingVariables = figma.variables.getLocalVariables('COLOR')
+        .filter(v => v.variableCollectionId === collection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+
+      for (const [hex, name] of Object.entries(values.colorNameMap)) {
+        // Skip "No name" patterns
+        if (name === 'No name' || /^No name \d+$/.test(name)) continue;
+        if (existingNames.has(name)) {
+          duplicates.colors.push(name);
+        }
+      }
+    }
+  }
+
+  // Check Spacing Variables
+  if (values.spacingScale) {
+    const spacingValues = values.spacingScale.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+    const collectionName = prefix ? `Spacing - ${prefix}` : 'Spacing';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    const collection = existingCollections.find(c => c.name === collectionName);
+
+    if (collection) {
+      const existingVariables = figma.variables.getLocalVariables('FLOAT')
+        .filter(v => v.variableCollectionId === collection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+
+      for (let index = 0; index < spacingValues.length; index++) {
+        const variableName = String(index);
+        if (existingNames.has(variableName)) {
+          duplicates.spacing.push(`${variableName} (${spacingValues[index]}px)`);
+        }
+      }
+    }
+  }
+
+  // Check Text Styles
+  if (values.typographyStyles && values.typographyStyles.length > 0) {
+    const existingStyles = figma.getLocalTextStyles();
+    const existingNames = new Set(existingStyles.map(s => s.name));
+
+    for (const style of values.typographyStyles) {
+      let styleName = style.name;
+      if (prefix) {
+        const breakpoints = ['Desktop/', 'Tablet/', 'Mobile/'];
+        for (const bp of breakpoints) {
+          if (style.name.startsWith(bp)) {
+            const restOfName = style.name.substring(bp.length);
+            const breakpointName = bp.slice(0, -1);
+            styleName = `${breakpointName} - ${prefix}/${restOfName}`;
+            break;
+          }
+        }
+        if (styleName === style.name && !breakpoints.some(bp => style.name.startsWith(bp))) {
+          styleName = `${prefix}/${style.name}`;
+        }
+      }
+      if (existingNames.has(styleName)) {
+        duplicates.textStyles.push(styleName);
+      }
+    }
+  }
+
+  return duplicates;
+}
+
+// ============================================
+// CREATE VARIABLES AND TEXT STYLES FROM JSON
+// ============================================
+
+async function createVariablesAndStyles(values, prefix, duplicateAction = 'skip') {
+  console.log('Creating Variables and Text Styles with prefix:', prefix, 'duplicateAction:', duplicateAction);
+
+  // 1. Create Color Variables
+  if (values.colorNameMap && Object.keys(values.colorNameMap).length > 0) {
+    await createColorVariablesFromJSON(values.colorNameMap, prefix, duplicateAction);
+  }
+
+  // 2. Create Spacing Variables
+  if (values.spacingScale) {
+    await createSpacingVariablesFromJSON(values.spacingScale, prefix, duplicateAction);
+  }
+
+  // 3. Create Text Styles
+  if (values.typographyStyles && values.typographyStyles.length > 0) {
+    await createTextStylesFromJSON(values.typographyStyles, prefix, duplicateAction);
+  }
+}
+
+async function createColorVariablesFromJSON(colorNameMap, prefix, duplicateAction = 'skip') {
+  console.log('Creating color variables... duplicateAction:', duplicateAction);
+
+  // Get or create a variable collection for colors
+  let collection;
+  // Format: "Colors - MG" (prefix after)
+  const collectionName = prefix ? `Colors - ${prefix}` : 'Colors';
+
+  // Check if collection already exists
+  const existingCollections = figma.variables.getLocalVariableCollections();
+  collection = existingCollections.find(c => c.name === collectionName);
+
+  if (!collection) {
+    collection = figma.variables.createVariableCollection(collectionName);
+    console.log(`Created new collection: ${collectionName}`);
+  } else {
+    console.log(`Using existing collection: ${collectionName}`);
+  }
+
+  const modeId = collection.modes[0].modeId;
+
+  // Get existing variables in THIS collection only to avoid duplicates
+  const existingVariables = figma.variables.getLocalVariables('COLOR')
+    .filter(v => v.variableCollectionId === collection.id);
+  const existingVariableMap = new Map(existingVariables.map(v => [v.name, v]));
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  let overwrittenCount = 0;
+
+  for (const [hex, name] of Object.entries(colorNameMap)) {
+    // Variable name stays the same (no prefix on individual variables, only on collection)
+    // "No name X" colors are also created as variables
+    const variableName = name;
+
+    // Check if variable already exists in this collection
+    const existingVariable = existingVariableMap.get(variableName);
+    if (existingVariable) {
+      if (duplicateAction === 'overwrite') {
+        // Overwrite: update the existing variable's value
+        try {
+          const rgb = hexToRgb(hex);
+          existingVariable.setValueForMode(modeId, rgb);
+          overwrittenCount++;
+          console.log(`Overwritten color variable: ${variableName} = ${hex}`);
+        } catch (e) {
+          console.error(`Failed to overwrite variable ${variableName}:`, e);
+        }
+      } else {
+        // Skip
+        console.log(`Skipping existing variable in collection: ${variableName}`);
+        skippedCount++;
+      }
+      continue;
     }
 
-    if (!groupedVars[category]) {
-      groupedVars[category] = [];
+    try {
+      const variable = figma.variables.createVariable(variableName, collection, 'COLOR');
+      const rgb = hexToRgb(hex);
+      variable.setValueForMode(modeId, rgb);
+      createdCount++;
+      console.log(`Created color variable: ${variableName} = ${hex}`);
+    } catch (e) {
+      console.error(`Failed to create variable ${variableName}:`, e);
     }
-    groupedVars[category].push(v);
+  }
+
+  console.log(`Color variables: ${createdCount} created, ${overwrittenCount} overwritten, ${skippedCount} skipped`);
+}
+
+async function createSpacingVariablesFromJSON(spacingScale, prefix, duplicateAction = 'skip') {
+  console.log('Creating spacing variables... duplicateAction:', duplicateAction);
+
+  const values = spacingScale.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+
+  if (values.length === 0) {
+    console.log('No valid spacing values found');
+    return;
+  }
+
+  // Get or create a variable collection for spacing
+  let collection;
+  // Format: "Spacing - MG" (prefix after)
+  const collectionName = prefix ? `Spacing - ${prefix}` : 'Spacing';
+
+  const existingCollections = figma.variables.getLocalVariableCollections();
+  collection = existingCollections.find(c => c.name === collectionName);
+
+  if (!collection) {
+    collection = figma.variables.createVariableCollection(collectionName);
+    console.log(`Created new collection: ${collectionName}`);
+  } else {
+    console.log(`Using existing collection: ${collectionName}`);
+  }
+
+  // Setup 3 modes: Desktop, Tablet, Mobile
+  const modes = {};
+
+  // Rename default mode to Desktop
+  const defaultMode = collection.modes[0];
+  collection.renameMode(defaultMode.modeId, 'Desktop');
+  modes['Desktop'] = defaultMode.modeId;
+
+  // Add Tablet and Mobile modes if they don't exist
+  const existingModeNames = collection.modes.map(m => m.name);
+
+  if (!existingModeNames.includes('Tablet')) {
+    const tabletModeId = collection.addMode('Tablet');
+    modes['Tablet'] = tabletModeId;
+  } else {
+    modes['Tablet'] = collection.modes.find(m => m.name === 'Tablet').modeId;
+  }
+
+  if (!existingModeNames.includes('Mobile')) {
+    const mobileModeId = collection.addMode('Mobile');
+    modes['Mobile'] = mobileModeId;
+  } else {
+    modes['Mobile'] = collection.modes.find(m => m.name === 'Mobile').modeId;
+  }
+
+  console.log('Modes setup:', modes);
+
+  // Get existing variables in THIS collection only to avoid duplicates
+  const existingVariables = figma.variables.getLocalVariables('FLOAT')
+    .filter(v => v.variableCollectionId === collection.id);
+  const existingVariableMap = new Map(existingVariables.map(v => [v.name, v]));
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  let overwrittenCount = 0;
+
+  // Create variables with index-based names (0, 1, 2, 3...)
+  // Variable names are just numbers, prefix is only used for collection name
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index];
+    const variableName = String(index);
+
+    const existingVariable = existingVariableMap.get(variableName);
+    if (existingVariable) {
+      if (duplicateAction === 'overwrite') {
+        // Overwrite: update the existing variable's values
+        try {
+          existingVariable.setValueForMode(modes['Desktop'], value);
+          existingVariable.setValueForMode(modes['Tablet'], value);
+          existingVariable.setValueForMode(modes['Mobile'], value);
+          overwrittenCount++;
+          console.log(`Overwritten spacing variable: ${variableName} = ${value} (all modes)`);
+        } catch (e) {
+          console.error(`Failed to overwrite variable ${variableName}:`, e);
+        }
+      } else {
+        // Skip
+        console.log(`Skipping existing variable in collection: ${variableName}`);
+        skippedCount++;
+      }
+      continue;
+    }
+
+    try {
+      const variable = figma.variables.createVariable(variableName, collection, 'FLOAT');
+
+      // Set same value for all 3 modes (Desktop, Tablet, Mobile)
+      variable.setValueForMode(modes['Desktop'], value);
+      variable.setValueForMode(modes['Tablet'], value);
+      variable.setValueForMode(modes['Mobile'], value);
+
+      createdCount++;
+      console.log(`Created spacing variable: ${variableName} = ${value} (all modes)`);
+    } catch (e) {
+      console.error(`Failed to create variable ${variableName}:`, e);
+    }
+  }
+
+  console.log(`Spacing variables: ${createdCount} created, ${overwrittenCount} overwritten, ${skippedCount} skipped`);
+}
+
+async function createTextStylesFromJSON(typographyStyles, prefix, duplicateAction = 'skip') {
+  console.log('Creating text styles... duplicateAction:', duplicateAction);
+
+  // Get existing text styles to avoid duplicates
+  const existingStyles = figma.getLocalTextStyles();
+  const existingStyleMap = new Map(existingStyles.map(s => [s.name, s]));
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  let overwrittenCount = 0;
+
+  for (const style of typographyStyles) {
+    // Handle prefix - add prefix after breakpoint with " - " separator
+    // e.g., "Desktop/H1" + prefix "MG" -> "Desktop - MG/H1"
+    let styleName = style.name;
+
+    if (prefix) {
+      const breakpoints = ['Desktop/', 'Tablet/', 'Mobile/'];
+      let breakpointFound = false;
+
+      for (const bp of breakpoints) {
+        if (style.name.startsWith(bp)) {
+          const restOfName = style.name.substring(bp.length);
+          const breakpointName = bp.slice(0, -1); // Remove trailing "/"
+          styleName = `${breakpointName} - ${prefix}/${restOfName}`;
+          breakpointFound = true;
+          break;
+        }
+      }
+
+      // If no breakpoint prefix, just add prefix with separator
+      if (!breakpointFound) {
+        styleName = `${prefix}/${style.name}`;
+      }
+    }
+
+    const existingStyle = existingStyleMap.get(styleName);
+
+    // Load the font first
+    const fontName = { family: style.fontFamily, style: style.fontWeight };
+    let fontLoaded = false;
+
+    try {
+      await figma.loadFontAsync(fontName);
+      fontLoaded = true;
+    } catch (e) {
+      // Try fallbacks
+      const fallbacks = [
+        { family: style.fontFamily, style: 'Regular' },
+        { family: style.fontFamily, style: 'Medium' },
+        { family: 'Inter', style: 'Regular' }
+      ];
+
+      for (const fallback of fallbacks) {
+        try {
+          await figma.loadFontAsync(fallback);
+          fontName.family = fallback.family;
+          fontName.style = fallback.style;
+          fontLoaded = true;
+          console.warn(`Using fallback font for ${styleName}: ${fallback.family} ${fallback.style}`);
+          break;
+        } catch (fallbackError) {
+          // Continue
+        }
+      }
+    }
+
+    if (!fontLoaded) {
+      console.error(`Could not load any font for style: ${styleName}`);
+      skippedCount++;
+      continue;
+    }
+
+    if (existingStyle) {
+      if (duplicateAction === 'overwrite') {
+        // Overwrite: update the existing style's properties
+        try {
+          existingStyle.fontName = fontName;
+          existingStyle.fontSize = style.fontSize;
+
+          // Line height
+          if (style.lineHeight) {
+            if (style.lineHeight === 'auto' || style.lineHeight === 'Auto') {
+              existingStyle.lineHeight = { unit: 'AUTO' };
+            } else if (String(style.lineHeight).endsWith('%')) {
+              existingStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PERCENT' };
+            } else {
+              existingStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PIXELS' };
+            }
+          }
+
+          // Letter spacing
+          if (style.letterSpacing) {
+            if (String(style.letterSpacing).endsWith('%')) {
+              existingStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PERCENT' };
+            } else {
+              existingStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PIXELS' };
+            }
+          }
+
+          overwrittenCount++;
+          console.log(`Overwritten text style: ${styleName}`);
+        } catch (e) {
+          console.error(`Failed to overwrite text style ${styleName}:`, e);
+        }
+      } else {
+        // Skip
+        console.log(`Skipping existing text style: ${styleName}`);
+        skippedCount++;
+      }
+      continue;
+    }
+
+    try {
+      // Create the text style
+      const textStyle = figma.createTextStyle();
+      textStyle.name = styleName;
+      textStyle.fontName = fontName;
+      textStyle.fontSize = style.fontSize;
+
+      // Line height
+      if (style.lineHeight) {
+        if (style.lineHeight === 'auto' || style.lineHeight === 'Auto') {
+          textStyle.lineHeight = { unit: 'AUTO' };
+        } else if (String(style.lineHeight).endsWith('%')) {
+          textStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PERCENT' };
+        } else {
+          textStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PIXELS' };
+        }
+      }
+
+      // Letter spacing
+      if (style.letterSpacing) {
+        if (String(style.letterSpacing).endsWith('%')) {
+          textStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PERCENT' };
+        } else {
+          textStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PIXELS' };
+        }
+      }
+
+      createdCount++;
+      console.log(`Created text style: ${styleName}`);
+    } catch (e) {
+      console.error(`Failed to create text style ${styleName}:`, e);
+      skippedCount++;
+    }
+  }
+
+  console.log(`Text styles: ${createdCount} created, ${overwrittenCount} overwritten, ${skippedCount} skipped`);
+}
+
+// ============================================
+// END CREATE VARIABLES AND TEXT STYLES
+// ============================================
+
+async function createSpacingFromVariables(parent, numberVariables) {
+  // Group variables by their collection first
+  // Each collection becomes a separate page/section (e.g., "Spacing", "Spacing - MG", "Spacing - MG2")
+  const collectionMap = new Map(); // collectionId -> { name, variables, collection }
+
+  for (const variable of numberVariables) {
+    const collectionId = variable.variableCollectionId;
+    if (!collectionMap.has(collectionId)) {
+      const collection = figma.variables.getVariableCollectionById(collectionId);
+      collectionMap.set(collectionId, {
+        name: collection ? collection.name : 'Spacing',
+        variables: [],
+        collection: collection
+      });
+    }
+    collectionMap.get(collectionId).variables.push(variable);
+  }
+
+  // Sort collections: "Spacing" first, then alphabetically
+  const sortedCollections = [...collectionMap.entries()].sort((a, b) => {
+    if (a[1].name === 'Spacing') return -1;
+    if (b[1].name === 'Spacing') return 1;
+    return a[1].name.localeCompare(b[1].name);
   });
 
-  // Create sections for each category
-  Object.entries(groupedVars).forEach(([category, vars]) => {
+  // Create a section for each collection
+  for (const [collectionId, collectionData] of sortedCollections) {
+    const collection = collectionData.collection;
+    if (!collection) continue;
+
+    // Get modes for this collection
+    const modes = collection.modes.map(m => ({
+      id: m.modeId,
+      name: m.name
+    }));
+
+    // Helper function to get value with fallback to default mode
+    const getVariableValue = (variable, modeId) => {
+      if (variable.valuesByMode[modeId] !== undefined) {
+        return variable.valuesByMode[modeId];
+      }
+      if (collection.defaultModeId && variable.valuesByMode[collection.defaultModeId] !== undefined) {
+        return variable.valuesByMode[collection.defaultModeId];
+      }
+      const firstValue = Object.values(variable.valuesByMode)[0];
+      return firstValue !== undefined ? firstValue : 0;
+    };
+
+    // Create section for this collection
     const section = figma.createFrame();
-    section.name = category;
+    section.name = collectionData.name;
     section.layoutMode = "VERTICAL";
     section.itemSpacing = 20;
     section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
@@ -1219,111 +1799,134 @@ async function createSpacingFromVariables(parent, numberVariables) {
     section.cornerRadius = 8;
     section.counterAxisSizingMode = "AUTO";
 
-    const title = figma.createText();
-    title.fontName = { family: "Inter", style: "Regular" };
-    title.characters = category;
-    title.fontSize = 32;
-    section.appendChild(title);
+    // Section title
+    const sectionTitle = figma.createText();
+    sectionTitle.fontName = { family: "Inter", style: "Regular" };
+    sectionTitle.characters = collectionData.name;
+    sectionTitle.fontSize = 24;
+    section.appendChild(sectionTitle);
 
-    const table = figma.createFrame();
-    table.layoutMode = "VERTICAL";
-    table.itemSpacing = 1;
-    table.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
-    table.counterAxisSizingMode = "AUTO";
+    // Group variables within this collection by category
+    const groupedVars = {};
+    collectionData.variables.forEach(v => {
+      const name = v.name;
+      let category;
 
-    // Header Row with all mode names
-    const headerRow = figma.createFrame();
-    headerRow.layoutMode = "HORIZONTAL";
-    headerRow.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
-    headerRow.paddingLeft = 16;
-    headerRow.paddingRight = 16;
-    headerRow.paddingTop = 10;
-    headerRow.paddingBottom = 10;
-    headerRow.primaryAxisSizingMode = "AUTO";
-    headerRow.counterAxisSizingMode = "AUTO";
-
-    // First column: Name
-    const nameHeader = figma.createText();
-    nameHeader.fontName = { family: "Inter", style: "Bold" };
-    nameHeader.characters = 'Name';
-    nameHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-    nameHeader.fontSize = 16;
-    nameHeader.resize(150, nameHeader.height);
-    headerRow.appendChild(nameHeader);
-
-    // Other columns: Mode names (Desktop, Tablet, Mobile, 1024, etc.)
-    modes.forEach(mode => {
-      const cell = figma.createText();
-      cell.fontName = { family: "Inter", style: "Bold" };
-      cell.characters = mode.name;
-      cell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-      cell.fontSize = 16;
-      cell.resize(100, cell.height);
-      headerRow.appendChild(cell);
-    });
-    table.appendChild(headerRow);
-
-    // Sort variables by numeric value (extract number from name)
-    const sortedVars = [...vars].sort((a, b) => {
-      // Extract numeric part from name like "Horizontal spacing/8" -> 8
-      const extractNum = (name) => {
-        const match = name.match(/\/(\d+)$/);
-        return match ? parseInt(match[1]) : 0;
-      };
-      return extractNum(a.name) - extractNum(b.name);
-    });
-
-    // Data Rows
-    sortedVars.forEach(variable => {
-      // Debug log for first few variables
-      if (sortedVars.indexOf(variable) < 3) {
-        console.log(`\nVariable: ${variable.name}`);
-        console.log(`valuesByMode keys:`, Object.keys(variable.valuesByMode));
-        console.log(`valuesByMode:`, variable.valuesByMode);
-        console.log(`Resolved values for each mode:`);
-        modes.forEach(mode => {
-          const rawValue = variable.valuesByMode[mode.id];
-          const resolvedValue = getVariableValue(variable, mode.id);
-          console.log(`  ${mode.name}: raw=${rawValue}, resolved=${resolvedValue}`);
-        });
+      if (name.toLowerCase().includes('horizontal')) {
+        category = 'Horizontal spacing';
+      } else if (name.toLowerCase().includes('vertical')) {
+        category = 'Vertical spacing';
+      } else {
+        category = 'Spacing';
       }
 
-      const row = figma.createFrame();
-      row.layoutMode = "HORIZONTAL";
-      row.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
-      row.paddingLeft = 16;
-      row.paddingRight = 16;
-      row.paddingTop = 10;
-      row.paddingBottom = 10;
-      row.primaryAxisSizingMode = "AUTO";
-      row.counterAxisSizingMode = "AUTO";
-
-      // Name cell - show just the number or last part
-      const displayName = variable.name.split('/').pop() || variable.name;
-      const nameCell = figma.createText();
-      nameCell.fontName = { family: "Inter", style: "Regular" };
-      nameCell.characters = displayName;
-      nameCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-      nameCell.fontSize = 16;
-      nameCell.resize(150, nameCell.height);
-      row.appendChild(nameCell);
-
-      // Value cells for each mode
-      modes.forEach(mode => {
-        const value = getVariableValue(variable, mode.id);
-        const valueCell = figma.createText();
-        valueCell.fontName = { family: "Inter", style: "Regular" };
-        valueCell.characters = String(value);
-        valueCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-        valueCell.fontSize = 16;
-        valueCell.resize(100, valueCell.height);
-        row.appendChild(valueCell);
-      });
-
-      table.appendChild(row);
+      if (!groupedVars[category]) {
+        groupedVars[category] = [];
+      }
+      groupedVars[category].push(v);
     });
 
-    section.appendChild(table);
+    // Create table for each category within this collection
+    Object.entries(groupedVars).forEach(([category, vars]) => {
+      const categoryFrame = figma.createFrame();
+      categoryFrame.name = category;
+      categoryFrame.layoutMode = "VERTICAL";
+      categoryFrame.itemSpacing = 10;
+      categoryFrame.fills = [];
+      categoryFrame.primaryAxisSizingMode = "AUTO";
+      categoryFrame.counterAxisSizingMode = "AUTO";
+
+      // Category title
+      const categoryTitle = figma.createText();
+      categoryTitle.fontName = { family: "Inter", style: "Bold" };
+      categoryTitle.characters = category;
+      categoryTitle.fontSize = 18;
+      categoryFrame.appendChild(categoryTitle);
+
+      const table = figma.createFrame();
+      table.layoutMode = "VERTICAL";
+      table.itemSpacing = 1;
+      table.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
+      table.counterAxisSizingMode = "AUTO";
+
+      // Header Row
+      const headerRow = figma.createFrame();
+      headerRow.layoutMode = "HORIZONTAL";
+      headerRow.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
+      headerRow.paddingLeft = 16;
+      headerRow.paddingRight = 16;
+      headerRow.paddingTop = 10;
+      headerRow.paddingBottom = 10;
+      headerRow.primaryAxisSizingMode = "AUTO";
+      headerRow.counterAxisSizingMode = "AUTO";
+
+      const nameHeader = figma.createText();
+      nameHeader.fontName = { family: "Inter", style: "Bold" };
+      nameHeader.characters = 'Name';
+      nameHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+      nameHeader.fontSize = 16;
+      nameHeader.resize(150, nameHeader.height);
+      headerRow.appendChild(nameHeader);
+
+      modes.forEach(mode => {
+        const cell = figma.createText();
+        cell.fontName = { family: "Inter", style: "Bold" };
+        cell.characters = mode.name;
+        cell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+        cell.fontSize = 16;
+        cell.resize(100, cell.height);
+        headerRow.appendChild(cell);
+      });
+      table.appendChild(headerRow);
+
+      // Sort variables by numeric value
+      const sortedVars = [...vars].sort((a, b) => {
+        const extractNum = (name) => {
+          const match = name.match(/\/(\d+)$/);
+          return match ? parseInt(match[1]) : 0;
+        };
+        return extractNum(a.name) - extractNum(b.name);
+      });
+
+      // Data Rows
+      sortedVars.forEach(variable => {
+        const row = figma.createFrame();
+        row.layoutMode = "HORIZONTAL";
+        row.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
+        row.paddingLeft = 16;
+        row.paddingRight = 16;
+        row.paddingTop = 10;
+        row.paddingBottom = 10;
+        row.primaryAxisSizingMode = "AUTO";
+        row.counterAxisSizingMode = "AUTO";
+
+        const displayName = variable.name.split('/').pop() || variable.name;
+        const nameCell = figma.createText();
+        nameCell.fontName = { family: "Inter", style: "Regular" };
+        nameCell.characters = displayName;
+        nameCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+        nameCell.fontSize = 16;
+        nameCell.resize(150, nameCell.height);
+        row.appendChild(nameCell);
+
+        modes.forEach(mode => {
+          const value = getVariableValue(variable, mode.id);
+          const valueCell = figma.createText();
+          valueCell.fontName = { family: "Inter", style: "Regular" };
+          valueCell.characters = String(value);
+          valueCell.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+          valueCell.fontSize = 16;
+          valueCell.resize(100, valueCell.height);
+          row.appendChild(valueCell);
+        });
+
+        table.appendChild(row);
+      });
+
+      categoryFrame.appendChild(table);
+      section.appendChild(categoryFrame);
+    });
+
     parent.appendChild(section);
-  });
+  }
 }

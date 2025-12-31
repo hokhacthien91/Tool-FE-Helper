@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
+     <meta charset="utf-8" />
+    <meta
+      http-equiv="Permissions-Policy"
+      content="camera=(), microphone=(), clipboard-write=(), display-capture=(), local-network-access=()"
+    />
+    <title>Generate Global Style</title>
   <style>
     body {
       font-family: sans-serif;
-      padding: 20px;
+      padding: 15px;
       margin: 0;
+           margin: 0 auto;
+      max-width: 1000px;
     }
     h2 {
-      margin: 0 0 20px 0;
+      margin: 0 0 15px 0;
       font-size: 16px;
     }
     .options-container {
@@ -19,12 +27,12 @@
       flex: 1;
       border: 1px solid #ddd;
       border-radius: 8px;
-      padding: 16px;
+      padding: 15px;
       background: #f9f9f9;
     }
     .option-card h3 {
       margin: 0 0 8px 0;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 600;
     }
     .option-card p {
@@ -80,6 +88,142 @@
       background: #e3f2fd;
       color: #1976d2;
     }
+    .checkbox-group {
+      margin: 0 0 12px 0;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .prefix-input {
+      margin-top: 8px;
+      display: none;
+    }
+    .prefix-input.show {
+      display: block;
+    }
+    .prefix-input label {
+      display: block;
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .prefix-input input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    .prefix-input input:focus {
+      outline: none;
+      border-color: #18A0FB;
+    }
+    .prefix-hint {
+      font-size: 10px;
+      color: #888;
+      margin-top: 4px;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 505px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal-content h3 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      color: #d32f2f;
+    }
+    .modal-content p {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      color: #333;
+    }
+    .duplicate-list {
+      background: #f5f5f5;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 16px;
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .duplicate-list .dup-category {
+      font-weight: 600;
+      margin-top: 8px;
+      color: #666;
+    }
+    .duplicate-list .dup-category:first-child {
+      margin-top: 0;
+    }
+    .duplicate-list .dup-item {
+      padding: 2px 0 2px 12px;
+      color: #333;
+    }
+    .modal-buttons {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+    }
+    .modal-buttons button {
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-skip {
+      background: #ff9800 !important;
+      color: white !important;
+    }
+    .btn-skip:hover {
+      background: #f57c00 !important;
+    }
+    .btn-overwrite {
+      background: #d32f2f !important;
+      color: white !important;
+    }
+    .btn-overwrite:hover {
+      background: #b71c1c !important;
+    }
+    .btn-cancel {
+      background: #e0e0e0 !important;
+      color: #333 !important;
+    }
+    .btn-cancel:hover {
+      background: #bdbdbd !important;
+    }
     .spinner {
       display: inline-block;
       width: 12px;
@@ -104,6 +248,19 @@
       <h3>Option 1: From JSON File</h3>
       <p>Upload a json file to generate the style guide.</p>
       <input type="file" id="fileInput" accept=".json">
+
+      <div class="checkbox-group">
+        <label>
+          <input type="checkbox" id="createVariablesCheckbox">
+          Create Variables & Text Styles
+        </label>
+        <div class="prefix-input" id="prefixInputContainer">
+          <label for="prefixInput">Prefix (to avoid duplicates):</label>
+          <input type="text" id="prefixInput" placeholder="e.g., MG, NewQuest">
+          <div class="prefix-hint">e.g., Colors - [Prefix], Desktop - [Prefix]/H1</div>
+        </div>
+      </div>
+
       <button id="generateBtn" disabled>Generate</button>
     </div>
 
@@ -116,15 +273,50 @@
 
   <div id="message" class="message"></div>
 
+  <!-- Duplicate Confirmation Modal -->
+  <div id="duplicateModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h3>⚠️ Duplicate Names Found</h3>
+      <p id="duplicateMessage">Some variable/style names already exist in Figma.</p>
+      <div id="duplicateList" class="duplicate-list"></div>
+      <div class="modal-buttons">
+        <button id="btnSkipDuplicates" class="btn-skip">Skip Duplicates</button>
+        <button id="btnOverwriteDuplicates" class="btn-overwrite">Overwrite Duplicates</button>
+        <button id="btnCancelDuplicates" class="btn-cancel">Cancel (Edit Prefix)</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const fileInput = document.getElementById('fileInput');
     const generateBtn = document.getElementById('generateBtn');
     const generateFromFigmaBtn = document.getElementById('generateFromFigmaBtn');
     const message = document.getElementById('message');
+    const createVariablesCheckbox = document.getElementById('createVariablesCheckbox');
+    const prefixInputContainer = document.getElementById('prefixInputContainer');
+    const prefixInput = document.getElementById('prefixInput');
+
+    // Modal elements
+    const duplicateModal = document.getElementById('duplicateModal');
+    const duplicateMessage = document.getElementById('duplicateMessage');
+    const duplicateList = document.getElementById('duplicateList');
+    const btnSkipDuplicates = document.getElementById('btnSkipDuplicates');
+    const btnOverwriteDuplicates = document.getElementById('btnOverwriteDuplicates');
+    const btnCancelDuplicates = document.getElementById('btnCancelDuplicates');
+
+    // Store pending data for after user choice
+    let pendingGenerateData = null;
 
     fileInput.addEventListener('change', () => {
       generateBtn.disabled = !fileInput.files.length;
       message.className = 'message';
+    });
+
+    // Toggle prefix input visibility when checkbox is checked/unchecked
+    createVariablesCheckbox.addEventListener('change', () => {
+      prefixInputContainer.className = createVariablesCheckbox.checked
+        ? 'prefix-input show'
+        : 'prefix-input';
     });
 
     generateBtn.addEventListener('click', () => {
@@ -135,10 +327,37 @@
       reader.onload = (e) => {
         try {
           const json = JSON.parse(e.target.result);
-          showLoading('Generating global style from JSON...');
-          generateBtn.disabled = true;
-          generateFromFigmaBtn.disabled = true;
-          parent.postMessage({ pluginMessage: { type: 'generate', data: json } }, '*');
+          const createVariables = createVariablesCheckbox.checked;
+          const prefix = prefixInput.value.trim();
+
+          if (createVariables) {
+            // First check for duplicates
+            showLoading('Checking for duplicates...');
+            generateBtn.disabled = true;
+            generateFromFigmaBtn.disabled = true;
+            pendingGenerateData = { json, createVariables, prefix };
+            parent.postMessage({
+              pluginMessage: {
+                type: 'checkDuplicates',
+                data: json,
+                prefix: prefix
+              }
+            }, '*');
+          } else {
+            // No variables creation, proceed directly
+            showLoading('Generating global style from JSON...');
+            generateBtn.disabled = true;
+            generateFromFigmaBtn.disabled = true;
+            parent.postMessage({
+              pluginMessage: {
+                type: 'generate',
+                data: json,
+                createVariables: false,
+                prefix: prefix,
+                duplicateAction: 'skip'
+              }
+            }, '*');
+          }
         } catch (err) {
           message.textContent = 'Invalid JSON file.';
           message.className = 'message error show';
@@ -154,6 +373,91 @@
       parent.postMessage({ pluginMessage: { type: 'generateFromFigma' } }, '*');
     });
 
+    // Modal button handlers
+    btnSkipDuplicates.addEventListener('click', () => {
+      hideModal();
+      if (pendingGenerateData) {
+        proceedWithGenerate('skip');
+      }
+    });
+
+    btnOverwriteDuplicates.addEventListener('click', () => {
+      hideModal();
+      if (pendingGenerateData) {
+        proceedWithGenerate('overwrite');
+      }
+    });
+
+    btnCancelDuplicates.addEventListener('click', () => {
+      hideModal();
+      hideLoading();
+      pendingGenerateData = null;
+      // Focus on prefix input
+      prefixInput.focus();
+      prefixInput.select();
+    });
+
+    function proceedWithGenerate(duplicateAction) {
+      showLoading('Generating global style from JSON...');
+      parent.postMessage({
+        pluginMessage: {
+          type: 'generate',
+          data: pendingGenerateData.json,
+          createVariables: pendingGenerateData.createVariables,
+          prefix: pendingGenerateData.prefix,
+          duplicateAction: duplicateAction
+        }
+      }, '*');
+      pendingGenerateData = null;
+    }
+
+    function showModal(duplicates) {
+      // Build duplicate list HTML
+      let html = '';
+      if (duplicates.colors && duplicates.colors.length > 0) {
+        html += '<div class="dup-category">🎨 Color Variables (' + duplicates.colors.length + '):</div>';
+        duplicates.colors.slice(0, 10).forEach(name => {
+          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
+        });
+        if (duplicates.colors.length > 10) {
+          html += '<div class="dup-item">... and ' + (duplicates.colors.length - 10) + ' more</div>';
+        }
+      }
+      if (duplicates.spacing && duplicates.spacing.length > 0) {
+        html += '<div class="dup-category">📏 Spacing Variables (' + duplicates.spacing.length + '):</div>';
+        duplicates.spacing.slice(0, 10).forEach(name => {
+          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
+        });
+        if (duplicates.spacing.length > 10) {
+          html += '<div class="dup-item">... and ' + (duplicates.spacing.length - 10) + ' more</div>';
+        }
+      }
+      if (duplicates.textStyles && duplicates.textStyles.length > 0) {
+        html += '<div class="dup-category">✍️ Text Styles (' + duplicates.textStyles.length + '):</div>';
+        duplicates.textStyles.slice(0, 10).forEach(name => {
+          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
+        });
+        if (duplicates.textStyles.length > 10) {
+          html += '<div class="dup-item">... and ' + (duplicates.textStyles.length - 10) + ' more</div>';
+        }
+      }
+
+      const totalDuplicates = (duplicates.colors?.length || 0) + (duplicates.spacing?.length || 0) + (duplicates.textStyles?.length || 0);
+      duplicateMessage.textContent = totalDuplicates + ' duplicate name(s) found in Figma:';
+      duplicateList.innerHTML = html;
+      duplicateModal.style.display = 'flex';
+    }
+
+    function hideModal() {
+      duplicateModal.style.display = 'none';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     function showLoading(text) {
       message.innerHTML = '<span class="spinner"></span>' + text;
       message.className = 'message loading show';
@@ -166,10 +470,20 @@
 
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
-      if (msg && msg.type === 'status') {
+      if (!msg) return;
+
+      if (msg.type === 'status') {
         hideLoading();
         message.textContent = msg.message;
         message.className = msg.error ? 'message error show' : 'message success show';
+      } else if (msg.type === 'duplicatesFound') {
+        hideLoading();
+        showModal(msg.duplicates);
+      } else if (msg.type === 'noDuplicates') {
+        // No duplicates, proceed with generation
+        if (pendingGenerateData) {
+          proceedWithGenerate('skip');
+        }
       }
     };
   </script>

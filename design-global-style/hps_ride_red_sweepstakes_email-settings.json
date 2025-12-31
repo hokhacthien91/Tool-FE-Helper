@@ -1,0 +1,199 @@
+[
+  {
+    "name": "HPS Ride Red Sweepstakes Email",
+    "values": {
+      "spacingScale": "0, 4, 8, 12, 16, 24, 32, 40, 48, 71, 236",
+      "spacingThreshold": "100",
+      "colorScale": "#212121, #3C3C3C, #DE1C21, #965035, #707070, #976C5E, #8F9570, #B6B6B6, #E4C8A8, #CDDFE1, #DBE4D5, #EFE4D6, #F7F7F7, #FFFFFF",
+      "colorNameMap": {
+        "#DE1C21": "Primary/Honda Red",
+        "#FFFFFF": "Primary/White",
+        "#212121": "Primary/Black",
+        "#F7F7F7": "Primary/Light Gray",
+        "#B6B6B6": "Environment/Surface",
+        "#DBE4D5": "Environment/Forest Light",
+        "#CDDFE1": "Environment/Sky",
+        "#E4C8A8": "Environment/Dirt",
+        "#EFE4D6": "Environment/Sand",
+        "#8F9570": "Environment/Forest",
+        "#976C5E": "Environment/Soil",
+        "#707070": "Secondary/Dark Gray",
+        "#965035": "Secondary/Rebel",
+        "#3C3C3C": "Secondary/Black Alt"
+      },
+      "ignoredIssues": {},
+      "fontSizeScale": "88, 72, 64, 40, 32, 24, 20, 16, 14, 12",
+      "fontSizeThreshold": "100",
+      "lineHeightScale": "100, 107, 108, 109, 125, 138, 143, 150",
+      "lineHeightThreshold": "300",
+      "lineHeightBaselineThreshold": "120",
+      "typographyStyles": [
+        {
+          "id": 1,
+          "name": "HPS/Headline/Large/Large",
+          "styleId": "S:9653b2ab0ff6992d1341a07160fdf44044e78da1,",
+          "fontFamily": "Figtree",
+          "fontSize": 40,
+          "fontWeight": "Bold",
+          "lineHeight": "100%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 2,
+          "name": "HPS/Headline/Medium/Medium",
+          "styleId": "S:345f7431d53c9b7165f8623275decf9cbc347cc5,",
+          "fontFamily": "Figtree",
+          "fontSize": 32,
+          "fontWeight": "Bold",
+          "lineHeight": "100%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 3,
+          "name": "HPS/Headline/Small/Small",
+          "styleId": "S:0ba8ef0338892719ad72f4efc1cc642fc37112f2,",
+          "fontFamily": "Figtree",
+          "fontSize": 24,
+          "fontWeight": "SemiBold",
+          "lineHeight": "125%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 4,
+          "name": "HPS/Body/Large",
+          "styleId": "S:a622e615d3e544396fe702969fd21ecee028d254,",
+          "fontFamily": "Figtree",
+          "fontSize": 16,
+          "fontWeight": "Regular",
+          "lineHeight": "138%",
+          "letterSpacing": "0.5%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 5,
+          "name": "HPS/Body/Medium",
+          "styleId": "S:d55435ce5fb0f90c1d0dbd6b2efc4a1097024730,",
+          "fontFamily": "Figtree",
+          "fontSize": 14,
+          "fontWeight": "Regular",
+          "lineHeight": "143%",
+          "letterSpacing": "0.3%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 6,
+          "name": "HPS/Body/Small",
+          "styleId": "S:c677c6b1a95ca87f893d503091c3d80d5948ae4d,",
+          "fontFamily": "Figtree",
+          "fontSize": 12,
+          "fontWeight": "Regular",
+          "lineHeight": "150%",
+          "letterSpacing": "0.4",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 7,
+          "name": "HPS/Body/Links",
+          "styleId": "S:0b5b5a07b60872b3d94c11b8c51eea3dfd79939a,",
+          "fontFamily": "Figtree",
+          "fontSize": 12,
+          "fontWeight": "Bold",
+          "lineHeight": "150%",
+          "letterSpacing": "0.4",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 8,
+          "name": "HPS/Label/Medium",
+          "styleId": "S:53cc3736b847a8ea38a4af9ee7bebd837c54863f,",
+          "fontFamily": "Figtree",
+          "fontSize": 14,
+          "fontWeight": "Bold",
+          "lineHeight": "143%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 9,
+          "name": "HPS/Label/Small",
+          "styleId": "S:d47a0be34cbf53a6f9ec99eb7a6e0f9468294e58,",
+          "fontFamily": "Figtree",
+          "fontSize": 12,
+          "fontWeight": "Bold",
+          "lineHeight": "150%",
+          "letterSpacing": "0.5%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 10,
+          "name": "HPS/Title/Medium",
+          "styleId": "S:b6ec5365669b6c7ce32199b4500c634d23221541,",
+          "fontFamily": "Figtree",
+          "fontSize": 20,
+          "fontWeight": "SemiBold",
+          "lineHeight": "100%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 11,
+          "name": "HPS/Title/Large",
+          "styleId": "S:cbd3f4bc8c4e51ce6f6e9789c8d4efdc211cdaa2,",
+          "fontFamily": "Figtree",
+          "fontSize": 24,
+          "fontWeight": "Bold",
+          "lineHeight": "125%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 12,
+          "name": "HPS/Display/Large/Large",
+          "styleId": "S:a11ccf2d8e37c836a5c344c9df6e97288c7960cf,",
+          "fontFamily": "Figtree",
+          "fontSize": 88,
+          "fontWeight": "Bold",
+          "lineHeight": "107%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 13,
+          "name": "HPS/Display/Medium/Medium",
+          "styleId": "S:bdf3d54efbd370db97d0ea8e71bd9390be2f7366,",
+          "fontFamily": "Figtree",
+          "fontSize": 72,
+          "fontWeight": "Bold",
+          "lineHeight": "108%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        },
+        {
+          "id": 14,
+          "name": "HPS/Display/Small/Small",
+          "styleId": "S:57b6926e9d533c81e905c92d88887e6b14ff536a,",
+          "fontFamily": "Figtree",
+          "fontSize": 64,
+          "fontWeight": "Bold",
+          "lineHeight": "109%",
+          "letterSpacing": "0%",
+          "wordSpacing": "0"
+        }
+      ],
+      "typographyRules": {
+        "checkStyle": true,
+        "checkFontFamily": true,
+        "checkFontSize": true,
+        "checkFontWeight": true,
+        "checkLineHeight": true,
+        "checkLetterSpacing": true,
+        "checkWordSpacing": true
+      }
+    },
+    "createdAt": "2025-12-29T01:13:43.972Z",
+    "updatedAt": "2025-12-29T01:13:43.972Z"
+  }
+]

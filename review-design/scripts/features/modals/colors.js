@@ -2,6 +2,30 @@ import { showFixMessage } from "../fixMessage.js";
 import { getContrastTextColor } from "../../utils/color.js";
 import { escapeHtml } from "../../utils/html.js";
 
+// Helper function to calculate color distance (simple RGB distance)
+function calculateColorDistance(color1, color2) {
+  const hex1 = color1.replace('#', '');
+  const hex2 = color2.replace('#', '');
+
+  const r1 = parseInt(hex1.substr(0, 2), 16);
+  const g1 = parseInt(hex1.substr(2, 2), 16);
+  const b1 = parseInt(hex1.substr(4, 2), 16);
+
+  const r2 = parseInt(hex2.substr(0, 2), 16);
+  const g2 = parseInt(hex2.substr(2, 2), 16);
+  const b2 = parseInt(hex2.substr(4, 2), 16);
+
+  // Euclidean distance in RGB space
+  return Math.sqrt(Math.pow(r1 - r2, 2) + Math.pow(g1 - g2, 2) + Math.pow(b1 - b2, 2));
+}
+
+// Helper function to calculate similarity percentage (max distance is ~441 for black to white)
+function calculateColorSimilarity(color1, color2) {
+  const maxDistance = 441.67; // sqrt(255^2 * 3)
+  const distance = calculateColorDistance(color1, color2);
+  return Math.round((1 - distance / maxDistance) * 100);
+}
+
 // Helper function to create color picker item with consistent styling
 export function createColorPickerItem(color, colorName, borderColor, additionalInfo = "", rightLabel = "") {
   // keep for potential future styling (currently unused but harmless)
@@ -145,9 +169,73 @@ export function showColorPickerModal(issue, currentColor, availableColors, color
   });
 }
 
-// Show color fix confirm modal
-export function showColorFixConfirmModal(issue, currentColor, selectedColor, colorNameMap = {}) {
-  const colorName = colorNameMap[selectedColor] || selectedColor;
+// Show color fix confirm modal with top 5 similar colors
+export function showColorFixConfirmModal(issue, currentColor, suggestedColor, colorNameMap = {}, availableColors = [], callbacks = {}) {
+  const { onApply, onIgnore, onCancel, showIgnore = false, progress } = callbacks;
+
+  // Get available colors from colorNameMap if not provided
+  let colors = availableColors.length > 0 ? availableColors : Object.keys(colorNameMap);
+
+  // If still empty, just use the suggested color
+  if (colors.length === 0 && suggestedColor) {
+    colors = [suggestedColor];
+  }
+
+  // Calculate similarity and sort by closest match
+  const sortedColors = colors
+    .map(color => ({
+      color,
+      name: colorNameMap[color] || color,
+      similarity: calculateColorSimilarity(currentColor, color)
+    }))
+    .sort((a, b) => {
+      // Put suggested color first if provided
+      if (suggestedColor && a.color === suggestedColor) return -1;
+      if (suggestedColor && b.color === suggestedColor) return 1;
+      return b.similarity - a.similarity;
+    })
+    .slice(0, 5);
+
+  if (sortedColors.length === 0) {
+    alert("No colors available");
+    return;
+  }
+
+  // Track selected color (default to first one)
+  let selectedColorValue = sortedColors[0].color;
+
+  // Build color option HTML
+  const buildColorOptionHtml = (colorData, isSelected) => {
+    return `
+      <div class="color-option-item" data-color="${escapeHtml(colorData.color)}" style="
+        padding: 10px 12px;
+        margin-bottom: 6px;
+        border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+        border-radius: 8px;
+        cursor: pointer;
+        background: ${isSelected ? '#e3f2fd' : 'white'};
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: all 0.15s;
+      ">
+        <input type="radio" name="color-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer;" />
+        <div style="
+          width: 36px;
+          height: 36px;
+          border-radius: 6px;
+          background: ${escapeHtml(colorData.color)};
+          border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+          flex-shrink: 0;
+        "></div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; font-size: 13px; color: #333;">${escapeHtml(colorData.name)}</div>
+          <div style="font-size: 11px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(colorData.color)}</div>
+        </div>
+        <span style="font-size: 11px; color: #666; background: #f0f0f0; padding: 2px 8px; border-radius: 10px;">${colorData.similarity}%</span>
+      </div>
+    `;
+  };
 
   // Create modal overlay
   const overlay = document.createElement("div");
@@ -157,40 +245,42 @@ export function showColorFixConfirmModal(issue, currentColor, selectedColor, col
   // Create modal dialog
   const dialog = document.createElement("div");
   dialog.className = "modal-dialog";
-  dialog.style.maxWidth = "400px";
+  dialog.style.maxWidth = "420px";
+
+  const progressHtml = progress ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e3f2fd; border-radius: 6px; font-size: 13px; color: #1976d2; font-weight: 600;">Progress: ${progress.current}/${progress.total}</div>` : '';
+
+  const colorOptionsHtml = sortedColors.map((colorData, index) => buildColorOptionHtml(colorData, index === 0)).join('');
 
   dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Confirm Color Change</h2>
+        <h2 class="modal-title">Apply Suggested Color</h2>
         <p class="modal-subtitle">Node: ${escapeHtml(issue.nodeName || "Unnamed")}</p>
       </div>
+      ${progressHtml}
       <div class="modal-body">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Change color from:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
-            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(
-              currentColor
-            )}; border: 2px solid #ddd;"></div>
-            <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
-            </div>
+        <div style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; display: flex; align-items: center; gap: 10px;">
+          <div style="
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            background: ${escapeHtml(currentColor)};
+            border: 1px solid #ddd;
+          "></div>
+          <div>
+            <div style="font-size: 11px; color: #666;">Current:</div>
+            <div style="font-size: 12px; font-weight: 600; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(currentColor)}</div>
           </div>
-          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
-            <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(
-              selectedColor
-            )}; border: 2px solid #0071e3;"></div>
-            <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
-              <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(
-                selectedColor
-              )}</div>
-            </div>
-          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px;">
+          Select a color to apply (Top 5 matches):
+        </div>
+        <div id="color-options-container" style="max-height: 280px; overflow-y: auto;">
+          ${colorOptionsHtml}
         </div>
       </div>
       <div class="modal-footer">
+        ${showIgnore ? `<button class="modal-btn modal-btn-cancel" id="color-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ''}
         <button class="modal-btn modal-btn-cancel" id="color-fix-confirm-cancel-btn">Cancel</button>
         <button class="modal-btn modal-btn-create" id="color-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
       </div>
@@ -202,7 +292,36 @@ export function showColorFixConfirmModal(issue, currentColor, selectedColor, col
   // Get elements
   const cancelBtn = dialog.querySelector("#color-fix-confirm-cancel-btn");
   const applyBtn = dialog.querySelector("#color-fix-confirm-apply-btn");
+  const ignoreBtn = dialog.querySelector("#color-fix-ignore-btn");
   const closeBtn = dialog.querySelector(".modal-close");
+  const colorOptionsContainer = dialog.querySelector("#color-options-container");
+
+  // Function to update selection UI
+  const updateSelection = (newSelectedColor) => {
+    selectedColorValue = newSelectedColor;
+    const items = colorOptionsContainer.querySelectorAll(".color-option-item");
+    items.forEach(item => {
+      const itemColor = item.getAttribute("data-color");
+      const isSelected = itemColor === newSelectedColor;
+      item.style.border = isSelected ? "2px solid #0071e3" : "2px solid #e0e0e0";
+      item.style.background = isSelected ? "#e3f2fd" : "white";
+      const radio = item.querySelector('input[type="radio"]');
+      if (radio) radio.checked = isSelected;
+    });
+  };
+
+  // Attach click handlers to color options
+  const attachOptionHandlers = () => {
+    const items = colorOptionsContainer.querySelectorAll(".color-option-item");
+    items.forEach(item => {
+      item.onclick = (e) => {
+        e.preventDefault();
+        const color = item.getAttribute("data-color");
+        updateSelection(color);
+      };
+    });
+  };
+  attachOptionHandlers();
 
   // Close function
   const closeModal = () => {
@@ -215,13 +334,26 @@ export function showColorFixConfirmModal(issue, currentColor, selectedColor, col
   };
 
   // Cancel button
-  cancelBtn.onclick = closeModal;
-  closeBtn.onclick = closeModal;
+  cancelBtn.onclick = () => {
+    closeModal();
+    if (onCancel && typeof onCancel === "function") {
+      onCancel();
+    }
+  };
+  closeBtn.onclick = () => {
+    closeModal();
+    if (onCancel && typeof onCancel === "function") {
+      onCancel();
+    }
+  };
 
   // Click overlay to close
   overlay.onclick = (e) => {
     if (e.target === overlay) {
       closeModal();
+      if (onCancel && typeof onCancel === "function") {
+        onCancel();
+      }
     }
   };
 
@@ -238,12 +370,24 @@ export function showColorFixConfirmModal(issue, currentColor, selectedColor, col
         pluginMessage: {
           type: "fix-color-issue",
           issue: issue,
-          color: selectedColor
+          color: selectedColorValue
         }
       },
       "*"
     );
+
+    if (onApply && typeof onApply === "function") {
+      onApply();
+    }
   };
+
+  // Ignore button
+  if (ignoreBtn) {
+    ignoreBtn.onclick = () => {
+      closeModal();
+      if (onIgnore && typeof onIgnore === "function") {
+        onIgnore();
+      }
+    };
+  }
 }
-
-
