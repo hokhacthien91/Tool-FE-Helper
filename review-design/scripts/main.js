@@ -6287,10 +6287,15 @@ console.log("ui.js loaded");
       const input = document.getElementById("font-size-scale");
       if (!input) return;
 
-      // Extract unique font sizes and sort
+      // Get threshold value
+      const thresholdInput = document.getElementById("font-size-threshold");
+      const threshold = thresholdInput ? parseInt(thresholdInput.value, 10) : 100;
+      const validThreshold = isNaN(threshold) ? 100 : threshold;
+
+      // Extract unique font sizes, filter by threshold, and sort
       const values = tokens.fontSize
         .map(t => parseInt(String(t && t.value !== undefined ? t.value : "").trim(), 10))
-        .filter(n => !isNaN(n));
+        .filter(n => !isNaN(n) && n <= validThreshold);
 
       if (!values.length) return;
 
@@ -6316,6 +6321,11 @@ console.log("ui.js loaded");
       const input = document.getElementById("line-height-scale");
       if (!input) return;
 
+      // Get threshold value
+      const thresholdInput = document.getElementById("line-height-threshold");
+      const threshold = thresholdInput ? parseInt(thresholdInput.value, 10) : 300;
+      const validThreshold = isNaN(threshold) ? 300 : threshold;
+
       // Extract unique line heights and sort
       const values = [];
       tokens.lineHeight.forEach(t => {
@@ -6324,7 +6334,7 @@ console.log("ui.js loaded");
           values.push("auto");
         } else {
           const numValue = parseFloat(value);
-          if (!isNaN(numValue)) {
+          if (!isNaN(numValue) && numValue <= validThreshold) {
             values.push(numValue);
           }
         }
