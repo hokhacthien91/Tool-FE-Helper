@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node --check:*)"
+      "Bash(node --check:*)",
+      "Bash(cat:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

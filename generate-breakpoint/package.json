@@ -1,0 +1,25 @@
+{
+  "name": "desktop-to-mobile-converter",
+  "version": "1.0.0",
+  "description": "Figma plugin to convert desktop frames to mobile breakpoints",
+  "main": "code.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.100.2",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "figma",
+    "plugin",
+    "responsive",
+    "mobile",
+    "breakpoint"
+  ],
+  "author": "",
+  "license": "MIT"
+}

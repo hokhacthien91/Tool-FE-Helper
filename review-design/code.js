@@ -1943,14 +1943,16 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           // Check itemSpacing (gap) - only if spacing guidelines is provided
           if (customSpacingScale !== null) {
           if (typeof node.itemSpacing === "number") {
+              // Convert negative values to positive for comparison
+              const absItemSpacing = Math.abs(node.itemSpacing);
               // If value exceeds threshold, pass (special case)
-              if (node.itemSpacing > spacingThreshold) {
+              if (absItemSpacing > spacingThreshold) {
                 // Pass - value is above threshold (special case)
-              } else if (!isInScale(node.itemSpacing, customSpacingScale)) {
+              } else if (!isInScale(absItemSpacing, customSpacingScale)) {
               addIssue({
                 severity: "error",
                 type: "spacing",
-                  message: `Gap (itemSpacing: ${node.itemSpacing}px) does not follow scale on "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
+                  message: `Gap (itemSpacing: ${absItemSpacing}px) does not follow scale on "${nodeName}". Scale: ${customSpacingScale.join(", ")}`,
                   id: node.id,
                   nodeName: nodeName
               });
@@ -1959,10 +1961,11 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           } else {
             // If spacing guidelines is empty, show skipped message
             if (typeof node.itemSpacing === "number") {
+              const absItemSpacing = Math.abs(node.itemSpacing);
               addIssue({
                 severity: "info",
                 type: "spacing",
-                message: `Gap (itemSpacing: ${node.itemSpacing}px) - Check spacing is skipped (spacing guidelines is empty).`,
+                message: `Gap (itemSpacing: ${absItemSpacing}px) - Check spacing is skipped (spacing guidelines is empty).`,
                 id: node.id,
                 nodeName: nodeName
               });
@@ -3094,6 +3097,39 @@ figma.ui.onmessage = async msg => {
     case "cancel-scan": {
       cancelRequested = true;
       figma.notify("Cancelling scan...");
+      break;
+    }
+    case "get-node-count": {
+      // Count nodes before scan to warn user about large designs
+      const mode = msg.mode || "page";
+      let nodeCount = 0;
+
+      function countNodes(n) {
+        nodeCount++;
+        if ("children" in n && Array.isArray(n.children)) {
+          for (const child of n.children) {
+            countNodes(child);
+          }
+        }
+      }
+
+      if (mode === "selection") {
+        if (figma.currentPage.selection.length === 0) {
+          countNodes(figma.currentPage);
+        } else {
+          for (const n of figma.currentPage.selection) {
+            countNodes(n);
+          }
+        }
+      } else {
+        countNodes(figma.currentPage);
+      }
+
+      figma.ui.postMessage({
+        type: "node-count-result",
+        count: nodeCount,
+        mode: mode
+      });
       break;
     }
     case "scan": {

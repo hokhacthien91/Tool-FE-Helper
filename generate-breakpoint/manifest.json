@@ -1,0 +1,14 @@
+{
+  "name": "Desktop to Mobile Converter",
+  "id": "desktop-to-mobile-breakpoint-converter",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "capabilities": [
+    "inspect"
+  ],
+  "editorType": [
+  "figma",
+    "dev"
+  ]
+}

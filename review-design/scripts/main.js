@@ -69,6 +69,35 @@ console.log("ui.js loaded");
           context: null
         };
 
+        // Similarity cache for performance
+        const similarityCache = new Map();
+        const SIMILARITY_CACHE_MAX_SIZE = 1000;
+
+        // Clear similarity cache when typography styles change
+        function clearSimilarityCache() {
+          similarityCache.clear();
+        }
+
+        // Get cached similarity or calculate and cache
+        function getCachedSimilarity(cacheKey, calculateFn) {
+          if (similarityCache.has(cacheKey)) {
+            return similarityCache.get(cacheKey);
+          }
+          const result = calculateFn();
+          // Limit cache size
+          if (similarityCache.size >= SIMILARITY_CACHE_MAX_SIZE) {
+            // Remove oldest entries (first 100)
+            const keys = Array.from(similarityCache.keys()).slice(0, 100);
+            keys.forEach(k => similarityCache.delete(k));
+          }
+          similarityCache.set(cacheKey, result);
+          return result;
+        }
+
+        // Pending scan data for large design warning
+        let pendingScanData = null;
+        const LARGE_DESIGN_THRESHOLD = 5000; // Warn if > 5000 nodes
+
         // Typography Styles Storage
         let typographyStyles = [
           // Default styles
@@ -2159,44 +2188,48 @@ console.log("ui.js loaded");
 
     // Calculate similarity score for sorting (higher = more similar)
     const calculateSimilarity = (style) => {
-      let score = 0;
-      const maxScore = 100;
+      // Create cache key from current node props and style id
+      const cacheKey = `picker_${normalizeValue(currentFamily)}_${currentSizeNum}_${normalizeValue(currentWeight)}_${normalizeValue(currentLineHeight)}_${normalizeValue(currentLetterSpacing)}_${style.id}`;
 
-      // Font family match (25 points)
-      if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
-        score += 25;
-      }
+      return getCachedSimilarity(cacheKey, () => {
+        let score = 0;
 
-      // Font size match (30 points) - also consider proximity
-      if (currentSizeNum !== null && style.fontSize) {
-        const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
-        if (sizeDiff === 0) {
-          score += 30;
-        } else if (sizeDiff <= 2) {
+        // Font family match (25 points)
+        if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
           score += 25;
-        } else if (sizeDiff <= 4) {
+        }
+
+        // Font size match (30 points) - also consider proximity
+        if (currentSizeNum !== null && style.fontSize) {
+          const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
+          if (sizeDiff === 0) {
+            score += 30;
+          } else if (sizeDiff <= 2) {
+            score += 25;
+          } else if (sizeDiff <= 4) {
+            score += 20;
+          } else if (sizeDiff <= 8) {
+            score += 10;
+          }
+        }
+
+        // Font weight match (20 points)
+        if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
           score += 20;
-        } else if (sizeDiff <= 8) {
+        }
+
+        // Line height match (15 points)
+        if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
+          score += 15;
+        }
+
+        // Letter spacing match (10 points)
+        if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
           score += 10;
         }
-      }
 
-      // Font weight match (20 points)
-      if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
-        score += 20;
-      }
-
-      // Line height match (15 points)
-      if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
-        score += 15;
-      }
-
-      // Letter spacing match (10 points)
-      if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
-        score += 10;
-      }
-
-      return score;
+        return score;
+      });
     };
 
     // Sort styles by similarity (highest first), bestMatch always first if exists
@@ -3849,43 +3882,48 @@ console.log("ui.js loaded");
 
     // Calculate similarity score for sorting (higher = more similar)
     const calculateSimilarity = (style) => {
-      let score = 0;
+      // Create cache key from current node props and style id
+      const cacheKey = `typo_${normalizeValue(currentFamily)}_${currentSizeNum}_${normalizeValue(currentWeight)}_${normalizeValue(currentLineHeight)}_${normalizeValue(currentLetterSpacing)}_${style.id}`;
 
-      // Font family match (25 points)
-      if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
-        score += 25;
-      }
+      return getCachedSimilarity(cacheKey, () => {
+        let score = 0;
 
-      // Font size match (30 points) - also consider proximity
-      if (currentSizeNum !== null && style.fontSize) {
-        const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
-        if (sizeDiff === 0) {
-          score += 30;
-        } else if (sizeDiff <= 2) {
+        // Font family match (25 points)
+        if (normalizeValue(currentFamily) === normalizeValue(style.fontFamily)) {
           score += 25;
-        } else if (sizeDiff <= 4) {
+        }
+
+        // Font size match (30 points) - also consider proximity
+        if (currentSizeNum !== null && style.fontSize) {
+          const sizeDiff = Math.abs(currentSizeNum - style.fontSize);
+          if (sizeDiff === 0) {
+            score += 30;
+          } else if (sizeDiff <= 2) {
+            score += 25;
+          } else if (sizeDiff <= 4) {
+            score += 20;
+          } else if (sizeDiff <= 8) {
+            score += 10;
+          }
+        }
+
+        // Font weight match (20 points)
+        if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
           score += 20;
-        } else if (sizeDiff <= 8) {
+        }
+
+        // Line height match (15 points)
+        if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
+          score += 15;
+        }
+
+        // Letter spacing match (10 points)
+        if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
           score += 10;
         }
-      }
 
-      // Font weight match (20 points)
-      if (normalizeValue(currentWeight) === normalizeValue(style.fontWeight)) {
-        score += 20;
-      }
-
-      // Line height match (15 points)
-      if (normalizeValue(currentLineHeight) === normalizeValue(style.lineHeight)) {
-        score += 15;
-      }
-
-      // Letter spacing match (10 points)
-      if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
-        score += 10;
-      }
-
-      return score;
+        return score;
+      });
     };
 
     // Sort styles by similarity and get top 5
@@ -6007,6 +6045,72 @@ console.log("ui.js loaded");
     }
   }
 
+  // Function to execute the actual scan
+  function executeScan(scope) {
+    // Show cancel button and progress, hide scan button
+    btnScan.style.display = "none";
+    btnCancelScan.style.display = "block";
+    scanProgress.style.display = "block";
+    // Force reset progress bar
+    scanProgressBar.style.transition = "none";
+    scanProgressBar.style.width = "0%";
+    scanProgressText.textContent = "0%";
+    // Re-enable transition after reset
+    setTimeout(() => {
+      scanProgressBar.style.transition = "width 0.3s";
+    }, 10);
+
+    // Clear similarity cache before new scan
+    clearSimilarityCache();
+
+    const spacingScaleInput = document.getElementById("spacing-scale");
+    const spacingThresholdInput = document.getElementById("spacing-threshold");
+    const colorScaleInput = document.getElementById("color-scale");
+    const fontSizeScaleInput = document.getElementById("font-size-scale");
+    const fontSizeThresholdInput = document.getElementById("font-size-threshold");
+    const lineHeightScaleInput = document.getElementById("line-height-scale");
+    const lineHeightThresholdInput = document.getElementById("line-height-threshold");
+    const lineHeightBaselineThresholdInput = document.getElementById("line-height-baseline-threshold");
+
+    let spacingScaleValue = spacingScaleInput ? spacingScaleInput.value.trim() : "";
+    const spacingThreshold = spacingThresholdInput ? parseInt(spacingThresholdInput.value, 10) : 100;
+    let colorScaleValue = colorScaleInput ? colorScaleInput.value.trim() : "";
+    let fontSizeScaleValue = fontSizeScaleInput ? fontSizeScaleInput.value.trim() : "";
+    const fontSizeThreshold = fontSizeThresholdInput ? parseInt(fontSizeThresholdInput.value, 10) : 100;
+    let lineHeightScaleValue = lineHeightScaleInput ? lineHeightScaleInput.value.trim() : "";
+    const lineHeightThreshold = lineHeightThresholdInput ? parseInt(lineHeightThresholdInput.value, 10) : 300;
+    const lineHeightBaselineThreshold = lineHeightBaselineThresholdInput ? parseInt(lineHeightBaselineThresholdInput.value, 10) : 120;
+
+    // Get typography rules
+    const typographyRules = {
+      checkFontFamily: document.getElementById("rule-font-family")?.checked || false,
+      checkFontSize: document.getElementById("rule-font-size")?.checked || false,
+      checkFontWeight: document.getElementById("rule-font-weight")?.checked || false,
+      checkLineHeight: document.getElementById("rule-line-height")?.checked || false,
+      checkLetterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
+      checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
+    };
+
+    parent.postMessage({
+      pluginMessage: {
+        type: "scan",
+        mode: scope,
+        spacingScale: spacingScaleValue,
+        spacingThreshold: spacingThreshold,
+        colorScale: colorScaleValue,
+        fontSizeScale: fontSizeScaleValue,
+        fontSizeThreshold: fontSizeThreshold,
+        lineHeightScale: lineHeightScaleValue,
+        lineHeightThreshold: lineHeightThreshold,
+        lineHeightBaselineThreshold: lineHeightBaselineThreshold,
+        typographyStyles: typographyStyles,
+        typographyRules: typographyRules,
+        ignoredIssues: ignoredIssues
+      }
+    }, "*");
+    console.log("Message sent:", { type: "scan", mode: scope });
+  }
+
   btnScan.onclick = () => {
     console.log("btnScan clicked");
     try {
@@ -6015,23 +6119,10 @@ console.log("ui.js loaded");
       if (validationError) {
         validationError.style.display = "none";
       }
-      
-      // Show cancel button and progress, hide scan button
-      btnScan.style.display = "none";
-      btnCancelScan.style.display = "block";
-      scanProgress.style.display = "block";
-      // Force reset progress bar
-      scanProgressBar.style.transition = "none";
-      scanProgressBar.style.width = "0%";
-      scanProgressText.textContent = "0%";
-      // Re-enable transition after reset
-      setTimeout(() => {
-        scanProgressBar.style.transition = "width 0.3s";
-      }, 10);
-      
-      // Don't clear - keep both tabs' content
-      // clearResults();
+
       const scope = document.querySelector('input[name="scope"]:checked')?.value || "page";
+
+      // Validate inputs before proceeding
       const spacingScaleInput = document.getElementById("spacing-scale");
       const spacingThresholdInput = document.getElementById("spacing-threshold");
       const colorScaleInput = document.getElementById("color-scale");
@@ -6040,17 +6131,17 @@ console.log("ui.js loaded");
       const lineHeightScaleInput = document.getElementById("line-height-scale");
       const lineHeightThresholdInput = document.getElementById("line-height-threshold");
       const lineHeightBaselineThresholdInput = document.getElementById("line-height-baseline-threshold");
-      
-      let spacingScaleValue = spacingScaleInput ? spacingScaleInput.value.trim() : "";
+
+      const spacingScaleValue = spacingScaleInput ? spacingScaleInput.value.trim() : "";
       const spacingThreshold = spacingThresholdInput ? parseInt(spacingThresholdInput.value, 10) : 100;
-      let colorScaleValue = colorScaleInput ? colorScaleInput.value.trim() : "";
-      let fontSizeScaleValue = fontSizeScaleInput ? fontSizeScaleInput.value.trim() : "";
+      const colorScaleValue = colorScaleInput ? colorScaleInput.value.trim() : "";
+      const fontSizeScaleValue = fontSizeScaleInput ? fontSizeScaleInput.value.trim() : "";
       const fontSizeThreshold = fontSizeThresholdInput ? parseInt(fontSizeThresholdInput.value, 10) : 100;
-      let lineHeightScaleValue = lineHeightScaleInput ? lineHeightScaleInput.value.trim() : "";
+      const lineHeightScaleValue = lineHeightScaleInput ? lineHeightScaleInput.value.trim() : "";
       const lineHeightThreshold = lineHeightThresholdInput ? parseInt(lineHeightThresholdInput.value, 10) : 300;
       const lineHeightBaselineThreshold = lineHeightBaselineThresholdInput ? parseInt(lineHeightBaselineThresholdInput.value, 10) : 120;
-      
-      // Validate spacing guidelines format if not empty
+
+      // Validate spacing guidelines format
       if (spacingScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(spacingScaleValue)) {
@@ -6058,20 +6149,19 @@ console.log("ui.js loaded");
           return;
         }
       }
-      
-      // Validate color format if not empty (allow hex only)
+
+      // Validate color format
       if (colorScaleValue) {
-        // Split by comma and validate each color
         const colors = colorScaleValue.split(",").map(c => c.trim()).filter(c => c);
         const colorRegex = /^#[0-9a-fA-F]{3,8}$/;
         const invalidColors = colors.filter(c => !colorRegex.test(c));
         if (invalidColors.length > 0) {
-          showValidationError(`Color format is incorrect. Invalid colors: ${invalidColors.join(", ")}. Please use hex format only (e.g., #000000, #FFFFFF).`);
+          showValidationError(`Color format is incorrect. Invalid colors: ${invalidColors.join(", ")}. Please use hex format only.`);
           return;
         }
       }
-      
-      // Validate font-size scale format if not empty
+
+      // Validate font-size scale format
       if (fontSizeScaleValue) {
         const formatRegex = /^\d+(\s*,\s*\d+)*$/;
         if (!formatRegex.test(fontSizeScaleValue)) {
@@ -6079,87 +6169,61 @@ console.log("ui.js loaded");
           return;
         }
       }
-      
-      // Validate line-height scale format if not empty (allow "auto" keyword anywhere)
+
+      // Validate line-height scale format
       if (lineHeightScaleValue) {
-        // Split by comma and check each value
         const values = lineHeightScaleValue.split(",").map(v => v.trim()).filter(v => v);
-        const isValid = values.every(v => {
-          return v.toLowerCase() === "auto" || /^\d+$/.test(v);
-        });
-        
+        const isValid = values.every(v => v.toLowerCase() === "auto" || /^\d+$/.test(v));
         if (!isValid || values.length === 0) {
-          showValidationError('Line-height scale format is incorrect. Please enter "auto" and/or numbers separated by commas. "auto" can be placed anywhere (e.g. auto, 100, 120 or 100, auto, 150)');
+          showValidationError('Line-height scale format is incorrect. Please enter "auto" and/or numbers separated by commas.');
           return;
         }
       }
-      
+
       // Validate thresholds
       if (isNaN(spacingThreshold) || spacingThreshold < 0) {
         showValidationError("Spacing threshold must be a number >= 0");
         return;
       }
-      
       if (isNaN(fontSizeThreshold) || fontSizeThreshold < 0) {
         showValidationError("Font-size threshold must be a number >= 0");
         return;
       }
-      
       if (isNaN(lineHeightThreshold) || lineHeightThreshold < 0) {
         showValidationError("Line-height threshold must be a number >= 0");
         return;
       }
-      
       if (isNaN(lineHeightBaselineThreshold) || lineHeightBaselineThreshold < 0) {
         showValidationError("Line-height baseline threshold must be a number >= 0");
         return;
       }
-      
-      // Don't save to history here - wait for actual results
-      
+
+      // Show scanning message
       resultsIssues.innerHTML = `
         <div class="scanning">
           <div class="spinner"></div>
-          <p>Scanning design... Please wait</p>
+          <p>Checking design size...</p>
         </div>
       `;
       switchToTab("issues");
       btnScan.disabled = true;
       btnExtractTokens.disabled = true;
       currentReportData.scanMode = scope;
-      
-      // Save input values before scanning
+
+      // Save input values
       saveInputValues();
-      
-      // Get Typography settings
-      const typographyRules = {
-        checkStyle: document.getElementById("rule-typo-style")?.checked || false,
-        checkFontFamily: document.getElementById("rule-font-family")?.checked || false,
-        checkFontSize: document.getElementById("rule-font-size")?.checked || false,
-        checkFontWeight: document.getElementById("rule-font-weight")?.checked || false,
-        checkLineHeight: document.getElementById("rule-line-height")?.checked || false,
-        checkLetterSpacing: document.getElementById("rule-letter-spacing")?.checked || false,
-        checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
-      };
-      
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: "scan", 
-          mode: scope, 
-          spacingScale: spacingScaleValue, 
-          spacingThreshold: spacingThreshold,
-          colorScale: colorScaleValue,
-          fontSizeScale: fontSizeScaleValue,
-          fontSizeThreshold: fontSizeThreshold,
-          lineHeightScale: lineHeightScaleValue,
-          lineHeightThreshold: lineHeightThreshold,
-          lineHeightBaselineThreshold: lineHeightBaselineThreshold,
-          typographyStyles: typographyStyles,
-          typographyRules: typographyRules,
-          ignoredIssues: ignoredIssues // Send ignored issues to backend
-        } 
+
+      // Store pending scan data for use after node count check
+      pendingScanData = { scope };
+
+      // First, get node count to warn user about large designs
+      parent.postMessage({
+        pluginMessage: {
+          type: "get-node-count",
+          mode: scope
+        }
       }, "*");
-      console.log("Message sent:", { type: "scan", mode: scope });
+
     } catch (error) {
       console.error("Error in btnScan.onclick:", error);
       resultsIssues.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
@@ -6846,6 +6910,7 @@ console.log("ui.js loaded");
   window.deleteTypographyStyle = function(id) {
     if (!confirm("Delete this typography style?")) return;
     typographyStyles = typographyStyles.filter(s => s.id !== id);
+    clearSimilarityCache(); // Clear cache when styles change
     renderTypographyTable();
     saveInputValues();
   };
@@ -8390,6 +8455,43 @@ console.log("ui.js loaded");
       return;
     }
 
+    if (msg && msg.type === "node-count-result") {
+      const nodeCount = msg.count || 0;
+      const mode = msg.mode || "page";
+
+      if (nodeCount > LARGE_DESIGN_THRESHOLD) {
+        // Show warning for large designs
+        const confirmScan = confirm(
+          `⚠️ Large Design Warning\n\n` +
+          `This ${mode === "page" ? "page" : "selection"} contains ${nodeCount.toLocaleString()} nodes.\n\n` +
+          `Scanning large designs may take a while and could slow down Figma.\n\n` +
+          `Do you want to continue?`
+        );
+
+        if (confirmScan && pendingScanData) {
+          executeScan(pendingScanData.scope);
+        } else {
+          // Reset UI state if cancelled
+          if (btnScan) {
+            btnScan.disabled = false;
+            btnScan.textContent = "Scan Issues";
+          }
+          if (scanProgress) {
+            scanProgress.style.display = "none";
+          }
+        }
+      } else {
+        // Small design, proceed immediately
+        if (pendingScanData) {
+          executeScan(pendingScanData.scope);
+        }
+      }
+
+      // Clear pending data
+      pendingScanData = null;
+      return;
+    }
+
     if (msg && msg.type === "last-report") {
       if (msg.report) {
         applySavedReport(msg.report);
@@ -8630,9 +8732,10 @@ console.log("ui.js loaded");
             wordSpacing: style.wordSpacing || "0"
           };
         });
-        
+
         nextTypoStyleId = typographyStyles.length + 1;
-        
+        clearSimilarityCache(); // Clear cache when styles change
+
         // Re-render table
         renderTypographyTable();
         

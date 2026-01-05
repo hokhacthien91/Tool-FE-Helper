@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --bg-tertiary: #e8e8e8;
+      --bg-hover: #f0f0f0;
+      --text-primary: #333333;
+      --text-secondary: #666666;
+      --text-tertiary: #999999;
+      --border-color: #e0e0e0;
+      --accent-color: #0d99ff;
+      --accent-hover: #0b87e0;
+      --success-color: #14ae5c;
+      --error-color: #f24822;
+      --spacing-xs: 4px;
+      --spacing-sm: 8px;
+      --spacing-md: 12px;
+      --spacing-lg: 16px;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --font-size-sm: 11px;
+      --font-size-md: 12px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #2c2c2c;
+        --bg-secondary: #383838;
+        --bg-tertiary: #444444;
+        --bg-hover: #3d3d3d;
+        --text-primary: #ffffff;
+        --text-secondary: #b3b3b3;
+        --text-tertiary: #808080;
+        --border-color: #444444;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: var(--font-size-md);
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      padding: var(--spacing-lg);
+      padding-top: 0;
+      line-height: 1.4;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+    }
+
+    .section-title {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Tab Navigation */
+    .tab-nav {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-color);
+      /* margin-bottom: var(--spacing-md); */
+    }
+
+    .tab-btn {
+      padding: var(--spacing-sm) var(--spacing-lg);
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: var(--font-size-md);
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-color);
+      border-bottom-color: var(--accent-color);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Selection Info */
+    .selection-info {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+      padding: var(--spacing-md);
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .selection-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-color);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .selection-icon svg {
+      width: 18px;
+      height: 18px;
+      fill: white;
+    }
+
+    .selection-icon.empty {
+      background: var(--bg-tertiary);
+    }
+
+    .selection-icon.empty svg {
+      fill: var(--text-tertiary);
+    }
+
+    .selection-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .selection-name {
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .selection-meta {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+    }
+
+    .selection-empty {
+      color: var(--text-tertiary);
+      font-style: italic;
+    }
+
+    /* Input */
+    input[type="number"] {
+      width: 100%;
+      height: 32px;
+      padding: 0 var(--spacing-sm);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: var(--font-size-md);
+      font-family: inherit;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 1px var(--accent-color);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: var(--spacing-sm);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: var(--font-size-sm);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 1px var(--accent-color);
+    }
+
+    textarea::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    input[type="number"]:disabled {
+      background: var(--bg-tertiary);
+      color: var(--text-tertiary);
+    }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .input-row input {
+      width: 80px;
+    }
+
+    .input-suffix {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+    }
+
+    .hint {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    /* Preset Buttons */
+    .presets {
+      display: flex;
+      gap: var(--spacing-xs);
+      flex-wrap: wrap;
+    }
+
+    .preset-btn {
+      padding: var(--spacing-xs) var(--spacing-sm);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      font-size: var(--font-size-sm);
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .preset-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-tertiary);
+    }
+
+    .preset-btn.active {
+      background: var(--accent-color);
+      border-color: var(--accent-color);
+      color: white;
+    }
+
+    .preset-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Radio Options */
+    .radio-group {
+      display: flex;
+      flex-direction: row;
+      gap: var(--spacing-xs);
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .radio-option:hover {
+      background: var(--bg-hover);
+    }
+
+    .radio-option.selected {
+      border-color: var(--accent-color);
+      background: rgba(13, 153, 255, 0.08);
+    }
+
+    .radio-option input[type="radio"] {
+      margin-top: 2px;
+      accent-color: var(--accent-color);
+    }
+
+    .radio-content {
+      flex: 1;
+    }
+
+    .radio-label {
+      font-weight: 500;
+      color: var(--text-primary);
+      font-size: var(--font-size-md);
+    }
+
+    .radio-desc {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .radio-input {
+      margin-top: var(--spacing-xs);
+    }
+
+    .radio-input input {
+      width: 80px;
+    }
+
+    /* Messages */
+    .message-container {
+      display: none;
+    }
+
+    .message-container.visible {
+      display: block;
+    }
+
+    .message-box {
+      padding: var(--spacing-md);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+    }
+
+    .message-box.error {
+      background: rgba(242, 72, 34, 0.1);
+      border: 1px solid var(--error-color);
+      color: var(--error-color);
+    }
+
+    .message-box.success {
+      background: rgba(20, 174, 92, 0.1);
+      border: 1px solid var(--success-color);
+      color: var(--success-color);
+    }
+
+    /* Buttons */
+    .button-group {
+      display: flex;
+      gap: var(--spacing-sm);
+      margin-top: var(--spacing-sm);
+    }
+
+    .btn {
+      flex: 1;
+      height: 36px;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-md);
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent-color);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    .btn-primary:disabled {
+      background: var(--bg-tertiary);
+      color: var(--text-tertiary);
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: var(--spacing-xs) 0;
+    }
+
+    .footer {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+      text-align: center;
+      padding-top: var(--spacing-sm);
+      border-top: 1px solid var(--border-color);
+    }
+    .flex-row{
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Manual Frames List */
+    .manual-frames-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: var(--spacing-xs);
+    }
+
+    .manual-frame-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-xs);
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .manual-frame-item:hover {
+      background: var(--bg-secondary);
+    }
+
+    .manual-frame-item input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    .manual-frame-name {
+      flex: 1;
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+    }
+
+    .manual-frame-count {
+      font-size: var(--font-size-sm);
+      color: var(--accent-color);
+      font-weight: 500;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      display: none;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .progress-container.visible {
+      display: block;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--spacing-xs);
+    }
+
+    .progress-text {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .progress-count {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-secondary);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent-color);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    /* Inspector Tab Styles */
+    .inspector-preview {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+      padding: var(--spacing-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 150px;
+      max-height: 200px;
+      overflow: hidden;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .inspector-preview img {
+      max-width: 100%;
+      max-height: 180px;
+      object-fit: contain;
+      border-radius: var(--radius-sm);
+    }
+
+    .inspector-preview-empty {
+      color: var(--text-tertiary);
+      font-style: italic;
+      text-align: center;
+    }
+
+    .inspector-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-sm);
+      margin-bottom: var(--spacing-md);
+    }
+
+    .inspector-info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .inspector-info-label {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+    }
+
+    .inspector-info-value {
+      font-size: var(--font-size-md);
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .inspector-json {
+      position: relative;
+    }
+
+    .inspector-json textarea {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 11px;
+      min-height: 200px;
+      max-height: 300px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .inspector-options {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .inspector-options label {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .copy-success {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--success-color);
+      color: white;
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .copy-success.visible {
+      opacity: 1;
+    }
+
+    /* Pattern Match Confirmation Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-primary);
+      border-radius: var(--radius-md);
+      padding: var(--spacing-lg);
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: var(--spacing-md);
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .modal-title-icon {
+      width: 20px;
+      height: 20px;
+      background: #ff9800;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .modal-info {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      padding: var(--spacing-md);
+      margin-bottom: var(--spacing-md);
+    }
+
+    .modal-info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .modal-info-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .modal-info-label {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+      width: 100px;
+    }
+
+    .modal-info-value {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      font-weight: 500;
+      word-break: break-word;
+      text-align: right;
+    }
+
+    .modal-info-value.highlight {
+      color: #ff9800;
+      background: rgba(255, 152, 0, 0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .modal-layout-preview {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      margin: var(--spacing-md) 0;
+      justify-content: center;
+    }
+
+    .modal-layout-box {
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+    }
+
+    .modal-layout-box.current {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .modal-layout-box.result {
+      background: var(--accent-color);
+      color: white;
+    }
+
+    .modal-layout-arrow {
+      color: var(--text-tertiary);
+      font-size: 16px;
+    }
+
+    .modal-desc {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--spacing-md);
+      line-height: 1.5;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: var(--spacing-sm);
+    }
+
+    .modal-buttons .btn {
+      flex: 1;
+    }
+
+    .btn-warning {
+      background: #ff9800;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #f57c00;
+    }
+
+    /* Modal checkbox */
+    .modal-checkbox {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      margin-bottom: var(--spacing-md);
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .modal-checkbox input {
+      cursor: pointer;
+    }
+
+    /* Muted frames list */
+    .muted-frames-section {
+      margin-top: var(--spacing-sm);
+    }
+
+    .muted-frames-section summary {
+      cursor: pointer;
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      padding: var(--spacing-xs) 0;
+      user-select: none;
+    }
+
+    .muted-frames-section summary:hover {
+      color: var(--text-primary);
+    }
+
+    .muted-frames-list {
+      margin-top: var(--spacing-xs);
+      padding: var(--spacing-sm);
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .muted-frame-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--spacing-xs);
+      font-size: var(--font-size-sm);
+      border-radius: var(--radius-sm);
+    }
+
+    .muted-frame-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .muted-frame-name {
+      color: var(--text-primary);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .muted-frame-action {
+      color: var(--text-secondary);
+      font-size: 10px;
+      margin-left: var(--spacing-sm);
+    }
+
+    .muted-frame-remove {
+      background: none;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: var(--font-size-sm);
+      border-radius: var(--radius-sm);
+    }
+
+    .muted-frame-remove:hover {
+      background: var(--error-color);
+      color: white;
+    }
+
+    .muted-frames-empty {
+      color: var(--text-tertiary);
+      font-style: italic;
+      font-size: var(--font-size-sm);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="generator">Generator</button>
+      <button class="tab-btn" data-tab="inspector">Inspector</button>
+    </div>
+
+    <!-- Generator Tab -->
+    <div class="tab-content active" id="tab-generator">
+      <!-- Selection Info -->
+      <div class="section">
+        <div class="section-title">Selected Frame</div>
+        <div class="selection-info" id="selectionInfo" style="margin-bottom: 10px;">
+          <div class="selection-icon empty" id="selectionIcon">
+            <svg viewBox="0 0 24 24">
+              <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z"/>
+            </svg>
+          </div>
+          <div class="selection-details">
+            <div class="selection-name selection-empty" id="selectionName">No frame selected</div>
+            <div class="selection-meta" id="selectionMeta">Select a frame to convert</div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="flex-row">
+    <!-- Mobile Width -->
+      <div class="section">
+        <div class="section-title">Target Width</div>
+        <div class="presets">
+          <button class="preset-btn active" data-width="414">Mobile (414)</button>
+          <button class="preset-btn" data-width="390">iPhone Pro (390)</button>
+          <button class="preset-btn" data-width="375">iPhone (375)</button>
+          <button class="preset-btn" data-width="768">Tablet (768)</button>
+           <button class="preset-btn" data-width="1024">Tablet (1024)</button>
+        </div>
+        <input type="number" id="mobileWidth" value="414" min="280" max="1920" step="1">
+      </div>
+
+      <!-- Container Padding -->
+      <div class="section">
+        <div class="section-title">Container Padding (left/right)</div>
+        <div class="input-row">
+          <input type="number" id="containerPadding" value="20" min="0" max="100" step="1">
+          <span class="input-suffix">px</span>
+        </div>
+        <div class="hint">Spacing for content inside mobile container</div>
+      </div>
+      </div>
+
+      <!-- Max Spacing Cap -->
+      <div class="section" style="margin-top: 10px;">
+        <div class="section-title">Max Spacing Cap</div>
+        <div class="input-row">
+          <input type="number" id="maxSpacing" value="40" min="16" max="100" step="4">
+          <span class="input-suffix">px</span>
+        </div>
+        <div class="hint">Maximum spacing between items when converting to mobile</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Manual Source Frames -->
+      <div class="section">
+        <div class="section-title">Manual Sections Source (Optional)</div>
+        <label class="manual-frame-item" style="margin-bottom: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+          <input type="checkbox" id="enableManualReplacement">
+          <span style="font-weight: 500;">Enable manual section replacement</span>
+        </label>
+        <label class="manual-frame-item" style="margin-bottom: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+          <input type="checkbox" id="generateMultipleVersions">
+          <span style="font-weight: 500;">Generate 3 versions for comparison</span>
+        </label>
+
+        <!-- Collapsible Advanced Settings -->
+        <details id="advancedSettings" style="margin-bottom: 8px;">
+          <summary style="cursor: pointer; font-weight: 500; font-size: var(--font-size-sm); color: var(--text-primary); padding: 8px 0; user-select: none;">
+            ▸ Advanced Settings
+          </summary>
+          <div style="padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-top: 8px;">
+            <!-- Preserved Components -->
+            <div style="margin-bottom: 12px;">
+              <div style="font-weight: 500; margin-bottom: 4px; font-size: var(--font-size-sm); color: var(--text-primary);">Preserved Components (one per line)</div>
+              <div class="hint" style="margin-bottom: 8px;">Component names that should NOT be detached. Keep button/icon instances intact.</div>
+              <textarea id="preservedComponentNames" placeholder="button&#10;btn&#10;icon" style="min-height: 60px;"></textarea>
+            </div>
+
+            <!-- UI Control Patterns -->
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px; font-size: var(--font-size-sm); color: var(--text-primary);">UI Control Patterns (one per line)</div>
+              <div class="hint" style="margin-bottom: 8px;">Elements matching these patterns will keep their natural size (won't stretch to FILL width).</div>
+              <textarea id="uiControlPatterns" placeholder="button&#10;btn&#10;cta&#10;input&#10;field&#10;search&#10;tab&#10;icon" style="min-height: 80px;"></textarea>
+            </div>
+
+            <!-- Muted Frames (Don't ask again) -->
+            <details class="muted-frames-section" id="mutedFramesDetails">
+              <summary>Muted frames (<span id="mutedFramesCount">0</span>)</summary>
+              <div id="mutedFramesList" class="muted-frames-list">
+                <div class="muted-frames-empty">No muted frames</div>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <div class="hint" style="margin-bottom: 8px;">Select a frame on canvas, then click "Add Selected Frame" to add it as a manual source.</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <button id="addSelectedFrameBtn" class="preset-btn" style="flex: 1;">
+            Add Selected Frame
+          </button>
+          <button id="clearManualFramesBtn" class="preset-btn" style="flex: 1;">
+            Clear All
+          </button>
+        </div>
+        <div id="manualFramesList" class="manual-frames-list">
+          <div class="hint">No frames selected. Select a frame on canvas and click "Add Selected Frame".</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Font Size Options -->
+      <div class="section">
+        <div class="section-title">Font Size</div>
+        <div class="radio-group" id="fontSizeOptions">
+          <label class="radio-option selected" data-value="keep">
+            <input type="radio" name="fontMode" value="keep" checked>
+            <div class="radio-content">
+              <div class="radio-label">Keep font size</div>
+              <div class="radio-desc">Keep original font sizes unchanged</div>
+            </div>
+          </label>
+          <label class="radio-option" data-value="map">
+            <input type="radio" name="fontMode" value="map">
+            <div class="radio-content">
+              <div class="radio-label">Map text styles</div>
+              <div class="radio-desc">Desktop/H1 → Mobile/H1 (if style exists)</div>
+            </div>
+          </label>
+          <label class="radio-option" data-value="scale">
+            <input type="radio" name="fontMode" value="scale">
+            <div class="radio-content">
+              <div class="radio-label">Scale font size</div>
+              <div class="radio-desc">Multiply all font sizes by a factor</div>
+              <div class="radio-input">
+                <input type="number" id="textScale" value="0.85" min="0.5" max="1.5" step="0.05" disabled>
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="message-container" id="messageContainer">
+        <div class="message-box" id="messageBox">
+          <div id="messageText"></div>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div id="progressContainer" class="progress-container">
+        <div class="progress-info">
+          <span id="progressText" class="progress-text">Processing...</span>
+          <span id="progressCount" class="progress-count">0 / 0</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="button-group">
+        <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="convertBtn" disabled>Generate</button>
+      </div>
+    </div>
+
+    <!-- Inspector Tab -->
+    <div class="tab-content" id="tab-inspector">
+      <!-- Selected Node Info -->
+      <div class="section">
+        <div class="section-title">Selected Node</div>
+        <div class="selection-info" id="inspectorSelectionInfo">
+          <div class="selection-icon empty" id="inspectorSelectionIcon">
+            <svg viewBox="0 0 24 24">
+              <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z"/>
+            </svg>
+          </div>
+          <div class="selection-details">
+            <div class="selection-name selection-empty" id="inspectorSelectionName">No node selected</div>
+            <div class="selection-meta" id="inspectorSelectionType">Select a node to inspect</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="section">
+        <div class="section-title">Preview</div>
+        <div class="inspector-preview" id="inspectorPreview">
+          <div class="inspector-preview-empty">Select a node to see preview</div>
+        </div>
+      </div>
+     <!-- JSON Output -->
+      <div class="section">
+           <button class="btn btn-primary" id="copyJsonBtn" style="margin-top: var(--spacing-sm); flex: auto;">
+          Copy node structure
+        </button>
+        <div class="section-title">Node Structure (JSON)</div>
+        <div class="inspector-options">
+          <label>
+            <input type="checkbox" id="minifyJson" checked>
+            Minify JSON output
+          </label>
+        </div>
+        <div class="inspector-json">
+          <textarea id="inspectorJsonOutput" readonly placeholder="Select a node to see JSON structure"></textarea>
+          <div class="copy-success" id="copySuccess">Copied!</div>
+        </div>
+     
+      </div>
+      <!-- Node Info Grid -->
+      <div class="section" style="margin-top: 30px;">
+        <div class="section-title">Properties</div>
+        <div class="inspector-info" id="inspectorInfo">
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">x</span>
+            <span class="inspector-info-value" id="infoX">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">y</span>
+            <span class="inspector-info-value" id="infoY">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">width</span>
+            <span class="inspector-info-value" id="infoWidth">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">height</span>
+            <span class="inspector-info-value" id="infoHeight">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">padding left</span>
+            <span class="inspector-info-value" id="infoPaddingLeft">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">padding right</span>
+            <span class="inspector-info-value" id="infoPaddingRight">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">padding top</span>
+            <span class="inspector-info-value" id="infoPaddingTop">-</span>
+          </div>
+          <div class="inspector-info-item">
+            <span class="inspector-info-label">padding bottom</span>
+            <span class="inspector-info-value" id="infoPaddingBottom">-</span>
+          </div>
+        </div>
+      </div>
+
+ 
+    </div>
+
+    <div class="footer">
+      Breakpoint Generator v2.0
+    </div>
+  </div>
+
+  <!-- Pattern Match Confirmation Modal -->
+  <div class="modal-overlay" id="patternMatchModal">
+    <div class="modal-content">
+      <div class="modal-title">
+        <div class="modal-title-icon">!</div>
+        Pattern Match Detected
+      </div>
+      <div class="modal-info">
+        <div class="modal-info-row">
+          <span class="modal-info-label">Frame:</span>
+          <span class="modal-info-value" id="modalFrameName">-</span>
+        </div>
+        <div class="modal-info-row">
+          <span class="modal-info-label">Matched:</span>
+          <span class="modal-info-value highlight" id="modalPattern">-</span>
+        </div>
+      </div>
+      <div class="modal-layout-preview">
+        <div class="modal-layout-box current" id="modalCurrentLayout">HORIZONTAL</div>
+        <span class="modal-layout-arrow">→</span>
+        <div class="modal-layout-box result" id="modalResultLayout">Keep HORIZONTAL</div>
+      </div>
+      <div class="modal-desc">
+        This frame matches a UI control pattern and will keep its current layout. Click "Skip Matching" to convert it to vertical layout instead.
+      </div>
+      <label class="modal-checkbox">
+        <input type="checkbox" id="modalDontAskAgain">
+        <span>Don't ask again for "<span id="modalDontAskName">this name</span>"</span>
+      </label>
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" id="modalSkipBtn">Skip Matching</button>
+        <button class="btn btn-warning" id="modalContinueBtn">Continue (Keep Layout)</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tab Management
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabId = btn.dataset.tab;
+
+        // Update button states
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update content visibility
+        tabContents.forEach(content => {
+          content.classList.toggle('active', content.id === `tab-${tabId}`);
+        });
+
+        // Request node info when switching to inspector tab
+        if (tabId === 'inspector') {
+          parent.postMessage({ pluginMessage: { type: 'GET_NODE_INFO' } }, '*');
+        }
+      });
+    });
+
+    // DOM Elements - Generator Tab
+    const selectionIcon = document.getElementById('selectionIcon');
+    const selectionName = document.getElementById('selectionName');
+    const selectionMeta = document.getElementById('selectionMeta');
+    const mobileWidthInput = document.getElementById('mobileWidth');
+    const containerPaddingInput = document.getElementById('containerPadding');
+    const maxSpacingInput = document.getElementById('maxSpacing');
+    const textScaleInput = document.getElementById('textScale');
+    const presetButtons = document.querySelectorAll('.preset-btn[data-width]');
+    const radioOptions = document.querySelectorAll('.radio-option');
+    const messageContainer = document.getElementById('messageContainer');
+    const messageBox = document.getElementById('messageBox');
+    const messageText = document.getElementById('messageText');
+    const convertBtn = document.getElementById('convertBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const addSelectedFrameBtn = document.getElementById('addSelectedFrameBtn');
+    const clearManualFramesBtn = document.getElementById('clearManualFramesBtn');
+    const manualFramesList = document.getElementById('manualFramesList');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressText = document.getElementById('progressText');
+    const progressCount = document.getElementById('progressCount');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const enableManualReplacementCheckbox = document.getElementById('enableManualReplacement');
+    const generateMultipleVersionsCheckbox = document.getElementById('generateMultipleVersions');
+    const preservedComponentNamesTextarea = document.getElementById('preservedComponentNames');
+    const uiControlPatternsTextarea = document.getElementById('uiControlPatterns');
+
+    // DOM Elements - Inspector Tab
+    const inspectorSelectionIcon = document.getElementById('inspectorSelectionIcon');
+    const inspectorSelectionName = document.getElementById('inspectorSelectionName');
+    const inspectorSelectionType = document.getElementById('inspectorSelectionType');
+    const inspectorPreview = document.getElementById('inspectorPreview');
+    const inspectorJsonOutput = document.getElementById('inspectorJsonOutput');
+    const minifyJsonCheckbox = document.getElementById('minifyJson');
+    const copyJsonBtn = document.getElementById('copyJsonBtn');
+    const copySuccess = document.getElementById('copySuccess');
+    const infoX = document.getElementById('infoX');
+    const infoY = document.getElementById('infoY');
+    const infoWidth = document.getElementById('infoWidth');
+    const infoHeight = document.getElementById('infoHeight');
+    const infoPaddingLeft = document.getElementById('infoPaddingLeft');
+    const infoPaddingRight = document.getElementById('infoPaddingRight');
+    const infoPaddingTop = document.getElementById('infoPaddingTop');
+    const infoPaddingBottom = document.getElementById('infoPaddingBottom');
+
+    let hasValidSelection = false;
+    let manualFrames = []; // Array of {id, name, manualSectionCount}
+    let selectedFrameIds = [];
+    let currentNodeJson = null;
+
+    // DOM Elements - Pattern Match Modal
+    const patternMatchModal = document.getElementById('patternMatchModal');
+    const modalFrameName = document.getElementById('modalFrameName');
+    const modalPattern = document.getElementById('modalPattern');
+    const modalCurrentLayout = document.getElementById('modalCurrentLayout');
+    const modalResultLayout = document.getElementById('modalResultLayout');
+    const modalSkipBtn = document.getElementById('modalSkipBtn');
+    const modalContinueBtn = document.getElementById('modalContinueBtn');
+    const modalDontAskAgain = document.getElementById('modalDontAskAgain');
+    const modalDontAskName = document.getElementById('modalDontAskName');
+
+    // DOM Elements - Muted Frames
+    const mutedFramesList = document.getElementById('mutedFramesList');
+    const mutedFramesCount = document.getElementById('mutedFramesCount');
+    const mutedFramesDetails = document.getElementById('mutedFramesDetails');
+
+    let currentMatchId = null;
+    let currentMatchFrameName = null;
+    // Map: frameName -> { action: 'skip' | 'keep' }
+    let mutedFrames = new Map();
+
+    // Muted Frames Functions
+    function addMutedFrame(frameName, action) {
+      mutedFrames.set(frameName, { action });
+      renderMutedFramesList();
+      // Send to plugin
+      parent.postMessage({
+        pluginMessage: {
+          type: 'MUTE_FRAME',
+          frameName,
+          action
+        }
+      }, '*');
+    }
+
+    function removeMutedFrame(frameName) {
+      mutedFrames.delete(frameName);
+      renderMutedFramesList();
+      // Send to plugin
+      parent.postMessage({
+        pluginMessage: {
+          type: 'UNMUTE_FRAME',
+          frameName
+        }
+      }, '*');
+    }
+
+    function renderMutedFramesList() {
+      mutedFramesCount.textContent = mutedFrames.size;
+
+      if (mutedFrames.size === 0) {
+        mutedFramesList.innerHTML = '<div class="muted-frames-empty">No muted frames</div>';
+        return;
+      }
+
+      let html = '';
+      mutedFrames.forEach((data, frameName) => {
+        const actionText = data.action === 'skip' ? 'Convert' : 'Keep';
+        html += `
+          <div class="muted-frame-item">
+            <span class="muted-frame-name" title="${frameName}">${frameName}</span>
+            <span class="muted-frame-action">${actionText}</span>
+            <button class="muted-frame-remove" data-frame="${frameName}" title="Remove">×</button>
+          </div>
+        `;
+      });
+      mutedFramesList.innerHTML = html;
+
+      // Add click handlers for remove buttons
+      mutedFramesList.querySelectorAll('.muted-frame-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const frameName = e.target.dataset.frame;
+          removeMutedFrame(frameName);
+        });
+      });
+    }
+
+    // Pattern Match Modal Functions
+    function showPatternMatchModal(data) {
+      currentMatchId = data.matchId;
+      currentMatchFrameName = data.frameName;
+      modalFrameName.textContent = data.frameName;
+      modalDontAskName.textContent = data.frameName;
+      modalPattern.textContent = `"${data.pattern}"`;
+      modalCurrentLayout.textContent = data.currentLayout;
+      modalResultLayout.textContent = data.willBecome;
+      modalDontAskAgain.checked = false; // Reset checkbox
+      patternMatchModal.classList.add('visible');
+    }
+
+    function hidePatternMatchModal() {
+      patternMatchModal.classList.remove('visible');
+      currentMatchId = null;
+      currentMatchFrameName = null;
+    }
+
+    // Modal button handlers
+    modalSkipBtn.addEventListener('click', () => {
+      if (currentMatchId) {
+        // Check if "Don't ask again" is checked
+        if (modalDontAskAgain.checked && currentMatchFrameName) {
+          addMutedFrame(currentMatchFrameName, 'skip');
+        }
+
+        parent.postMessage({
+          pluginMessage: {
+            type: 'PATTERN_MATCH_RESPONSE',
+            matchId: currentMatchId,
+            skipMatching: true,
+            mute: modalDontAskAgain.checked
+          }
+        }, '*');
+      }
+      hidePatternMatchModal();
+    });
+
+    modalContinueBtn.addEventListener('click', () => {
+      if (currentMatchId) {
+        // Check if "Don't ask again" is checked
+        if (modalDontAskAgain.checked && currentMatchFrameName) {
+          addMutedFrame(currentMatchFrameName, 'keep');
+        }
+
+        parent.postMessage({
+          pluginMessage: {
+            type: 'PATTERN_MATCH_RESPONSE',
+            matchId: currentMatchId,
+            skipMatching: false,
+            mute: modalDontAskAgain.checked
+          }
+        }, '*');
+      }
+      hidePatternMatchModal();
+    });
+
+    // Progress Functions
+    function showProgress(current, total, stepName) {
+      progressContainer.classList.add('visible');
+      progressText.textContent = stepName;
+      progressCount.textContent = `${current} / ${total}`;
+      const percentage = total > 0 ? (current / total) * 100 : 0;
+      progressBarFill.style.width = `${percentage}%`;
+    }
+
+    function hideProgress() {
+      progressContainer.classList.remove('visible');
+      progressBarFill.style.width = '0%';
+    }
+
+    // Preset Buttons
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const width = parseInt(btn.dataset.width, 10);
+        mobileWidthInput.value = width;
+        presetButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        saveCurrentSettings();
+      });
+    });
+
+    mobileWidthInput.addEventListener('input', () => {
+      const value = parseInt(mobileWidthInput.value, 10);
+      presetButtons.forEach(btn => {
+        const width = parseInt(btn.dataset.width, 10);
+        btn.classList.toggle('active', width === value);
+      });
+      saveCurrentSettings();
+    });
+
+    // Radio Options
+    radioOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        const radio = option.querySelector('input[type="radio"]');
+        radio.checked = true;
+
+        radioOptions.forEach(o => o.classList.remove('selected'));
+        option.classList.add('selected');
+
+        // Enable/disable scale input
+        const value = option.dataset.value;
+        textScaleInput.disabled = value !== 'scale';
+        saveCurrentSettings();
+      });
+    });
+
+    // Container Padding Input
+    containerPaddingInput.addEventListener('input', () => {
+      saveCurrentSettings();
+    });
+
+    // Max Spacing Input
+    maxSpacingInput.addEventListener('input', () => {
+      saveCurrentSettings();
+    });
+
+    // Text Scale Input
+    textScaleInput.addEventListener('input', () => {
+      saveCurrentSettings();
+    });
+
+    // Enable Manual Replacement Checkbox
+    enableManualReplacementCheckbox.addEventListener('change', () => {
+      updateManualFramesUIState();
+      saveCurrentSettings();
+    });
+
+    // Generate Multiple Versions Checkbox
+    generateMultipleVersionsCheckbox.addEventListener('change', () => {
+      saveCurrentSettings();
+    });
+
+    // Preserved Component Names Textarea
+    preservedComponentNamesTextarea.addEventListener('input', () => {
+      saveCurrentSettings();
+    });
+
+    // UI Control Patterns Textarea
+    uiControlPatternsTextarea.addEventListener('input', () => {
+      saveCurrentSettings();
+    });
+
+    // Convert Button
+    convertBtn.addEventListener('click', () => {
+      if (!hasValidSelection) return;
+
+      hideMessage();
+
+      // Show progress bar immediately
+      showProgress(0, 15, 'Starting...');
+
+      const fontMode = document.querySelector('input[name="fontMode"]:checked').value;
+
+      // Parse preserved component names from textarea (split by newlines and trim)
+      const preservedComponentNames = preservedComponentNamesTextarea.value
+        .split('\n')
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
+      // Parse UI control patterns from textarea
+      const uiControlPatterns = uiControlPatternsTextarea.value
+        .split('\n')
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
+      const config = {
+        mobileWidth: parseInt(mobileWidthInput.value, 10) || 375,
+        containerPadding: parseInt(containerPaddingInput.value, 10) || 20,
+        maxSpacing: parseInt(maxSpacingInput.value, 10) || 40,
+        fontMode: fontMode,
+        textScale: fontMode === 'scale' ? parseFloat(textScaleInput.value) || 0.85 : 1,
+        manualSourceFrameIds: selectedFrameIds,
+        enableManualReplacement: enableManualReplacementCheckbox.checked,
+        generateMultipleVersions: generateMultipleVersionsCheckbox.checked,
+        preservedComponentNames: preservedComponentNames,
+        uiControlPatterns: uiControlPatterns,
+      };
+
+      parent.postMessage({
+        pluginMessage: { type: 'CONVERT', config }
+      }, '*');
+
+      convertBtn.disabled = true;
+      convertBtn.textContent = 'Generating...';
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'CANCEL' } }, '*');
+    });
+
+    // Inspector Tab - Copy JSON Button
+    copyJsonBtn.addEventListener('click', () => {
+      if (currentNodeJson) {
+        const jsonStr = minifyJsonCheckbox.checked
+          ? JSON.stringify(currentNodeJson)
+          : JSON.stringify(currentNodeJson, null, 2);
+
+        // Use textarea for copy (works in Figma iframe)
+        copyToClipboard(jsonStr);
+      }
+    });
+
+    // Copy to clipboard function (works in Figma plugin iframe)
+    function copyToClipboard(text) {
+      // Method 1: Try using the textarea that's already visible
+      const textarea = inspectorJsonOutput;
+      const originalValue = textarea.value;
+
+      textarea.value = text;
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+
+      try {
+        const success = document.execCommand('copy');
+        if (success) {
+          copySuccess.classList.add('visible');
+          setTimeout(() => {
+            copySuccess.classList.remove('visible');
+          }, 1500);
+        } else {
+          // Fallback: try navigator.clipboard
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(() => {
+              copySuccess.classList.add('visible');
+              setTimeout(() => {
+                copySuccess.classList.remove('visible');
+              }, 1500);
+            }).catch(err => {
+              console.error('Failed to copy:', err);
+              alert('Failed to copy. Please select the text and copy manually.');
+            });
+          }
+        }
+      } catch (err) {
+        console.error('execCommand failed:', err);
+      }
+
+      // Restore original value and deselect
+      textarea.value = originalValue;
+      textarea.blur();
+    }
+
+    // Minify checkbox change
+    minifyJsonCheckbox.addEventListener('change', () => {
+      if (currentNodeJson) {
+        inspectorJsonOutput.value = minifyJsonCheckbox.checked
+          ? JSON.stringify(currentNodeJson)
+          : JSON.stringify(currentNodeJson, null, 2);
+      }
+    });
+
+    // Message Handlers
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      switch (msg.type) {
+        case 'SELECTION_INFO':
+          updateSelectionInfo(msg);
+          break;
+
+        case 'SELECTED_FRAME_INFO':
+          // When user clicks "Add Selected Frame"
+          if (msg.frame) {
+            // Check if frame already exists
+            if (!manualFrames.some(f => f.id === msg.frame.id)) {
+              manualFrames.push(msg.frame);
+              // Auto-check the newly added frame
+              if (!selectedFrameIds.includes(msg.frame.id)) {
+                selectedFrameIds.push(msg.frame.id);
+              }
+              renderManualFramesList();
+              saveCurrentSettings();
+            }
+          } else {
+            showMessage('error', '✗ Please select a frame on canvas first');
+          }
+          break;
+
+        case 'MANUAL_FRAMES_INFO':
+          // Restore manual frames from saved settings
+          manualFrames = msg.frames || [];
+          // selectedFrameIds is already set from SETTINGS_LOADED
+          // Just render the list with correct checkboxes
+          renderManualFramesList();
+          break;
+
+        case 'SETTINGS_LOADED':
+          console.log('📥 UI received SETTINGS_LOADED:', msg.config);
+
+          // Restore saved settings
+          mobileWidthInput.value = msg.config.mobileWidth;
+          containerPaddingInput.value = msg.config.containerPadding;
+          maxSpacingInput.value = msg.config.maxSpacing || 40;
+          textScaleInput.value = msg.config.textScale;
+
+          console.log('📝 Updated input values:', {
+            mobileWidth: mobileWidthInput.value,
+            containerPadding: containerPaddingInput.value,
+            textScale: textScaleInput.value
+          });
+
+          // Update preset buttons active state
+          presetButtons.forEach(btn => {
+            const btnWidth = parseInt(btn.dataset.width, 10);
+            if (btnWidth === msg.config.mobileWidth) {
+              btn.classList.add('active');
+              console.log(`✓ Set button ${btnWidth} to active`);
+            } else {
+              btn.classList.remove('active');
+            }
+          });
+
+          // Restore font mode
+          const fontModeRadio = document.querySelector(`input[name="fontMode"][value="${msg.config.fontMode}"]`);
+          if (fontModeRadio) {
+            fontModeRadio.checked = true;
+            radioOptions.forEach(opt => opt.classList.remove('selected'));
+            fontModeRadio.closest('.radio-option').classList.add('selected');
+            console.log(`✓ Set font mode to: ${msg.config.fontMode}`);
+          }
+
+          // Update text scale input disabled state
+          textScaleInput.disabled = msg.config.fontMode !== 'scale';
+
+          // Restore selectedFrameIds first
+          selectedFrameIds = msg.config.manualSourceFrameIds || [];
+
+          // Restore manual frames (request from backend)
+          if (selectedFrameIds.length > 0) {
+            parent.postMessage({
+              pluginMessage: { type: 'GET_MANUAL_FRAMES_INFO', frameIds: selectedFrameIds }
+            }, '*');
+          } else {
+            manualFrames = [];
+            renderManualFramesList();
+          }
+
+          // Restore enableManualReplacement checkbox state
+          enableManualReplacementCheckbox.checked = msg.config.enableManualReplacement || false;
+          console.log(`✓ Set enableManualReplacement to: ${enableManualReplacementCheckbox.checked}`);
+
+          // Restore generateMultipleVersions checkbox state
+          generateMultipleVersionsCheckbox.checked = msg.config.generateMultipleVersions || false;
+          console.log(`✓ Set generateMultipleVersions to: ${generateMultipleVersionsCheckbox.checked}`);
+
+          // Restore preserved component names
+          if (msg.config.preservedComponentNames && msg.config.preservedComponentNames.length > 0) {
+            preservedComponentNamesTextarea.value = msg.config.preservedComponentNames.join('\n');
+          } else {
+            preservedComponentNamesTextarea.value = 'button\nbtn\nicon';
+          }
+          console.log(`✓ Set preservedComponentNames to: ${msg.config.preservedComponentNames}`);
+
+          // Restore UI control patterns
+          if (msg.config.uiControlPatterns && msg.config.uiControlPatterns.length > 0) {
+            uiControlPatternsTextarea.value = msg.config.uiControlPatterns.join('\n');
+          } else {
+            uiControlPatternsTextarea.value = 'button\nbtn\ncta\ninput\nfield\nsearch\ntab\nicon';
+          }
+          console.log(`✓ Set uiControlPatterns to: ${msg.config.uiControlPatterns}`);
+
+          // Update UI state based on checkbox
+          updateManualFramesUIState();
+          break;
+
+        case 'MUTED_FRAMES_LOADED':
+          // Restore muted frames from storage
+          console.log('📥 UI received MUTED_FRAMES_LOADED:', msg.mutedFrames);
+          mutedFrames.clear();
+          if (msg.mutedFrames && typeof msg.mutedFrames === 'object') {
+            Object.entries(msg.mutedFrames).forEach(([frameName, action]) => {
+              mutedFrames.set(frameName, { action });
+            });
+          }
+          renderMutedFramesList();
+          break;
+
+        case 'PROGRESS_UPDATE':
+          console.log(`🎨 UI PROGRESS: ${msg.current}/${msg.total} - ${msg.stepName}`);
+          showProgress(msg.current, msg.total, msg.stepName);
+          break;
+
+        case 'CONVERSION_COMPLETE':
+          hideProgress();
+          showMessage('success', `✓ Created: ${msg.result.mobileFrameName}`);
+          convertBtn.disabled = false;
+          convertBtn.textContent = 'Generate';
+          break;
+
+        case 'CONVERSION_ERROR':
+          hideProgress();
+          showMessage('error', `✗ ${msg.errors.join(', ')}`);
+          convertBtn.disabled = false;
+          convertBtn.textContent = 'Generate';
+          break;
+
+        case 'VALIDATION_FAILED':
+          hideProgress();
+          const errorMsg = msg.result.errors.map(e => e.message).join(', ');
+          showMessage('error', `✗ ${errorMsg}`);
+          convertBtn.disabled = false;
+          convertBtn.textContent = 'Generate';
+          break;
+
+        case 'NODE_INFO':
+          updateInspectorInfo(msg);
+          break;
+
+        case 'PATTERN_MATCH_CONFIRM':
+          showPatternMatchModal(msg);
+          break;
+      }
+    };
+
+    function updateSelectionInfo(info) {
+      hasValidSelection = info.hasSelection;
+
+      if (info.hasSelection) {
+        selectionIcon.classList.remove('empty');
+        selectionName.textContent = info.frameName;
+        selectionName.classList.remove('selection-empty');
+        selectionMeta.textContent = `${info.frameWidth}px × ${info.frameHeight}px`;
+        convertBtn.disabled = false;
+      } else {
+        selectionIcon.classList.add('empty');
+        selectionName.textContent = 'No frame selected';
+        selectionName.classList.add('selection-empty');
+        selectionMeta.textContent = 'Select a frame to convert';
+        convertBtn.disabled = true;
+      }
+    }
+
+    function updateInspectorInfo(info) {
+      if (info.hasSelection) {
+        inspectorSelectionIcon.classList.remove('empty');
+        inspectorSelectionName.textContent = info.nodeName;
+        inspectorSelectionName.classList.remove('selection-empty');
+        inspectorSelectionType.textContent = info.nodeType;
+
+        // Update info grid
+        infoX.textContent = info.x !== undefined ? info.x : '-';
+        infoY.textContent = info.y !== undefined ? info.y : '-';
+        infoWidth.textContent = info.width !== undefined ? info.width : '-';
+        infoHeight.textContent = info.height !== undefined ? info.height : '-';
+        infoPaddingLeft.textContent = info.paddingLeft !== undefined ? info.paddingLeft : '-';
+        infoPaddingRight.textContent = info.paddingRight !== undefined ? info.paddingRight : '-';
+        infoPaddingTop.textContent = info.paddingTop !== undefined ? info.paddingTop : '-';
+        infoPaddingBottom.textContent = info.paddingBottom !== undefined ? info.paddingBottom : '-';
+
+        // Update JSON
+        currentNodeJson = info.nodeJson;
+        inspectorJsonOutput.value = minifyJsonCheckbox.checked
+          ? JSON.stringify(currentNodeJson)
+          : JSON.stringify(currentNodeJson, null, 2);
+
+        // Update preview
+        if (info.previewImage) {
+          inspectorPreview.innerHTML = `<img src="${info.previewImage}" alt="Preview">`;
+        } else {
+          inspectorPreview.innerHTML = '<div class="inspector-preview-empty">Preview not available</div>';
+        }
+      } else {
+        inspectorSelectionIcon.classList.add('empty');
+        inspectorSelectionName.textContent = 'No node selected';
+        inspectorSelectionName.classList.add('selection-empty');
+        inspectorSelectionType.textContent = 'Select a node to inspect';
+
+        // Clear info
+        infoX.textContent = '-';
+        infoY.textContent = '-';
+        infoWidth.textContent = '-';
+        infoHeight.textContent = '-';
+        infoPaddingLeft.textContent = '-';
+        infoPaddingRight.textContent = '-';
+        infoPaddingTop.textContent = '-';
+        infoPaddingBottom.textContent = '-';
+
+        currentNodeJson = null;
+        inspectorJsonOutput.value = '';
+        inspectorPreview.innerHTML = '<div class="inspector-preview-empty">Select a node to see preview</div>';
+      }
+    }
+
+    function showMessage(type, text) {
+      messageContainer.classList.add('visible');
+      messageBox.className = `message-box ${type}`;
+      messageText.textContent = text;
+    }
+
+    function hideMessage() {
+      messageContainer.classList.remove('visible');
+    }
+
+    // Manual Frames Management
+    function updateManualFramesUIState() {
+      const isEnabled = enableManualReplacementCheckbox.checked;
+
+      // Enable/disable buttons
+      addSelectedFrameBtn.disabled = !isEnabled;
+      clearManualFramesBtn.disabled = !isEnabled;
+
+      // Enable/disable list
+      manualFramesList.style.opacity = isEnabled ? '1' : '0.5';
+      manualFramesList.style.pointerEvents = isEnabled ? 'auto' : 'none';
+    }
+
+    function renderManualFramesList() {
+      if (manualFrames.length === 0) {
+        manualFramesList.innerHTML = '<div class="hint">No frames selected. Select a frame on canvas and click "Add Selected Frame".</div>';
+        selectedFrameIds = [];
+        return;
+      }
+
+      manualFramesList.innerHTML = manualFrames.map(frame => `
+        <div class="manual-frame-item" style="justify-content: space-between;">
+          <label style="display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer;">
+            <input
+              type="checkbox"
+              data-frame-id="${frame.id}"
+              ${selectedFrameIds.includes(frame.id) ? 'checked' : ''}
+            >
+            <span class="manual-frame-name">${frame.name}</span>
+            ${frame.manualSectionCount > 0 ? `<span class="manual-frame-count">${frame.manualSectionCount} manual</span>` : ''}
+          </label>
+          <button class="preset-btn" data-frame-id="${frame.id}" style="padding: 4px 8px; font-size: 12px;">
+            Remove
+          </button>
+        </div>
+      `).join('');
+
+      // Add event listeners to checkboxes
+      manualFramesList.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', (e) => {
+          const frameId = e.target.dataset.frameId;
+          if (e.target.checked) {
+            // Add to selectedFrameIds if not already there
+            if (!selectedFrameIds.includes(frameId)) {
+              selectedFrameIds.push(frameId);
+            }
+          } else {
+            // Remove from selectedFrameIds
+            selectedFrameIds = selectedFrameIds.filter(id => id !== frameId);
+          }
+          saveCurrentSettings();
+        });
+      });
+
+      // Add event listeners to remove buttons
+      manualFramesList.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const frameId = btn.dataset.frameId;
+          manualFrames = manualFrames.filter(f => f.id !== frameId);
+          selectedFrameIds = selectedFrameIds.filter(id => id !== frameId);
+          renderManualFramesList();
+          saveCurrentSettings();
+        });
+      });
+    }
+
+    function addSelectedFrame() {
+      parent.postMessage({
+        pluginMessage: { type: 'GET_SELECTED_FRAME_FOR_MANUAL' }
+      }, '*');
+    }
+
+    function clearManualFrames() {
+      manualFrames = [];
+      renderManualFramesList();
+      saveCurrentSettings();
+    }
+
+    function saveCurrentSettings() {
+      const fontMode = document.querySelector('input[name="fontMode"]:checked').value;
+
+      // Parse preserved component names from textarea
+      const preservedComponentNames = preservedComponentNamesTextarea.value
+        .split('\n')
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
+      // Parse UI control patterns from textarea
+      const uiControlPatterns = uiControlPatternsTextarea.value
+        .split('\n')
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
+      const config = {
+        mobileWidth: parseInt(mobileWidthInput.value, 10) || 414,
+        containerPadding: parseInt(containerPaddingInput.value, 10) || 20,
+        maxSpacing: parseInt(maxSpacingInput.value, 10) || 40,
+        fontMode: fontMode,
+        textScale: fontMode === 'scale' ? parseFloat(textScaleInput.value) || 0.85 : 1,
+        manualSourceFrameIds: selectedFrameIds,
+        enableManualReplacement: enableManualReplacementCheckbox.checked,
+        generateMultipleVersions: generateMultipleVersionsCheckbox.checked,
+        preservedComponentNames: preservedComponentNames,
+        uiControlPatterns: uiControlPatterns,
+      };
+
+      console.log('💾 UI sending SAVE_SETTINGS:', config);
+
+      parent.postMessage({
+        pluginMessage: { type: 'SAVE_SETTINGS', config }
+      }, '*');
+    }
+
+    // Manual frames buttons
+    addSelectedFrameBtn.addEventListener('click', addSelectedFrame);
+    clearManualFramesBtn.addEventListener('click', clearManualFrames);
+
+    // Initial request
+    parent.postMessage({ pluginMessage: { type: 'GET_SELECTION' } }, '*');
+  </script>
+</body>
+</html>
