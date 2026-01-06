@@ -297,19 +297,37 @@ console.log("ui.js loaded");
   reportTabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const tabName = tab.dataset.tab;
-      
+
       // Update tabs
       reportTabs.forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
-      
+
       // Update content
       reportContents.forEach(c => c.classList.remove("active"));
-      document.getElementById(`results-${tabName}`).classList.add("active");
-      
+      const targetContent = document.getElementById(`results-${tabName}`);
+      if (targetContent) {
+        targetContent.classList.add("active");
+      }
+
+      // Hide filter controls for settings tab, show for issues/tokens
+      const filterControls = document.getElementById("filter-controls");
+      if (filterControls) {
+        if (tabName === "settings") {
+          filterControls.style.display = "none";
+        } else {
+          // Show filter controls for issues/tokens tabs (if there's any content)
+          const hasContent = (tabName === "issues" && resultsIssues && resultsIssues.querySelector('.issue-group')) ||
+                            (tabName === "tokens" && resultsTokens && resultsTokens.querySelector('.token-group'));
+          if (hasContent || currentReportData.issues || currentReportData.tokens) {
+            filterControls.style.display = "";
+          }
+        }
+      }
+
       activeTab = tabName;
-      
-      // Save last active tab when user manually switches
-      if (currentReportData.issues || currentReportData.tokens) {
+
+      // Save last active tab when user manually switches (only for issues/tokens)
+      if (tabName !== "settings" && (currentReportData.issues || currentReportData.tokens)) {
         saveLastReport({
           issues: currentReportData.issues,
           issuesTimestamp: currentReportData.timestamp,
@@ -338,7 +356,7 @@ console.log("ui.js loaded");
         tab.classList.remove("active");
       }
     });
-    
+
     reportContents.forEach(content => {
       if (content.id === `results-${tabName}`) {
         content.classList.add("active");
@@ -346,7 +364,22 @@ console.log("ui.js loaded");
         content.classList.remove("active");
       }
     });
-    
+
+    // Hide filter controls for settings tab, show for issues/tokens
+    const filterControls = document.getElementById("filter-controls");
+    if (filterControls) {
+      if (tabName === "settings") {
+        filterControls.style.display = "none";
+      } else {
+        // Show filter controls for issues/tokens tabs (if there's any content)
+        const hasContent = (tabName === "issues" && resultsIssues && resultsIssues.querySelector('.issue-group')) ||
+                          (tabName === "tokens" && resultsTokens && resultsTokens.querySelector('.token-group'));
+        if (hasContent || currentReportData.issues || currentReportData.tokens) {
+          filterControls.style.display = "";
+        }
+      }
+    }
+
     activeTab = tabName;
   }
 
@@ -6083,6 +6116,7 @@ console.log("ui.js loaded");
 
     // Get typography rules
     const typographyRules = {
+      checkStyle: document.getElementById("rule-typo-style")?.checked || false,
       checkFontFamily: document.getElementById("rule-font-family")?.checked || false,
       checkFontSize: document.getElementById("rule-font-size")?.checked || false,
       checkFontWeight: document.getElementById("rule-font-weight")?.checked || false,

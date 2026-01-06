@@ -257,7 +257,8 @@ const STORAGE_KEYS = {
   lastReport: "design-qa-last-report",
   history: "design-qa-history",
   inputValues: "design-qa-input-values",
-  savedSettings: "design-qa-saved-settings"
+  savedSettings: "design-qa-saved-settings",
+  scanSettings: "design-qa-scan-settings"
 };
 
 const MAX_HISTORY_ENTRIES = 10;
@@ -3403,6 +3404,24 @@ figma.ui.onmessage = async msg => {
       } catch (e) {
         console.error("Failed to load input values", e);
         figma.ui.postMessage({ type: "input-values-data", values: null });
+      }
+      break;
+    }
+    case "save-scan-settings": {
+      try {
+        await figma.clientStorage.setAsync(STORAGE_KEYS.scanSettings, msg.settings || null);
+      } catch (e) {
+        console.error("Failed to save scan settings", e);
+      }
+      break;
+    }
+    case "load-scan-settings": {
+      try {
+        const settings = await figma.clientStorage.getAsync(STORAGE_KEYS.scanSettings);
+        figma.ui.postMessage({ type: "scan-settings-loaded", settings: settings || null });
+      } catch (e) {
+        console.error("Failed to load scan settings", e);
+        figma.ui.postMessage({ type: "scan-settings-loaded", settings: null });
       }
       break;
     }

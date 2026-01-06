@@ -166,22 +166,11 @@
         </div>
       </div>
 
-      <!-- Settings Panel -->
-      <div class="typography-panel" id="settings-panel">
-        <div class="typography-panel-header" id="settings-panel-header">
-          <button
-            class="issue-group-toggle"
-            type="button"
-            id="settings-panel-toggle"
-          >
-            <span class="issue-group-toggle-icon">▶</span>
-          </button>
-          <h4 style="font-size: 14px; font-weight: 600; margin: 0">
-            Panel Setting
-          </h4>
-        </div>
-        <div class="typography-panel-content">
-          <div class="footer">
+      <!-- Settings Panel (as tab content) -->
+      <div id="results-settings" class="report-content" style="padding-top: 0;">
+        <div class="settings-panel-inner">
+          <div style="border-radius: 8px;border: 1px solid #e5e5e7; background-color: #fff;">
+  <div class="footer">
             <div class="footer-left">
               <button
                 id="btn-save-settings"
@@ -262,6 +251,8 @@
               </div>
             </div>
           </div>
+          </div>
+        
 
           <div class="controls-group controls-group-padding">
             <div class="flex-row">
@@ -758,6 +749,9 @@
 
       <!-- Report Tabs -->
       <div class="report-tabs">
+        <button class="report-tab" data-tab="settings">
+          ⚙️ Settings
+        </button>
         <button class="report-tab active" data-tab="issues">
           📋 Issues
           <span class="tab-badge" id="issues-count">0</span>
@@ -1114,9 +1108,558 @@
           </div>
         </div>
       </div>
+         <!-- Scan Settings Modal -->
+    <div
+      id="scan-settings-modal"
+      class="settings-modal"
+      style="display: none"
+    >
+      <div class="settings-modal-content" style="max-width: 400px">
+        <div class="settings-modal-header">
+          <h3>⚙️ Scan Settings</h3>
+          <button id="btn-close-scan-settings" class="btn-close-history">
+            ✕
+          </button>
+        </div>
+        <div class="settings-modal-body">
+          <p style="margin: 0 0 16px 0; color: #86868b; font-size: 13px">
+            Select which checks to include when scanning. Unchecked groups will be skipped and hidden from results.
+          </p>
+          <div class="scan-settings-groups" style="display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto;">
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-naming" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📁 Naming Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-autolayout" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🖼️ Auto Layout</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-spacing" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✏️ Spacing</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-color" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Color</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-fontsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✍️ Font Size</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-textstyle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Text Style (Variable)</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-typography" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Typography Style Match</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-lineheight" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Line Height</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-position" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📍 Position Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-duplicate" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🔄 Duplicate Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-group" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📦 Group Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-component" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🧩 Component Reusable</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-emptyframe" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🗑️ Empty Frame Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-nestedgroup" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📚 Nested Group Layer</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-contrast" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🌈 Contrast (ADA AA)</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-textsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📱 Text Size (ADA)</span>
+            </label>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 16px">
+            <button
+              id="btn-scan-settings-check-all"
+              style="
+                flex: 1;
+                padding: 8px 12px;
+                background: #6c757d;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 13px;
+              "
+            >
+              ✓ Check All
+            </button>
+            <button
+              id="btn-scan-settings-uncheck-all"
+              style="
+                flex: 1;
+                padding: 8px 12px;
+                background: #6c757d;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 13px;
+              "
+            >
+              ✗ Uncheck All
+            </button>
+          </div>
+          <button
+            id="btn-scan-settings-apply"
+            style="
+              width: 100%;
+              margin-top: 12px;
+              padding: 12px 16px;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              border: none;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+            "
+          >
+            ✓ Apply Settings
+          </button>
+          <p id="scan-settings-note" style="margin: 12px 0 0 0; color: #ff9800; font-size: 12px; display: none;">
+            ⚠️ Settings changed. Click "Apply" to update, then re-scan to see changes.
+          </p>
+        </div>
+      </div>
     </div>
 
+    <!-- Floating Settings Button -->
+    <button
+      id="btn-floating-scan-settings"
+      class="btn-floating-settings"
+      title="Scan Settings"
+      style="
+        position: fixed;
+        bottom: 5px;
+        right: 5px;
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        border: none;
+        font-size: 27px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      "
+    >
+      ⚙️
+    </button>
+    </div>
+
+ 
+
     <script src="http://127.0.0.1:5500/ui.js?v=xsasssedffđfsdsasfssdaffdd2"></script>
-     <!-- import script -->
+    <!-- import script -->
+
+    <!-- Scan Settings Modal Logic -->
+    <script>
+    (function() {
+      function initScanSettings() {
+        const scanSettingsModal = document.getElementById('scan-settings-modal');
+        const btnFloatingSettings = document.getElementById('btn-floating-scan-settings');
+        const btnCloseScanSettings = document.getElementById('btn-close-scan-settings');
+        const btnCheckAll = document.getElementById('btn-scan-settings-check-all');
+        const btnUncheckAll = document.getElementById('btn-scan-settings-uncheck-all');
+        const btnApply = document.getElementById('btn-scan-settings-apply');
+        const settingsNote = document.getElementById('scan-settings-note');
+
+        const scanCheckboxIds = [
+          'scan-check-naming',
+          'scan-check-autolayout',
+          'scan-check-spacing',
+          'scan-check-color',
+          'scan-check-fontsize',
+          'scan-check-textstyle',
+          'scan-check-typography',
+          'scan-check-lineheight',
+          'scan-check-position',
+          'scan-check-duplicate',
+          'scan-check-group',
+          'scan-check-component',
+          'scan-check-emptyframe',
+          'scan-check-nestedgroup',
+          'scan-check-contrast',
+          'scan-check-textsize'
+        ];
+
+        // Mapping from checkbox key to issue group data-issue-type attribute
+        // Note: The data-issue-type values in the rendered HTML
+        const keyToIssueTypeMap = {
+          'naming': 'naming',
+          'autolayout': 'autolayout',
+          'spacing': 'spacing',
+          'color': 'color',
+          'fontsize': 'typography',           // Font size issues are in 'typography' type
+          'textstyle': 'typography-style',    // Text style variable issues
+          'typography': 'typography-check',   // Typography style match
+          'lineheight': 'line-height',        // Note: hyphen in actual type
+          'position': 'position',
+          'duplicate': 'duplicate',
+          'group': 'group',
+          'component': 'component',
+          'emptyframe': 'empty-frame',        // Note: hyphen in actual type
+          'nestedgroup': 'nested-group',      // Note: hyphen in actual type
+          'contrast': 'contrast',
+          'textsize': 'text-size-mobile'      // Note: actual type name
+        };
+
+        const scanCheckboxes = {};
+        scanCheckboxIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            const key = id.replace('scan-check-', '');
+            scanCheckboxes[key] = el;
+          }
+        });
+
+        // Applied settings (separate from checkbox state) - stored in memory only
+        let appliedSettings = {};
+
+        // Initialize default settings (all enabled)
+        function initDefaultSettings() {
+          Object.keys(scanCheckboxes).forEach(key => {
+            appliedSettings[key] = true;
+          });
+        }
+
+        // Load settings - just initialize defaults (no localStorage in Figma plugin)
+        function loadScanSettings() {
+          initDefaultSettings();
+          // Request saved settings from Figma plugin if available
+          try {
+            parent.postMessage({ pluginMessage: { type: 'load-scan-settings' } }, '*');
+          } catch (e) {
+            // Ignore - may not be in Figma context
+          }
+        }
+
+        // Save settings - just update checkForChanges (settings stored in memory)
+        function saveScanSettings() {
+          checkForChanges();
+        }
+
+        // Save applied settings - send to Figma plugin for persistence
+        function saveAppliedSettings() {
+          try {
+            parent.postMessage({
+              pluginMessage: {
+                type: 'save-scan-settings',
+                settings: appliedSettings
+              }
+            }, '*');
+          } catch (e) {
+            // Ignore - may not be in Figma context
+          }
+        }
+
+        // Listen for settings loaded from Figma plugin
+        window.addEventListener('message', function(event) {
+          if (event.data && event.data.pluginMessage) {
+            const msg = event.data.pluginMessage;
+            if (msg.type === 'scan-settings-loaded' && msg.settings) {
+              // Restore checkbox states and applied settings
+              Object.keys(msg.settings).forEach(key => {
+                if (scanCheckboxes[key]) {
+                  scanCheckboxes[key].checked = msg.settings[key];
+                }
+                appliedSettings[key] = msg.settings[key];
+              });
+              applyGroupVisibility();
+            }
+          }
+        });
+
+        // Check if current checkbox states differ from applied settings
+        function checkForChanges() {
+          let hasChanges = false;
+          Object.keys(scanCheckboxes).forEach(key => {
+            if (scanCheckboxes[key]) {
+              const currentValue = scanCheckboxes[key].checked;
+              const appliedValue = appliedSettings[key] !== false;
+              if (currentValue !== appliedValue) {
+                hasChanges = true;
+              }
+            }
+          });
+          if (settingsNote) {
+            settingsNote.style.display = hasChanges ? 'block' : 'none';
+          }
+        }
+
+        // Get current scan settings (checkbox state - expose globally)
+        window.getScanSettings = function() {
+          const settings = {};
+          Object.keys(scanCheckboxes).forEach(key => {
+            if (scanCheckboxes[key]) {
+              settings[key] = scanCheckboxes[key].checked;
+            }
+          });
+          return settings;
+        };
+
+        // Get applied scan settings (what's actually active - expose globally)
+        window.getAppliedScanSettings = function() {
+          return { ...appliedSettings };
+        };
+
+        // Reverse mapping: from issue-type to settings key
+        const issueTypeToKey = {};
+        for (const [key, issueType] of Object.entries(keyToIssueTypeMap)) {
+          issueTypeToKey[issueType] = key;
+        }
+
+        // Get settings key from group element using data-issue-type attribute
+        function getGroupKey(groupElement) {
+          // Use data-issue-type attribute (this is how issue groups are rendered)
+          const issueType = groupElement.getAttribute('data-issue-type');
+          if (issueType) {
+            const key = issueTypeToKey[issueType];
+            if (key) {
+              return key;
+            }
+          }
+
+          // Fallback: try data-type attribute (used in some places)
+          const dataType = groupElement.getAttribute('data-type');
+          if (dataType) {
+            const key = issueTypeToKey[dataType];
+            if (key) {
+              return key;
+            }
+          }
+
+          return null;
+        }
+
+        // Hide/show issue groups based on applied settings
+        function applyGroupVisibility() {
+          const issueGroups = document.querySelectorAll('.issue-group');
+          let totalErrors = 0;
+          let totalWarnings = 0;
+
+          issueGroups.forEach(group => {
+            const groupKey = getGroupKey(group);
+
+            if (groupKey && appliedSettings[groupKey] === false) {
+              group.style.display = 'none';
+            } else {
+              group.style.display = '';
+              // Count errors and warnings from visible groups
+              const errorIssues = group.querySelectorAll('.issue.error:not([style*="display: none"])');
+              const warnIssues = group.querySelectorAll('.issue.warn:not([style*="display: none"])');
+              totalErrors += errorIssues.length;
+              totalWarnings += warnIssues.length;
+            }
+          });
+
+          // Update total counts in summary header if it exists
+          const statsContainer = document.querySelector('.results-stats');
+          if (statsContainer) {
+            const errorStat = statsContainer.querySelector('.stat.error');
+            const warnStat = statsContainer.querySelector('.stat.warn');
+            if (errorStat) {
+              errorStat.textContent = totalErrors + ' Error';
+            }
+            if (warnStat) {
+              warnStat.textContent = totalWarnings + ' Warning';
+            }
+          }
+
+          // Update issues count badge in tab
+          const issuesCount = document.getElementById('issues-count');
+          if (issuesCount) {
+            issuesCount.textContent = totalErrors + totalWarnings;
+          }
+        }
+
+        // Apply button click handler
+        if (btnApply) {
+          btnApply.onclick = function() {
+            // Copy current checkbox states to applied settings
+            Object.keys(scanCheckboxes).forEach(key => {
+              if (scanCheckboxes[key]) {
+                appliedSettings[key] = scanCheckboxes[key].checked;
+              }
+            });
+            saveAppliedSettings();
+            applyGroupVisibility();
+
+            // Hide the warning note
+            if (settingsNote) {
+              settingsNote.style.display = 'none';
+            }
+
+            // Show confirmation feedback then close modal
+            const originalText = btnApply.innerHTML;
+            btnApply.innerHTML = '✓ Applied!';
+            btnApply.style.background = '#28a745';
+            setTimeout(() => {
+              btnApply.innerHTML = originalText;
+              btnApply.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+              // Close the modal after feedback
+              closeModal();
+            }, 800);
+          };
+        }
+
+        // Open modal
+        if (btnFloatingSettings) {
+          btnFloatingSettings.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (scanSettingsModal) {
+              scanSettingsModal.style.display = 'flex';
+              checkForChanges();
+            }
+          };
+        }
+
+        // Close modal - reset checkboxes to applied state
+        function closeModal() {
+          if (scanSettingsModal) {
+            scanSettingsModal.style.display = 'none';
+            // Reset checkboxes to match applied settings (discard unapplied changes)
+            Object.keys(scanCheckboxes).forEach(key => {
+              if (scanCheckboxes[key]) {
+                scanCheckboxes[key].checked = appliedSettings[key] !== false;
+              }
+            });
+            // Hide the warning note since we reset to applied state
+            if (settingsNote) {
+              settingsNote.style.display = 'none';
+            }
+          }
+        }
+
+        if (btnCloseScanSettings) {
+          btnCloseScanSettings.onclick = closeModal;
+        }
+
+        if (scanSettingsModal) {
+          scanSettingsModal.onclick = function(e) {
+            if (e.target === scanSettingsModal) {
+              closeModal();
+            }
+          };
+        }
+
+        // Check All
+        if (btnCheckAll) {
+          btnCheckAll.onclick = function() {
+            Object.values(scanCheckboxes).forEach(cb => {
+              if (cb) cb.checked = true;
+            });
+            saveScanSettings();
+          };
+        }
+
+        // Uncheck All
+        if (btnUncheckAll) {
+          btnUncheckAll.onclick = function() {
+            Object.values(scanCheckboxes).forEach(cb => {
+              if (cb) cb.checked = false;
+            });
+            saveScanSettings();
+          };
+        }
+
+        // Save on checkbox change
+        Object.values(scanCheckboxes).forEach(cb => {
+          if (cb) {
+            cb.onchange = saveScanSettings;
+          }
+        });
+
+        // Load settings on init
+        loadScanSettings();
+
+        // Apply visibility on load (in case there are existing results)
+        setTimeout(applyGroupVisibility, 100);
+
+        // Re-apply visibility when scan results are updated (debounced to prevent infinite loop)
+        let applyTimeout = null;
+        let isApplying = false;
+        const observer = new MutationObserver(function(mutations) {
+          // Skip if we're currently applying visibility (prevents infinite loop)
+          if (isApplying) return;
+
+          // Only react to actual new issue groups being added
+          const hasNewGroups = mutations.some(m =>
+            Array.from(m.addedNodes).some(n =>
+              n.nodeType === 1 && (n.classList?.contains('issue-group') || n.classList?.contains('results-header'))
+            )
+          );
+
+          if (hasNewGroups) {
+            clearTimeout(applyTimeout);
+            applyTimeout = setTimeout(() => {
+              isApplying = true;
+              applyGroupVisibility();
+              isApplying = false;
+            }, 50);
+          }
+        });
+
+        const resultsContainer = document.getElementById('results-issues');
+        if (resultsContainer) {
+          observer.observe(resultsContainer, { childList: true, subtree: false });
+        }
+      }
+
+      // Initialize when DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initScanSettings);
+      } else {
+        initScanSettings();
+      }
+    })();
+
+    // Move settings panel to correct position (after filter controls, before results-issues)
+    (function() {
+      function moveSettingsPanel() {
+        const settingsPanel = document.getElementById('results-settings');
+        const resultsIssues = document.getElementById('results-issues');
+        if (settingsPanel && resultsIssues && settingsPanel.parentNode) {
+          // Insert settings panel right before results-issues
+          resultsIssues.parentNode.insertBefore(settingsPanel, resultsIssues);
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', moveSettingsPanel);
+      } else {
+        moveSettingsPanel();
+      }
+    })();
+    </script>
   </body>
 </html>

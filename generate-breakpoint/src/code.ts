@@ -14,6 +14,14 @@ import {
   DEFAULT_CONFIG,
   isTextNode,
   hasChildren,
+  QAConfig,
+  QAIssue,
+  QAScanResult,
+  IssueGroup,
+  IssueCategory,
+  DesignTokens,
+  ColorToken,
+  DEFAULT_QA_CONFIG,
 } from './types';
 
 // ============================================================================
@@ -22,7 +30,7 @@ import {
 
 figma.showUI(__html__, {
   width: 550,
-  height: 460,
+  height: 600,
   title: 'Breakpoint Generator',
   themeColors: true,
 });
@@ -494,6 +502,77 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
       console.log(`🔊 Unmuted frame "${msg.frameName}"`);
       break;
 
+    case 'CONVERT_DARK_MODE':
+      handleConvertDarkMode(msg.skipFrames || []);
+      break;
+
+    case 'EXPORT_BUTTONS':
+      handleExportButtons(msg.patterns, msg.scale, msg.padding);
+      break;
+
+    case 'EXPORT_BUTTON_IMAGE':
+      handleExportButtonImage(msg.id, msg.name, msg.textContent, msg.scale, msg.padding, msg.format);
+      break;
+
+    // QA Checker messages
+    case 'QA_SCAN':
+      handleQAScan(msg.config, msg.scope);
+      break;
+
+    case 'QA_FIX_ISSUE':
+      handleQAFixIssue(msg.issue);
+      break;
+
+    case 'QA_FIX_ALL':
+      handleQAFixAll(msg.category, msg.issues);
+      break;
+
+    case 'QA_EXTRACT_TOKENS':
+      handleQAExtractTokens(msg.scope);
+      break;
+
+    case 'QA_SAVE_CONFIG':
+      await saveQAConfig(msg.config);
+      break;
+
+    case 'QA_SAVE_REPORT':
+      await saveQAReport(msg.result);
+      break;
+
+    case 'QA_SAVE_TOKENS':
+      await saveQATokens(msg.tokens);
+      break;
+
+    case 'QA_SELECT_NODE':
+      handleQASelectNode(msg.nodeId);
+      break;
+
+    case 'QA_EXTRACT_STYLES':
+      handleQAExtractStyles();
+      break;
+
+    case 'QA_EXTRACT_VARIABLES':
+      handleQAExtractVariables();
+      break;
+
+    case 'QA_EXTRACT_TYPOGRAPHY_STYLES':
+      handleQAExtractTypographyStyles();
+      break;
+
+    case 'QA_REQUEST_CONFIG':
+      // UI is ready, send config
+      (async () => {
+        const qaConfig = await loadQAConfig();
+        sendToUI({ type: 'QA_CONFIG_LOADED', config: qaConfig });
+
+        const qaReport = await loadQAReport();
+        sendToUI({ type: 'QA_REPORT_LOADED', result: qaReport });
+
+        const qaTokens = await loadQATokens();
+        sendToUI({ type: 'QA_TOKENS_LOADED', tokens: qaTokens });
+      })();
+      break;
+
     case 'CANCEL':
       figma.closePlugin();
       break;
@@ -549,6 +628,512 @@ function validateSelection(): ValidationResult {
 }
 
 // ============================================================================
+// DARK MODE CONVERSION (FOR EMAIL)
+// ============================================================================
+
+/**
+ * Check if a color is "light" (brightness > 0.5)
+ */
+function isLightColor(r: number, g: number, b: number): boolean {
+  // Calculate relative luminance
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 0.5;
+}
+
+/**
+ * Check if a color is grayscale (r, g, b values are similar)
+ */
+function isGrayscale(r: number, g: number, b: number): boolean {
+  const tolerance = 0.05; // 5% tolerance
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  return (max - min) < tolerance;
+}
+
+/**
+ * Check if a color is near white (light grayscale)
+ */
+function isNearWhite(r: number, g: number, b: number): boolean {
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return isGrayscale(r, g, b) && luminance > 0.75;
+}
+
+/**
+ * Convert background color for dark mode
+ * Light/white backgrounds → dark backgrounds
+ */
+function convertBackgroundColor(r: number, g: number, b: number): { r: number; g: number; b: number } | null {
+  if (isNearWhite(r, g, b)) {
+    // White/light gray → dark gray (#1a1a1a)
+    return { r: 0.1, g: 0.1, b: 0.1 };
+  } else if (isGrayscale(r, g, b) && isLightColor(r, g, b)) {
+    // Light gray → medium dark gray
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    const newLuminance = 0.15 + (1 - luminance) * 0.1;
+    return { r: newLuminance, g: newLuminance, b: newLuminance };
+  }
+  // Non-grayscale colors or dark colors → keep as is
+  return null;
+}
+
+/**
+ * Convert text color for dark mode
+ * Black/dark/medium gray text → white text
+ * Colored text (red, blue, etc.) → keep as is
+ */
+function convertTextColor(r: number, g: number, b: number): { r: number; g: number; b: number } | null {
+  // Check if grayscale (including #707070 which is ~0.44 luminance)
+  if (isGrayscale(r, g, b)) {
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    // Convert all dark and medium gray text to white (luminance < 0.6)
+    // This includes: black, dark gray, #707070 (~0.44), etc.
+    if (luminance < 0.6) {
+      return { r: 1, g: 1, b: 1 };
+    }
+  }
+  // Colored text (red, blue, etc.) → keep as is
+  // Light gray text → keep as is (already visible on dark bg)
+  return null;
+}
+
+/**
+ * Convert fills to dark mode (for backgrounds)
+ */
+function convertFillsToDarkMode(fills: readonly Paint[] | typeof figma.mixed): Paint[] {
+  if (fills === figma.mixed || !fills) return [];
+
+  return fills.map(fill => {
+    if (fill.type === 'SOLID') {
+      const converted = convertBackgroundColor(fill.color.r, fill.color.g, fill.color.b);
+      if (converted) {
+        return {
+          ...fill,
+          color: converted
+        };
+      }
+    }
+    return fill;
+  });
+}
+
+/**
+ * Convert text fills to dark mode
+ */
+function convertTextFillsToDarkMode(fills: readonly Paint[]): Paint[] {
+  if (!fills || fills.length === 0) return [];
+
+  const newFills: Paint[] = [];
+  for (const fill of fills) {
+    if (fill.type === 'SOLID') {
+      const { r, g, b } = fill.color;
+      const converted = convertTextColor(r, g, b);
+      if (converted) {
+        // Color was converted (dark/gray → white)
+        newFills.push({
+          ...fill,
+          color: converted
+        });
+      } else {
+        // Keep original (colored text or already light)
+        newFills.push(fill);
+      }
+    } else {
+      newFills.push(fill);
+    }
+  }
+  return newFills;
+}
+
+/**
+ * Check if a node should be skipped during dark mode conversion
+ * Skips: VECTOR nodes, GROUP containing VECTORs, and user-specified frame names (exact match)
+ */
+function shouldSkipDarkModeConversion(node: SceneNode, skipFrameNames: string[]): boolean {
+  // Skip VECTOR nodes entirely (actual vector graphics)
+  if (node.type === 'VECTOR') {
+    return true;
+  }
+
+  // Check if GROUP contains VECTOR children (likely an icon/logo)
+  if (node.type === 'GROUP' && hasChildren(node)) {
+    for (const child of node.children) {
+      if (child.type === 'VECTOR' || child.type === 'GROUP') {
+        return true;
+      }
+    }
+  }
+
+  // Check user-specified skip frame names - EXACT MATCH only (case-insensitive)
+  // Only apply to non-TEXT nodes
+  if (node.type !== 'TEXT') {
+    const nodeName = node.name.toLowerCase().trim();
+    for (const skipName of skipFrameNames) {
+      if (skipName && nodeName === skipName.toLowerCase().trim()) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Convert text node fills to dark mode (handles mixed fills)
+ */
+async function convertTextNodeToDarkMode(textNode: TextNode): Promise<void> {
+  const textLength = textNode.characters.length;
+  if (textLength === 0) return;
+
+  console.log(`[DarkMode] Processing TEXT node: "${textNode.name.substring(0, 50)}...", length: ${textLength}, fills mixed: ${textNode.fills === figma.mixed}`);
+
+  // Load all fonts used in this text node first
+  try {
+    if (textNode.fontName !== figma.mixed) {
+      await figma.loadFontAsync(textNode.fontName as FontName);
+      console.log(`[DarkMode] Loaded single font`);
+    } else {
+      // If fontName is mixed, load fonts for each character range
+      const fontsToLoad = new Set<string>();
+      for (let i = 0; i < textLength; i++) {
+        try {
+          const fontName = textNode.getRangeFontName(i, i + 1);
+          if (fontName && typeof fontName === 'object' && 'family' in fontName) {
+            fontsToLoad.add(JSON.stringify(fontName));
+          }
+        } catch {
+          // Skip
+        }
+      }
+      console.log(`[DarkMode] Loading ${fontsToLoad.size} fonts for mixed text`);
+      for (const fontStr of fontsToLoad) {
+        try {
+          await figma.loadFontAsync(JSON.parse(fontStr));
+        } catch (e) {
+          console.log(`[DarkMode] Failed to load font: ${fontStr}`, e);
+        }
+      }
+    }
+  } catch (e) {
+    console.log(`[DarkMode] Font loading error:`, e);
+  }
+
+  // Now convert fills
+  if (textNode.fills === figma.mixed) {
+    console.log(`[DarkMode] Converting mixed fills for ${textLength} characters`);
+    let convertedCount = 0;
+    // Handle styled text with mixed fills - convert each character range
+    for (let i = 0; i < textLength; i++) {
+      try {
+        const rangeFills = textNode.getRangeFills(i, i + 1);
+        if (rangeFills !== figma.mixed && rangeFills && rangeFills.length > 0) {
+          const newFills = convertTextFillsToDarkMode(rangeFills);
+          if (newFills.length > 0) {
+            textNode.setRangeFills(i, i + 1, newFills);
+            convertedCount++;
+          }
+        }
+      } catch (e) {
+        if (i === 0) console.log(`[DarkMode] setRangeFills error at char ${i}:`, e);
+      }
+    }
+    console.log(`[DarkMode] Converted ${convertedCount}/${textLength} character ranges`);
+  } else {
+    const fills = textNode.fills as readonly Paint[];
+    console.log(`[DarkMode] Converting single fills, count: ${fills.length}`);
+    if (fills.length > 0) {
+      const firstFill = fills[0];
+      if (firstFill.type === 'SOLID') {
+        console.log(`[DarkMode] First fill color: r=${firstFill.color.r.toFixed(3)}, g=${firstFill.color.g.toFixed(3)}, b=${firstFill.color.b.toFixed(3)}`);
+      }
+      const newFills = convertTextFillsToDarkMode(fills);
+      if (newFills.length > 0) {
+        textNode.fills = newFills;
+        console.log(`[DarkMode] Applied new fills`);
+      }
+    }
+  }
+}
+
+/**
+ * Recursively convert node colors to dark mode
+ */
+async function convertNodeToDarkMode(node: SceneNode, skipFrameNames: string[] = []): Promise<void> {
+  // Skip VECTOR nodes, icon/logo groups, and user-specified frames
+  if (shouldSkipDarkModeConversion(node, skipFrameNames)) {
+    console.log(`[DarkMode] SKIPPING node: "${node.name}" (type: ${node.type})`);
+    return;
+  }
+
+  console.log(`[DarkMode] Processing node: "${node.name.substring(0, 40)}..." (type: ${node.type})`);
+
+  // Convert text colors (use text-specific conversion)
+  if (node.type === 'TEXT') {
+    await convertTextNodeToDarkMode(node as TextNode);
+  } else {
+    // Convert fills (background colors) - skip text nodes
+    if ('fills' in node && node.fills !== figma.mixed) {
+      const fills = node.fills as readonly Paint[];
+      if (fills.length > 0) {
+        const newFills = convertFillsToDarkMode(fills);
+        if (newFills.length > 0) {
+          (node as GeometryMixin).fills = newFills;
+        }
+      }
+    }
+  }
+
+  // Convert strokes (keep same logic for borders)
+  if ('strokes' in node && node.strokes) {
+    const strokes = node.strokes as readonly Paint[];
+    if (strokes.length > 0) {
+      const newStrokes = convertFillsToDarkMode(strokes);
+      if (newStrokes.length > 0) {
+        (node as GeometryMixin).strokes = newStrokes;
+      }
+    }
+  }
+
+  // Recurse into children
+  if (hasChildren(node)) {
+    for (const child of node.children) {
+      await convertNodeToDarkMode(child, skipFrameNames);
+    }
+  }
+}
+
+/**
+ * Handle dark mode conversion for email
+ */
+async function handleConvertDarkMode(skipFrameNames: string[] = []): Promise<void> {
+  try {
+    const selection = figma.currentPage.selection;
+
+    if (selection.length === 0) {
+      sendToUI({ type: 'DARK_MODE_ERROR', error: 'Please select a frame first' });
+      return;
+    }
+
+    const sourceFrame = selection[0];
+    if (sourceFrame.type !== 'FRAME' && sourceFrame.type !== 'COMPONENT' && sourceFrame.type !== 'INSTANCE') {
+      sendToUI({ type: 'DARK_MODE_ERROR', error: 'Please select a Frame, Component, or Instance' });
+      return;
+    }
+
+    // Clone the frame
+    let newFrame = sourceFrame.clone();
+
+    // If it's an instance, detach it
+    if (newFrame.type === 'INSTANCE') {
+      newFrame = newFrame.detachInstance();
+    }
+
+    // Detach all nested instances so we can modify their fills
+    detachAllInstances(newFrame);
+
+    // Rename with dark mode suffix
+    newFrame.name = `${sourceFrame.name} - Dark Mode`;
+
+    // Position next to original (like breakpoint generation)
+    newFrame.x = sourceFrame.x + sourceFrame.width + 100;
+    newFrame.y = sourceFrame.y;
+
+    // Convert all colors to dark mode
+    await convertNodeToDarkMode(newFrame, skipFrameNames);
+
+    // Select the new frame
+    figma.currentPage.selection = [newFrame];
+    figma.viewport.scrollAndZoomIntoView([newFrame]);
+
+    sendToUI({ type: 'DARK_MODE_COMPLETE', frameName: newFrame.name });
+    figma.notify(`✓ Created dark mode version: ${newFrame.name}`, { timeout: 2000 });
+
+  } catch (error) {
+    console.error('Dark mode conversion error:', error);
+    sendToUI({ type: 'DARK_MODE_ERROR', error: String(error) });
+  }
+}
+
+// ============================================================================
+// EXPORT BUTTONS
+// ============================================================================
+
+/**
+ * Get text content from a node (finds first TEXT node within)
+ */
+function getTextContent(node: SceneNode): string {
+  if (node.type === 'TEXT') {
+    return node.characters;
+  }
+  if (hasChildren(node)) {
+    for (const child of node.children) {
+      const text = getTextContent(child);
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+/**
+ * Find all buttons matching the patterns within a frame (exact match, case-insensitive)
+ */
+function findButtonsByPattern(node: SceneNode, patterns: string[]): Array<{ id: string; name: string; textContent: string }> {
+  const buttons: Array<{ id: string; name: string; textContent: string }> = [];
+
+  // Normalize patterns to lowercase for case-insensitive exact match
+  const patternsLower = patterns.map(p => p.toLowerCase().trim());
+
+  const searchNode = (n: SceneNode) => {
+    const nameLower = n.name.toLowerCase().trim();
+    // Exact match (case-insensitive)
+    const matchesPattern = patternsLower.includes(nameLower);
+
+    if (matchesPattern && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE' || n.type === 'GROUP')) {
+      const textContent = getTextContent(n);
+      buttons.push({
+        id: n.id,
+        name: n.name,
+        textContent: textContent || n.name,
+      });
+    }
+
+    // Continue searching children
+    if (hasChildren(n)) {
+      for (const child of n.children) {
+        searchNode(child);
+      }
+    }
+  };
+
+  searchNode(node);
+  return buttons;
+}
+
+/**
+ * Handle export buttons request - find all buttons matching patterns
+ */
+function handleExportButtons(patterns: string[], scale: number, padding: number): void {
+  try {
+    const selection = figma.currentPage.selection;
+
+    if (selection.length === 0) {
+      sendToUI({ type: 'EXPORT_BUTTONS_ERROR', error: 'Please select a frame first' });
+      return;
+    }
+
+    const sourceFrame = selection[0];
+    const buttons = findButtonsByPattern(sourceFrame, patterns);
+
+    console.log(`[Export] Found ${buttons.length} buttons matching patterns:`, patterns);
+
+    sendToUI({ type: 'EXPORT_BUTTONS_FOUND', buttons });
+
+  } catch (error) {
+    console.error('Export buttons error:', error);
+    sendToUI({ type: 'EXPORT_BUTTONS_ERROR', error: String(error) });
+  }
+}
+
+/**
+ * Handle export single button image with scale, padding and format
+ */
+async function handleExportButtonImage(
+  id: string,
+  name: string,
+  textContent: string,
+  scale: number,
+  padding: number,
+  format: 'PNG' | 'SVG' | 'JPG'
+): Promise<void> {
+  try {
+    const node = figma.getNodeById(id) as SceneNode;
+
+    if (!node) {
+      console.error(`[Export] Node not found: ${id}`);
+      return;
+    }
+
+    let exportNode: SceneNode = node;
+    let tempFrame: FrameNode | null = null;
+
+    // If padding > 0 and format is not SVG, create a temporary frame with transparent background
+    // SVG doesn't support padding via temp frame approach
+    if (padding > 0 && format !== 'SVG') {
+      const nodeWidth = 'width' in node ? (node as FrameNode).width : 100;
+      const nodeHeight = 'height' in node ? (node as FrameNode).height : 100;
+
+      // Create temporary frame with padding
+      tempFrame = figma.createFrame();
+      tempFrame.name = '__temp_export_frame__';
+      tempFrame.resize(nodeWidth + padding * 2, nodeHeight + padding * 2);
+      tempFrame.x = node.x - 1000; // Move off-screen
+      tempFrame.y = node.y - 1000;
+      tempFrame.fills = []; // Transparent background
+      tempFrame.clipsContent = false;
+
+      // Clone the node and add to temp frame
+      const clonedNode = node.clone();
+      tempFrame.appendChild(clonedNode);
+      clonedNode.x = padding;
+      clonedNode.y = padding;
+
+      exportNode = tempFrame;
+    }
+
+    // Build export settings based on format
+    let exportSettings: ExportSettings;
+    let fileExtension: string;
+
+    if (format === 'SVG') {
+      exportSettings = { format: 'SVG' };
+      fileExtension = 'svg';
+    } else if (format === 'JPG') {
+      exportSettings = {
+        format: 'JPG',
+        constraint: { type: 'SCALE', value: scale },
+      };
+      fileExtension = 'jpg';
+    } else {
+      // PNG (default)
+      exportSettings = {
+        format: 'PNG',
+        constraint: { type: 'SCALE', value: scale },
+      };
+      fileExtension = 'png';
+    }
+
+    const bytes = await exportNode.exportAsync(exportSettings);
+
+    // Clean up temporary frame
+    if (tempFrame) {
+      tempFrame.remove();
+    }
+
+    // Convert to base64
+    const base64 = figma.base64Encode(bytes);
+
+    // Create filename from text content (sanitize for filesystem)
+    const sanitizedName = textContent
+      .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special chars
+      .replace(/\s+/g, '_')            // Replace spaces with underscore
+      .substring(0, 50)                 // Limit length
+      || name;                          // Fallback to node name
+
+    const fileName = `${sanitizedName}.${fileExtension}`;
+
+    sendToUI({
+      type: 'EXPORT_BUTTON_DATA',
+      id,
+      fileName,
+      data: base64,
+    });
+
+  } catch (error) {
+    console.error(`[Export] Error exporting button ${id}:`, error);
+    sendToUI({ type: 'EXPORT_BUTTONS_ERROR', error: `Failed to export ${name}: ${String(error)}` });
+  }
+}
+
+// ============================================================================
 // CONVERSION
 // ============================================================================
 
@@ -574,61 +1159,91 @@ async function handleConvert(config: PluginConfig): Promise<void> {
     node => node.type === 'FRAME' || node.type === 'SECTION' || node.type === 'COMPONENT' || node.type === 'INSTANCE'
   ) as (FrameNode | SectionNode | InstanceNode)[];
 
-  // Convert all valid frames
+  // Get all widths to generate (use mobileWidths if available, otherwise single mobileWidth)
+  const widthsToGenerate = config.mobileWidths && config.mobileWidths.length > 0
+    ? config.mobileWidths
+    : [config.mobileWidth];
+
+  // Convert all valid frames for all selected widths
   const results: TransformResult[] = [];
   const newFrames: (FrameNode | SectionNode | InstanceNode)[] = [];
 
-  for (const frame of validFrames) {
-    if (config.generateMultipleVersions) {
-      // Generate 3 versions with different strategies
-      const versionConfigs = [
-        { ...config, version: 1, layoutStrategy: 'conservative' as const },  // Ver1: Keep layout as is
-        { ...config, version: 2, layoutStrategy: 'balanced' as const },      // Ver2: Add spacing when converting to vertical
-        { ...config, version: 3, layoutStrategy: 'aggressive' as const },    // Ver3: More aggressive layout conversion
-      ];
+  // Track cumulative offset for positioning multiple breakpoints
+  // Gap between breakpoints is 100px
+  const GAP = 100;
+  let previousWidthsTotal = 0;
 
-      const versionResults: TransformResult[] = [];
-      const versionFrameIds: string[] = [];
+  for (let widthIndex = 0; widthIndex < widthsToGenerate.length; widthIndex++) {
+    const targetWidth = widthsToGenerate[widthIndex];
 
-      for (const versionConfig of versionConfigs) {
-        const result = await generateBreakpoint(frame, versionConfig);
-        versionResults.push(result);
+    // Create config for this specific width with positioning info
+    const widthConfig = {
+      ...config,
+      mobileWidth: targetWidth,
+      widthIndex,
+      previousWidthsTotal,
+    };
+
+    for (const frame of validFrames) {
+      if (widthConfig.generateMultipleVersions) {
+        // Generate 3 versions with different strategies
+        const versionConfigs = [
+          { ...widthConfig, version: 1, layoutStrategy: 'conservative' as const },  // Ver1: Keep layout as is
+          { ...widthConfig, version: 2, layoutStrategy: 'balanced' as const },      // Ver2: Add spacing when converting to vertical
+          { ...widthConfig, version: 3, layoutStrategy: 'aggressive' as const },    // Ver3: More aggressive layout conversion
+        ];
+
+        const versionResults: TransformResult[] = [];
+        const versionFrameIds: string[] = [];
+
+        for (const versionConfig of versionConfigs) {
+          const result = await generateBreakpoint(frame, versionConfig);
+          versionResults.push(result);
+
+          if (result.success && result.mobileFrameId) {
+            versionFrameIds.push(result.mobileFrameId);
+            const newFrame = figma.getNodeById(result.mobileFrameId);
+            if (newFrame) {
+              newFrames.push(newFrame as FrameNode | SectionNode | InstanceNode);
+            }
+          }
+        }
+
+        // Add a combined result for all versions
+        const firstSuccessResult = versionResults.find(r => r.success);
+        const combinedResult: TransformResult = {
+          success: versionResults.some(r => r.success),
+          mobileFrameId: firstSuccessResult?.mobileFrameId,
+          mobileFrameName: `${frame.name} - ${targetWidth}px (3 versions)`,
+          mobileFrameIds: versionFrameIds,
+          errors: versionResults.flatMap(r => r.errors),
+          stats: {
+            nodesProcessed: versionResults.reduce((sum, r) => sum + r.stats.nodesProcessed, 0),
+            textsScaled: versionResults.reduce((sum, r) => sum + r.stats.textsScaled, 0),
+            textStylesMapped: versionResults.reduce((sum, r) => sum + r.stats.textStylesMapped, 0),
+          },
+        };
+        results.push(combinedResult);
+      } else {
+        // Single version generation
+        const result = await generateBreakpoint(frame, widthConfig);
+        results.push(result);
 
         if (result.success && result.mobileFrameId) {
-          versionFrameIds.push(result.mobileFrameId);
           const newFrame = figma.getNodeById(result.mobileFrameId);
           if (newFrame) {
             newFrames.push(newFrame as FrameNode | SectionNode | InstanceNode);
           }
         }
       }
+    }
 
-      // Add a combined result for all versions
-      const firstSuccessResult = versionResults.find(r => r.success);
-      const combinedResult: TransformResult = {
-        success: versionResults.some(r => r.success),
-        mobileFrameId: firstSuccessResult?.mobileFrameId,
-        mobileFrameName: `${frame.name} - ${config.mobileWidth}px (3 versions)`,
-        mobileFrameIds: versionFrameIds,
-        errors: versionResults.flatMap(r => r.errors),
-        stats: {
-          nodesProcessed: versionResults.reduce((sum, r) => sum + r.stats.nodesProcessed, 0),
-          textsScaled: versionResults.reduce((sum, r) => sum + r.stats.textsScaled, 0),
-          textStylesMapped: versionResults.reduce((sum, r) => sum + r.stats.textStylesMapped, 0),
-        },
-      };
-      results.push(combinedResult);
+    // Update cumulative offset for next width
+    // If generateMultipleVersions, each width produces 3 frames side by side
+    if (config.generateMultipleVersions) {
+      previousWidthsTotal += (targetWidth + GAP) * 3;
     } else {
-      // Single version generation
-      const result = await generateBreakpoint(frame, config);
-      results.push(result);
-
-      if (result.success && result.mobileFrameId) {
-        const newFrame = figma.getNodeById(result.mobileFrameId);
-        if (newFrame) {
-          newFrames.push(newFrame as FrameNode | SectionNode | InstanceNode);
-        }
-      }
+      previousWidthsTotal += targetWidth + GAP;
     }
   }
 
@@ -645,14 +1260,16 @@ async function handleConvert(config: PluginConfig): Promise<void> {
   const successCount = results.filter(r => r.success).length;
   if (successCount > 0) {
     let message: string;
+    const widthsList = widthsToGenerate.join(', ');
+
     if (config.generateMultipleVersions) {
-      message = validFrames.length === 1
-        ? `✓ Created 3 versions at ${config.mobileWidth}px`
-        : `✓ Created ${successCount * 3} versions at ${config.mobileWidth}px`;
+      message = `✓ Created ${successCount * 3} versions at ${widthsList}px`;
+    } else if (widthsToGenerate.length > 1) {
+      message = `✓ Created ${successCount} breakpoints at ${widthsList}px`;
     } else {
       message = validFrames.length === 1
-        ? `✓ Created ${config.mobileWidth}px breakpoint`
-        : `✓ Created ${successCount} breakpoint${successCount > 1 ? 's' : ''} at ${config.mobileWidth}px`;
+        ? `✓ Created ${widthsToGenerate[0]}px breakpoint`
+        : `✓ Created ${successCount} breakpoints at ${widthsToGenerate[0]}px`;
     }
     figma.notify(message, { timeout: 2000 });
 
@@ -742,8 +1359,10 @@ async function generateBreakpoint(
 
     // Step 5: Position next to original - align top, 100px to the right
     // For multiple versions, position them side by side
+    // For multiple widths, offset by previousWidthsTotal
     const versionOffset = config.version ? (config.version - 1) * (config.mobileWidth + 50) : 0;
-    newFrame.x = sourceFrame.x + sourceFrame.width + 100 + versionOffset;
+    const widthOffset = config.previousWidthsTotal || 0;
+    newFrame.x = sourceFrame.x + sourceFrame.width + 100 + widthOffset + versionOffset;
     newFrame.y = sourceFrame.y; // Align top with source frame
 
     // Step 6: Detach all nested instances so we can modify their layout
@@ -754,7 +1373,7 @@ async function generateBreakpoint(
     await new Promise(resolve => setTimeout(resolve, 30));
     detachAllInstances(newFrame, config.preservedComponentNames);
 
-    // Step 6b: Ungroup all GROUP nodes
+    // Step 6a: Ungroup all GROUP nodes
     // GROUPs don't have auto-layout, so children can't use FILL sizing
     // By ungrouping, children become direct children of parent frame and can resize properly
     console.log(`📊 Ungrouping GROUP nodes...`);
@@ -1200,7 +1819,7 @@ async function convertHorizontalToVertical(
           if (!isUIControl && currentSizing !== 'FILL') {
             // Set content blocks and lists to FILL
             if ((currentSizing === 'FIXED' && childWidth >= 100) ||
-                (currentSizing === 'HUG')) {  // Changed: HUG lists should also fill
+                (currentSizing === 'HUG')) {  // HUG lists should also fill
               try {
                 childFrame.layoutSizingHorizontal = 'FILL';
                 console.log(`     ✅ Changed to FILL (was ${currentSizing} ${childWidth}px)`);
@@ -2394,10 +3013,18 @@ function restoreImageAspectRatios(
 // ICON SIZE PRESERVATION
 // ============================================================================
 
+interface IconChildSize {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
 interface IconSize {
   width: number;
   height: number;
-  childSizes: Map<string, { width: number; height: number }>;
+  // Flattened map of all descendants (key = name, for VECTOR nodes with same name, use index suffix)
+  allDescendants: Map<string, IconChildSize>;
 }
 
 /**
@@ -2432,28 +3059,47 @@ function storeIconSizes(node: SceneNode): Map<string, IconSize> {
       const isIconByName = nameLower.includes('icon') || nameLower.includes('logo');
 
       if (isSmallFrame && (containsVectorOrGroup || isIconByName)) {
-        // Store this icon frame's size
-        const childSizes = new Map<string, { width: number; height: number }>();
+        // Flatten all descendants (VECTOR, LINE, etc.) regardless of GROUP structure
+        const allDescendants = new Map<string, IconChildSize>();
+        const nameCounters = new Map<string, number>();
 
-        // Store sizes of all children (especially Group/Vector)
-        if (hasChildren(frame)) {
-          for (const child of frame.children) {
-            if ('width' in child && 'height' in child) {
-              childSizes.set(child.name, {
-                width: (child as any).width,
-                height: (child as any).height
-              });
+        function collectAllDescendants(parent: SceneNode): void {
+          if (!hasChildren(parent)) return;
+          for (const child of (parent as any).children) {
+            // Store VECTOR, LINE, ELLIPSE, RECTANGLE, POLYGON, STAR nodes
+            if (child.type === 'VECTOR' || child.type === 'LINE' ||
+                child.type === 'ELLIPSE' || child.type === 'RECTANGLE' ||
+                child.type === 'POLYGON' || child.type === 'STAR') {
+              if ('width' in child && 'height' in child && 'x' in child && 'y' in child) {
+                // Use counter for duplicate names (e.g., multiple "Vector" nodes)
+                const count = nameCounters.get(child.name) || 0;
+                const key = count === 0 ? child.name : `${child.name}_${count}`;
+                nameCounters.set(child.name, count + 1);
+
+                allDescendants.set(key, {
+                  width: child.width,
+                  height: child.height,
+                  x: child.x,
+                  y: child.y
+                });
+              }
+            }
+            // Recurse into GROUP to get nested VECTORs
+            if (child.type === 'GROUP' && hasChildren(child)) {
+              collectAllDescendants(child);
             }
           }
         }
 
+        collectAllDescendants(frame);
+
         iconSizes.set(currentPath, {
           width: frame.width,
           height: frame.height,
-          childSizes
+          allDescendants
         });
 
-        console.log(`📦 Stored icon: "${currentPath}" (${frame.width}x${frame.height})`);
+        console.log(`📦 Stored icon: "${currentPath}" (${frame.width}x${frame.height}) with ${allDescendants.size} vector descendants`);
       }
     }
 
@@ -2496,20 +3142,53 @@ function restoreIconSizes(
           // Restore frame size
           frame.resize(storedIcon.width, storedIcon.height);
 
-          // Restore children sizes (especially Group/Vector)
+          // Collect all current vector descendants in the frame (after ungroup, they're direct children)
+          const currentVectors: SceneNode[] = [];
+          const nameCounters = new Map<string, number>();
+
           if (hasChildren(frame)) {
             for (const child of frame.children) {
-              const storedChildSize = storedIcon.childSizes.get(child.name);
-              if (storedChildSize && 'resize' in child) {
-                const childWidth = (child as any).width;
-                const childHeight = (child as any).height;
+              if (child.type === 'VECTOR' || child.type === 'LINE' ||
+                  child.type === 'ELLIPSE' || child.type === 'RECTANGLE' ||
+                  child.type === 'POLYGON' || child.type === 'STAR') {
+                currentVectors.push(child);
+              }
+            }
+          }
 
-                if (childWidth !== storedChildSize.width || childHeight !== storedChildSize.height) {
-                  console.log(`  ↳ Restoring child "${child.name}" from ${childWidth}x${childHeight} to ${storedChildSize.width}x${storedChildSize.height}`);
+          // Restore each vector using same naming convention as store
+          for (const vector of currentVectors) {
+            const count = nameCounters.get(vector.name) || 0;
+            const key = count === 0 ? vector.name : `${vector.name}_${count}`;
+            nameCounters.set(vector.name, count + 1);
+
+            const storedSize = storedIcon.allDescendants.get(key);
+            if (storedSize) {
+              // Restore position
+              if ('x' in vector && 'y' in vector) {
+                const currentX = (vector as any).x;
+                const currentY = (vector as any).y;
+                if (currentX !== storedSize.x || currentY !== storedSize.y) {
+                  console.log(`  ↳ Restoring position "${key}" from (${currentX},${currentY}) to (${storedSize.x},${storedSize.y})`);
                   try {
-                    (child as any).resize(storedChildSize.width, storedChildSize.height);
+                    (vector as any).x = storedSize.x;
+                    (vector as any).y = storedSize.y;
                   } catch (e) {
-                    console.log(`  ❌ Failed to restore child: ${e}`);
+                    console.log(`  ❌ Failed to restore position: ${e}`);
+                  }
+                }
+              }
+
+              // Restore size
+              if ('resize' in vector) {
+                const currentWidth = (vector as any).width;
+                const currentHeight = (vector as any).height;
+                if (currentWidth !== storedSize.width || currentHeight !== storedSize.height) {
+                  console.log(`  ↳ Restoring size "${key}" from ${currentWidth}x${currentHeight} to ${storedSize.width}x${storedSize.height}`);
+                  try {
+                    (vector as any).resize(storedSize.width, storedSize.height);
+                  } catch (e) {
+                    console.log(`  ❌ Failed to restore size: ${e}`);
                   }
                 }
               }
@@ -2517,7 +3196,7 @@ function restoreIconSizes(
           }
 
           stats.nodesProcessed++;
-          console.log(`✓ Restored icon: "${currentPath}"`);
+          console.log(`✓ Restored icon: "${currentPath}" with ${currentVectors.length} vectors`);
         } catch (e) {
           console.log(`❌ Failed to restore icon "${currentPath}":`, e);
         }
@@ -2922,7 +3601,8 @@ function applyContainerPadding(
           (child as FrameNode).layoutSizingHorizontal = 'FILL';
           stats.nodesProcessed++;
         } else if (isResizableNode(child)) {
-          child.resize(mobileWidth, child.height);
+          const resizable = child as FrameNode | GroupNode | ComponentNode | InstanceNode;
+          resizable.resize(mobileWidth, resizable.height);
           stats.nodesProcessed++;
         }
       } catch (e) {
@@ -3067,6 +3747,1275 @@ async function scaleTextSize(
     // Font loading failed, skip this node
   }
 }
+
+// ============================================================================
+// QA CHECKER - UTILITIES
+// ============================================================================
+
+const QA_CONFIG_KEY = 'qaConfig';
+const QA_REPORT_KEY = 'qaReport';
+const QA_TOKENS_KEY = 'qaTokens';
+
+/**
+ * Convert RGB to hex color string
+ */
+function rgbToHex(r: number, g: number, b: number): string {
+  const toHex = (n: number) => {
+    const hex = Math.round(n * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+/**
+ * Convert hex to RGB
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: parseInt(result[1], 16) / 255,
+        g: parseInt(result[2], 16) / 255,
+        b: parseInt(result[3], 16) / 255,
+      }
+    : null;
+}
+
+/**
+ * Calculate relative luminance (WCAG formula)
+ */
+function getLuminance(r: number, g: number, b: number): number {
+  const [rs, gs, bs] = [r, g, b].map((c) => {
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+}
+
+/**
+ * Calculate contrast ratio between two colors
+ */
+function getContrastRatio(l1: number, l2: number): number {
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Check if text is considered "large" for WCAG
+ * Large text: >= 18pt (24px) or >= 14pt (18.67px) bold
+ */
+function isLargeText(fontSize: number, fontWeight: number): boolean {
+  if (fontSize >= 24) return true;
+  if (fontSize >= 18.67 && fontWeight >= 700) return true;
+  return false;
+}
+
+/**
+ * Find nearest value in scale
+ */
+function findNearestInScale(value: number, scale: number[]): number {
+  let nearest = scale[0];
+  let minDiff = Math.abs(value - nearest);
+
+  for (const s of scale) {
+    const diff = Math.abs(value - s);
+    if (diff < minDiff) {
+      minDiff = diff;
+      nearest = s;
+    }
+  }
+
+  return nearest;
+}
+
+/**
+ * Generate unique issue ID
+ */
+function generateIssueId(): string {
+  return `issue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// ============================================================================
+// QA CHECKER - BACKGROUND DETECTION
+// ============================================================================
+
+/**
+ * Get effective background color for a node
+ * Traverses siblings and parents to find the actual background
+ */
+function getBackgroundColor(node: SceneNode): { color: RGB; nodeName: string } | null {
+  // Check previous siblings first (elements rendered before this one, visually behind)
+  if (node.parent && 'children' in node.parent) {
+    const siblings = node.parent.children;
+    const nodeIndex = siblings.indexOf(node as SceneNode);
+
+    // Check siblings before this node (rendered behind)
+    for (let i = nodeIndex - 1; i >= 0; i--) {
+      const sibling = siblings[i];
+      if (nodeOverlaps(node, sibling)) {
+        const siblingBg = getNodeFillColor(sibling);
+        if (siblingBg) {
+          return { color: siblingBg, nodeName: sibling.name };
+        }
+      }
+    }
+  }
+
+  // Check parent chain
+  let current: BaseNode | null = node.parent;
+  while (current) {
+    if ('fills' in current) {
+      const fillColor = getNodeFillColor(current as SceneNode);
+      if (fillColor) {
+        return { color: fillColor, nodeName: current.name };
+      }
+    }
+    current = current.parent;
+  }
+
+  // Default to white if no background found
+  return { color: { r: 1, g: 1, b: 1 }, nodeName: 'Page (default white)' };
+}
+
+/**
+ * Check if two nodes overlap
+ */
+function nodeOverlaps(node1: SceneNode, node2: SceneNode): boolean {
+  if (!('absoluteBoundingBox' in node1) || !('absoluteBoundingBox' in node2)) {
+    return false;
+  }
+
+  const box1 = node1.absoluteBoundingBox;
+  const box2 = node2.absoluteBoundingBox;
+
+  if (!box1 || !box2) return false;
+
+  return !(
+    box1.x + box1.width < box2.x ||
+    box2.x + box2.width < box1.x ||
+    box1.y + box1.height < box2.y ||
+    box2.y + box2.height < box1.y
+  );
+}
+
+/**
+ * Get fill color from a node
+ */
+function getNodeFillColor(node: SceneNode): RGB | null {
+  if (!('fills' in node)) return null;
+
+  const fills = node.fills;
+  if (!fills || fills === figma.mixed || !Array.isArray(fills)) return null;
+
+  for (const fill of fills) {
+    if (fill.type === 'SOLID' && fill.visible !== false) {
+      return fill.color;
+    }
+  }
+
+  return null;
+}
+
+// ============================================================================
+// QA CHECKER - SCANNING
+// ============================================================================
+
+/**
+ * Main QA scan handler
+ */
+async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Promise<void> {
+  const startTime = Date.now();
+  const issues: QAIssue[] = [];
+
+  try {
+    // Get nodes to scan
+    let nodesToScan: SceneNode[] = [];
+    let frameName: string | undefined;
+
+    if (scope === 'selection') {
+      nodesToScan = [...figma.currentPage.selection];
+      if (nodesToScan.length === 1) {
+        frameName = nodesToScan[0].name;
+      }
+    } else {
+      nodesToScan = [...figma.currentPage.children];
+    }
+
+    if (nodesToScan.length === 0) {
+      sendToUI({
+        type: 'QA_SCAN_ERROR',
+        error: scope === 'selection' ? 'No selection. Please select a frame to scan.' : 'No frames found on this page.',
+      });
+      return;
+    }
+
+    // Collect all nodes to process
+    const allNodes: SceneNode[] = [];
+    const collectNodes = (nodes: readonly SceneNode[]) => {
+      for (const node of nodes) {
+        allNodes.push(node);
+        if (hasChildren(node)) {
+          collectNodes(node.children);
+        }
+      }
+    };
+    collectNodes(nodesToScan);
+
+    const totalNodes = allNodes.length;
+    let processed = 0;
+
+    // Process each node
+    for (const node of allNodes) {
+      processed++;
+
+      // Send progress update every 50 nodes
+      if (processed % 50 === 0 || processed === totalNodes) {
+        sendToUI({
+          type: 'QA_SCAN_PROGRESS',
+          current: processed,
+          total: totalNodes,
+          step: `Scanning ${node.name.substring(0, 30)}...`,
+        });
+      }
+
+      // Text node checks
+      if (isTextNode(node)) {
+        // Typography checks (font-size, line-height, text-size)
+        if (config.checkFontSize !== false || config.checkLineHeight !== false || config.checkTextSize !== false) {
+          checkTypography(node, config, issues);
+        }
+
+        // Text Style check
+        if (config.checkTextStyle !== false) {
+          checkTextStyle(node, issues);
+        }
+
+        // Typography Style Match check
+        if (config.checkTypographyMatch !== false) {
+          checkTypographyStyleMatch(node, config, issues);
+        }
+
+        // Contrast check
+        if (config.checkContrast !== false) {
+          checkContrast(node, issues);
+        }
+      }
+
+      // Color checks
+      if (config.checkColor !== false && config.colorPalette.length > 0) {
+        checkColors(node, config, issues);
+      }
+    }
+
+    // Filter issues based on enabled categories
+    const filteredIssues = issues.filter((issue) => {
+      switch (issue.category) {
+        case 'typography-match':
+          return config.checkTypographyMatch !== false;
+        case 'text-style':
+          return config.checkTextStyle !== false;
+        case 'font-size':
+          return config.checkFontSize !== false;
+        case 'line-height':
+          return config.checkLineHeight !== false;
+        case 'contrast':
+          return config.checkContrast !== false;
+        case 'text-size':
+          return config.checkTextSize !== false;
+        case 'color':
+          return config.checkColor !== false;
+        default:
+          return true;
+      }
+    });
+
+    // Group issues by category
+    const issueGroups = groupIssues(filteredIssues);
+
+    // Calculate totals
+    const totalErrors = filteredIssues.filter((i) => i.severity === 'error').length;
+    const totalWarnings = filteredIssues.filter((i) => i.severity === 'warning').length;
+
+    const result: QAScanResult = {
+      timestamp: Date.now(),
+      scanType: scope,
+      frameName,
+      issues: filteredIssues,
+      issueGroups,
+      totalErrors,
+      totalWarnings,
+      totalNodes,
+      scanDuration: Date.now() - startTime,
+    };
+
+    sendToUI({ type: 'QA_SCAN_COMPLETE', result });
+  } catch (error) {
+    sendToUI({
+      type: 'QA_SCAN_ERROR',
+      error: `Scan failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/**
+ * Check typography issues
+ */
+function checkTypography(node: TextNode, config: QAConfig, issues: QAIssue[]): void {
+  // Check font size
+  const fontSize = node.fontSize;
+  if (typeof fontSize === 'number') {
+    // ADA check: font size <= 12px is too small
+    if (config.checkTextSize !== false && fontSize <= 12) {
+      issues.push({
+        id: generateIssueId(),
+        nodeId: node.id,
+        nodeName: node.name,
+        category: 'text-size',
+        severity: 'error',
+        message: `Font size ${fontSize}px is too small (ADA)`,
+        details: 'Minimum recommended size is 14px for accessibility',
+        currentValue: fontSize,
+        suggestedValue: 14,
+        fixable: true,
+        fixType: 'fontSize',
+      });
+    }
+
+    // Font size scale check
+    if (config.checkFontSize !== false && !config.fontSizeScale.includes(fontSize)) {
+      const nearest = findNearestInScale(fontSize, config.fontSizeScale);
+      const diff = Math.abs(fontSize - nearest);
+      const threshold = config.fontSizeThreshold;
+
+      // Only report if difference is significant (> threshold% of the value)
+      if (diff > 0 && (diff / fontSize) * 100 <= threshold) {
+        issues.push({
+          id: generateIssueId(),
+          nodeId: node.id,
+          nodeName: node.name,
+          category: 'font-size',
+          severity: 'warning',
+          message: `Font size ${fontSize}px not in scale`,
+          details: `Nearest value: ${nearest}px`,
+          currentValue: fontSize,
+          suggestedValue: nearest,
+          fixable: true,
+          fixType: 'fontSize',
+        });
+      }
+    }
+  }
+
+  // Check line height
+  if (config.checkLineHeight !== false) {
+    const lineHeight = node.lineHeight;
+    if (lineHeight !== figma.mixed && typeof lineHeight === 'object') {
+      if (lineHeight.unit === 'PERCENT') {
+        const value = lineHeight.value;
+
+        // Check if value is in scale
+        const inScale = config.lineHeightScale.some((s) => s === value || s === 'auto');
+
+        if (!inScale) {
+          // Find nearest
+          const numericScale = config.lineHeightScale.filter((s) => typeof s === 'number') as number[];
+          const nearest = findNearestInScale(value, numericScale);
+
+          issues.push({
+            id: generateIssueId(),
+            nodeId: node.id,
+            nodeName: node.name,
+            category: 'line-height',
+            severity: 'warning',
+            message: `Line height ${value}% not in scale`,
+            details: `Nearest value: ${nearest}%`,
+            currentValue: value,
+            suggestedValue: nearest,
+            fixable: true,
+            fixType: 'lineHeight',
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Check contrast issues (WCAG AA)
+ */
+function checkContrast(node: TextNode, issues: QAIssue[]): void {
+  // Get text color
+  const fills = node.fills;
+  if (!fills || fills === figma.mixed || !Array.isArray(fills)) return;
+
+  let textColor: RGB | null = null;
+  for (const fill of fills) {
+    if (fill.type === 'SOLID' && fill.visible !== false) {
+      textColor = fill.color;
+      break;
+    }
+  }
+
+  if (!textColor) return;
+
+  // Get background color
+  const background = getBackgroundColor(node);
+  if (!background) return;
+
+  // Calculate contrast
+  const textLuminance = getLuminance(textColor.r, textColor.g, textColor.b);
+  const bgLuminance = getLuminance(background.color.r, background.color.g, background.color.b);
+  const contrast = getContrastRatio(textLuminance, bgLuminance);
+
+  // Determine required ratio
+  const fontSize = typeof node.fontSize === 'number' ? node.fontSize : 16;
+  const fontWeight = getFontWeight(node);
+  const large = isLargeText(fontSize, fontWeight);
+  const requiredRatio = large ? 3.0 : 4.5;
+
+  if (contrast < requiredRatio) {
+    const textHex = rgbToHex(textColor.r, textColor.g, textColor.b);
+    const bgHex = rgbToHex(background.color.r, background.color.g, background.color.b);
+
+    issues.push({
+      id: generateIssueId(),
+      nodeId: node.id,
+      nodeName: node.name,
+      category: 'contrast',
+      severity: 'error',
+      message: `Contrast ratio ${contrast.toFixed(2)}:1 fails WCAG AA`,
+      details: `Required: ${requiredRatio}:1 for ${large ? 'large' : 'normal'} text`,
+      textColor: textHex,
+      backgroundColor: bgHex,
+      backgroundNodeName: background.nodeName,
+      contrastRatio: contrast,
+      requiredRatio,
+      fixable: false,
+    });
+  }
+}
+
+/**
+ * Get font weight from text node
+ */
+function getFontWeight(node: TextNode): number {
+  const fontName = node.fontName;
+  if (fontName === figma.mixed) return 400;
+
+  const style = (fontName as FontName).style.toLowerCase();
+  if (style.includes('black')) return 900;
+  if (style.includes('extrabold') || style.includes('extra bold')) return 800;
+  if (style.includes('bold')) return 700;
+  if (style.includes('semibold') || style.includes('semi bold')) return 600;
+  if (style.includes('medium')) return 500;
+  if (style.includes('light')) return 300;
+  if (style.includes('thin')) return 100;
+  return 400;
+}
+
+/**
+ * Check text style issues - text not using Text Style or Variable
+ */
+function checkTextStyle(node: TextNode, issues: QAIssue[]): void {
+  // Check if text has a text style applied
+  const textStyleId = node.textStyleId;
+
+  // If no text style is applied (or mixed styles)
+  if (!textStyleId || textStyleId === figma.mixed || textStyleId === '') {
+    issues.push({
+      id: generateIssueId(),
+      nodeId: node.id,
+      nodeName: node.name,
+      category: 'text-style',
+      severity: 'warning',
+      message: 'Text not using Text Style',
+      details: 'Consider applying a Text Style for consistency',
+      fixable: false,
+    });
+  }
+}
+
+/**
+ * Check typography style match - compare text properties against defined styles
+ */
+function checkTypographyStyleMatch(node: TextNode, config: QAConfig, issues: QAIssue[]): void {
+  if (!config.typographyCheckRules.checkTypographyStyle) return;
+  if (config.typographyStyles.length === 0) return;
+
+  // Get current text properties
+  const fontSize = node.fontSize;
+  const fontName = node.fontName;
+  const lineHeight = node.lineHeight;
+  const letterSpacing = node.letterSpacing;
+
+  // Skip if mixed values
+  if (fontSize === figma.mixed || fontName === figma.mixed) return;
+
+  const currentFontSize = fontSize as number;
+  const currentFontFamily = (fontName as FontName).family;
+  const currentFontWeight = getFontWeight(node);
+
+  // Get line height as percentage
+  let currentLineHeight = 150; // default
+  if (lineHeight !== figma.mixed && typeof lineHeight === 'object') {
+    if (lineHeight.unit === 'PERCENT') {
+      currentLineHeight = lineHeight.value;
+    } else if (lineHeight.unit === 'PIXELS' && currentFontSize > 0) {
+      currentLineHeight = (lineHeight.value / currentFontSize) * 100;
+    }
+  }
+
+  // Get letter spacing in px
+  let currentLetterSpacing = 0;
+  if (letterSpacing !== figma.mixed && typeof letterSpacing === 'object') {
+    if (letterSpacing.unit === 'PIXELS') {
+      currentLetterSpacing = Math.round(letterSpacing.value * 100) / 100;
+    } else if (letterSpacing.unit === 'PERCENT') {
+      currentLetterSpacing = Math.round((letterSpacing.value / 100) * currentFontSize * 100) / 100;
+    }
+  }
+
+  // Figma doesn't have word spacing, so default to 0
+  const currentWordSpacing = 0;
+
+  // Find best matching style
+  let bestMatch: {
+    style: typeof config.typographyStyles[0];
+    matchPercentage: number;
+    matches: { fontFamily: boolean; fontSize: boolean; fontWeight: boolean; lineHeight: boolean; letterSpacing: boolean; wordSpacing: boolean };
+  } | null = null;
+
+  for (const style of config.typographyStyles) {
+    const matches = {
+      fontFamily: !config.typographyCheckRules.checkFontFamily || currentFontFamily.toLowerCase() === style.fontFamily.toLowerCase(),
+      fontSize: !config.typographyCheckRules.checkFontSize || currentFontSize === style.fontSize,
+      fontWeight: !config.typographyCheckRules.checkFontWeight || currentFontWeight === style.fontWeight,
+      lineHeight: !config.typographyCheckRules.checkLineHeight || Math.abs(currentLineHeight - style.lineHeight) <= 5,
+      letterSpacing: !config.typographyCheckRules.checkLetterSpacing || Math.abs(currentLetterSpacing - (style.letterSpacing || 0)) <= 0.5,
+      wordSpacing: !config.typographyCheckRules.checkWordSpacing || Math.abs(currentWordSpacing - (style.wordSpacing || 0)) <= 0.5,
+    };
+
+    // Count matching properties
+    const matchCount = Object.values(matches).filter(Boolean).length;
+    const totalChecks = Object.values(config.typographyCheckRules).filter(Boolean).length - 1; // -1 for checkTypographyStyle
+    const matchPercentage = totalChecks > 0 ? Math.round((matchCount / totalChecks) * 100) : 0;
+
+    if (!bestMatch || matchPercentage > bestMatch.matchPercentage) {
+      bestMatch = { style, matchPercentage, matches };
+    }
+  }
+
+  // If no exact match found (100%), report as issue
+  if (bestMatch && bestMatch.matchPercentage < 100) {
+    // Get text content (truncated)
+    const textContent = node.characters.substring(0, 30) + (node.characters.length > 30 ? '...' : '');
+
+    issues.push({
+      id: generateIssueId(),
+      nodeId: node.id,
+      nodeName: node.name,
+      category: 'typography-match',
+      severity: 'warning',
+      message: `Typography does not match any defined style. Text: "${textContent}"`,
+      details: `Closest match: "${bestMatch.style.name}" (${bestMatch.matchPercentage}%)`,
+      fixable: true,
+      fixType: 'typographyStyle',
+      textContent,
+      currentTypography: {
+        fontFamily: currentFontFamily,
+        fontSize: currentFontSize,
+        fontWeight: currentFontWeight,
+        lineHeight: Math.round(currentLineHeight),
+        letterSpacing: currentLetterSpacing,
+        wordSpacing: currentWordSpacing,
+      },
+      closestMatch: {
+        styleName: bestMatch.style.name,
+        matchPercentage: bestMatch.matchPercentage,
+        fontFamily: bestMatch.style.fontFamily,
+        fontSize: bestMatch.style.fontSize,
+        fontWeight: bestMatch.style.fontWeight,
+        lineHeight: bestMatch.style.lineHeight,
+        letterSpacing: bestMatch.style.letterSpacing || 0,
+        wordSpacing: bestMatch.style.wordSpacing || 0,
+      },
+    });
+  }
+}
+
+/**
+ * Check color issues
+ */
+function checkColors(node: SceneNode, config: QAConfig, issues: QAIssue[]): void {
+  if (!('fills' in node)) return;
+
+  const fills = node.fills;
+  if (!fills || fills === figma.mixed || !Array.isArray(fills)) return;
+
+  for (const fill of fills) {
+    if (fill.type === 'SOLID' && fill.visible !== false) {
+      const hex = rgbToHex(fill.color.r, fill.color.g, fill.color.b);
+
+      if (!config.colorPalette.includes(hex) && !config.colorPalette.includes(hex.toLowerCase())) {
+        issues.push({
+          id: generateIssueId(),
+          nodeId: node.id,
+          nodeName: node.name,
+          category: 'color',
+          severity: 'warning',
+          message: `Color ${hex} not in palette`,
+          details: 'This color is not defined in your color palette',
+          currentValue: hex,
+          fixable: false,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Group issues by category
+ */
+function groupIssues(issues: QAIssue[]): IssueGroup[] {
+  const categories: { category: IssueCategory; label: string; icon: string }[] = [
+    { category: 'typography-match', label: 'Typography Style Match', icon: '📝' },
+    { category: 'text-style', label: 'Text Style (Variable)', icon: '🎨' },
+    { category: 'font-size', label: 'Font Size', icon: '✍️' },
+    { category: 'line-height', label: 'Line Height', icon: '📏' },
+    { category: 'contrast', label: 'Contrast (ADA AA)', icon: '🌈' },
+    { category: 'text-size', label: 'Text Size (ADA)', icon: '📱' },
+    { category: 'color', label: 'Color', icon: '🎨' },
+  ];
+
+  return categories
+    .map(({ category, label, icon }) => {
+      const categoryIssues = issues.filter((i) => i.category === category);
+      return {
+        category,
+        label,
+        icon,
+        issues: categoryIssues,
+        errorCount: categoryIssues.filter((i) => i.severity === 'error').length,
+        warningCount: categoryIssues.filter((i) => i.severity === 'warning').length,
+      };
+    })
+    .filter((group) => group.issues.length > 0);
+}
+
+// ============================================================================
+// QA CHECKER - FIX ISSUES
+// ============================================================================
+
+/**
+ * Fix a single issue
+ */
+async function handleQAFixIssue(issue: QAIssue): Promise<void> {
+  try {
+    const node = figma.getNodeById(issue.nodeId);
+    if (!node || !('type' in node)) {
+      sendToUI({
+        type: 'QA_FIX_COMPLETE',
+        issueId: issue.id,
+        success: false,
+        message: 'Node not found',
+      });
+      return;
+    }
+
+    const sceneNode = node as SceneNode;
+    let success = false;
+
+    switch (issue.fixType) {
+      case 'fontSize':
+        if (isTextNode(sceneNode) && typeof issue.suggestedValue === 'number') {
+          await figma.loadFontAsync(sceneNode.fontName as FontName);
+          sceneNode.fontSize = issue.suggestedValue;
+          success = true;
+        }
+        break;
+
+      case 'lineHeight':
+        if (isTextNode(sceneNode) && typeof issue.suggestedValue === 'number') {
+          await figma.loadFontAsync(sceneNode.fontName as FontName);
+          sceneNode.lineHeight = { value: issue.suggestedValue, unit: 'PERCENT' };
+          success = true;
+        }
+        break;
+
+      case 'spacing':
+        if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+          const frame = node as FrameNode;
+          if (typeof issue.suggestedValue === 'number') {
+            // Determine what spacing property to fix based on the message
+            const msg = issue.message.toLowerCase();
+            if (msg.includes('gap')) {
+              frame.itemSpacing = issue.suggestedValue;
+            } else if (msg.includes('padding-top')) {
+              frame.paddingTop = issue.suggestedValue;
+            } else if (msg.includes('padding-bottom')) {
+              frame.paddingBottom = issue.suggestedValue;
+            } else if (msg.includes('padding-left')) {
+              frame.paddingLeft = issue.suggestedValue;
+            } else if (msg.includes('padding-right')) {
+              frame.paddingRight = issue.suggestedValue;
+            }
+            success = true;
+          }
+        }
+        break;
+    }
+
+    sendToUI({
+      type: 'QA_FIX_COMPLETE',
+      issueId: issue.id,
+      success,
+      message: success ? 'Fixed successfully' : 'Unable to fix this issue',
+    });
+  } catch (error) {
+    sendToUI({
+      type: 'QA_FIX_COMPLETE',
+      issueId: issue.id,
+      success: false,
+      message: `Error: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/**
+ * Fix all issues in a category
+ */
+async function handleQAFixAll(category: IssueCategory, issues: QAIssue[]): Promise<void> {
+  let fixedCount = 0;
+  let failedCount = 0;
+
+  for (const issue of issues) {
+    if (!issue.fixable) {
+      failedCount++;
+      continue;
+    }
+
+    try {
+      const node = figma.getNodeById(issue.nodeId);
+      if (!node || !('type' in node)) {
+        failedCount++;
+        continue;
+      }
+
+      const sceneNode = node as SceneNode;
+      let success = false;
+
+      switch (issue.fixType) {
+        case 'fontSize':
+          if (isTextNode(sceneNode) && typeof issue.suggestedValue === 'number') {
+            await figma.loadFontAsync(sceneNode.fontName as FontName);
+            sceneNode.fontSize = issue.suggestedValue;
+            success = true;
+          }
+          break;
+
+        case 'lineHeight':
+          if (isTextNode(sceneNode) && typeof issue.suggestedValue === 'number') {
+            await figma.loadFontAsync(sceneNode.fontName as FontName);
+            sceneNode.lineHeight = { value: issue.suggestedValue, unit: 'PERCENT' };
+            success = true;
+          }
+          break;
+
+        case 'spacing':
+          if ('layoutMode' in sceneNode && sceneNode.layoutMode !== 'NONE') {
+            const frame = sceneNode as FrameNode;
+            if (typeof issue.suggestedValue === 'number') {
+              const msg = issue.message.toLowerCase();
+              if (msg.includes('gap')) {
+                frame.itemSpacing = issue.suggestedValue;
+              } else if (msg.includes('padding-top')) {
+                frame.paddingTop = issue.suggestedValue;
+              } else if (msg.includes('padding-bottom')) {
+                frame.paddingBottom = issue.suggestedValue;
+              } else if (msg.includes('padding-left')) {
+                frame.paddingLeft = issue.suggestedValue;
+              } else if (msg.includes('padding-right')) {
+                frame.paddingRight = issue.suggestedValue;
+              }
+              success = true;
+            }
+          }
+          break;
+      }
+
+      if (success) {
+        fixedCount++;
+      } else {
+        failedCount++;
+      }
+    } catch {
+      failedCount++;
+    }
+  }
+
+  sendToUI({
+    type: 'QA_FIX_ALL_COMPLETE',
+    category,
+    fixedCount,
+    failedCount,
+  });
+}
+
+// ============================================================================
+// QA CHECKER - TOKEN EXTRACTION
+// ============================================================================
+
+/**
+ * Extract design tokens from nodes
+ */
+async function handleQAExtractTokens(scope: 'page' | 'selection'): Promise<void> {
+  try {
+    let nodesToScan: SceneNode[] = [];
+
+    if (scope === 'selection') {
+      nodesToScan = [...figma.currentPage.selection];
+    } else {
+      nodesToScan = [...figma.currentPage.children];
+    }
+
+    if (nodesToScan.length === 0) {
+      sendToUI({
+        type: 'QA_SCAN_ERROR',
+        error: 'No nodes to extract tokens from',
+      });
+      return;
+    }
+
+    // Collect all nodes
+    const allNodes: SceneNode[] = [];
+    const collectNodes = (nodes: readonly SceneNode[]) => {
+      for (const node of nodes) {
+        allNodes.push(node);
+        if (hasChildren(node)) {
+          collectNodes(node.children);
+        }
+      }
+    };
+    collectNodes(nodesToScan);
+
+    // Extract tokens with node info
+    const colorMap = new Map<string, { value: string; type: string; count: number; nodeId: string; nodeName: string }>();
+    const fontFamilyMap = new Map<string, { style: string; count: number; nodeId: string; nodeName: string }>();
+    const fontSizeMap = new Map<number, { count: number; nodeId: string; nodeName: string }>();
+    const fontWeightMap = new Map<number, Map<string, number>>();
+    const lineHeightMap = new Map<string, { value: number | 'auto'; count: number; nodeId: string; nodeName: string }>();
+    const spacingMap = new Map<string, { value: number; type: string; count: number; nodeId: string; nodeName: string }>();
+    const borderRadiusMap = new Map<number, { count: number; nodeId: string; nodeName: string }>();
+
+    for (const node of allNodes) {
+      // Extract colors
+      if ('fills' in node) {
+        const fills = node.fills;
+        if (fills && fills !== figma.mixed && Array.isArray(fills)) {
+          for (const fill of fills) {
+            if (fill.type === 'SOLID' && fill.visible !== false) {
+              const hex = rgbToHex(fill.color.r, fill.color.g, fill.color.b);
+              const existing = colorMap.get(hex);
+              if (existing) {
+                existing.count++;
+              } else {
+                colorMap.set(hex, {
+                  value: hex,
+                  type: isTextNode(node) ? 'text' : 'fill',
+                  count: 1,
+                  nodeId: node.id,
+                  nodeName: node.name,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Extract typography
+      if (isTextNode(node)) {
+        const fontName = node.fontName;
+        if (fontName !== figma.mixed) {
+          const fn = fontName as FontName;
+          const key = `${fn.family}|${fn.style}`;
+          const existing = fontFamilyMap.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            fontFamilyMap.set(key, { style: fn.style, count: 1, nodeId: node.id, nodeName: node.name });
+          }
+
+          // Font weight
+          const weight = getFontWeight(node);
+          if (!fontWeightMap.has(weight)) {
+            fontWeightMap.set(weight, new Map());
+          }
+          const weightFonts = fontWeightMap.get(weight)!;
+          weightFonts.set(fn.family, (weightFonts.get(fn.family) || 0) + 1);
+        }
+
+        const fontSize = node.fontSize;
+        if (typeof fontSize === 'number') {
+          const existingSize = fontSizeMap.get(fontSize);
+          if (existingSize) {
+            existingSize.count++;
+          } else {
+            fontSizeMap.set(fontSize, { count: 1, nodeId: node.id, nodeName: node.name });
+          }
+        }
+
+        const lineHeight = node.lineHeight;
+        if (lineHeight !== figma.mixed && typeof lineHeight === 'object') {
+          let lhKey: string;
+          let lhValue: number | 'auto';
+          if (lineHeight.unit === 'AUTO') {
+            lhKey = 'auto';
+            lhValue = 'auto';
+          } else if (lineHeight.unit === 'PERCENT') {
+            lhKey = String(lineHeight.value);
+            lhValue = lineHeight.value;
+          } else {
+            lhKey = '';
+            lhValue = 0;
+          }
+          if (lhKey) {
+            const existingLh = lineHeightMap.get(lhKey);
+            if (existingLh) {
+              existingLh.count++;
+            } else {
+              lineHeightMap.set(lhKey, { value: lhValue, count: 1, nodeId: node.id, nodeName: node.name });
+            }
+          }
+        }
+      }
+
+      // Extract spacing
+      if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+        const frame = node as FrameNode;
+
+        if (frame.itemSpacing > 0) {
+          const key = `gap-${frame.itemSpacing}`;
+          const existing = spacingMap.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            spacingMap.set(key, { value: frame.itemSpacing, type: 'gap', count: 1, nodeId: node.id, nodeName: node.name });
+          }
+        }
+
+        const paddings = [
+          { value: frame.paddingTop, type: 'padding-top' },
+          { value: frame.paddingBottom, type: 'padding-bottom' },
+          { value: frame.paddingLeft, type: 'padding-left' },
+          { value: frame.paddingRight, type: 'padding-right' },
+        ];
+
+        for (const { value, type } of paddings) {
+          if (value > 0) {
+            const key = `${type}-${value}`;
+            const existing = spacingMap.get(key);
+            if (existing) {
+              existing.count++;
+            } else {
+              spacingMap.set(key, { value, type, count: 1, nodeId: node.id, nodeName: node.name });
+            }
+          }
+        }
+      }
+
+      // Extract border radius
+      if ('cornerRadius' in node) {
+        const radius = node.cornerRadius;
+        if (typeof radius === 'number' && radius > 0) {
+          const existingRadius = borderRadiusMap.get(radius);
+          if (existingRadius) {
+            existingRadius.count++;
+          } else {
+            borderRadiusMap.set(radius, { count: 1, nodeId: node.id, nodeName: node.name });
+          }
+        }
+      }
+    }
+
+    // Build tokens object
+    const tokens: DesignTokens = {
+      colors: Array.from(colorMap.values())
+        .map((c) => ({ value: c.value, type: c.type as ColorToken['type'], count: c.count, nodeId: c.nodeId, nodeName: c.nodeName }))
+        .sort((a, b) => b.count - a.count),
+      typography: {
+        fontFamilies: Array.from(fontFamilyMap.entries())
+          .map(([key, data]) => ({
+            value: key.split('|')[0],
+            style: data.style,
+            count: data.count,
+            nodeId: data.nodeId,
+            nodeName: data.nodeName,
+          }))
+          .sort((a, b) => b.count - a.count),
+        fontSizes: Array.from(fontSizeMap.entries())
+          .map(([value, data]) => ({ value, count: data.count, nodeId: data.nodeId, nodeName: data.nodeName }))
+          .sort((a, b) => a.value - b.value),
+        fontWeights: Array.from(fontWeightMap.entries())
+          .map(([weight, fonts]) => ({
+            weight,
+            fonts: Array.from(fonts.entries()).map(([family, count]) => ({ family, count })),
+          }))
+          .sort((a, b) => a.weight - b.weight),
+        lineHeights: Array.from(lineHeightMap.values())
+          .sort((a, b) => {
+            if (a.value === 'auto') return -1;
+            if (b.value === 'auto') return 1;
+            return (a.value as number) - (b.value as number);
+          }),
+      },
+      spacing: Array.from(spacingMap.values()).sort((a, b) => a.value - b.value),
+      borderRadius: Array.from(borderRadiusMap.entries())
+        .map(([value, data]) => ({ value, count: data.count, nodeId: data.nodeId, nodeName: data.nodeName }))
+        .sort((a, b) => a.value - b.value),
+    };
+
+    sendToUI({ type: 'QA_TOKENS_EXTRACTED', tokens });
+  } catch (error) {
+    sendToUI({
+      type: 'QA_SCAN_ERROR',
+      error: `Token extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+// ============================================================================
+// QA CHECKER - SETTINGS & NAVIGATION
+// ============================================================================
+
+/**
+ * Save QA configuration
+ */
+async function saveQAConfig(config: QAConfig): Promise<void> {
+  try {
+    await figma.clientStorage.setAsync(QA_CONFIG_KEY, config);
+    console.log('✓ QA Config saved:', config);
+  } catch (e) {
+    console.error('Failed to save QA config:', e);
+  }
+}
+
+/**
+ * Load QA configuration
+ */
+async function loadQAConfig(): Promise<QAConfig> {
+  try {
+    const config = await figma.clientStorage.getAsync(QA_CONFIG_KEY);
+    if (config) {
+      return config as QAConfig;
+    }
+  } catch (e) {
+    console.error('Failed to load QA config:', e);
+  }
+  return DEFAULT_QA_CONFIG;
+}
+
+/**
+ * Save QA scan report
+ */
+async function saveQAReport(result: QAScanResult): Promise<void> {
+  try {
+    await figma.clientStorage.setAsync(QA_REPORT_KEY, result);
+    console.log('✓ QA Report saved');
+  } catch (e) {
+    console.error('Failed to save QA report:', e);
+  }
+}
+
+/**
+ * Load QA scan report
+ */
+async function loadQAReport(): Promise<QAScanResult | null> {
+  try {
+    const result = await figma.clientStorage.getAsync(QA_REPORT_KEY);
+    if (result) {
+      return result as QAScanResult;
+    }
+  } catch (e) {
+    console.error('Failed to load QA report:', e);
+  }
+  return null;
+}
+
+/**
+ * Save QA tokens
+ */
+async function saveQATokens(tokens: DesignTokens): Promise<void> {
+  try {
+    await figma.clientStorage.setAsync(QA_TOKENS_KEY, tokens);
+    console.log('✓ QA Tokens saved');
+  } catch (e) {
+    console.error('Failed to save QA tokens:', e);
+  }
+}
+
+/**
+ * Load QA tokens
+ */
+async function loadQATokens(): Promise<DesignTokens | null> {
+  try {
+    const tokens = await figma.clientStorage.getAsync(QA_TOKENS_KEY);
+    if (tokens) {
+      return tokens as DesignTokens;
+    }
+  } catch (e) {
+    console.error('Failed to load QA tokens:', e);
+  }
+  return null;
+}
+
+/**
+ * Select node in Figma
+ */
+function handleQASelectNode(nodeId: string): void {
+  const node = figma.getNodeById(nodeId);
+  if (node && 'type' in node) {
+    figma.currentPage.selection = [node as SceneNode];
+    figma.viewport.scrollAndZoomIntoView([node as SceneNode]);
+  }
+}
+
+/**
+ * Extract color styles from document
+ */
+function handleQAExtractStyles(): void {
+  const colors: { name: string; hex: string }[] = [];
+  const paintStyles = figma.getLocalPaintStyles();
+  let noNameCounter = 1;
+
+  for (const style of paintStyles) {
+    for (const paint of style.paints) {
+      if (paint.type === 'SOLID') {
+        const hex = rgbToHex(paint.color.r, paint.color.g, paint.color.b);
+        const name = style.name || `No name ${noNameCounter++}`;
+        // Only add if hex not already in list
+        if (!colors.some(c => c.hex === hex)) {
+          colors.push({ name, hex });
+        }
+      }
+    }
+  }
+
+  sendToUI({ type: 'QA_STYLES_EXTRACTED', colors });
+}
+
+/**
+ * Extract color variables from document
+ */
+function handleQAExtractVariables(): void {
+  const colors: { name: string; hex: string }[] = [];
+  let noNameCounter = 1;
+
+  try {
+    const collections = figma.variables.getLocalVariableCollections();
+
+    for (const collection of collections) {
+      for (const variableId of collection.variableIds) {
+        const variable = figma.variables.getVariableById(variableId);
+        if (variable && variable.resolvedType === 'COLOR') {
+          // Get value from first mode
+          const modeId = collection.modes[0]?.modeId;
+          if (modeId) {
+            const value = variable.valuesByMode[modeId];
+            if (value && typeof value === 'object' && 'r' in value) {
+              const rgb = value as RGB;
+              const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+              const name = variable.name || `No name ${noNameCounter++}`;
+              // Only add if hex not already in list
+              if (!colors.some(c => c.hex === hex)) {
+                colors.push({ name, hex });
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Variables API not available or error:', e);
+  }
+
+  sendToUI({ type: 'QA_VARIABLES_EXTRACTED', colors });
+}
+
+/**
+ * Extract typography styles from Figma text styles
+ */
+function handleQAExtractTypographyStyles(): void {
+  const styles: { name: string; fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number; letterSpacing: number; wordSpacing: number }[] = [];
+
+  try {
+    const textStyles = figma.getLocalTextStyles();
+
+    for (const style of textStyles) {
+      const fontName = style.fontName;
+      const fontSize = style.fontSize;
+      const lineHeight = style.lineHeight;
+      const letterSpacing = style.letterSpacing;
+
+      // Get font weight from style name
+      let fontWeight = 400;
+      const styleName = fontName.style.toLowerCase();
+      if (styleName.includes('black')) fontWeight = 900;
+      else if (styleName.includes('extrabold') || styleName.includes('extra bold')) fontWeight = 800;
+      else if (styleName.includes('bold')) fontWeight = 700;
+      else if (styleName.includes('semibold') || styleName.includes('semi bold')) fontWeight = 600;
+      else if (styleName.includes('medium')) fontWeight = 500;
+      else if (styleName.includes('light')) fontWeight = 300;
+      else if (styleName.includes('thin')) fontWeight = 100;
+
+      // Get line height as percentage
+      let lineHeightPercent = 150;
+      if (typeof lineHeight === 'object') {
+        if (lineHeight.unit === 'PERCENT') {
+          lineHeightPercent = Math.round(lineHeight.value);
+        } else if (lineHeight.unit === 'PIXELS' && fontSize > 0) {
+          lineHeightPercent = Math.round((lineHeight.value / fontSize) * 100);
+        }
+      }
+
+      // Get letter spacing in px (convert from percentage if needed)
+      let letterSpacingPx = 0;
+      if (typeof letterSpacing === 'object') {
+        if (letterSpacing.unit === 'PIXELS') {
+          letterSpacingPx = Math.round(letterSpacing.value * 100) / 100;
+        } else if (letterSpacing.unit === 'PERCENT') {
+          // Convert percentage to px (percentage of font size)
+          letterSpacingPx = Math.round((letterSpacing.value / 100) * fontSize * 100) / 100;
+        }
+      }
+
+      styles.push({
+        name: style.name,
+        fontFamily: fontName.family,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        lineHeight: lineHeightPercent,
+        letterSpacing: letterSpacingPx,
+        wordSpacing: 0, // Figma doesn't have word spacing property
+      });
+    }
+  } catch (e) {
+    console.log('Error extracting typography styles:', e);
+  }
+
+  sendToUI({ type: 'QA_TYPOGRAPHY_STYLES_EXTRACTED', styles });
+}
+
+// Load QA config, report, and tokens on startup
+(async () => {
+  const qaConfig = await loadQAConfig();
+  sendToUI({ type: 'QA_CONFIG_LOADED', config: qaConfig });
+
+  const qaReport = await loadQAReport();
+  sendToUI({ type: 'QA_REPORT_LOADED', result: qaReport });
+
+  const qaTokens = await loadQATokens();
+  sendToUI({ type: 'QA_TOKENS_LOADED', tokens: qaTokens });
+})();
 
 // ============================================================================
 // UTILITIES

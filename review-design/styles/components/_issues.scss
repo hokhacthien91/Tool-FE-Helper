@@ -1,7 +1,7 @@
 @use "../variables" as *;
 
 .issue-group {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   background: $color-surface;
   border-radius: 8px;
   border: 1px solid $color-border;
@@ -12,7 +12,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
+    padding: 10px;
     cursor: pointer;
     user-select: none;
     transition: background-color 0.2s;
