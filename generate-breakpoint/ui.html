@@ -1484,7 +1484,7 @@
     <div class="container">
       <!-- Tab Navigation -->
       <div class="tab-nav">
-        <button class="tab-btn active" data-tab="generator">Generator</button>
+        <button class="tab-btn active" data-tab="generator">Breakpoint Generator</button>
         <button class="tab-btn" data-tab="email">For Email</button>
         <button class="tab-btn" data-tab="inspector">Inspector</button>
         <button class="tab-btn" data-tab="qa">QA Checker</button>
@@ -2547,6 +2547,21 @@
 
           <div class="divider"></div>
 
+          <!-- Skip Layer Names -->
+          <div class="section">
+            <div class="section-title">Skip Layer Names</div>
+            <textarea
+              id="qa-skip-layer-names"
+              placeholder="vector&#10;icon&#10;..."
+              style="min-height: 60px"
+            ></textarea>
+            <div class="hint" style="margin-top: 4px">
+              Enter layer names to skip during QA scan (one per line). Layers with matching names will be ignored.
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
           <!-- Settings Actions -->
           <div class="section">
             <div class="button-group">
@@ -2624,8 +2639,8 @@
       const TAB_CONFIG = {
         generator: true,   // Generator tab
         email: true,       // For Email tab
-        inspector: true,   // Inspector tab
-        qa: true,          // QA Checker tab
+        inspector: false,   // Inspector tab
+        qa: false,          // QA Checker tab
       };
       // ============================================================================
 
@@ -4021,6 +4036,7 @@
       const qaTypographySettingsContent = document.getElementById(
         "qa-typography-settings-content"
       );
+      const qaSkipLayerNames = document.getElementById("qa-skip-layer-names");
 
       // Default typography styles
       const defaultTypographyStyles = [
@@ -4498,6 +4514,11 @@
             checkLetterSpacing: qaTypoCheckLetterspacing.checked,
             checkWordSpacing: qaTypoCheckWordspacing.checked,
           },
+          // Skip layer names
+          skipLayerNames: qaSkipLayerNames.value
+            .split("\n")
+            .map((s) => s.trim().toLowerCase())
+            .filter((s) => s.length > 0),
         };
       }
 
@@ -5589,6 +5610,12 @@
                   msg.config.typographyCheckRules.checkLetterSpacing !== false;
                 qaTypoCheckWordspacing.checked =
                   msg.config.typographyCheckRules.checkWordSpacing !== false;
+              }
+              // Restore skip layer names
+              if (msg.config.skipLayerNames && msg.config.skipLayerNames.length > 0) {
+                qaSkipLayerNames.value = msg.config.skipLayerNames.join("\n");
+              } else {
+                qaSkipLayerNames.value = "vector";
               }
               renderColorPaletteGrid();
             }

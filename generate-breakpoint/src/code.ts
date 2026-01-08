@@ -3978,6 +3978,14 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
         });
       }
 
+      // Skip layers whose names match skipLayerNames
+      if (config.skipLayerNames && config.skipLayerNames.length > 0) {
+        const nodeLowerName = node.name.toLowerCase();
+        if (config.skipLayerNames.some(skipName => nodeLowerName.includes(skipName))) {
+          continue;
+        }
+      }
+
       // Text node checks
       if (isTextNode(node)) {
         // Typography checks (font-size, line-height, text-size)

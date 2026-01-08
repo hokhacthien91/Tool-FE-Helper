@@ -252,6 +252,8 @@ export interface QAConfig {
   // Typography style matching
   typographyStyles: TypographyStyle[];
   typographyCheckRules: TypographyCheckRules;
+  // Skip layer names - layers matching these names will be skipped during QA scan
+  skipLayerNames: string[];
 }
 
 /**
@@ -300,6 +302,7 @@ export const DEFAULT_QA_CONFIG: QAConfig = {
     checkLetterSpacing: true,
     checkWordSpacing: true,
   },
+  skipLayerNames: ['vector'],
 };
 
 /**
