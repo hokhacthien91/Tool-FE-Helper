@@ -74,7 +74,7 @@
       }
 
       .tab-btn {
-        padding: var(--spacing-sm) var(--spacing-lg);
+        padding: 10px 12px;
         border: none;
         background: transparent;
         color: var(--text-secondary);
@@ -395,7 +395,7 @@
       .divider {
         height: 1px;
         background: var(--border-color);
-        margin: 20px 0;
+        margin: 15px 0;
       }
 
       .footer {
@@ -551,7 +551,7 @@
       .inspector-json textarea {
         font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
         font-size: 11px;
-        min-height: 200px;
+        min-height: 100px;
         max-height: 300px;
         white-space: pre;
         overflow-x: auto;
@@ -1123,6 +1123,9 @@
       .qa-issue-node {
         font-size: 11px;
         color: var(--text-tertiary);
+            white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
       }
 
       .qa-issue-actions {
@@ -1486,8 +1489,9 @@
       <div class="tab-nav">
         <button class="tab-btn active" data-tab="generator">Breakpoint Generator</button>
         <button class="tab-btn" data-tab="email">For Email</button>
-        <button class="tab-btn" data-tab="inspector">Inspector</button>
+        <button class="tab-btn" data-tab="inspector">Export JSON</button>
         <button class="tab-btn" data-tab="qa">QA Checker</button>
+        <button class="tab-btn" data-tab="gif">Export GIF</button>
       </div>
 
       <!-- Generator Tab -->
@@ -1516,73 +1520,61 @@
           </div>
         </div>
 
-        <div class="flex-row">
-          <!-- Mobile Width -->
-          <div class="section">
-            <div class="section-title">
-              Target Widths
-              <span class="hint" style="font-weight: normal"
-                >(select one or more)</span
-              >
-            </div>
-            <div class="presets">
-              <button class="preset-btn active" data-width="414">
-                Mobile (414)
-              </button>
-              <button class="preset-btn" data-width="390">
-                iPhone Pro (390)
-              </button>
-              <button class="preset-btn" data-width="375">iPhone (375)</button>
-              <button class="preset-btn" data-width="768">Tablet (768)</button>
-              <button class="preset-btn" data-width="1024">
-                Tablet (1024)
-              </button>
-            </div>
-            <input
-              type="number"
-              id="mobileWidth"
-              value="414"
-              min="280"
-              max="1920"
-              step="1"
-              style="display: none"
-            />
+        <!-- Target Breakpoints with individual settings -->
+        <div class="section">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleBreakpointsSection()">
+            <span id="breakpointsSectionToggle">▼</span>
+            Target Breakpoints
+            <span class="hint" style="font-weight: normal">(select one or more)</span>
           </div>
 
-          <!-- Container Padding -->
-          <div class="section">
-            <div class="section-title">Container Padding (left/right)</div>
-            <div class="input-row">
-              <input
-                type="number"
-                id="containerPadding"
-                value="20"
-                min="0"
-                max="100"
-                step="1"
-              />
-              <span class="input-suffix">px</span>
+          <div id="breakpointsSectionContent">
+          <!-- Mobile 414 -->
+          <div class="breakpoint-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; min-width: 120px; cursor: pointer;">
+              <input type="checkbox" class="breakpoint-checkbox" data-width="414" checked />
+              <span style="font-weight: 500;">Mobile (414)</span>
+            </label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 11px; color: var(--text-secondary);">Padding:</span>
+              <input type="number" id="padding414" value="24" min="0" max="100" style="width: 50px; font-size: 11px;" />
+              <span style="font-size: 11px; color: var(--text-secondary);">Max Gap:</span>
+              <input type="number" id="maxSpacing414" value="40" min="16" max="100" style="width: 50px; font-size: 11px;" />
             </div>
-            <div class="hint">Spacing for content inside mobile container</div>
           </div>
-        </div>
 
-        <!-- Max Spacing Cap -->
-        <div class="section" style="margin-top: 10px">
-          <div class="section-title">Max Spacing Cap</div>
-          <div class="input-row">
-            <input
-              type="number"
-              id="maxSpacing"
-              value="40"
-              min="16"
-              max="100"
-              step="4"
-            />
-            <span class="input-suffix">px</span>
+          <!-- Tablet 768 -->
+          <div class="breakpoint-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; min-width: 120px; cursor: pointer;">
+              <input type="checkbox" class="breakpoint-checkbox" data-width="768" />
+              <span style="font-weight: 500;">Tablet (768)</span>
+            </label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 11px; color: var(--text-secondary);">Padding:</span>
+              <input type="number" id="padding768" value="48" min="0" max="100" style="width: 50px; font-size: 11px;" />
+              <span style="font-size: 11px; color: var(--text-secondary);">Max Gap:</span>
+              <input type="number" id="maxSpacing768" value="60" min="16" max="100" style="width: 50px; font-size: 11px;" />
+            </div>
           </div>
-          <div class="hint">
-            Maximum spacing between items when converting to mobile
+
+          <!-- Tablet 1024 -->
+          <div class="breakpoint-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; min-width: 120px; cursor: pointer;">
+              <input type="checkbox" class="breakpoint-checkbox" data-width="1024" />
+              <span style="font-weight: 500;">Tablet (1024)</span>
+            </label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 11px; color: var(--text-secondary);">Padding:</span>
+              <input type="number" id="padding1024" value="48" min="0" max="100" style="width: 50px; font-size: 11px;" />
+              <span style="font-size: 11px; color: var(--text-secondary);">Max Gap:</span>
+              <input type="number" id="maxSpacing1024" value="60" min="16" max="100" style="width: 50px; font-size: 11px;" />
+            </div>
+          </div>
+
+          <!-- Hidden inputs for backward compatibility -->
+          <input type="number" id="mobileWidth" value="414" style="display: none" />
+          <input type="number" id="containerPadding" value="24" style="display: none" />
+          <input type="number" id="maxSpacing" value="40" style="display: none" />
           </div>
         </div>
 
@@ -1590,7 +1582,11 @@
 
         <!-- Manual Source Frames -->
         <div class="section">
-          <div class="section-title">Manual Sections Source (Optional)</div>
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleManualSectionsSection()">
+            <span id="manualSectionsSectionToggle">▶</span>
+            Manual Sections Source (Optional)
+          </div>
+          <div id="manualSectionsSectionContent" style="display: none;">
           <label
             class="manual-frame-item"
             style="
@@ -1632,7 +1628,7 @@
                 user-select: none;
               "
             >
-              ▸ Advanced Settings
+              Advanced Settings
             </summary>
             <div
               style="
@@ -1721,6 +1717,7 @@
               No frames selected. Select a frame on canvas and click "Add
               Selected Frame".
             </div>
+          </div>
           </div>
         </div>
 
@@ -1827,7 +1824,11 @@
 
         <!-- Dark Mode Conversion -->
         <div class="section">
-          <div class="section-title">Dark Mode Simulation</div>
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleDarkModeSection()">
+            <span id="darkModeSectionToggle">▶</span>
+            Dark Mode Simulation
+          </div>
+          <div id="darkModeSectionContent" style="display: none;">
           <div class="hint" style="margin-bottom: 12px">
             Clone selection and invert colors to simulate how email will look in
             dark mode.
@@ -1870,14 +1871,25 @@
               </button>
             </div>
           </div>
+          </div>
         </div>
 
-        <div class="divider" style="margin: 20px 0"></div>
+        <div class="divider"></div>
 
-        <!-- Export Buttons -->
+        <!-- Export for Compare DOCX -->
         <div class="section">
-          <div class="flex" style="display: flex; gap: 10px; align-items: end">
-            <div style="">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleCompareExportSection()">
+            <span id="compareExportSectionToggle">▶</span>
+            Export for Compare (DOCX vs Design)
+          </div>
+          <div id="compareExportSectionContent" style="display: none;">
+          <div class="hint" style="margin-bottom: 12px">
+            Export JSON structure and screenshot of selected frames for comparing with DOCX content.
+            Select 2 frames: Desktop and Mobile versions.
+          </div>
+
+          <div style="display: flex; gap: 12px; margin-bottom: 12px">
+            <div style="flex: 1">
               <div
                 style="
                   font-weight: 500;
@@ -1886,106 +1898,171 @@
                   color: var(--text-primary);
                 "
               >
-                Name Frame/Group export
+                Project Name
               </div>
-              <div class="hint" style="margin-bottom: 4px">
-                Frames with exact name match will be exported (case-insensitive)
-              </div>
-              <textarea
-                id="buttonNamePatterns"
-                placeholder="button&#10;btn&#10;cta"
-                style="min-height: 100px"
-              ></textarea>
+              <input
+                type="text"
+                id="compareProjectName"
+                placeholder="mail1"
+                value="mail1"
+                style="
+                  width: 100%;
+                  height: 32px;
+                  padding: 0 var(--spacing-sm);
+                  border: 1px solid var(--border-color);
+                  border-radius: var(--radius-sm);
+                  background: var(--bg-primary);
+                  color: var(--text-primary);
+                  font-size: var(--font-size-md);
+                "
+              />
             </div>
+          </div>
 
-            <div style="width: 60%">
-              <div style="display: flex; gap: 12px; margin-bottom: 12px">
-                <div style="flex: 1">
-                  <div
-                    style="
-                      font-weight: 500;
-                      margin-bottom: 4px;
-                      font-size: var(--font-size-sm);
-                      color: var(--text-primary);
-                    "
-                  >
-                    Format
-                  </div>
-                  <select
-                    id="exportFormat"
-                    style="
-                      width: 100%;
-                      padding: 6px;
-                      border: 1px solid var(--border-color);
-                      border-radius: var(--radius-sm);
-                      background: transparent;
-                      color: var(--text-primary);
-                    "
-                  >
+          <div style="display: flex; gap: 8px; margin-bottom: 8px">
+            <button id="addDesktopFrameBtn" class="preset-btn" style="flex: 1">
+              + Add Desktop Frame
+            </button>
+            <button id="addMobileFrameBtn" class="preset-btn" style="flex: 1">
+              + Add Mobile Frame
+            </button>
+          </div>
+
+          <div id="compareFramesList" style="
+            background: var(--bg-secondary);
+            border-radius: var(--radius-sm);
+            padding: var(--spacing-sm);
+            margin-bottom: 12px;
+            font-size: var(--font-size-sm);
+          ">
+            <div style="color: var(--text-tertiary); font-style: italic;">
+              No frames selected. Select frames on canvas and click buttons above.
+            </div>
+          </div>
+
+          <button
+            id="exportCompareBtn"
+            class="btn btn-primary"
+            style="width: 100%;flex: auto;"
+            disabled
+          >
+            Export for Compare
+          </button>
+          <div id="compareExportStatus" class="hint" style="margin-top: 4px"></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Export Buttons -->
+        <div class="section">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleExportImagesSection()">
+            <span id="exportImagesSectionToggle">▼</span>
+            Export all images
+          </div>
+          <div id="exportImagesSectionContent">
+          <div class="hint" style="margin-bottom: 8px">
+            Frames with exact name match will be exported (case-insensitive).
+          </div>
+
+              <!-- Row 1: Button patterns + Format + Scale + Padding -->
+              <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end;">
+                <div style="flex: 2;">
+                  <div style="font-weight: 500; font-size: var(--font-size-sm); color: var(--text-primary); margin-bottom: 4px;">Button</div>
+                  <textarea
+                    id="buttonNamePatterns"
+                    style="min-height: 100px; font-size: 11px;"
+                  >Button
+aton/Buttons</textarea>
+                </div>
+                <div style="width: 60px;">
+                  <div class="hint" style="margin-bottom: 2px; font-size: 10px;">Format</div>
+                  <select id="buttonExportFormat" style="font-size: 11px; padding: 7px;border: 1px solid var(--border-color);border-radius: 4px;">
                     <option value="PNG" selected>PNG</option>
                     <option value="SVG">SVG</option>
                     <option value="JPG">JPG</option>
                   </select>
                 </div>
-                <div style="flex: 1">
-                  <div
-                    style="
-                      font-weight: 500;
-                      margin-bottom: 4px;
-                      font-size: var(--font-size-sm);
-                      color: var(--text-primary);
-                    "
-                  >
-                    Scale
-                  </div>
-                  <div class="input-row">
-                    <input
-                      type="number"
-                      id="exportScale"
-                      value="2"
-                      min="1"
-                      max="4"
-                      step="0.5"
-                    />
-                    <span class="input-suffix">x</span>
-                  </div>
+                <div style="width: 56px;">
+                  <div class="hint" style="margin-bottom: 2px; font-size: 10px;">Scale</div>
+                  <select id="buttonExportScale" style="font-size: 11px; padding: 7px;border: 1px solid var(--border-color);border-radius: 4px;">
+                    <option value="1">1x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2" selected>2x</option>
+                    <option value="2.5">2.5x</option>
+                    <option value="3">3x</option>
+                  </select>
                 </div>
-                <div style="flex: 1">
-                  <div
-                    style="
-                      font-weight: 500;
-                      margin-bottom: 4px;
-                      font-size: var(--font-size-sm);
-                      color: var(--text-primary);
-                    "
-                  >
-                    Padding
-                  </div>
-                  <div class="input-row">
-                    <input
-                      type="number"
-                      id="exportPadding"
-                      value="4"
-                      min="0"
-                      max="50"
-                      step="1"
-                    />
-                    <span class="input-suffix">px</span>
-                  </div>
+                <div style="width: 50px;">
+                  <div class="hint" style="margin-bottom: 2px; font-size: 10px;">Padding</div>
+                  <select id="buttonExportPadding" style="font-size: 11px; padding: 7px;border: 1px solid var(--border-color);border-radius: 4px;">
+                    <option value="1">1px</option>
+                    <option value="2" selected>2px</option>
+                    <option value="3">3px</option>
+                    <option value="4">4px</option>
+                    <option value="5">5px</option>
+                    <option value="6">6px</option>
+                    <option value="7">7px</option>
+                    <option value="8">8px</option>
+                  </select>
                 </div>
               </div>
 
+              <!-- Row 2: PNG patterns + Scale -->
+              <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end;">
+                <div style="flex: 2;">
+                  <div style="font-weight: 500; font-size: var(--font-size-sm); color: var(--text-primary); margin-bottom: 4px;">PNG</div>
+                  <textarea
+                    id="pngNamePatterns"
+                    placeholder="icon&#10;logo"
+                    style="min-height: 100px; font-size: 11px;"
+                  ></textarea>
+                </div>
+                <div style="width: 50px;">
+                  <div class="hint" style="margin-bottom: 2px; font-size: 10px;">Scale</div>
+                  <select id="pngExportScale" style="font-size: 11px; padding: 7px;border: 1px solid var(--border-color);border-radius: 4px;">
+                    <option value="1">1x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2" selected>2x</option>
+                    <option value="2.5">2.5x</option>
+                    <option value="3">3x</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Row 3: JPG patterns + Scale -->
+              <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-end;">
+                <div style="flex: 2;">
+                  <div style="font-weight: 500; font-size: var(--font-size-sm); color: var(--text-primary); margin-bottom: 4px;">JPG</div>
+                  <textarea
+                    id="jpgNamePatterns"
+                    placeholder="image&#10;photo"
+                    style="min-height: 100px; font-size: 11px;"
+                  ></textarea>
+                </div>
+                <div style="width: 50px;">
+                  <div class="hint" style="margin-bottom: 2px; font-size: 10px;">Scale</div>
+                  <select id="jpgExportScale" style="font-size: 11px; padding: 7px;border: 1px solid var(--border-color);border-radius: 4px;">
+                    <option value="1">1x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2" selected>2x</option>
+                    <option value="2.5">2.5x</option>
+                    <option value="3">3x</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Row 3: Export button -->
               <button
-                id="exportButtonsBtn"
+                id="exportAllImagesBtn"
                 class="btn btn-primary"
-                style="width: 100%; flex: auto"
+                style="width: 100%;"
                 disabled
               >
-                Export All Buttons
+                Export All Images
               </button>
-            </div>
-          </div>
           <div id="exportStatus" class="hint" style="margin-top: 4px"></div>
+          </div>
         </div>
       </div>
 
@@ -2016,23 +2093,32 @@
 
         <!-- Preview -->
         <div class="section">
-          <div class="section-title">Preview</div>
+          <div class="section-title" style="cursor: pointer; user-select: none; margin-top: 10px;" onclick="toggleInspectorPreviewSection()">
+            <span id="inspectorPreviewSectionToggle">▼</span>
+            Preview
+          </div>
+          <div id="inspectorPreviewSectionContent">
           <div class="inspector-preview" id="inspectorPreview">
             <div class="inspector-preview-empty">
               Select a node to see preview
             </div>
           </div>
-        </div>
-        <!-- JSON Output -->
-        <div class="section">
           <button
             class="btn btn-primary"
             id="copyJsonBtn"
-            style="margin-top: var(--spacing-sm); flex: auto"
+            style="margin-top: var(--spacing-sm); width: 100%;"
           >
-            Copy node structure
+            Copy Json
           </button>
-          <div class="section-title">Node Structure (JSON)</div>
+          </div>
+        </div>
+        <!-- JSON Output -->
+        <div class="section">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleInspectorJsonSection()">
+            <span id="inspectorJsonSectionToggle">▶</span>
+            Node Structure (JSON)
+          </div>
+          <div id="inspectorJsonSectionContent" style="display: none;">
           <div class="inspector-options">
             <label>
               <input type="checkbox" id="minifyJson" checked />
@@ -2047,10 +2133,15 @@
             ></textarea>
             <div class="copy-success" id="copySuccess">Copied!</div>
           </div>
+          </div>
         </div>
         <!-- Node Info Grid -->
         <div class="section" style="margin-top: 30px">
-          <div class="section-title">Properties</div>
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleInspectorPropertiesSection()">
+            <span id="inspectorPropertiesSectionToggle">▶</span>
+            Properties
+          </div>
+          <div id="inspectorPropertiesSectionContent" style="display: none;">
           <div class="inspector-info" id="inspectorInfo">
             <div class="inspector-info-item">
               <span class="inspector-info-label">x</span>
@@ -2084,6 +2175,7 @@
               <span class="inspector-info-label">padding bottom</span>
               <span class="inspector-info-value" id="infoPaddingBottom">-</span>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -2576,6 +2668,151 @@
         </div>
       </div>
 
+      <!-- Export GIF Tab -->
+      <div class="tab-content" id="tab-gif">
+        <!-- Selection Info -->
+        <div class="section">
+          <div class="section-title">Selected Frame</div>
+          <div class="selection-info" id="gifSelectionInfo" style="margin-bottom: 10px">
+            <div class="selection-icon empty" id="gifSelectionIcon">
+              <svg viewBox="0 0 24 24">
+                <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z" />
+              </svg>
+            </div>
+            <div class="selection-details">
+              <div class="selection-name selection-empty" id="gifSelectionName">
+                No frame selected
+              </div>
+              <div class="selection-meta" id="gifSelectionMeta">
+                Select a frame with multiple children or a component instance
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame List (Collapsible) -->
+        <div class="section" id="gifFrameListSection" style="display: none; margin-bottom: 20px;">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleGifFrameList()">
+            <span id="gifFrameListToggle">▶</span> Frames to Export (<span id="gifFrameCount">0</span>)
+          </div>
+          <div id="gifFrameList" class="gif-frame-list" style="padding: 8px; display: none;">
+            <!-- Frame names will be listed here -->
+          </div>
+        </div>
+
+        <!-- Export Settings (Collapsible, default open) -->
+        <div class="section">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleGifExportSettings()">
+            <span id="gifExportSettingsToggle">▼</span> Export Settings
+          </div>
+          <div id="gifExportSettingsContent">
+          <!-- Row 1: Width, Height, Scale -->
+          <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Width</label>
+              <input type="number" id="gifWidth" value="600" min="100" max="2000" style="width: 100%;" />
+            </div>
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Height</label>
+              <input type="number" id="gifHeight" value="400" min="100" max="2000" style="width: 100%;" />
+            </div>
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Scale</label>
+              <select id="gifScale" style="width: 100%; height: 32px;">
+                <option value="0.5">0.5x</option>
+                <option value="1">1x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2" selected>2x</option>
+                <option value="3">3x</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2: FPS, Delay, Loop -->
+          <div style="display: flex; gap: 12px; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">FPS</label>
+              <input type="number" id="gifFps" value="25" min="1" max="60" style="width: 100%;" />
+            </div>
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Delay (ms)</label>
+              <input type="number" id="gifFrameDelay" value="500" min="50" max="5000" step="50" style="width: 100%;" />
+            </div>
+            <div style="flex: 1;">
+              <label style="display: flex; align-items: center; gap: 6px; height: 32px; font-size: 12px; cursor: pointer;">
+                <input type="checkbox" id="gifLoop" checked />
+                Loop
+              </label>
+            </div>
+          </div>
+
+          <!-- Row 3: Padding X, Padding Y -->
+          <div style="display: flex; gap: 12px; margin-top: 12px;">
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Padding X (left/right)</label>
+              <input type="number" id="gifPaddingX" value="0" min="0" max="500" style="width: 100%;" />
+            </div>
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Padding Y (top/bottom)</label>
+              <input type="number" id="gifPaddingY" value="0" min="0" max="500" style="width: 100%;" />
+            </div>
+          </div>
+
+          <!-- Background Color -->
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <div style="flex: 1;">
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Background Color (empty = transparent)</label>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <input type="text" id="gifBgColor" placeholder="#FFFFFF or transparent" style="flex: 1;" />
+                <input type="color" id="gifBgColorPicker" value="#ffffff" style="width: 32px; height: 28px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Overlay Layers (multi-select) -->
+          <div id="gifOverlaySection" style="display: none; margin-top: 12px;">
+            <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Overlay Layers (static on top of GIF)</label>
+            <div id="gifOverlayList" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px;">
+              <!-- Checkbox items will be added here -->
+            </div>
+          </div>
+          </div><!-- End gifExportSettingsContent -->
+        </div>
+
+        <!-- Progress -->
+        <div id="gifProgress" class="progress-container" style="margin: 10px 0; display: none;">
+          <div class="progress-info">
+            <span id="gifProgressText" class="progress-text">Exporting frames...</span>
+            <span id="gifProgressCount" class="progress-count">0 / 0</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="gifProgressFill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+<br>
+        <!-- Preview -->
+        <div class="section" id="gifPreviewSection" style="display: none; margin-bottom: 10px;">
+          <div class="section-title" style="margin-bottom: 10px;">Preview</div>
+          <div id="gifPreview" style="text-align: center; background: var(--figma-color-bg-secondary); border-radius: 4px; padding: 16px;">
+            <img id="gifPreviewImage" style="max-width: 100%; max-height: 300px;" />
+          </div>
+        </div>
+
+
+        <!-- Actions -->
+        <div class="section" style="flex-direction: row">
+          <button id="gifExportBtn" class="btn btn-primary" style="width: 100%; flex: auto;" disabled>
+            Preview
+          </button>
+          <button id="gifDownloadBtn" class="btn btn-primary" style="width: 100%; flex: auto; display: none;">
+            Download
+          </button>
+        </div>
+
+        <!-- Status -->
+        <div id="gifStatus" class="status-message" style="display: none;"></div>
+      </div>
+
       <div class="footer">Breakpoint Generator v2.0</div>
     </div>
 
@@ -2631,6 +2868,296 @@
     <!-- JSZip library for creating ZIP files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
+    <!-- GIF Encoder - inline implementation for Figma plugin sandbox -->
+    <script>
+      // GIF encoder with proper RGB color handling
+      const GIFEncoder = (function() {
+        // LZW encoder for GIF compression
+        function LZWEncoder(width, height, pixels, colorDepth) {
+          const EOF = -1;
+          const BITS = 12;
+          const HSIZE = 5003;
+          let curAccum = 0, curBits = 0;
+          let accum = new Uint8Array(256);
+          let aCount = 0;
+          let freeEnt = 0, maxCode, clearCode, eofCode;
+          let nBits, initBits;
+          let clearFlg = false;
+          let gInitBits, remaining, curPixel;
+          let htab = new Int32Array(HSIZE), codetab = new Int32Array(HSIZE);
+
+          function charOut(c, outs) {
+            accum[aCount++] = c;
+            if (aCount >= 254) flushChar(outs);
+          }
+
+          function clBlock(outs) {
+            htab.fill(-1);
+            freeEnt = clearCode + 2;
+            clearFlg = true;
+            output(clearCode, outs);
+          }
+
+          function compress(initBits, outs) {
+            gInitBits = initBits;
+            clearFlg = false;
+            nBits = gInitBits;
+            maxCode = (1 << nBits) - 1;
+            clearCode = 1 << (initBits - 1);
+            eofCode = clearCode + 1;
+            freeEnt = clearCode + 2;
+            aCount = 0;
+            htab.fill(-1);
+            let ent = nextPixel();
+            let hshift = 0;
+            for (let fcode = HSIZE; fcode < 65536; fcode *= 2) ++hshift;
+            hshift = 8 - hshift;
+            output(clearCode, outs);
+            let c;
+            outer: while ((c = nextPixel()) != EOF) {
+              let fcode = (c << BITS) + ent;
+              let i = (c << hshift) ^ ent;
+              if (htab[i] === fcode) { ent = codetab[i]; continue; }
+              else if (htab[i] >= 0) {
+                let disp = HSIZE - i; if (i === 0) disp = 1;
+                do { if ((i -= disp) < 0) i += HSIZE;
+                  if (htab[i] === fcode) { ent = codetab[i]; continue outer; }
+                } while (htab[i] >= 0);
+              }
+              output(ent, outs); ent = c;
+              if (freeEnt < 4096) { codetab[i] = freeEnt++; htab[i] = fcode; }
+              else clBlock(outs);
+            }
+            output(ent, outs);
+            output(eofCode, outs);
+          }
+
+          function flushChar(outs) {
+            if (aCount > 0) { outs.writeByte(aCount); outs.writeBytes(accum, 0, aCount); aCount = 0; }
+          }
+
+          function nextPixel() {
+            if (remaining === 0) return EOF;
+            --remaining;
+            return pixels[curPixel++] & 0xff;
+          }
+
+          function output(code, outs) {
+            curAccum &= (1 << curBits) - 1;
+            if (curBits > 0) curAccum |= (code << curBits);
+            else curAccum = code;
+            curBits += nBits;
+            while (curBits >= 8) { charOut(curAccum & 0xff, outs); curAccum >>= 8; curBits -= 8; }
+            if (freeEnt > maxCode || clearFlg) {
+              if (clearFlg) { maxCode = (1 << (nBits = gInitBits)) - 1; clearFlg = false; }
+              else { ++nBits; maxCode = nBits == BITS ? 4096 : (1 << nBits) - 1; }
+            }
+            if (code == eofCode) {
+              while (curBits > 0) { charOut(curAccum & 0xff, outs); curAccum >>= 8; curBits -= 8; }
+              flushChar(outs);
+            }
+          }
+
+          this.encode = function(outs) {
+            remaining = width * height; curPixel = 0;
+            compress(colorDepth + 1, outs);
+          };
+        }
+
+        // Median Cut color quantizer - better quality than NeuQuant
+        function MedianCut(imageData, maxColors, skipTransparent = false) {
+          const pixels = [];
+          for (let i = 0; i < imageData.length; i += 4) {
+            // Skip transparent pixels if skipTransparent is enabled
+            if (skipTransparent && imageData[i + 3] < 128) continue;
+            pixels.push([imageData[i], imageData[i + 1], imageData[i + 2]]);
+          }
+          // If all pixels are transparent, add a dummy pixel
+          if (pixels.length === 0) {
+            pixels.push([0, 0, 0]);
+          }
+
+          function getRange(box) {
+            let rMin = 255, rMax = 0, gMin = 255, gMax = 0, bMin = 255, bMax = 0;
+            for (const p of box) {
+              rMin = Math.min(rMin, p[0]); rMax = Math.max(rMax, p[0]);
+              gMin = Math.min(gMin, p[1]); gMax = Math.max(gMax, p[1]);
+              bMin = Math.min(bMin, p[2]); bMax = Math.max(bMax, p[2]);
+            }
+            return { rRange: rMax - rMin, gRange: gMax - gMin, bRange: bMax - bMin };
+          }
+
+          function splitBox(box) {
+            if (box.length < 2) return [box];
+            const { rRange, gRange, bRange } = getRange(box);
+            let channel = 0;
+            if (gRange >= rRange && gRange >= bRange) channel = 1;
+            else if (bRange >= rRange && bRange >= gRange) channel = 2;
+            box.sort((a, b) => a[channel] - b[channel]);
+            const mid = Math.floor(box.length / 2);
+            return [box.slice(0, mid), box.slice(mid)];
+          }
+
+          function quantize() {
+            let boxes = [pixels];
+            while (boxes.length < maxColors) {
+              let maxRange = 0, maxIdx = 0;
+              for (let i = 0; i < boxes.length; i++) {
+                const { rRange, gRange, bRange } = getRange(boxes[i]);
+                const range = Math.max(rRange, gRange, bRange);
+                if (range > maxRange && boxes[i].length > 1) { maxRange = range; maxIdx = i; }
+              }
+              if (maxRange === 0) break;
+              const [box1, box2] = splitBox(boxes[maxIdx]);
+              boxes.splice(maxIdx, 1, box1, box2);
+            }
+            return boxes.map(box => {
+              let r = 0, g = 0, b = 0;
+              for (const p of box) { r += p[0]; g += p[1]; b += p[2]; }
+              return [Math.round(r / box.length), Math.round(g / box.length), Math.round(b / box.length)];
+            });
+          }
+
+          const palette = quantize();
+
+          this.palette = palette;
+          this.findClosest = function(r, g, b) {
+            let minDist = Infinity, idx = 0;
+            for (let i = 0; i < palette.length; i++) {
+              const dr = r - palette[i][0], dg = g - palette[i][1], db = b - palette[i][2];
+              const dist = dr * dr + dg * dg + db * db;
+              if (dist < minDist) { minDist = dist; idx = i; }
+            }
+            return idx;
+          };
+        }
+
+        // ByteArray helper
+        function ByteArray() {
+          this.data = [];
+          this.writeByte = function(v) { this.data.push(v & 0xff); };
+          this.writeBytes = function(arr, off, len) { for (let i = off; i < off + len; i++) this.data.push(arr[i] & 0xff); };
+          this.writeUTFBytes = function(s) { for (let i = 0; i < s.length; i++) this.data.push(s.charCodeAt(i)); };
+          this.writeShort = function(v) { this.data.push(v & 0xff, (v >> 8) & 0xff); };
+          this.getData = function() { return new Uint8Array(this.data); };
+        }
+
+        // Main GIF encoder
+        function Encoder() {
+          let width, height, repeat = 0, delay = 0, image, indexedPixels, colorDepth = 8;
+          let colorTab = [], firstFrame = true, sizeSet = false, out;
+          let transparentIndex = -1; // -1 means no transparency
+
+          this.setDelay = function(ms) { delay = Math.round(ms / 10); };
+          this.setRepeat = function(iter) { repeat = iter; };
+          this.setSize = function(w, h) { width = w; height = h; sizeSet = true; };
+          this.setQuality = function(q) { /* ignored, using median cut */ };
+          this.setTransparent = function(enable) { transparentIndex = enable ? 0 : -1; };
+
+          this.addFrame = function(ctx) {
+            if (!sizeSet) { width = ctx.canvas.width; height = ctx.canvas.height; sizeSet = true; }
+            image = ctx.getImageData(0, 0, width, height).data;
+            analyzePixels();
+            if (firstFrame) { writeLSD(); writePalette(); writeNetscapeExt(); }
+            writeGraphicCtrlExt(); writeImageDesc();
+            // Always write local palette for EVERY frame (including first frame after global)
+            // Each frame needs its own palette with transparent color at index 0
+            writePalette();
+            writePixels(); firstFrame = false;
+          };
+
+          this.start = function() { out = new ByteArray(); out.writeUTFBytes("GIF89a"); };
+          this.finish = function() { out.writeByte(0x3b); };
+          this.getOutput = function() { return out.getData(); };
+
+          function analyzePixels() {
+            const nPix = width * height;
+            // Reserve index 0 for transparent if transparency enabled
+            const hasTransparency = transparentIndex >= 0;
+            const maxColors = hasTransparency ? 255 : 256;
+            // Skip transparent pixels when building palette if transparency enabled
+            const mc = new MedianCut(image, maxColors, hasTransparency);
+            colorTab = [];
+
+            // If transparency enabled, put transparent color at index 0
+            if (transparentIndex >= 0) {
+              colorTab.push(0, 0, 0); // Transparent color (will be ignored)
+            }
+
+            for (const c of mc.palette) { colorTab.push(c[0], c[1], c[2]); }
+            // Pad palette to 256 colors
+            while (colorTab.length < 768) colorTab.push(0);
+
+            indexedPixels = new Uint8Array(nPix);
+            for (let i = 0; i < nPix; i++) {
+              const idx = i * 4;
+              const alpha = image[idx + 3];
+              // If pixel is nearly fully transparent (alpha < 10) and transparency enabled, use index 0
+              // Using low threshold so semi-transparent pixels still show
+              if (transparentIndex >= 0 && alpha < 10) {
+                indexedPixels[i] = 0; // Transparent index
+              } else {
+                // Offset by 1 if transparency enabled
+                const colorIdx = mc.findClosest(image[idx], image[idx + 1], image[idx + 2]);
+                indexedPixels[i] = transparentIndex >= 0 ? colorIdx + 1 : colorIdx;
+              }
+            }
+          }
+
+          function writeLSD() {
+            out.writeShort(width); out.writeShort(height);
+            out.writeByte(0xf7); // Global color table, 8 bits
+            out.writeByte(0); // Background color index
+            out.writeByte(0); // Pixel aspect ratio
+          }
+
+          function writePalette() {
+            for (let i = 0; i < 768; i++) out.writeByte(colorTab[i] || 0);
+          }
+
+          function writeNetscapeExt() {
+            out.writeByte(0x21); out.writeByte(0xff); out.writeByte(11);
+            out.writeUTFBytes("NETSCAPE2.0");
+            out.writeByte(3); out.writeByte(1);
+            out.writeShort(repeat);
+            out.writeByte(0);
+          }
+
+          function writeGraphicCtrlExt() {
+            out.writeByte(0x21); out.writeByte(0xf9); out.writeByte(4);
+            // Packed byte: disposal method, user input=0, transparent flag
+            // disposal=2 (restore to background) - clear frame to transparent before next
+            // This prevents previous frames from showing through transparent areas
+            const hasTransparency = transparentIndex >= 0;
+            const disposal = hasTransparency ? 2 : 1; // Use disposal=2 for transparency
+            const packed = (disposal << 2) | (hasTransparency ? 1 : 0);
+            out.writeByte(packed);
+            out.writeShort(delay);
+            out.writeByte(hasTransparency ? 0 : 0); // Transparent color index (0 if enabled)
+            out.writeByte(0);
+          }
+
+          function writeImageDesc() {
+            out.writeByte(0x2c);
+            out.writeShort(0); out.writeShort(0); // Position
+            out.writeShort(width); out.writeShort(height);
+            // Always use local color table (0x87) for all frames including first
+            // This ensures each frame has its own palette with transparent at index 0
+            out.writeByte(0x87);
+          }
+
+          function writePixels() {
+            const enc = new LZWEncoder(width, height, indexedPixels, colorDepth);
+            out.writeByte(colorDepth);
+            enc.encode(out);
+            out.writeByte(0);
+          }
+        }
+
+        return Encoder;
+      })();
+    </script>
+
     <script>
       // ============================================================================
       // TAB VISIBILITY CONFIG
@@ -2639,8 +3166,9 @@
       const TAB_CONFIG = {
         generator: true,   // Generator tab
         email: true,       // For Email tab
-        inspector: false,   // Inspector tab
-        qa: false,          // QA Checker tab
+        inspector: true,   // Inspector tab
+        qa: true,          // QA Checker tab
+        gif: true,         // Export GIF tab
       };
       // ============================================================================
 
@@ -2692,6 +3220,11 @@
         if (tabId === "inspector") {
           parent.postMessage({ pluginMessage: { type: "GET_NODE_INFO" } }, "*");
         }
+
+        // Request GIF selection info when switching to gif tab
+        if (tabId === "gif") {
+          parent.postMessage({ pluginMessage: { type: "GIF_GET_SELECTION_INFO" } }, "*");
+        }
       }
 
       tabBtns.forEach((btn) => {
@@ -2713,6 +3246,34 @@
       const presetButtons = document.querySelectorAll(
         ".preset-btn[data-width]"
       );
+      const breakpointCheckboxes = document.querySelectorAll(".breakpoint-checkbox");
+      const padding414Input = document.getElementById("padding414");
+      const padding768Input = document.getElementById("padding768");
+      const padding1024Input = document.getElementById("padding1024");
+      const maxSpacing414Input = document.getElementById("maxSpacing414");
+      const maxSpacing768Input = document.getElementById("maxSpacing768");
+      const maxSpacing1024Input = document.getElementById("maxSpacing1024");
+
+      // Collapsible section elements
+      const breakpointsSectionContent = document.getElementById("breakpointsSectionContent");
+      const breakpointsSectionToggle = document.getElementById("breakpointsSectionToggle");
+      const manualSectionsSectionContent = document.getElementById("manualSectionsSectionContent");
+      const manualSectionsSectionToggle = document.getElementById("manualSectionsSectionToggle");
+
+      // Toggle function for Target Breakpoints section (default open)
+      window.toggleBreakpointsSection = function() {
+        const isHidden = breakpointsSectionContent.style.display === "none";
+        breakpointsSectionContent.style.display = isHidden ? "block" : "none";
+        breakpointsSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for Manual Sections Source section (default closed)
+      window.toggleManualSectionsSection = function() {
+        const isHidden = manualSectionsSectionContent.style.display === "none";
+        manualSectionsSectionContent.style.display = isHidden ? "block" : "none";
+        manualSectionsSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
       const radioOptions = document.querySelectorAll(".radio-option");
       const messageContainer = document.getElementById("messageContainer");
       const messageBox = document.getElementById("messageBox");
@@ -2749,13 +3310,53 @@
       const convertDarkModeBtn = document.getElementById("convertDarkModeBtn");
       const darkModeSkipFramesTextarea =
         document.getElementById("darkModeSkipFrames");
-      const buttonNamePatternsTextarea =
-        document.getElementById("buttonNamePatterns");
-      const exportFormatSelect = document.getElementById("exportFormat");
-      const exportScaleInput = document.getElementById("exportScale");
-      const exportPaddingInput = document.getElementById("exportPadding");
-      const exportButtonsBtn = document.getElementById("exportButtonsBtn");
+      const buttonNamePatternsTextarea = document.getElementById("buttonNamePatterns");
+      const pngNamePatternsTextarea = document.getElementById("pngNamePatterns");
+      const jpgNamePatternsTextarea = document.getElementById("jpgNamePatterns");
+      const buttonExportFormatSelect = document.getElementById("buttonExportFormat");
+      const buttonExportScaleInput = document.getElementById("buttonExportScale");
+      const buttonExportPaddingInput = document.getElementById("buttonExportPadding");
+      const pngExportScaleInput = document.getElementById("pngExportScale");
+      const jpgExportScaleInput = document.getElementById("jpgExportScale");
+      const exportAllImagesBtn = document.getElementById("exportAllImagesBtn");
       const exportStatus = document.getElementById("exportStatus");
+
+      // Collapsible section elements for Email tab
+      const darkModeSectionContent = document.getElementById("darkModeSectionContent");
+      const darkModeSectionToggle = document.getElementById("darkModeSectionToggle");
+      const compareExportSectionContent = document.getElementById("compareExportSectionContent");
+      const compareExportSectionToggle = document.getElementById("compareExportSectionToggle");
+      const exportImagesSectionContent = document.getElementById("exportImagesSectionContent");
+      const exportImagesSectionToggle = document.getElementById("exportImagesSectionToggle");
+
+      // Toggle function for Dark Mode Simulation section (default closed)
+      window.toggleDarkModeSection = function() {
+        const isHidden = darkModeSectionContent.style.display === "none";
+        darkModeSectionContent.style.display = isHidden ? "block" : "none";
+        darkModeSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for Export for Compare section (default closed)
+      window.toggleCompareExportSection = function() {
+        const isHidden = compareExportSectionContent.style.display === "none";
+        compareExportSectionContent.style.display = isHidden ? "block" : "none";
+        compareExportSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for Export all images section (default open)
+      window.toggleExportImagesSection = function() {
+        const isHidden = exportImagesSectionContent.style.display === "none";
+        exportImagesSectionContent.style.display = isHidden ? "block" : "none";
+        exportImagesSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // DOM Elements - Export for Compare
+      const compareProjectNameInput = document.getElementById("compareProjectName");
+      const addDesktopFrameBtn = document.getElementById("addDesktopFrameBtn");
+      const addMobileFrameBtn = document.getElementById("addMobileFrameBtn");
+      const compareFramesList = document.getElementById("compareFramesList");
+      const exportCompareBtn = document.getElementById("exportCompareBtn");
+      const compareExportStatus = document.getElementById("compareExportStatus");
 
       // DOM Elements - Inspector Tab
       const inspectorSelectionIcon = document.getElementById(
@@ -2783,10 +3384,45 @@
       const infoPaddingTop = document.getElementById("infoPaddingTop");
       const infoPaddingBottom = document.getElementById("infoPaddingBottom");
 
+      // Collapsible section elements for Export JSON (Inspector) tab
+      const inspectorPreviewSectionContent = document.getElementById("inspectorPreviewSectionContent");
+      const inspectorPreviewSectionToggle = document.getElementById("inspectorPreviewSectionToggle");
+      const inspectorJsonSectionContent = document.getElementById("inspectorJsonSectionContent");
+      const inspectorJsonSectionToggle = document.getElementById("inspectorJsonSectionToggle");
+      const inspectorPropertiesSectionContent = document.getElementById("inspectorPropertiesSectionContent");
+      const inspectorPropertiesSectionToggle = document.getElementById("inspectorPropertiesSectionToggle");
+
+      // Toggle function for Preview section (default open)
+      window.toggleInspectorPreviewSection = function() {
+        const isHidden = inspectorPreviewSectionContent.style.display === "none";
+        inspectorPreviewSectionContent.style.display = isHidden ? "block" : "none";
+        inspectorPreviewSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for Node Structure (JSON) section (default closed)
+      window.toggleInspectorJsonSection = function() {
+        const isHidden = inspectorJsonSectionContent.style.display === "none";
+        inspectorJsonSectionContent.style.display = isHidden ? "block" : "none";
+        inspectorJsonSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for Properties section (default closed)
+      window.toggleInspectorPropertiesSection = function() {
+        const isHidden = inspectorPropertiesSectionContent.style.display === "none";
+        inspectorPropertiesSectionContent.style.display = isHidden ? "block" : "none";
+        inspectorPropertiesSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
       let hasValidSelection = false;
       let manualFrames = []; // Array of {id, name, manualSectionCount}
       let selectedFrameIds = [];
       let currentNodeJson = null;
+
+      // State for Export Compare
+      let compareDesktopFrame = null; // {id, name, width, height}
+      let compareMobileFrame = null;  // {id, name, width, height}
+      let compareExportZip = null;
+      let comparePendingExports = [];
 
       // DOM Elements - Pattern Match Modal
       const patternMatchModal = document.getElementById("patternMatchModal");
@@ -2903,54 +3539,75 @@
         saveCurrentSettings();
       });
 
-      // Button name patterns - enable/disable export button
-      buttonNamePatternsTextarea.addEventListener("input", () => {
-        const patterns = buttonNamePatternsTextarea.value.trim();
-        exportButtonsBtn.disabled = !hasValidSelection || patterns.length === 0;
+      // Export patterns - enable/disable export button
+      function updateExportButtonState() {
+        const buttonPatterns = buttonNamePatternsTextarea.value.trim();
+        const pngPatterns = pngNamePatternsTextarea.value.trim();
+        const jpgPatterns = jpgNamePatternsTextarea.value.trim();
+        const hasPatterns = buttonPatterns.length > 0 || pngPatterns.length > 0 || jpgPatterns.length > 0;
+        exportAllImagesBtn.disabled = !hasValidSelection || !hasPatterns;
         saveCurrentSettings();
-      });
+      }
+      buttonNamePatternsTextarea.addEventListener("input", updateExportButtonState);
+      pngNamePatternsTextarea.addEventListener("input", updateExportButtonState);
+      jpgNamePatternsTextarea.addEventListener("input", updateExportButtonState);
 
       // Export settings - save on change
-      exportFormatSelect.addEventListener("change", () => {
+      buttonExportFormatSelect.addEventListener("change", () => {
         saveCurrentSettings();
       });
-      exportScaleInput.addEventListener("input", () => {
+      buttonExportScaleInput.addEventListener("change", () => {
         saveCurrentSettings();
       });
-      exportPaddingInput.addEventListener("input", () => {
+      buttonExportPaddingInput.addEventListener("change", () => {
+        saveCurrentSettings();
+      });
+      pngExportScaleInput.addEventListener("change", () => {
+        saveCurrentSettings();
+      });
+      jpgExportScaleInput.addEventListener("change", () => {
         saveCurrentSettings();
       });
 
-      // Export Buttons
+      // Export All Images
       let pendingExports = [];
       let exportZip = null;
-      let exportScale = 2;
-      let exportPadding = 4;
-      let exportFormat = "PNG";
 
-      exportButtonsBtn.addEventListener("click", () => {
+      exportAllImagesBtn.addEventListener("click", () => {
         if (!hasValidSelection) {
           showMessage("error", "Please select a frame first");
           return;
         }
 
-        const patterns = buttonNamePatternsTextarea.value
+        const buttonPatterns = buttonNamePatternsTextarea.value
           .split("\n")
           .map((p) => p.trim())
           .filter((p) => p.length > 0);
 
-        if (patterns.length === 0) {
-          showMessage("error", "Please enter at least one button name pattern");
+        const pngPatterns = pngNamePatternsTextarea.value
+          .split("\n")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+
+        const jpgPatterns = jpgNamePatternsTextarea.value
+          .split("\n")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+
+        if (buttonPatterns.length === 0 && pngPatterns.length === 0 && jpgPatterns.length === 0) {
+          showMessage("error", "Please enter at least one name pattern");
           return;
         }
 
-        // Get scale, padding, and format values
-        exportScale = parseFloat(exportScaleInput.value) || 2;
-        exportPadding = parseInt(exportPaddingInput.value, 10) || 4;
-        exportFormat = exportFormatSelect.value || "PNG";
+        // Get format, scale, and padding values for each group
+        const buttonFormat = buttonExportFormatSelect.value || "PNG";
+        const buttonScale = parseFloat(buttonExportScaleInput.value) || 2;
+        const buttonPadding = parseInt(buttonExportPaddingInput.value, 10) || 0;
+        const pngScale = parseFloat(pngExportScaleInput.value) || 2;
+        const jpgScale = parseFloat(jpgExportScaleInput.value) || 2;
 
-        exportButtonsBtn.disabled = true;
-        exportButtonsBtn.textContent = "Finding buttons...";
+        exportAllImagesBtn.disabled = true;
+        exportAllImagesBtn.textContent = "Finding frames...";
         exportStatus.textContent = "";
         pendingExports = [];
         exportZip = new JSZip();
@@ -2958,11 +3615,103 @@
         parent.postMessage(
           {
             pluginMessage: {
-              type: "EXPORT_BUTTONS",
-              patterns,
-              scale: exportScale,
-              padding: exportPadding,
-              format: exportFormat,
+              type: "EXPORT_ALL_IMAGES",
+              buttonPatterns,
+              buttonFormat,
+              buttonScale,
+              buttonPadding,
+              pngPatterns,
+              pngScale,
+              jpgPatterns,
+              jpgScale,
+            },
+          },
+          "*"
+        );
+      });
+
+      // ========== Export for Compare Functions ==========
+      function updateCompareFramesList() {
+        let html = '';
+
+        if (compareDesktopFrame) {
+          html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border-color);">
+              <span><strong>Desktop:</strong> ${compareDesktopFrame.name} (${compareDesktopFrame.width}×${compareDesktopFrame.height})</span>
+              <button class="preset-btn" onclick="removeCompareFrame('desktop')" style="padding: 2px 8px;">×</button>
+            </div>
+          `;
+        }
+
+        if (compareMobileFrame) {
+          html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+              <span><strong>Mobile:</strong> ${compareMobileFrame.name} (${compareMobileFrame.width}×${compareMobileFrame.height})</span>
+              <button class="preset-btn" onclick="removeCompareFrame('mobile')" style="padding: 2px 8px;">×</button>
+            </div>
+          `;
+        }
+
+        if (!compareDesktopFrame && !compareMobileFrame) {
+          html = '<div style="color: var(--text-tertiary); font-style: italic;">No frames selected. Select frames on canvas and click buttons above.</div>';
+        }
+
+        compareFramesList.innerHTML = html;
+
+        // Enable export button if both frames are selected
+        exportCompareBtn.disabled = !(compareDesktopFrame && compareMobileFrame);
+      }
+
+      window.removeCompareFrame = function(type) {
+        if (type === 'desktop') {
+          compareDesktopFrame = null;
+        } else {
+          compareMobileFrame = null;
+        }
+        updateCompareFramesList();
+      };
+
+      addDesktopFrameBtn.addEventListener("click", () => {
+        parent.postMessage(
+          { pluginMessage: { type: "GET_COMPARE_FRAME_INFO", frameType: "desktop" } },
+          "*"
+        );
+      });
+
+      addMobileFrameBtn.addEventListener("click", () => {
+        parent.postMessage(
+          { pluginMessage: { type: "GET_COMPARE_FRAME_INFO", frameType: "mobile" } },
+          "*"
+        );
+      });
+
+      exportCompareBtn.addEventListener("click", () => {
+        if (!compareDesktopFrame || !compareMobileFrame) {
+          compareExportStatus.textContent = "Please select both Desktop and Mobile frames";
+          return;
+        }
+
+        const projectName = compareProjectNameInput.value.trim() || "mail1";
+
+        exportCompareBtn.disabled = true;
+        exportCompareBtn.textContent = "Exporting...";
+        compareExportStatus.textContent = "Preparing export...";
+
+        compareExportZip = new JSZip();
+        comparePendingExports = [
+          { type: 'json', frameType: 'desktop', id: compareDesktopFrame.id },
+          { type: 'json', frameType: 'mobile', id: compareMobileFrame.id },
+          { type: 'screenshot', frameType: 'desktop', id: compareDesktopFrame.id },
+          { type: 'screenshot', frameType: 'mobile', id: compareMobileFrame.id }
+        ];
+
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "EXPORT_COMPARE_DATA",
+              projectName,
+              desktopFrameId: compareDesktopFrame.id,
+              mobileFrameId: compareMobileFrame.id
             },
           },
           "*"
@@ -3047,17 +3796,36 @@
         progressBarFill.style.width = "0%";
       }
 
-      // Preset Buttons - Multi-select toggle
+      // Breakpoint Checkboxes - Multi-select with individual settings
       let selectedWidths = [414]; // Default selected width
 
-      function getSelectedWidths() {
-        const widths = [];
-        presetButtons.forEach((btn) => {
-          if (btn.classList.contains("active")) {
-            widths.push(parseInt(btn.dataset.width, 10));
+      function getSelectedBreakpoints() {
+        const breakpoints = [];
+        breakpointCheckboxes.forEach((checkbox) => {
+          if (checkbox.checked) {
+            const width = parseInt(checkbox.dataset.width, 10);
+            let padding, maxSpacing;
+
+            // Get individual settings for each breakpoint
+            if (width === 414) {
+              padding = parseInt(padding414Input.value, 10) || 24;
+              maxSpacing = parseInt(maxSpacing414Input.value, 10) || 40;
+            } else if (width === 768) {
+              padding = parseInt(padding768Input.value, 10) || 48;
+              maxSpacing = parseInt(maxSpacing768Input.value, 10) || 60;
+            } else if (width === 1024) {
+              padding = parseInt(padding1024Input.value, 10) || 48;
+              maxSpacing = parseInt(maxSpacing1024Input.value, 10) || 60;
+            }
+
+            breakpoints.push({ width, padding, maxSpacing });
           }
         });
-        return widths.sort((a, b) => b - a); // Sort descending (largest first)
+        return breakpoints.sort((a, b) => b.width - a.width); // Sort descending (largest first)
+      }
+
+      function getSelectedWidths() {
+        return getSelectedBreakpoints().map(bp => bp.width);
       }
 
       function updateGenerateButtonState() {
@@ -3066,7 +3834,7 @@
         convertBtn.disabled = !canGenerate;
 
         if (widths.length === 0) {
-          convertBtn.textContent = "Select at least one width";
+          convertBtn.textContent = "Select at least one breakpoint";
         } else if (widths.length === 1) {
           convertBtn.textContent = "Generate";
         } else {
@@ -3074,17 +3842,12 @@
         }
       }
 
-      presetButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          // Toggle active state
-          btn.classList.toggle("active");
-
-          // Ensure at least one is selected - if none selected, keep this one active
-          const activeCount = document.querySelectorAll(
-            ".preset-btn[data-width].active"
-          ).length;
-          if (activeCount === 0) {
-            btn.classList.add("active");
+      breakpointCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          // Ensure at least one is selected
+          const checkedCount = document.querySelectorAll(".breakpoint-checkbox:checked").length;
+          if (checkedCount === 0) {
+            checkbox.checked = true;
           }
 
           // Update hidden input with first selected value (for backwards compatibility)
@@ -3098,8 +3861,10 @@
         });
       });
 
-      // Remove old input listener since we hide the input now
-      // mobileWidthInput.addEventListener('input', ...) - removed
+      // Save settings when padding/maxSpacing inputs change
+      [padding414Input, padding768Input, padding1024Input, maxSpacing414Input, maxSpacing768Input, maxSpacing1024Input].forEach(input => {
+        input.addEventListener("input", saveCurrentSettings);
+      });
 
       // Radio Options
       radioOptions.forEach((option) => {
@@ -3157,8 +3922,8 @@
       convertBtn.addEventListener("click", () => {
         if (!hasValidSelection) return;
 
-        const widths = getSelectedWidths();
-        if (widths.length === 0) return;
+        const breakpoints = getSelectedBreakpoints();
+        if (breakpoints.length === 0) return;
 
         hideMessage();
 
@@ -3181,11 +3946,15 @@
           .map((name) => name.trim())
           .filter((name) => name.length > 0);
 
+        // Get widths array for backwards compatibility
+        const widths = breakpoints.map(bp => bp.width);
+
         const config = {
           mobileWidth: widths[0], // Primary width (for backwards compatibility)
-          mobileWidths: widths, // All selected widths
-          containerPadding: parseInt(containerPaddingInput.value, 10) || 20,
-          maxSpacing: parseInt(maxSpacingInput.value, 10) || 40,
+          mobileWidths: widths, // All selected widths (for backwards compatibility)
+          breakpoints: breakpoints, // New format with individual settings
+          containerPadding: breakpoints[0].padding, // Use first breakpoint's padding for backwards compatibility
+          maxSpacing: breakpoints[0].maxSpacing, // Use first breakpoint's maxSpacing for backwards compatibility
           fontMode: fontMode,
           textScale:
             fontMode === "scale" ? parseFloat(textScaleInput.value) || 0.85 : 1,
@@ -3228,20 +3997,24 @@
 
       // Copy to clipboard function (works in Figma plugin iframe)
       function copyToClipboard(text) {
-        // Method 1: Try using the textarea that's already visible
-        const textarea = inspectorJsonOutput;
-        const originalValue = textarea.value;
-
-        textarea.value = text;
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
+        // Create a temporary textarea for copying (works even when main textarea is hidden)
+        const tempTextarea = document.createElement("textarea");
+        tempTextarea.value = text;
+        tempTextarea.style.position = "fixed";
+        tempTextarea.style.left = "-9999px";
+        tempTextarea.style.top = "0";
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        tempTextarea.setSelectionRange(0, tempTextarea.value.length);
 
         try {
           const success = document.execCommand("copy");
           if (success) {
-            copySuccess.classList.add("visible");
+            // Update button text temporarily to show success
+            const originalText = copyJsonBtn.textContent;
+            copyJsonBtn.textContent = "Copied!";
             setTimeout(() => {
-              copySuccess.classList.remove("visible");
+              copyJsonBtn.textContent = originalText;
             }, 1500);
           } else {
             // Fallback: try navigator.clipboard
@@ -3249,9 +4022,10 @@
               navigator.clipboard
                 .writeText(text)
                 .then(() => {
-                  copySuccess.classList.add("visible");
+                  const originalText = copyJsonBtn.textContent;
+                  copyJsonBtn.textContent = "Copied!";
                   setTimeout(() => {
-                    copySuccess.classList.remove("visible");
+                    copyJsonBtn.textContent = originalText;
                   }, 1500);
                 })
                 .catch((err) => {
@@ -3266,9 +4040,8 @@
           console.error("execCommand failed:", err);
         }
 
-        // Restore original value and deselect
-        textarea.value = originalValue;
-        textarea.blur();
+        // Remove temporary textarea
+        document.body.removeChild(tempTextarea);
       }
 
       // Minify checkbox change
@@ -3432,33 +4205,38 @@
               `✓ Set darkModeSkipFrames to: ${msg.config.darkModeSkipFrames}`
             );
 
-            // Restore button name patterns
-            if (
-              msg.config.buttonNamePatterns &&
-              msg.config.buttonNamePatterns.length > 0
-            ) {
-              buttonNamePatternsTextarea.value =
-                msg.config.buttonNamePatterns.join("\n");
-            } else {
-              buttonNamePatternsTextarea.value = "";
+            // Restore Button name patterns and settings
+            if (msg.config.buttonNamePatterns && msg.config.buttonNamePatterns.length > 0) {
+              buttonNamePatternsTextarea.value = msg.config.buttonNamePatterns.join("\n");
             }
-            console.log(
-              `✓ Set buttonNamePatterns to: ${msg.config.buttonNamePatterns}`
-            );
+            // Don't set empty - keep default values if no saved settings
+            if (msg.config.buttonExportFormat) {
+              buttonExportFormatSelect.value = msg.config.buttonExportFormat;
+            }
+            if (msg.config.buttonExportScale !== undefined) {
+              buttonExportScaleInput.value = msg.config.buttonExportScale;
+            }
+            if (msg.config.buttonExportPadding !== undefined) {
+              buttonExportPaddingInput.value = msg.config.buttonExportPadding;
+            }
+            console.log(`✓ Set buttonNamePatterns: ${msg.config.buttonNamePatterns}, format: ${msg.config.buttonExportFormat}, scale: ${msg.config.buttonExportScale}, padding: ${msg.config.buttonExportPadding}`);
 
-            // Restore export settings
-            if (msg.config.exportFormat) {
-              exportFormatSelect.value = msg.config.exportFormat;
+            // Restore PNG name patterns and scale
+            if (msg.config.pngNamePatterns && msg.config.pngNamePatterns.length > 0) {
+              pngNamePatternsTextarea.value = msg.config.pngNamePatterns.join("\n");
             }
-            if (msg.config.exportScale !== undefined) {
-              exportScaleInput.value = msg.config.exportScale;
+            if (msg.config.pngExportScale !== undefined) {
+              pngExportScaleInput.value = msg.config.pngExportScale;
             }
-            if (msg.config.exportPadding !== undefined) {
-              exportPaddingInput.value = msg.config.exportPadding;
+
+            // Restore JPG name patterns and scale
+            if (msg.config.jpgNamePatterns && msg.config.jpgNamePatterns.length > 0) {
+              jpgNamePatternsTextarea.value = msg.config.jpgNamePatterns.join("\n");
             }
-            console.log(
-              `✓ Set export settings: format=${msg.config.exportFormat}, scale=${msg.config.exportScale}, padding=${msg.config.exportPadding}`
-            );
+            if (msg.config.jpgExportScale !== undefined) {
+              jpgExportScaleInput.value = msg.config.jpgExportScale;
+            }
+            console.log(`✓ Set pngNamePatterns: ${msg.config.pngNamePatterns}, jpgNamePatterns: ${msg.config.jpgNamePatterns}`);
 
             // Restore active tab
             if (msg.config.activeTab) {
@@ -3535,26 +4313,34 @@
             break;
 
           case "EXPORT_BUTTONS_FOUND":
-            // Received list of buttons to export
+            // Received list of frames to export
             if (msg.buttons.length === 0) {
-              exportStatus.textContent =
-                "No buttons found matching the patterns";
-              exportButtonsBtn.disabled = false;
-              exportButtonsBtn.textContent = "Export All Buttons";
+              exportStatus.textContent = "No frames found matching the patterns";
+              exportAllImagesBtn.disabled = false;
+              exportAllImagesBtn.textContent = "Export All Images";
             } else {
-              pendingExports = msg.buttons.map((b) => ({
-                ...b,
-                exported: false,
-              }));
-              exportStatus.textContent = `Found ${msg.buttons.length} buttons. Exporting...`;
-              exportButtonsBtn.textContent = `Exporting 0/${msg.buttons.length}...`;
-              // Request export for first button
+              // Flatten: each frame with each export config (format + scale + padding) becomes a separate export task
+              pendingExports = [];
+              for (const b of msg.buttons) {
+                for (const exp of b.exports) {
+                  pendingExports.push({
+                    ...b,
+                    format: exp.format,
+                    scale: exp.scale,
+                    padding: exp.padding || 0,
+                    exported: false,
+                  });
+                }
+              }
+              exportStatus.textContent = `Found ${msg.buttons.length} frames (${pendingExports.length} exports). Exporting...`;
+              exportAllImagesBtn.textContent = `Exporting 0/${pendingExports.length}...`;
+              // Request export for first item
               requestNextExport();
             }
             break;
 
           case "EXPORT_BUTTON_DATA":
-            // Received PNG data for a button
+            // Received image data for a frame
             if (msg.data && msg.fileName) {
               // Convert base64 to blob and add to zip
               const binaryData = atob(msg.data);
@@ -3562,18 +4348,34 @@
               for (let i = 0; i < binaryData.length; i++) {
                 bytes[i] = binaryData.charCodeAt(i);
               }
-              exportZip.file(msg.fileName, bytes, { binary: true });
 
-              // Mark as exported
-              const pending = pendingExports.find((p) => p.id === msg.id);
+              // Check for duplicate filename and add number suffix if needed
+              let finalFileName = msg.fileName;
+              const existingFiles = Object.keys(exportZip.files);
+              if (existingFiles.includes(finalFileName)) {
+                // Extract name and extension
+                const lastDot = finalFileName.lastIndexOf('.');
+                const baseName = lastDot > 0 ? finalFileName.substring(0, lastDot) : finalFileName;
+                const ext = lastDot > 0 ? finalFileName.substring(lastDot) : '';
+
+                // Find next available number
+                let counter = 2;
+                while (existingFiles.includes(`${baseName}_${counter}${ext}`)) {
+                  counter++;
+                }
+                finalFileName = `${baseName}_${counter}${ext}`;
+              }
+
+              exportZip.file(finalFileName, bytes, { binary: true });
+
+              // Mark as exported (match by id and format)
+              const pending = pendingExports.find((p) => p.id === msg.id && p.format === msg.format && !p.exported);
               if (pending) pending.exported = true;
 
               // Update progress
-              const exportedCount = pendingExports.filter(
-                (p) => p.exported
-              ).length;
-              exportButtonsBtn.textContent = `Exporting ${exportedCount}/${pendingExports.length}...`;
-              exportStatus.textContent = `Exported: ${msg.fileName}`;
+              const exportedCount = pendingExports.filter((p) => p.exported).length;
+              exportAllImagesBtn.textContent = `Exporting ${exportedCount}/${pendingExports.length}...`;
+              exportStatus.textContent = `Exported: ${finalFileName}`;
 
               // Request next or finalize
               requestNextExport();
@@ -3582,9 +4384,81 @@
 
           case "EXPORT_BUTTONS_ERROR":
             showMessage("error", `✗ ${msg.error}`);
-            exportButtonsBtn.disabled = false;
-            exportButtonsBtn.textContent = "Export All Buttons";
+            exportAllImagesBtn.disabled = false;
+            exportAllImagesBtn.textContent = "Export All Images";
             exportStatus.textContent = "";
+            break;
+
+          // Export for Compare messages
+          case "COMPARE_FRAME_INFO":
+            if (msg.frame) {
+              if (msg.frameType === "desktop") {
+                compareDesktopFrame = msg.frame;
+              } else {
+                compareMobileFrame = msg.frame;
+              }
+              updateCompareFramesList();
+            } else {
+              compareExportStatus.textContent = "Please select a frame on canvas first";
+            }
+            break;
+
+          case "COMPARE_EXPORT_COMPLETE":
+            if (msg.success) {
+              // Add files to ZIP
+              const projectName = msg.projectName || "mail1";
+
+              // Add JSON files
+              if (msg.desktopJson) {
+                compareExportZip.file(`${projectName}/json/desktop.json`, msg.desktopJson);
+              }
+              if (msg.mobileJson) {
+                compareExportZip.file(`${projectName}/json/mobile.json`, msg.mobileJson);
+              }
+
+              // Add screenshots (base64 to blob)
+              if (msg.desktopScreenshot) {
+                const desktopData = msg.desktopScreenshot.split(',')[1] || msg.desktopScreenshot;
+                compareExportZip.file(`${projectName}/screenshot/desktop.png`, desktopData, {base64: true});
+              }
+              if (msg.mobileScreenshot) {
+                const mobileData = msg.mobileScreenshot.split(',')[1] || msg.mobileScreenshot;
+                compareExportZip.file(`${projectName}/screenshot/mobile.png`, mobileData, {base64: true});
+              }
+
+              // Create empty docx folder with .gitkeep
+              compareExportZip.file(`${projectName}/docx/.gitkeep`, "");
+
+              // Generate and download ZIP
+              compareExportZip.generateAsync({ type: "blob" }).then((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${projectName}_compare_export.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                compareExportStatus.textContent = `✓ Exported ${projectName} (JSON + Screenshots)`;
+                exportCompareBtn.disabled = false;
+                exportCompareBtn.textContent = "Export for Compare";
+              }).catch((err) => {
+                compareExportStatus.textContent = `✗ Failed: ${err.message}`;
+                exportCompareBtn.disabled = false;
+                exportCompareBtn.textContent = "Export for Compare";
+              });
+            } else {
+              compareExportStatus.textContent = `✗ ${msg.error || "Export failed"}`;
+              exportCompareBtn.disabled = false;
+              exportCompareBtn.textContent = "Export for Compare";
+            }
+            break;
+
+          case "COMPARE_EXPORT_ERROR":
+            compareExportStatus.textContent = `✗ ${msg.error}`;
+            exportCompareBtn.disabled = false;
+            exportCompareBtn.textContent = "Export for Compare";
             break;
 
           // QA Checker messages
@@ -3615,9 +4489,9 @@
                 id: next.id,
                 name: next.name,
                 textContent: next.textContent,
-                scale: exportScale,
-                padding: exportPadding,
-                format: exportFormat,
+                scale: next.scale || 2,  // Use scale from export config
+                padding: next.padding || 0,  // Use padding from export config
+                format: next.format,
               },
             },
             "*"
@@ -3635,7 +4509,7 @@
           const a = document.createElement("a");
           a.href = url;
 
-          // Generate filename with timestamp: buttons_YYYYMMDD_HHmmss.zip
+          // Generate filename with timestamp: images_YYYYMMDD_HHmmss.zip
           const now = new Date();
           const timestamp =
             now.getFullYear().toString() +
@@ -3645,22 +4519,22 @@
             String(now.getHours()).padStart(2, "0") +
             String(now.getMinutes()).padStart(2, "0") +
             String(now.getSeconds()).padStart(2, "0");
-          a.download = `buttons_${timestamp}.zip`;
+          a.download = `images_${timestamp}.zip`;
 
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          showMessage("success", `✓ Exported ${pendingExports.length} buttons`);
-          exportStatus.textContent = `Successfully exported ${pendingExports.length} buttons`;
+          showMessage("success", `✓ Exported ${pendingExports.length} images`);
+          exportStatus.textContent = `Successfully exported ${pendingExports.length} images`;
         } catch (err) {
           showMessage("error", `✗ Failed to create ZIP: ${err.message}`);
           exportStatus.textContent = "Failed to create ZIP file";
         }
 
-        exportButtonsBtn.disabled = false;
-        exportButtonsBtn.textContent = "Export All Buttons";
+        exportAllImagesBtn.disabled = false;
+        exportAllImagesBtn.textContent = "Export All Images";
         pendingExports = [];
         exportZip = null;
       }
@@ -3700,9 +4574,11 @@
         // Update dark mode button state
         convertDarkModeBtn.disabled = !hasValidSelection;
 
-        // Update export buttons state
-        const hasPatterns = buttonNamePatternsTextarea.value.trim().length > 0;
-        exportButtonsBtn.disabled = !hasValidSelection || !hasPatterns;
+        // Update export all images button state
+        const hasPatterns = buttonNamePatternsTextarea.value.trim().length > 0 ||
+                           pngNamePatternsTextarea.value.trim().length > 0 ||
+                           jpgNamePatternsTextarea.value.trim().length > 0;
+        exportAllImagesBtn.disabled = !hasValidSelection || !hasPatterns;
       }
 
       function updateInspectorInfo(info) {
@@ -3892,8 +4768,18 @@
           .map((name) => name.trim())
           .filter((name) => name.length > 0);
 
-        // Parse button name patterns from textarea
+        // Parse Button name patterns from textarea (PNG export)
         const buttonNamePatterns = buttonNamePatternsTextarea.value
+          .split("\n")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0);
+
+        // Parse JPG and PNG name patterns from textareas
+        const jpgNamePatterns = jpgNamePatternsTextarea.value
+          .split("\n")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0);
+        const pngNamePatterns = pngNamePatternsTextarea.value
           .split("\n")
           .map((name) => name.trim())
           .filter((name) => name.length > 0);
@@ -3912,10 +4798,14 @@
           uiControlPatterns: uiControlPatterns,
           darkModeSkipFrames: darkModeSkipFrames,
           buttonNamePatterns: buttonNamePatterns,
+          buttonExportFormat: buttonExportFormatSelect.value || "PNG",
+          buttonExportScale: parseFloat(buttonExportScaleInput.value) || 2,
+          buttonExportPadding: parseInt(buttonExportPaddingInput.value, 10) || 0,
+          pngNamePatterns: pngNamePatterns,
+          pngExportScale: parseFloat(pngExportScaleInput.value) || 2,
+          jpgNamePatterns: jpgNamePatterns,
+          jpgExportScale: parseFloat(jpgExportScaleInput.value) || 2,
           activeTab: currentTab,
-          exportFormat: exportFormatSelect.value || "PNG",
-          exportScale: parseFloat(exportScaleInput.value) || 2,
-          exportPadding: parseInt(exportPaddingInput.value, 10) || 4,
         };
 
         console.log("💾 UI sending SAVE_SETTINGS:", config);
@@ -3934,6 +4824,8 @@
 
       // Initial request
       parent.postMessage({ pluginMessage: { type: "GET_SELECTION" } }, "*");
+      // Also request GIF selection info on startup (in case gif tab is active or will be restored)
+      parent.postMessage({ pluginMessage: { type: "GIF_GET_SELECTION_INFO" } }, "*");
 
       // ============================================================================
       // QA CHECKER FUNCTIONALITY
@@ -5690,6 +6582,423 @@
 
       // Request saved config from plugin when UI is ready
       parent.postMessage({ pluginMessage: { type: 'QA_REQUEST_CONFIG' } }, '*');
+
+      // ============================================================================
+      // EXPORT GIF TAB LOGIC
+      // ============================================================================
+
+      // GIF Elements
+      const gifSelectionIcon = document.getElementById("gifSelectionIcon");
+      const gifSelectionName = document.getElementById("gifSelectionName");
+      const gifSelectionMeta = document.getElementById("gifSelectionMeta");
+      const gifFrameListSection = document.getElementById("gifFrameListSection");
+      const gifFrameList = document.getElementById("gifFrameList");
+      const gifFrameListToggle = document.getElementById("gifFrameListToggle");
+      const gifFrameCount = document.getElementById("gifFrameCount");
+
+      // Toggle function for GIF frame list collapse
+      window.toggleGifFrameList = function() {
+        const isHidden = gifFrameList.style.display === "none";
+        gifFrameList.style.display = isHidden ? "block" : "none";
+        gifFrameListToggle.textContent = isHidden ? "▼" : "▶";
+      };
+
+      // Toggle function for GIF export settings collapse
+      const gifExportSettingsContent = document.getElementById("gifExportSettingsContent");
+      const gifExportSettingsToggle = document.getElementById("gifExportSettingsToggle");
+      window.toggleGifExportSettings = function() {
+        const isHidden = gifExportSettingsContent.style.display === "none";
+        gifExportSettingsContent.style.display = isHidden ? "block" : "none";
+        gifExportSettingsToggle.textContent = isHidden ? "▼" : "▶";
+      };
+      const gifWidthInput = document.getElementById("gifWidth");
+      const gifHeightInput = document.getElementById("gifHeight");
+      const gifScaleSelect = document.getElementById("gifScale");
+      const gifFpsInput = document.getElementById("gifFps");
+      const gifFrameDelayInput = document.getElementById("gifFrameDelay");
+      const gifLoopCheckbox = document.getElementById("gifLoop");
+      const gifPaddingXInput = document.getElementById("gifPaddingX");
+      const gifPaddingYInput = document.getElementById("gifPaddingY");
+      const gifBgColorInput = document.getElementById("gifBgColor");
+      const gifBgColorPicker = document.getElementById("gifBgColorPicker");
+      const gifOverlaySection = document.getElementById("gifOverlaySection");
+      const gifOverlayList = document.getElementById("gifOverlayList");
+
+      // Sync color picker with text input
+      gifBgColorPicker.addEventListener("input", () => {
+        gifBgColorInput.value = gifBgColorPicker.value;
+      });
+      gifBgColorInput.addEventListener("input", () => {
+        const value = gifBgColorInput.value.trim();
+        if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+          gifBgColorPicker.value = value;
+        }
+      });
+      const gifProgress = document.getElementById("gifProgress");
+      const gifProgressText = document.getElementById("gifProgressText");
+      const gifProgressCount = document.getElementById("gifProgressCount");
+      const gifProgressFill = document.getElementById("gifProgressFill");
+      const gifPreviewSection = document.getElementById("gifPreviewSection");
+      const gifPreviewImage = document.getElementById("gifPreviewImage");
+      const gifExportBtn = document.getElementById("gifExportBtn");
+      const gifDownloadBtn = document.getElementById("gifDownloadBtn");
+      const gifStatus = document.getElementById("gifStatus");
+      // GIF State
+      let gifSelectionInfo = null;
+      let gifGeneratedBlob = null;
+
+      // Update GIF selection info when tab is active
+      function updateGifSelectionInfo() {
+        parent.postMessage({ pluginMessage: { type: "GIF_GET_SELECTION_INFO" } }, "*");
+      }
+
+      // Show GIF status message
+      function showGifStatus(type, message) {
+        gifStatus.className = `status-message ${type}`;
+        gifStatus.textContent = message;
+        gifStatus.style.display = "block";
+        if (type === "success") {
+          setTimeout(() => {
+            gifStatus.style.display = "none";
+          }, 3000);
+        }
+      }
+
+      // Handle GIF selection info update
+      function handleGifSelectionInfo(info) {
+        gifSelectionInfo = info;
+
+        if (!info) {
+          gifSelectionIcon.className = "selection-icon empty";
+          gifSelectionName.textContent = "No frame selected";
+          gifSelectionName.className = "selection-name selection-empty";
+          gifSelectionMeta.textContent = "Select a frame with multiple children or a component instance";
+          gifFrameListSection.style.display = "none";
+          gifOverlaySection.style.display = "none";
+          gifOverlayList.innerHTML = '';
+          gifExportBtn.disabled = true;
+          return;
+        }
+
+        // Update selection display
+        gifSelectionIcon.className = "selection-icon";
+        gifSelectionName.textContent = info.frameName;
+        gifSelectionName.className = "selection-name";
+
+        // Build meta info
+        let metaParts = [`${info.width} × ${info.height}`];
+        if (info.isComponentInstance && info.variantCount > 0) {
+          metaParts.push(`${info.variantCount} variants`);
+        } else if (info.childFrameCount > 0) {
+          metaParts.push(`${info.childFrameCount} child frames`);
+        }
+        if (info.hasPrototype) {
+          metaParts.push("Has prototype");
+        }
+        gifSelectionMeta.textContent = metaParts.join(" • ");
+
+        // Update width/height inputs
+        gifWidthInput.value = info.width;
+        gifHeightInput.value = info.height;
+
+        // Update frame delay from Figma interactions (if available)
+        if (info.defaultDelay && info.defaultDelay > 0) {
+          gifFrameDelayInput.value = info.defaultDelay;
+        }
+
+        // Show frame list if available
+        const frameCount = info.variantCount || info.childFrameCount;
+        if (frameCount > 0 && info.frameNames.length > 0) {
+          gifFrameListSection.style.display = "block";
+          gifFrameCount.textContent = frameCount;
+          gifFrameList.innerHTML = info.frameNames
+            .map((name, i) => {
+              const delay = info.delays && info.delays[i] ? info.delays[i] : 0;
+              const delayText = delay > 0 ? `<span style="color: var(--accent-color); margin-left: 8px;">${delay}ms</span>` : '';
+              return `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color); font-size: 11px; display: flex; justify-content: space-between;">${i + 1}. ${name}${delayText}</div>`;
+            })
+            .join("");
+          gifExportBtn.disabled = false;
+        } else {
+          gifFrameListSection.style.display = "none";
+          gifExportBtn.disabled = true;
+          showGifStatus("warning", "Selected frame has no child frames or variants to export");
+        }
+
+        // Show overlay layers checkbox list if available
+        if (info.overlayLayers && info.overlayLayers.length > 0) {
+          gifOverlaySection.style.display = "block";
+          gifOverlayList.innerHTML = info.overlayLayers.map(layer =>
+            `<label style="display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 11px; cursor: pointer; border-bottom: 1px solid var(--border-color);">
+              <input type="checkbox" class="gif-overlay-checkbox" value="${layer.id}" />
+              ${layer.name}
+            </label>`
+          ).join("");
+        } else {
+          gifOverlaySection.style.display = "none";
+          gifOverlayList.innerHTML = '';
+        }
+      }
+
+      // Export GIF
+      function exportGif() {
+        if (!gifSelectionInfo) return;
+
+        // Get all selected overlay layer IDs
+        const selectedOverlayIds = Array.from(document.querySelectorAll('.gif-overlay-checkbox:checked'))
+          .map(cb => cb.value);
+
+        const config = {
+          width: parseInt(gifWidthInput.value, 10),
+          height: parseInt(gifHeightInput.value, 10),
+          fps: parseInt(gifFpsInput.value, 10),
+          frameDelay: parseInt(gifFrameDelayInput.value, 10),
+          scale: parseFloat(gifScaleSelect.value),
+          loop: gifLoopCheckbox.checked,
+          overlayFrameIds: selectedOverlayIds.length > 0 ? selectedOverlayIds : undefined,
+          paddingX: parseInt(gifPaddingXInput.value, 10) || 0,
+          paddingY: parseInt(gifPaddingYInput.value, 10) || 0,
+          bgColor: gifBgColorInput.value.trim() || null, // null = transparent
+        };
+
+        // Show progress
+        gifProgress.style.display = "block";
+        gifProgressText.textContent = "Exporting frames from Figma...";
+        gifProgressCount.textContent = "0 / ?";
+        gifProgressFill.style.width = "0%";
+        gifExportBtn.disabled = true;
+        gifPreviewSection.style.display = "none";
+        gifDownloadBtn.style.display = "none";
+        gifStatus.style.display = "none";
+
+        parent.postMessage({ pluginMessage: { type: "GIF_EXPORT_FRAMES", config } }, "*");
+      }
+
+      // Handle export progress
+      function handleGifExportProgress(current, total) {
+        const percent = Math.round((current / total) * 50); // First 50% is exporting
+        gifProgressFill.style.width = `${percent}%`;
+        gifProgressCount.textContent = `${current} / ${total}`;
+      }
+
+      // Handle frames data and generate output based on selected format
+      async function handleGifFramesData(frames, config, overlayDataList) {
+        if (frames.length === 0) {
+          showGifStatus("error", "No frames to export");
+          gifProgress.style.display = "none";
+          gifExportBtn.disabled = false;
+          return;
+        }
+
+        gifProgressText.textContent = "Generating GIF...";
+        gifProgressFill.style.width = "50%";
+
+        try {
+          // Load all overlay images if provided (with their position data)
+          const overlayItems = [];
+          if (overlayDataList && overlayDataList.length > 0) {
+            for (const overlayData of overlayDataList) {
+              const overlayImg = new Image();
+              overlayImg.src = `data:image/png;base64,${overlayData.imageData}`;
+              await new Promise((resolve, reject) => {
+                overlayImg.onload = resolve;
+                overlayImg.onerror = reject;
+              });
+              overlayItems.push({
+                img: overlayImg,
+                x: overlayData.x || 0,
+                y: overlayData.y || 0,
+              });
+            }
+          }
+
+          // Calculate padding and background color
+          const paddingX = config.paddingX || 0;
+          const paddingY = config.paddingY || 0;
+          const bgColor = config.bgColor || null; // null = transparent
+
+          // Process frames into canvases first (shared by all formats)
+          const processedCanvases = [];
+          for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            const img = new Image();
+            img.src = `data:image/png;base64,${frame.imageData}`;
+
+            await new Promise((resolve, reject) => {
+              img.onload = () => {
+                const canvasWidth = frame.width + (paddingX * 2);
+                const canvasHeight = frame.height + (paddingY * 2);
+
+                const canvas = document.createElement("canvas");
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+                const ctx = canvas.getContext("2d");
+
+                // Fill background: use specified color or clear for transparent
+                if (bgColor) {
+                  ctx.fillStyle = bgColor;
+                  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+                } else {
+                  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                }
+
+                // Draw frame image centered with padding offset
+                ctx.drawImage(img, paddingX, paddingY);
+
+                // Draw all overlay images on top
+                for (const overlay of overlayItems) {
+                  ctx.drawImage(overlay.img, paddingX + overlay.x, paddingY + overlay.y);
+                }
+
+                // Simulate opacity by overlaying background color with inverse opacity
+                // Only if bgColor is specified and frame has opacity < 1
+                const frameOpacity = frame.opacity !== undefined ? frame.opacity : 1;
+                if (bgColor && frameOpacity < 1) {
+                  ctx.fillStyle = bgColor;
+                  ctx.globalAlpha = 1 - frameOpacity; // Inverse opacity
+                  ctx.fillRect(paddingX, paddingY, frame.width, frame.height);
+                  ctx.globalAlpha = 1; // Reset
+                }
+
+                processedCanvases.push({ canvas, name: frame.name, index: i });
+
+                const percent = 50 + Math.round((i / frames.length) * 20);
+                gifProgressFill.style.width = `${percent}%`;
+                gifProgressText.textContent = `Processing frame ${i + 1} / ${frames.length}...`;
+
+                resolve();
+              };
+              img.onerror = reject;
+            });
+          }
+
+          // Generate GIF
+          await generateGIF(processedCanvases, config, bgColor);
+
+        } catch (error) {
+          console.error("Error generating output:", error);
+          showGifStatus("error", `Error: ${error.message}`);
+          gifProgress.style.display = "none";
+          gifExportBtn.disabled = false;
+        }
+      }
+
+      // Generate GIF format
+      async function generateGIF(processedCanvases, config, bgColor) {
+        gifProgressText.textContent = "Encoding GIF...";
+
+        const encoder = new GIFEncoder();
+        encoder.setRepeat(0);
+        encoder.setDelay(config.frameDelay);
+        encoder.setQuality(10);
+        encoder.setTransparent(!bgColor);
+        encoder.start();
+
+        for (let i = 0; i < processedCanvases.length; i++) {
+          const { canvas } = processedCanvases[i];
+          const ctx = canvas.getContext("2d");
+          encoder.setSize(canvas.width, canvas.height);
+          encoder.addFrame(ctx);
+
+          const percent = 70 + Math.round((i / processedCanvases.length) * 20);
+          gifProgressFill.style.width = `${percent}%`;
+        }
+
+        encoder.finish();
+        const binaryData = encoder.getOutput();
+        const blob = new Blob([binaryData], { type: "image/gif" });
+
+        gifGeneratedBlob = blob;
+        gifGeneratedFrames = null;
+
+        const url = URL.createObjectURL(blob);
+        gifPreviewImage.src = url;
+        gifPreviewSection.style.display = "block";
+        gifDownloadBtn.style.display = "block";
+        gifProgress.style.display = "none";
+        gifExportBtn.disabled = false;
+
+        showGifStatus("success", `GIF created! Size: ${(blob.size / 1024).toFixed(1)} KB`);
+      }
+
+      // Download file
+      function downloadGif() {
+        if (!gifGeneratedBlob || !gifSelectionInfo) return;
+
+        const name = gifSelectionInfo.frameName.replace(/[^a-z0-9]/gi, "_");
+        const w = gifWidthInput.value;
+        const h = gifHeightInput.value;
+        const scale = gifScaleSelect.value.replace(".", "");
+        const delay = gifFrameDelayInput.value;
+
+        const fileName = `${name}_${w}x${h}_${scale}x_${delay}ms.gif`;
+
+        const url = URL.createObjectURL(gifGeneratedBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // Event listeners for GIF tab
+      gifExportBtn.addEventListener("click", exportGif);
+      gifDownloadBtn.addEventListener("click", downloadGif);
+
+      // Update selection info when switching to GIF tab
+      tabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.dataset.tab === "gif") {
+            updateGifSelectionInfo();
+          }
+        });
+      });
+
+      // Handle GIF messages
+      function handleGifMessage(msg) {
+        switch (msg.type) {
+          case "GIF_SELECTION_INFO":
+            handleGifSelectionInfo(msg.info);
+            break;
+
+          case "GIF_EXPORT_PROGRESS":
+            handleGifExportProgress(msg.current, msg.total);
+            break;
+
+          case "GIF_FRAMES_DATA":
+            handleGifFramesData(msg.frames, msg.config, msg.overlayDataList);
+            break;
+
+          case "GIF_EXPORT_ERROR":
+            showGifStatus("error", msg.error);
+            gifProgress.style.display = "none";
+            gifExportBtn.disabled = false;
+            break;
+        }
+      }
+
+      // Add GIF message handling to onmessage
+      const existingOnMessage = window.onmessage;
+      window.onmessage = (event) => {
+        if (existingOnMessage) existingOnMessage(event);
+
+        const msg = event.data.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type && msg.type.startsWith("GIF_")) {
+          handleGifMessage(msg);
+        }
+      };
+
+      // Also listen for selection changes when on GIF tab
+      figma_onSelectionChange_callbacks = figma_onSelectionChange_callbacks || [];
+      figma_onSelectionChange_callbacks.push(() => {
+        if (currentTab === "gif") {
+          updateGifSelectionInfo();
+        }
+      });
     </script>
   </body>
 </html>

@@ -9,15 +9,21 @@
     cursor: pointer;
     transition: all 0.2s;
     color: $color-text;
-  
+
     &:hover {
       background: $color-bg;
       border-color: $color-primary;
       color: $color-primary;
     }
-  
+
     &:active {
       transform: scale(0.98);
+    }
+
+    &.active {
+      background: $color-primary;
+      border-color: $color-primary;
+      color: $color-surface;
     }
   }
   

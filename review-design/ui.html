@@ -1660,6 +1660,44 @@
         moveSettingsPanel();
       }
     })();
+
+    // Handle active state for issue items when clicking Select button
+    (function() {
+      function initIssueSelectActive() {
+        const resultsContainer = document.getElementById('results-issues');
+        if (!resultsContainer) return;
+
+        resultsContainer.addEventListener('click', function(e) {
+          const selectBtn = e.target.closest('.btn-select');
+          if (!selectBtn) return;
+
+          const issueItem = selectBtn.closest('.issue');
+          if (!issueItem) return;
+
+          // Remove active state from all other buttons and issues
+          const allSelectBtns = resultsContainer.querySelectorAll('.btn-select.active');
+          const allSelectedIssues = resultsContainer.querySelectorAll('.issue.selected');
+
+          allSelectBtns.forEach(btn => {
+            if (btn !== selectBtn) btn.classList.remove('active');
+          });
+
+          allSelectedIssues.forEach(issue => {
+            if (issue !== issueItem) issue.classList.remove('selected');
+          });
+
+          // Toggle active state on clicked button and issue
+          selectBtn.classList.add('active');
+          issueItem.classList.add('selected');
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initIssueSelectActive);
+      } else {
+        initIssueSelectActive();
+      }
+    })();
     </script>
   </body>
 </html>

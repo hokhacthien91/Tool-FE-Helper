@@ -499,6 +499,12 @@ console.log("ui.js loaded");
     const btn = el.querySelector("button.btn-select");
     if (btn) {
       btn.onclick = () => {
+        // Remove active state from all other buttons and issues
+        document.querySelectorAll(".btn-select.active").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".issue.selected").forEach(i => i.classList.remove("selected"));
+        // Add active state to clicked button and issue
+        btn.classList.add("active");
+        el.classList.add("selected");
         parent.postMessage({ pluginMessage: { type: "select-node", id: issue.id } }, "*");
       };
     }
@@ -5241,6 +5247,12 @@ console.log("ui.js loaded");
               const btn = issueEl.querySelector("button.btn-select");
               if (btn) {
                 btn.onclick = () => {
+                  // Remove active state from all other buttons and issues
+                  document.querySelectorAll(".btn-select.active").forEach(b => b.classList.remove("active"));
+                  document.querySelectorAll(".issue.selected").forEach(i => i.classList.remove("selected"));
+                  // Add active state to clicked button and issue
+                  btn.classList.add("active");
+                  issueEl.classList.add("selected");
                   parent.postMessage({ pluginMessage: { type: "select-node", id: issue.id } }, "*");
                 };
               }
@@ -6013,6 +6025,12 @@ console.log("ui.js loaded");
               const btn = tokenEl.querySelector("button.btn-select");
               if (btn) {
                 btn.onclick = () => {
+                  // Remove active state from all other buttons and items
+                  document.querySelectorAll(".btn-select.active").forEach(b => b.classList.remove("active"));
+                  document.querySelectorAll(".issue.selected, .token-item.selected").forEach(i => i.classList.remove("selected"));
+                  // Add active state to clicked button and token item
+                  btn.classList.add("active");
+                  tokenEl.classList.add("selected");
                   parent.postMessage({ pluginMessage: { type: "select-node", id: firstNode.id } }, "*");
                 };
               }

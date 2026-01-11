@@ -13,11 +13,17 @@
     padding: 10px 12px;
     border: 1px solid $color-border;
     transition: all 0.2s;
-}
 
-.token-item:hover {
-    background: $color-bg;
-    border-color: $color-border-strong;
+    &:hover {
+        background: $color-bg;
+        border-color: $color-border-strong;
+    }
+
+    &.selected {
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+        border-color: $color-primary;
+        background: #f0f4ff;
+    }
 }
 
 .token-item-row {

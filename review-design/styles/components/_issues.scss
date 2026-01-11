@@ -117,6 +117,13 @@
     transform: translateX(2px);
   }
 
+  &.selected {
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+    transform: translateX(2px);
+    border-left-color: $color-primary !important;
+    background: #f0f4ff !important;
+  }
+
   &.error {
     border-left-color: $color-danger-500;
     background: $color-danger-bg;

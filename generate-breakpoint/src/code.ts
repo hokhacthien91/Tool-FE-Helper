@@ -22,6 +22,9 @@ import {
   DesignTokens,
   ColorToken,
   DEFAULT_QA_CONFIG,
+  GifExportConfig,
+  GifSelectionInfo,
+  GifFrameData,
 } from './types';
 
 // ============================================================================
@@ -370,6 +373,8 @@ figma.on('selectionchange', () => {
   sendSelectionInfo();
   // Also update Inspector tab when selection changes
   sendNodeInfo();
+  // Also update GIF tab when selection changes
+  handleGifGetSelectionInfo();
 });
 
 // ============================================================================
@@ -506,12 +511,25 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
       handleConvertDarkMode(msg.skipFrames || []);
       break;
 
-    case 'EXPORT_BUTTONS':
-      handleExportButtons(msg.patterns, msg.scale, msg.padding);
+    case 'EXPORT_ALL_IMAGES':
+      handleExportAllImages(
+        msg.buttonPatterns, msg.buttonFormat, msg.buttonScale, msg.buttonPadding,
+        msg.pngPatterns, msg.pngScale,
+        msg.jpgPatterns, msg.jpgScale
+      );
       break;
 
     case 'EXPORT_BUTTON_IMAGE':
       handleExportButtonImage(msg.id, msg.name, msg.textContent, msg.scale, msg.padding, msg.format);
+      break;
+
+    // Export for Compare messages
+    case 'GET_COMPARE_FRAME_INFO':
+      handleGetCompareFrameInfo(msg.frameType);
+      break;
+
+    case 'EXPORT_COMPARE_DATA':
+      handleExportCompareData(msg.projectName, msg.desktopFrameId, msg.mobileFrameId);
       break;
 
     // QA Checker messages
@@ -576,8 +594,250 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
     case 'CANCEL':
       figma.closePlugin();
       break;
+
+    // Export GIF messages
+    case 'GIF_GET_SELECTION_INFO':
+      handleGifGetSelectionInfo();
+      break;
+
+    case 'GIF_EXPORT_FRAMES':
+      handleGifExportFrames(msg.config);
+      break;
   }
 };
+
+// ============================================================================
+// EXPORT GIF HANDLERS
+// ============================================================================
+
+/**
+ * Get information about selected frame for GIF export
+ */
+function handleGifGetSelectionInfo(): void {
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    sendToUI({ type: 'GIF_SELECTION_INFO', info: null });
+    return;
+  }
+
+  const node = selection[0];
+
+  // Check if it's a valid frame type
+  if (node.type !== 'FRAME' && node.type !== 'INSTANCE' && node.type !== 'COMPONENT') {
+    sendToUI({ type: 'GIF_SELECTION_INFO', info: null });
+    return;
+  }
+
+  const info: GifSelectionInfo = {
+    frameId: node.id,
+    frameName: node.name,
+    width: Math.round(node.width),
+    height: Math.round(node.height),
+    hasPrototype: false,
+    isComponentInstance: node.type === 'INSTANCE',
+    variantCount: 0,
+    childFrameCount: 0,
+    frameNames: [],
+    delays: [],
+    defaultDelay: 500,
+    overlayLayers: [],
+  };
+
+  // Check for prototype reactions and extract delays
+  if ('reactions' in node && node.reactions && node.reactions.length > 0) {
+    info.hasPrototype = true;
+  }
+
+  // Helper function to extract delay from reactions
+  const getDelayFromReactions = (frameNode: SceneNode): number => {
+    if ('reactions' in frameNode && frameNode.reactions) {
+      for (const reaction of frameNode.reactions) {
+        // Check for "After delay" trigger
+        if (reaction.trigger && reaction.trigger.type === 'AFTER_TIMEOUT') {
+          // Figma timeout is in SECONDS, convert to milliseconds
+          return Math.round(reaction.trigger.timeout * 1000);
+        }
+      }
+    }
+    return 0; // No delay found
+  };
+
+  // If it's an instance, check for variants
+  if (node.type === 'INSTANCE') {
+    try {
+      const mainComponent = node.mainComponent;
+      if (mainComponent && mainComponent.parent && mainComponent.parent.type === 'COMPONENT_SET') {
+        const componentSet = mainComponent.parent;
+        info.variantCount = componentSet.children.length;
+        info.frameNames = componentSet.children.map(child => child.name);
+        // Get delays from each variant's reactions
+        info.delays = componentSet.children.map(child => getDelayFromReactions(child));
+      }
+    } catch (e) {
+      console.error('Error accessing component set:', e);
+    }
+  }
+
+  // Count child frames (for frame-based animation)
+  if ('children' in node) {
+    const childFrames = node.children.filter(
+      child => child.type === 'FRAME' || child.type === 'INSTANCE' || child.type === 'COMPONENT'
+    );
+    info.childFrameCount = childFrames.length;
+    if (info.frameNames.length === 0) {
+      info.frameNames = childFrames.map(child => child.name);
+    }
+    // Get delays from each child frame's reactions
+    if (info.delays.length === 0) {
+      info.delays = childFrames.map(child => getDelayFromReactions(child));
+    }
+  }
+
+  // Collect potential overlay layers from SIBLING nodes (same level as selected frame)
+  // This allows selecting layers outside the animation frame
+  if (node.parent && 'children' in node.parent) {
+    info.overlayLayers = node.parent.children
+      .filter(sibling => sibling.id !== node.id && sibling.visible && 'exportAsync' in sibling)
+      .map(sibling => ({ id: sibling.id, name: sibling.name }));
+  }
+
+  // Calculate default delay from found delays (use first non-zero delay or 500ms)
+  const foundDelay = info.delays.find(d => d > 0);
+  if (foundDelay) {
+    info.defaultDelay = foundDelay;
+  }
+
+  console.log('GIF Selection Info:', info);
+  sendToUI({ type: 'GIF_SELECTION_INFO', info });
+}
+
+/**
+ * Export frames for GIF generation
+ */
+async function handleGifExportFrames(config: GifExportConfig): Promise<void> {
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    sendToUI({ type: 'GIF_EXPORT_ERROR', error: 'No frame selected' });
+    return;
+  }
+
+  const node = selection[0];
+
+  if (node.type !== 'FRAME' && node.type !== 'INSTANCE' && node.type !== 'COMPONENT') {
+    sendToUI({ type: 'GIF_EXPORT_ERROR', error: 'Please select a Frame, Instance, or Component' });
+    return;
+  }
+
+  try {
+    const frames: GifFrameData[] = [];
+    let nodesToExport: SceneNode[] = [];
+
+    // Determine which nodes to export
+    if (node.type === 'INSTANCE') {
+      // Try to get all variants from component set
+      const mainComponent = node.mainComponent;
+      if (mainComponent && mainComponent.parent && mainComponent.parent.type === 'COMPONENT_SET') {
+        const componentSet = mainComponent.parent;
+        nodesToExport = [...componentSet.children];
+      } else {
+        // Just export the instance itself
+        nodesToExport = [node];
+      }
+    } else if ('children' in node) {
+      // Export child frames
+      const childFrames = node.children.filter(
+        child => child.type === 'FRAME' || child.type === 'INSTANCE' || child.type === 'COMPONENT'
+      );
+      if (childFrames.length > 0) {
+        nodesToExport = childFrames as SceneNode[];
+      } else {
+        // Just export the frame itself
+        nodesToExport = [node];
+      }
+    } else {
+      nodesToExport = [node];
+    }
+
+    const overlayCount = config.overlayFrameIds?.length || 0;
+    const total = nodesToExport.length + overlayCount;
+    console.log(`Exporting ${nodesToExport.length} frames for GIF...`);
+
+    for (let i = 0; i < nodesToExport.length; i++) {
+      const exportNode = nodesToExport[i];
+
+      sendToUI({ type: 'GIF_EXPORT_PROGRESS', current: i + 1, total });
+
+      // Export as PNG
+      const bytes = await (exportNode as FrameNode | InstanceNode | ComponentNode).exportAsync({
+        format: 'PNG',
+        constraint: { type: 'SCALE', value: config.scale },
+      });
+
+      // Convert to base64
+      const base64 = figma.base64Encode(bytes);
+
+      // Get opacity from node (default to 1 if not available)
+      const nodeOpacity = 'opacity' in exportNode ? (exportNode as FrameNode).opacity : 1;
+
+      frames.push({
+        index: i,
+        name: exportNode.name,
+        imageData: base64,
+        width: Math.round(exportNode.width * config.scale),
+        height: Math.round(exportNode.height * config.scale),
+        opacity: nodeOpacity,
+      });
+    }
+
+    // Export overlay layers if specified (multiple overlays supported)
+    // Overlays are SIBLINGS of the selected frame (same parent level)
+    const overlayDataList: GifFrameData[] = [];
+    if (config.overlayFrameIds && config.overlayFrameIds.length > 0) {
+      // Reference position is always the selected frame's position
+      // because overlays are siblings of the selected frame
+      const referenceX = node.x;
+      const referenceY = node.y;
+
+      for (let i = 0; i < config.overlayFrameIds.length; i++) {
+        const overlayId = config.overlayFrameIds[i];
+        const overlayNode = figma.getNodeById(overlayId) as SceneNode;
+        if (overlayNode && 'exportAsync' in overlayNode) {
+          sendToUI({ type: 'GIF_EXPORT_PROGRESS', current: nodesToExport.length + i + 1, total });
+          console.log(`Exporting overlay layer ${i + 1}: ${overlayNode.name}`);
+
+          const overlayBytes = await (overlayNode as FrameNode | InstanceNode | ComponentNode | GroupNode).exportAsync({
+            format: 'PNG',
+            constraint: { type: 'SCALE', value: config.scale },
+          });
+
+          // Calculate overlay position relative to the selected frame
+          // Both overlay and selected frame are siblings with positions relative to same parent
+          const relativeX = Math.round((overlayNode.x - referenceX) * config.scale);
+          const relativeY = Math.round((overlayNode.y - referenceY) * config.scale);
+
+          overlayDataList.push({
+            index: i,
+            name: overlayNode.name,
+            imageData: figma.base64Encode(overlayBytes),
+            width: Math.round(overlayNode.width * config.scale),
+            height: Math.round(overlayNode.height * config.scale),
+            x: relativeX,
+            y: relativeY,
+          });
+        }
+      }
+    }
+
+    console.log(`Exported ${frames.length} frames successfully`);
+    sendToUI({ type: 'GIF_FRAMES_DATA', frames, config, overlayDataList: overlayDataList.length > 0 ? overlayDataList : undefined });
+
+  } catch (e) {
+    console.error('Error exporting frames:', e);
+    sendToUI({ type: 'GIF_EXPORT_ERROR', error: String(e) });
+  }
+}
 
 // ============================================================================
 // VALIDATION
@@ -1009,9 +1269,14 @@ function findButtonsByPattern(node: SceneNode, patterns: string[]): Array<{ id: 
 }
 
 /**
- * Handle export buttons request - find all buttons matching patterns
+ * Handle export all images request - find all frames matching Button, PNG, and JPG patterns
+ * Each group has its own format, scale, and padding settings
  */
-function handleExportButtons(patterns: string[], scale: number, padding: number): void {
+function handleExportAllImages(
+  buttonPatterns: string[], buttonFormat: string, buttonScale: number, buttonPadding: number,
+  pngPatterns: string[], pngScale: number,
+  jpgPatterns: string[], jpgScale: number
+): void {
   try {
     const selection = figma.currentPage.selection;
 
@@ -1020,15 +1285,49 @@ function handleExportButtons(patterns: string[], scale: number, padding: number)
       return;
     }
 
-    const sourceFrame = selection[0];
-    const buttons = findButtonsByPattern(sourceFrame, patterns);
+    // Combine all patterns and find matching frames from ALL selected frames
+    const allPatterns = [...new Set([...buttonPatterns, ...pngPatterns, ...jpgPatterns])];
+    let allButtons: Array<{ id: string; name: string; textContent: string }> = [];
 
-    console.log(`[Export] Found ${buttons.length} buttons matching patterns:`, patterns);
+    // Loop through all selected frames
+    for (const sourceFrame of selection) {
+      const buttonsInFrame = findButtonsByPattern(sourceFrame, allPatterns);
+      allButtons = allButtons.concat(buttonsInFrame);
+    }
+
+    // Add format, scale, and padding info to each button based on which pattern list it matches
+    interface ExportInfo {
+      format: string;
+      scale: number;
+      padding: number;
+    }
+
+    const buttons = allButtons.map(button => {
+      const exports: ExportInfo[] = [];
+      const nameLower = button.name.toLowerCase();
+
+      // Check Button patterns (user-selected format with padding)
+      if (buttonPatterns.some(p => nameLower === p.toLowerCase())) {
+        exports.push({ format: buttonFormat || 'PNG', scale: buttonScale || 2, padding: buttonPadding || 0 });
+      }
+      // Check PNG patterns (no padding)
+      if (pngPatterns.some(p => nameLower === p.toLowerCase())) {
+        exports.push({ format: 'PNG', scale: pngScale || 2, padding: 0 });
+      }
+      // Check JPG patterns (no padding)
+      if (jpgPatterns.some(p => nameLower === p.toLowerCase())) {
+        exports.push({ format: 'JPG', scale: jpgScale || 2, padding: 0 });
+      }
+
+      return { ...button, exports };
+    });
+
+    console.log(`[Export All Images] Found ${buttons.length} frames. Button(${buttonFormat}): ${buttonPatterns}, PNG: ${pngPatterns}, JPG: ${jpgPatterns}`);
 
     sendToUI({ type: 'EXPORT_BUTTONS_FOUND', buttons });
 
   } catch (error) {
-    console.error('Export buttons error:', error);
+    console.error('Export all images error:', error);
     sendToUI({ type: 'EXPORT_BUTTONS_ERROR', error: String(error) });
   }
 }
@@ -1125,12 +1424,166 @@ async function handleExportButtonImage(
       id,
       fileName,
       data: base64,
+      format,
     });
 
   } catch (error) {
     console.error(`[Export] Error exporting button ${id}:`, error);
     sendToUI({ type: 'EXPORT_BUTTONS_ERROR', error: `Failed to export ${name}: ${String(error)}` });
   }
+}
+
+// ============================================================================
+// EXPORT FOR COMPARE (DOCX vs Design)
+// ============================================================================
+
+/**
+ * Get frame info for compare export
+ */
+function handleGetCompareFrameInfo(frameType: 'desktop' | 'mobile'): void {
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    sendToUI({ type: 'COMPARE_FRAME_INFO', frameType, frame: null });
+    return;
+  }
+
+  const node = selection[0];
+  if (node.type !== 'FRAME' && node.type !== 'COMPONENT' && node.type !== 'INSTANCE') {
+    sendToUI({ type: 'COMPARE_FRAME_INFO', frameType, frame: null });
+    return;
+  }
+
+  const frame = node as FrameNode;
+  sendToUI({
+    type: 'COMPARE_FRAME_INFO',
+    frameType,
+    frame: {
+      id: frame.id,
+      name: frame.name,
+      width: Math.round(frame.width),
+      height: Math.round(frame.height),
+    },
+  });
+}
+
+/**
+ * Export JSON structure and screenshot for compare
+ */
+async function handleExportCompareData(
+  projectName: string,
+  desktopFrameId: string,
+  mobileFrameId: string
+): Promise<void> {
+  try {
+    const desktopNode = figma.getNodeById(desktopFrameId) as FrameNode;
+    const mobileNode = figma.getNodeById(mobileFrameId) as FrameNode;
+
+    if (!desktopNode || !mobileNode) {
+      sendToUI({ type: 'COMPARE_EXPORT_ERROR', error: 'One or more frames not found' });
+      return;
+    }
+
+    // Extract JSON structure for both frames
+    const desktopJson = extractNodeStructure(desktopNode);
+    const mobileJson = extractNodeStructure(mobileNode);
+
+    // Export screenshots
+    const desktopScreenshot = await desktopNode.exportAsync({
+      format: 'PNG',
+      constraint: { type: 'SCALE', value: 1 },
+    });
+    const mobileScreenshot = await mobileNode.exportAsync({
+      format: 'PNG',
+      constraint: { type: 'SCALE', value: 1 },
+    });
+
+    // Convert to base64
+    const desktopScreenshotBase64 = figma.base64Encode(desktopScreenshot);
+    const mobileScreenshotBase64 = figma.base64Encode(mobileScreenshot);
+
+    sendToUI({
+      type: 'COMPARE_EXPORT_COMPLETE',
+      success: true,
+      projectName,
+      desktopJson: JSON.stringify(desktopJson, null, 2),
+      mobileJson: JSON.stringify(mobileJson, null, 2),
+      desktopScreenshot: desktopScreenshotBase64,
+      mobileScreenshot: mobileScreenshotBase64,
+    });
+
+  } catch (error) {
+    console.error('Export compare data error:', error);
+    sendToUI({ type: 'COMPARE_EXPORT_ERROR', error: String(error) });
+  }
+}
+
+/**
+ * Extract node structure for JSON export (similar to inspector but simplified for compare)
+ */
+function extractNodeStructure(node: SceneNode): object {
+  const result: Record<string, unknown> = {
+    name: node.name,
+    type: node.type,
+  };
+
+  // Add position and size
+  if ('x' in node) result.x = node.x;
+  if ('y' in node) result.y = node.y;
+  if ('width' in node) result.width = node.width;
+  if ('height' in node) result.height = node.height;
+
+  // Add fills info
+  if ('fills' in node && Array.isArray(node.fills)) {
+    result.fills = (node.fills as Paint[]).map(fill => {
+      const fillInfo: Record<string, unknown> = { type: fill.type };
+      if (fill.type === 'SOLID') {
+        const solidFill = fill as SolidPaint;
+        if (solidFill.boundVariables?.color) {
+          const variable = figma.variables.getVariableById(solidFill.boundVariables.color.id);
+          if (variable) {
+            fillInfo.name = variable.name;
+          }
+        }
+        fillInfo.hex = rgbToHex(solidFill.color.r, solidFill.color.g, solidFill.color.b);
+      }
+      return fillInfo;
+    });
+  }
+
+  // Add text content for TEXT nodes
+  if (node.type === 'TEXT') {
+    const textNode = node as TextNode;
+    result.characters = textNode.characters;
+    result.fontSize = textNode.fontSize;
+    result.fontName = textNode.fontName;
+    result.textAlignHorizontal = textNode.textAlignHorizontal;
+    result.textAlignVertical = textNode.textAlignVertical;
+    result.lineHeight = textNode.lineHeight;
+  }
+
+  // Add layout info for frames
+  if ('layoutMode' in node) {
+    const frameNode = node as FrameNode;
+    result.layoutMode = frameNode.layoutMode;
+    result.primaryAxisSizingMode = frameNode.primaryAxisSizingMode;
+    result.counterAxisSizingMode = frameNode.counterAxisSizingMode;
+    result.primaryAxisAlignItems = frameNode.primaryAxisAlignItems;
+    result.counterAxisAlignItems = frameNode.counterAxisAlignItems;
+    if (frameNode.paddingTop) result.paddingTop = frameNode.paddingTop;
+    if (frameNode.paddingRight) result.paddingRight = frameNode.paddingRight;
+    if (frameNode.paddingBottom) result.paddingBottom = frameNode.paddingBottom;
+    if (frameNode.paddingLeft) result.paddingLeft = frameNode.paddingLeft;
+    if (frameNode.itemSpacing) result.itemSpacing = frameNode.itemSpacing;
+  }
+
+  // Recursively process children
+  if ('children' in node) {
+    const children = (node as FrameNode).children;
+    result.children = children.map(child => extractNodeStructure(child));
+  }
+
+  return result;
 }
 
 // ============================================================================
@@ -1176,10 +1629,17 @@ async function handleConvert(config: PluginConfig): Promise<void> {
   for (let widthIndex = 0; widthIndex < widthsToGenerate.length; widthIndex++) {
     const targetWidth = widthsToGenerate[widthIndex];
 
+    // Find individual breakpoint settings for this width
+    const breakpointConfig = config.breakpoints?.find((bp: { width: number; padding: number; maxSpacing: number }) => bp.width === targetWidth);
+    const containerPadding = breakpointConfig?.padding ?? config.containerPadding;
+    const maxSpacing = breakpointConfig?.maxSpacing ?? config.maxSpacing;
+
     // Create config for this specific width with positioning info
     const widthConfig = {
       ...config,
       mobileWidth: targetWidth,
+      containerPadding,
+      maxSpacing,
       widthIndex,
       previousWidthsTotal,
     };

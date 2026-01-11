@@ -6,7 +6,14 @@
       "Bash(npm run typecheck:*)",
       "Bash(npx tsc:*)",
       "Bash(git checkout:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(unzip:*)",
+      "Bash(fold:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(node compare.js:*)",
+      "Bash(ls:*)",
+      "Bash(node:*)"
     ]
   }
 }

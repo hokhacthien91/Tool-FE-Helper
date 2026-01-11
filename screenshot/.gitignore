@@ -4,4 +4,5 @@ node_modules/
 report-*/
 *.xlsx
 urls.txt
-
+screenshots
+screenshots-bk

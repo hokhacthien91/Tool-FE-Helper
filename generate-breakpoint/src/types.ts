@@ -9,6 +9,7 @@
 export interface PluginConfig {
   mobileWidth: number;       // Target width (primary/first selected)
   mobileWidths?: number[];   // All selected target widths (for multi-breakpoint generation)
+  breakpoints?: { width: number; padding: number; maxSpacing: number }[];  // Individual settings per breakpoint
   widthIndex?: number;       // Index of current width being generated (for positioning)
   previousWidthsTotal?: number;  // Total width of all previous breakpoints (for positioning)
   containerPadding: number;  // Left/right padding for mobile container (default 20px)
@@ -25,10 +26,14 @@ export interface PluginConfig {
   forEmail?: boolean;        // For Email mode enabled
   darkModeSkipFrames?: string[];  // Frame names to skip during dark mode conversion
   activeTab?: string;        // Currently active tab (generator, email, inspector)
-  buttonNamePatterns?: string[];  // Patterns for export buttons feature
-  exportFormat?: 'PNG' | 'SVG' | 'JPG';  // Export format for buttons (default PNG)
-  exportScale?: number;      // Export scale for buttons (default 2)
-  exportPadding?: number;    // Export padding for buttons (default 4)
+  buttonNamePatterns?: string[];  // Patterns for Button export
+  buttonExportFormat?: 'PNG' | 'SVG' | 'JPG';  // Export format for buttons (default PNG)
+  buttonExportScale?: number;     // Export scale for buttons (default 2)
+  buttonExportPadding?: number;   // Export padding for buttons (default 0)
+  pngNamePatterns?: string[];     // Patterns for PNG export
+  pngExportScale?: number;        // Export scale for PNG (default 2)
+  jpgNamePatterns?: string[];     // Patterns for JPG export
+  jpgExportScale?: number;        // Export scale for JPG (default 2)
 }
 
 /**
@@ -137,7 +142,10 @@ export type PluginMessage =
   | { type: 'QA_EXTRACT_STYLES' }
   | { type: 'QA_EXTRACT_VARIABLES' }
   | { type: 'QA_EXTRACT_TYPOGRAPHY_STYLES' }
-  | { type: 'QA_REQUEST_CONFIG' };
+  | { type: 'QA_REQUEST_CONFIG' }
+  // Export GIF messages
+  | { type: 'GIF_GET_SELECTION_INFO' }
+  | { type: 'GIF_EXPORT_FRAMES'; config: GifExportConfig };
 
 export type UIMessage =
   | { type: 'CONVERSION_COMPLETE'; result: TransformResult }
@@ -167,7 +175,63 @@ export type UIMessage =
   | { type: 'QA_TOKENS_LOADED'; tokens: DesignTokens | null }
   | { type: 'QA_STYLES_EXTRACTED'; colors: { name: string; hex: string }[] }
   | { type: 'QA_VARIABLES_EXTRACTED'; colors: { name: string; hex: string }[] }
-  | { type: 'QA_TYPOGRAPHY_STYLES_EXTRACTED'; styles: TypographyStyle[] };
+  | { type: 'QA_TYPOGRAPHY_STYLES_EXTRACTED'; styles: TypographyStyle[] }
+  // Export GIF messages
+  | { type: 'GIF_SELECTION_INFO'; info: GifSelectionInfo | null }
+  | { type: 'GIF_FRAMES_DATA'; frames: GifFrameData[]; config: GifExportConfig; overlayDataList?: GifFrameData[] }
+  | { type: 'GIF_EXPORT_PROGRESS'; current: number; total: number }
+  | { type: 'GIF_EXPORT_ERROR'; error: string };
+
+// ============================================================================
+// EXPORT GIF TYPES
+// ============================================================================
+
+/**
+ * GIF Export Configuration
+ */
+export interface GifExportConfig {
+  width: number;           // Output width
+  height: number;          // Output height
+  fps: number;             // Frames per second (for smooth animation)
+  frameDelay: number;      // Delay between frames in ms
+  scale: number;           // Export scale (1x, 2x, etc.)
+  loop: boolean;           // Loop forever or play once
+  overlayFrameIds?: string[]; // Optional: IDs of static layers to overlay on top of each frame
+  paddingX: number;        // Left/Right padding (transparent) - default 0
+  paddingY: number;        // Top/Bottom padding (transparent) - default 0
+}
+
+/**
+ * Information about selected frame for GIF export
+ */
+export interface GifSelectionInfo {
+  frameId: string;
+  frameName: string;
+  width: number;
+  height: number;
+  hasPrototype: boolean;
+  isComponentInstance: boolean;
+  variantCount: number;
+  childFrameCount: number;  // For non-component frames with multiple children
+  frameNames: string[];     // Names of variants or child frames
+  delays: number[];         // Delay for each frame from Figma interactions (ms)
+  defaultDelay: number;     // Default delay if no interaction found (ms)
+  overlayLayers: { id: string; name: string }[];  // Available layers that can be used as overlay
+}
+
+/**
+ * Single frame data for GIF generation
+ */
+export interface GifFrameData {
+  index: number;
+  name: string;
+  imageData: string;  // Base64 encoded PNG
+  width: number;
+  height: number;
+  x?: number;  // X position relative to parent (for overlays)
+  y?: number;  // Y position relative to parent (for overlays)
+  opacity?: number;  // Frame opacity (0-1), used for simulating transparency
+}
 
 /**
  * Type guards for Figma nodes
