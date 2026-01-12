@@ -4,7 +4,9 @@
       "Bash(node --check:*)",
       "Bash(cat:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run prod:*)"
+      "Bash(npm run prod:*)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

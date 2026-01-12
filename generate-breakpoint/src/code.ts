@@ -1992,7 +1992,10 @@ async function generateBreakpoint(
     await new Promise(resolve => setTimeout(resolve, 30));
     const layoutStrategy = config.layoutStrategy || 'balanced';
     const uiControlPatterns = config.uiControlPatterns || ['button', 'btn', 'cta', 'input', 'field', 'search', 'tab', 'icon'];
-    await convertHorizontalToVertical(newFrame, config.mobileWidth, stats, layoutStrategy, config.maxSpacing, uiControlPatterns);
+    const sliderConfig = config.isSlider && config.sliderItemPattern
+      ? { isSlider: config.isSlider, sliderItemPattern: config.sliderItemPattern }
+      : undefined;
+    await convertHorizontalToVertical(newFrame, config.mobileWidth, stats, layoutStrategy, config.maxSpacing, uiControlPatterns, sliderConfig);
 
     // NOTE: We don't need adjustVerticalLayoutSpacing anymore
     // because convertHorizontalToVertical already adjusts spacing for converted layouts
@@ -2026,6 +2029,20 @@ async function generateBreakpoint(
     // Step 10.5: Fix absolute positioned content that overflows
     // This centers content that was positioned with desktop coordinates
     fixAbsolutePositionedContent(newFrame, config.mobileWidth, config, stats);
+
+    // Step 10.6: Process spacing variables - apply target breakpoint values
+    // If spacing uses Figma Variables with modes (Desktop/Mobile/Tablet),
+    // update to the corresponding mode value for the target width
+    console.log(`📊 Processing spacing variables for ${config.mobileWidth}px breakpoint...`);
+    await processSpacingVariables(newFrame, config.mobileWidth, stats);
+
+    // Step 10.7: Process slider/carousel frames
+    // If slider mode is enabled, resize slider items to fit mobile width
+    // instead of stacking them vertically
+    if (config.isSlider && config.sliderItemPattern) {
+      console.log(`📊 Processing slider frames with pattern: "${config.sliderItemPattern}"`);
+      processSliderFrames(newFrame, config, stats);
+    }
 
     // Step 11: Fix vertical layouts to have auto height (hug content)
     currentStep++;
@@ -2346,7 +2363,8 @@ async function convertHorizontalToVertical(
   stats: TransformStats,
   strategy: 'conservative' | 'balanced' | 'aggressive' = 'balanced',
   maxSpacing: number = 40,
-  uiControlPatterns: string[] = ['button', 'btn', 'cta', 'input', 'field', 'search', 'tab', 'icon']
+  uiControlPatterns: string[] = ['button', 'btn', 'cta', 'input', 'field', 'search', 'tab', 'icon'],
+  sliderConfig?: { isSlider: boolean; sliderItemPattern: string }
 ): Promise<void> {
   // Safety check: verify node still exists
   try {
@@ -2363,7 +2381,7 @@ async function convertHorizontalToVertical(
   if (hasChildren(node)) {
     for (const child of node.children) {
       try {
-        await convertHorizontalToVertical(child, targetWidth, stats, strategy, maxSpacing, uiControlPatterns);
+        await convertHorizontalToVertical(child, targetWidth, stats, strategy, maxSpacing, uiControlPatterns, sliderConfig);
       } catch (e) {
         console.error(`❌ convertHorizontalToVertical error on child "${child.name}" (id: ${child.id}): ${e}`);
       }
@@ -2373,6 +2391,21 @@ async function convertHorizontalToVertical(
   // Now check if THIS node is a horizontal auto-layout that needs conversion
   if (!isAutoLayoutFrame(node)) {
     return;
+  }
+
+  // Check if this is a slider container - skip conversion to keep HORIZONTAL
+  if (sliderConfig?.isSlider && sliderConfig?.sliderItemPattern) {
+    const frame = node as FrameNode | ComponentNode | InstanceNode;
+    if (frame.layoutMode === 'HORIZONTAL' && hasChildren(frame)) {
+      const pattern = sliderConfig.sliderItemPattern.toLowerCase();
+      const matchingChildren = frame.children.filter(child =>
+        child.name.toLowerCase().includes(pattern)
+      );
+      if (matchingChildren.length > 0) {
+        console.log(`🎠 Skipping slider container "${frame.name}" - will process separately`);
+        return; // Skip conversion, keep HORIZONTAL for slider
+      }
+    }
   }
 
   // Cast to appropriate type - for INSTANCE, we need to check if we can modify it
@@ -2815,6 +2848,152 @@ function isAutoLayoutFrame(node: SceneNode): node is FrameNode | ComponentNode |
     (node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE') &&
     (node as FrameNode).layoutMode !== 'NONE'
   );
+}
+
+// ============================================================================
+// SLIDER/CAROUSEL PROCESSING
+// ============================================================================
+
+/**
+ * Process slider/carousel frames - resize items to fit mobile width
+ * instead of converting to vertical layout
+ *
+ * @param node - Root node to search for sliders
+ * @param config - Plugin configuration with slider settings
+ * @param stats - Transform statistics
+ */
+function processSliderFrames(
+  node: SceneNode,
+  config: PluginConfig,
+  stats: TransformStats
+): void {
+  // Skip if slider mode is not enabled
+  if (!config.isSlider || !config.sliderItemPattern) {
+    return;
+  }
+
+  const pattern = config.sliderItemPattern.toLowerCase();
+  const itemsVisible = config.sliderItemsVisible || 1;
+  const peekEnabled = config.sliderPeekNextItem || false;
+  const peekAmount = config.sliderPeekAmount || 20;
+
+  console.log(`🎠 Processing sliders: pattern="${pattern}", itemsVisible=${itemsVisible}, peek=${peekEnabled ? peekAmount + 'px' : 'off'}`);
+
+  // Recursively find and process slider containers
+  processSliderNode(node, pattern, itemsVisible, peekEnabled, peekAmount, config, stats);
+}
+
+/**
+ * Recursively search for slider containers and process them
+ */
+function processSliderNode(
+  node: SceneNode,
+  pattern: string,
+  itemsVisible: number,
+  peekEnabled: boolean,
+  peekAmount: number,
+  config: PluginConfig,
+  stats: TransformStats
+): void {
+  // Safety check
+  try {
+    if (!node.id || !node.type) return;
+  } catch (e) {
+    return;
+  }
+
+  // Check if this is a frame with children
+  if (!hasChildren(node)) return;
+
+  // Check if this frame contains slider items (children matching pattern)
+  const frame = node as FrameNode | ComponentNode | InstanceNode;
+
+  // Only process HORIZONTAL auto-layout frames
+  if ('layoutMode' in frame && frame.layoutMode === 'HORIZONTAL') {
+    // Check if children match the slider item pattern
+    const matchingChildren = frame.children.filter(child =>
+      child.name.toLowerCase().includes(pattern)
+    );
+
+    if (matchingChildren.length > 0) {
+      console.log(`🎠 Found slider container: "${frame.name}" with ${matchingChildren.length} items matching "${pattern}"`);
+
+      // Calculate new item width
+      // Available width = frame width - padding - gaps - peek amount
+      const paddingLeft = frame.paddingLeft || 0;
+      const paddingRight = frame.paddingRight || 0;
+      const itemSpacing = frame.itemSpacing || 0;
+      const totalPadding = paddingLeft + paddingRight;
+      const totalGaps = itemSpacing * (itemsVisible - 1);
+      const peekSpace = peekEnabled ? peekAmount : 0;
+
+      // Frame width should already be set to target width by now
+      const availableWidth = frame.width - totalPadding - totalGaps - peekSpace;
+      const newItemWidth = Math.floor(availableWidth / itemsVisible);
+
+      console.log(`  📐 Calculating: frameWidth=${frame.width}, padding=${totalPadding}, gaps=${totalGaps}, peek=${peekSpace}`);
+      console.log(`  📐 Available width: ${availableWidth}px, new item width: ${newItemWidth}px`);
+
+      // Resize all matching children (slider items)
+      for (const child of matchingChildren) {
+        if ('resize' in child) {
+          const originalWidth = child.width;
+          const originalHeight = child.height;
+
+          try {
+            // Calculate new height maintaining aspect ratio (optional) or keep original height
+            child.resize(newItemWidth, originalHeight);
+
+            // If child is auto-layout, ensure it doesn't stretch
+            if ('layoutSizingHorizontal' in child) {
+              const childFrame = child as FrameNode | ComponentNode | InstanceNode;
+              // Set to FIXED so it doesn't try to FILL parent
+              childFrame.layoutSizingHorizontal = 'FIXED';
+            }
+
+            console.log(`  ✅ Resized "${child.name}": ${originalWidth}px → ${newItemWidth}px`);
+            stats.nodesProcessed++;
+          } catch (e) {
+            console.log(`  ❌ Failed to resize "${child.name}": ${e}`);
+          }
+        }
+      }
+
+      // Also resize any non-matching children that are similar width (likely also slider items)
+      const tolerance = 50; // 50px tolerance
+      const referenceWidth = matchingChildren[0]?.width;
+      if (referenceWidth) {
+        for (const child of frame.children) {
+          if (!matchingChildren.includes(child) && 'resize' in child) {
+            // Check if this child has similar width to matching children
+            if (Math.abs(child.width - referenceWidth) < tolerance) {
+              try {
+                child.resize(newItemWidth, child.height);
+                if ('layoutSizingHorizontal' in child) {
+                  (child as FrameNode | ComponentNode | InstanceNode).layoutSizingHorizontal = 'FIXED';
+                }
+                console.log(`  ✅ Also resized similar item "${child.name}": ${child.width}px → ${newItemWidth}px`);
+                stats.nodesProcessed++;
+              } catch (e) {
+                console.log(`  ⚠️ Could not resize "${child.name}": ${e}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Keep the frame as HORIZONTAL (don't convert to VERTICAL)
+      // This is already handled by the pattern - we just mark it processed
+      console.log(`  ✓ Slider "${frame.name}" processed, keeping HORIZONTAL layout`);
+
+      return; // Don't recurse into slider items
+    }
+  }
+
+  // Recurse into children to find nested sliders
+  for (const child of frame.children) {
+    processSliderNode(child, pattern, itemsVisible, peekEnabled, peekAmount, config, stats);
+  }
 }
 
 // ============================================================================
@@ -4213,6 +4392,154 @@ function applyContainerPadding(
       } catch (e) {
         // Some nodes can't be modified
       }
+    }
+  }
+}
+
+// ============================================================================
+// SPACING VARIABLE PROCESSING
+// ============================================================================
+
+/**
+ * Get the target mode ID based on breakpoint width
+ * Maps common breakpoint widths to mode names
+ */
+function getTargetModeForWidth(collection: VariableCollection, targetWidth: number): string | null {
+  const modes = collection.modes;
+
+  // Common mappings: width -> mode name patterns
+  const modePatterns: { [key: string]: string[] } = {
+    'mobile': ['mobile', 'mb', 'phone', 'sm', 'small'],
+    'tablet': ['tablet', 'tb', 'ipad', 'md', 'medium'],
+    'desktop': ['desktop', 'dt', 'pc', 'lg', 'large', 'default'],
+  };
+
+  // Determine which mode type based on width
+  let targetModeType: string;
+  if (targetWidth <= 480) {
+    targetModeType = 'mobile';
+  } else if (targetWidth <= 1024) {
+    targetModeType = 'tablet';
+  } else {
+    targetModeType = 'desktop';
+  }
+
+  // Find matching mode
+  const patterns = modePatterns[targetModeType];
+  for (const mode of modes) {
+    const modeName = mode.name.toLowerCase();
+    for (const pattern of patterns) {
+      if (modeName.includes(pattern)) {
+        return mode.modeId;
+      }
+    }
+  }
+
+  // If no match found, return first mode as fallback
+  return modes.length > 0 ? modes[0].modeId : null;
+}
+
+/**
+ * Process spacing variables in a frame and update to target breakpoint values
+ * This reads boundVariables for spacing properties and applies the corresponding mode value
+ */
+async function processSpacingVariables(
+  node: SceneNode,
+  targetWidth: number,
+  stats: TransformStats
+): Promise<void> {
+  // Process children first (depth-first)
+  if ('children' in node) {
+    for (const child of (node as FrameNode).children) {
+      await processSpacingVariables(child, targetWidth, stats);
+    }
+  }
+
+  // Only process frames with auto-layout
+  if (!isAutoLayoutFrame(node)) {
+    return;
+  }
+
+  const frame = node as FrameNode;
+
+  // Check for bound variables on spacing properties
+  const boundVars = frame.boundVariables;
+  if (!boundVars) {
+    return;
+  }
+
+  // Spacing properties to check
+  const spacingProps: (keyof typeof boundVars)[] = [
+    'itemSpacing',
+    'paddingTop',
+    'paddingRight',
+    'paddingBottom',
+    'paddingLeft',
+  ];
+
+  for (const prop of spacingProps) {
+    const binding = boundVars[prop];
+    if (!binding || !('id' in binding)) {
+      continue;
+    }
+
+    try {
+      // Get the variable
+      const variable = await figma.variables.getVariableByIdAsync(binding.id);
+      if (!variable) {
+        continue;
+      }
+
+      // Get the variable's collection to access modes
+      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+      if (!collection) {
+        continue;
+      }
+
+      // Find target mode based on breakpoint width
+      const targetModeId = getTargetModeForWidth(collection, targetWidth);
+      if (!targetModeId) {
+        continue;
+      }
+
+      // Get value for target mode
+      const valuesByMode = variable.valuesByMode;
+      const targetValue = valuesByMode[targetModeId];
+
+      if (targetValue === undefined || typeof targetValue !== 'number') {
+        continue;
+      }
+
+      // Get current value for comparison
+      const currentValue = frame[prop as keyof FrameNode] as number;
+
+      // Only update if value is different
+      if (currentValue !== targetValue) {
+        console.log(`📐 Spacing variable: ${variable.name} on "${frame.name}" - ${prop}: ${currentValue} → ${targetValue}`);
+
+        // Apply the new value
+        switch (prop) {
+          case 'itemSpacing':
+            frame.itemSpacing = targetValue;
+            break;
+          case 'paddingTop':
+            frame.paddingTop = targetValue;
+            break;
+          case 'paddingRight':
+            frame.paddingRight = targetValue;
+            break;
+          case 'paddingBottom':
+            frame.paddingBottom = targetValue;
+            break;
+          case 'paddingLeft':
+            frame.paddingLeft = targetValue;
+            break;
+        }
+
+        stats.nodesProcessed++;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Error processing spacing variable for ${prop}:`, e);
     }
   }
 }

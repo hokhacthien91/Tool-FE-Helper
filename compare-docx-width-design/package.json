@@ -1,0 +1,13 @@
+{
+  "name": "compare-docx-design",
+  "version": "1.0.0",
+  "description": "Compare DOCX content with Figma Design JSON",
+  "main": "compare.js",
+  "scripts": {
+    "compare": "node compare.js",
+    "compare:config": "node compare.js config.json"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10"
+  }
+}

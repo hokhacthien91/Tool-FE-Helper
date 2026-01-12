@@ -5,5 +5,4 @@ report-*/
 *.xlsx
 urls.txt
 screenshots
-screenshots-bk
-screenshots
+mail*

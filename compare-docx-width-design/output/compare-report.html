@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compare Report - mail1</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 40px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 24px; margin-bottom: 30px; }
+    h2 { font-size: 18px; margin: 30px 0 15px; color: #ccc; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #333;
+    }
+    th {
+      background: #2a2a2a;
+      font-weight: 600;
+      color: #999;
+    }
+    tr:hover { background: #252525; }
+    .status-match, .status-identical { color: #4ade80; }
+    .status-acceptable { color: #fbbf24; }
+    .status-mismatch, .status-different, .status-missing { color: #f87171; }
+    .highlight {
+      background: #fbbf24;
+      color: #000;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: bold;
+    }
+    .summary-table { max-width: 500px; }
+    .summary-table td:first-child { font-weight: 500; }
+    .conclusion {
+      background: #2a2a2a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 30px;
+    }
+    .conclusion h3 { margin-bottom: 15px; font-size: 16px; }
+    .conclusion ul { margin-left: 20px; }
+    .conclusion li { margin: 8px 0; }
+    .conclusion code {
+      background: #3a3a3a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .icon { margin-right: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Compare Report - mail1</h1>
+
+  <h2>1. DOCX vs Design</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Content Type</th>
+        <th>DOCX (Source)</th>
+        <th>Desktop</th>
+        <th>Mobile</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td>1</td>
+        <td>Headline</td>
+        <td>See Honda HRC Progressive in Action.</td>
+        <td>See Honda HRC Progressive in Action</td>
+        <td>See Honda HRC Progressive in Action</td>
+        <td class="status-mismatch">
+          ❌ DOCX has extra punctuation at end
+        </td>
+      </tr>
+      
+      <tr>
+        <td>2</td>
+        <td>CTA #1</td>
+        <td>Meet the Team<span class="highlight">2</span></td>
+        <td>Meet the Team</td>
+        <td>Meet the Team</td>
+        <td class="status-mismatch">
+          ❌ DOCX Typo - Extra numbers
+        </td>
+      </tr>
+      
+      <tr>
+        <td>3</td>
+        <td>CTA #2</td>
+        <td>Buy TicketsNow<span class="highlight">31</span></td>
+        <td>Buy Tickets Now</td>
+        <td>Buy Tickets Now</td>
+        <td class="status-mismatch">
+          ❌ DOCX Typo - Extra numbers
+        </td>
+      </tr>
+      
+      <tr>
+        <td>4</td>
+        <td>Module 2 Headline</td>
+        <td>.Ride Like Jett and Hunter 1</td>
+        <td>Ride like Jett + Hunter</td>
+        <td>Ride like Jett + Hunter</td>
+        <td class="status-mismatch">
+          ❌ DOCX Typo - Extra numbers; DOCX has extra punctuation at start
+        </td>
+      </tr>
+      
+      <tr>
+        <td>5</td>
+        <td>Module 2 Subhead</td>
+        <td>CRF450R</td>
+        <td>2026 CRF450R</td>
+        <td>2026 CRF450R</td>
+        <td class="status-acceptable">
+          ⚠️ Year added (acceptable)
+        </td>
+      </tr>
+      
+      <tr>
+        <td>6</td>
+        <td>Module 3 Headline</td>
+        <td>Ride Like Chance,</td>
+        <td>Ride like Chance</td>
+        <td>Ride like Chance</td>
+        <td class="status-mismatch">
+          ❌ DOCX has extra punctuation at end
+        </td>
+      </tr>
+      
+      <tr>
+        <td>7</td>
+        <td>Module 3 Subhead</td>
+        <td>CRF250R</td>
+        <td>2026 CRF250R</td>
+        <td>2026 CRF250R</td>
+        <td class="status-acceptable">
+          ⚠️ Year added (acceptable)
+        </td>
+      </tr>
+      
+      <tr>
+        <td>8</td>
+        <td>Legal Footer</td>
+        <td>(See issues)</td>
+        <td>(Full text)</td>
+        <td>(Full text)</td>
+        <td class="status-mismatch">
+          ❌ DOCX Typo - "or-" should be "or "
+        </td>
+      </tr>
+      
+    </tbody>
+  </table>
+
+  <h2>2. Desktop vs Mobile</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Content Type</th>
+        <th>Desktop</th>
+        <th>Mobile</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td>1</td>
+        <td>Headline</td>
+        <td>See Honda HRC Progressive in Action</td>
+        <td>See Honda HRC Progressive in Action</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>2</td>
+        <td>CTA #1</td>
+        <td>Meet the Team</td>
+        <td>Meet the Team</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>3</td>
+        <td>CTA #2</td>
+        <td>Buy Tickets Now</td>
+        <td>Buy Tickets Now</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>4</td>
+        <td>Module 2 Headline</td>
+        <td>Ride like Jett + Hunter</td>
+        <td>Ride like Jett + Hunter</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>5</td>
+        <td>Module 2 Subhead</td>
+        <td>2026 CRF450R</td>
+        <td>2026 CRF450R</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>6</td>
+        <td>Module 3 Headline</td>
+        <td>Ride like Chance</td>
+        <td>Ride like Chance</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>7</td>
+        <td>Module 3 Subhead</td>
+        <td>2026 CRF250R</td>
+        <td>2026 CRF250R</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+      <tr>
+        <td>8</td>
+        <td>Legal Footer</td>
+        <td>(Full text)</td>
+        <td>(Full text)</td>
+        <td class="status-identical">
+          ✅ Identical
+        </td>
+      </tr>
+      
+    </tbody>
+  </table>
+
+  <h2>3. Summary</h2>
+  <table class="summary-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>DOCX vs Design</th>
+        <th>Desktop vs Mobile</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Total Items</td>
+        <td>8</td>
+        <td>8</td>
+      </tr>
+      <tr>
+        <td class="status-match">Match/Identical</td>
+        <td>0</td>
+        <td>8</td>
+      </tr>
+      <tr>
+        <td class="status-acceptable">Acceptable Variation</td>
+        <td>2</td>
+        <td>0</td>
+      </tr>
+      <tr>
+        <td class="status-mismatch">Mismatch/DOCX Typo</td>
+        <td>6</td>
+        <td>0</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="conclusion">
+    <h3>Conclusion</h3>
+    <p><strong>DOCX has issues that need to be fixed:</strong></p><ul><li><code>See Honda HRC Progressive in Action.</code> - DOCX has extra punctuation at end</li><li><code>Meet the Team2</code> - DOCX Typo - Extra numbers</li><li><code>Buy TicketsNow31</code> - DOCX Typo - Extra numbers</li><li><code>.Ride Like Jett and Hunter 1</code> - DOCX Typo - Extra numbers; DOCX has extra punctuation at start</li><li><code>Ride Like Chance,</code> - DOCX has extra punctuation at end</li><li><code>(See issues)</code> - DOCX Typo - "or-" should be "or "</li></ul><p style="margin-top: 15px; color: #4ade80;"><strong>Desktop vs Mobile:</strong> 100% Identical</p>
+  </div>
+
+  <p style="margin-top: 30px; color: #666; font-size: 12px;">
+    Generated: 1/8/2026, 11:49:16 AM
+  </p>
+</body>
+</html>

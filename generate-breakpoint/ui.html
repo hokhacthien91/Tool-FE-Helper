@@ -163,7 +163,9 @@
       }
 
       /* Input */
-      input[type="number"] {
+      input[type="number"],
+      #gifBgColor,
+      #gifScale {
         width: 100%;
         height: 32px;
         padding: 0 var(--spacing-sm);
@@ -1482,6 +1484,9 @@
         padding-top: 6px;
         border-top: 1px dashed var(--border-color);
       }
+      #gifOverlayList label{
+        border: none !important;
+      }
     </style>
   </head>
   <body>
@@ -1576,6 +1581,54 @@
           <input type="number" id="mobileWidth" value="414" style="display: none" />
           <input type="number" id="containerPadding" value="24" style="display: none" />
           <input type="number" id="maxSpacing" value="40" style="display: none" />
+          </div>
+        </div>
+
+        <!-- Slider/Carousel Configuration -->
+        <div class="section">
+          <label class="manual-frame-item" style="padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer;">
+            <input type="checkbox" id="isSliderCheckbox">
+            <span style="font-weight: 500">Slider/Carousel</span>
+            <span class="hint" style="margin-left: 4px; font-weight: normal;">(keep horizontal layout)</span>
+          </label>
+          <div id="sliderOptions" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); flex-direction: column; gap: 12px;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <label style="font-size: var(--font-size-sm); font-weight: 500;">Item name pattern:</label>
+              <input
+                type="text"
+                id="sliderItemPattern"
+                placeholder="e.g., Cards, slide-item"
+                style="width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);"
+              >
+              <div class="hint">Frame containing children with this name will be treated as slider</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <label style="font-size: var(--font-size-sm); font-weight: 500;">Items visible:</label>
+              <input
+                type="number"
+                id="sliderItemsVisible"
+                value="1"
+                min="1"
+                max="10"
+                style="width: 60px; height: 32px; text-align: center;"
+              >
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--font-size-sm);">
+                <input type="checkbox" id="sliderPeekCheckbox">
+                <span style="font-weight: 500;">Peek next item</span>
+              </label>
+              <input
+                type="number"
+                id="sliderPeekAmount"
+                value="20"
+                min="0"
+                max="100"
+                style="width: 60px; height: 32px; text-align: center;"
+                disabled
+              >
+              <span style="font-size: var(--font-size-sm); color: var(--text-secondary);">px</span>
+            </div>
           </div>
         </div>
 
@@ -2036,6 +2089,14 @@
           >
             Export for Compare
           </button>
+          <button
+            id="exportAllAssetsBtn"
+            class="btn btn-secondary"
+            style="width: 100%;flex: auto; margin-top: 8px;"
+            disabled
+          >
+            Export All (Compare + Images)
+          </button>
           <div id="compareExportStatus" class="hint" style="margin-top: 4px"></div>
           </div>
         </div>
@@ -2202,7 +2263,7 @@ aton/Buttons</textarea>
         </div>
         <!-- JSON Output -->
         <div class="section">
-          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleInspectorJsonSection()">
+          <div class="section-title" style="cursor: pointer; user-select: none; margin-top: 15px;" onclick="toggleInspectorJsonSection()">
             <span id="inspectorJsonSectionToggle">▶</span>
             Node Structure (JSON)
           </div>
@@ -2224,7 +2285,7 @@ aton/Buttons</textarea>
           </div>
         </div>
         <!-- Node Info Grid -->
-        <div class="section" style="margin-top: 30px">
+        <div class="section" style="margin-top: 15px">
           <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleInspectorPropertiesSection()">
             <span id="inspectorPropertiesSectionToggle">▶</span>
             Properties
@@ -2794,8 +2855,8 @@ aton/Buttons</textarea>
             <span id="gifExportSettingsToggle">▼</span> Export Settings
           </div>
           <div id="gifExportSettingsContent">
-          <!-- Row 1: Width, Height, Scale -->
-          <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <!-- Row 1: Width, Height, Scale, FPS, Delay, Loop -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-end;">
             <div style="flex: 1;">
               <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Width</label>
               <input type="number" id="gifWidth" value="600" min="100" max="2000" style="width: 100%;" />
@@ -2806,7 +2867,7 @@ aton/Buttons</textarea>
             </div>
             <div style="flex: 1;">
               <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Scale</label>
-              <select id="gifScale" style="width: 100%; height: 32px;">
+              <select id="gifScale" style="width: 100%; height: 30px;">
                 <option value="0.5">0.5x</option>
                 <option value="1">1x</option>
                 <option value="1.5">1.5x</option>
@@ -2814,46 +2875,38 @@ aton/Buttons</textarea>
                 <option value="3">3x</option>
               </select>
             </div>
-          </div>
-
-          <!-- Row 2: FPS, Delay, Loop -->
-          <div style="display: flex; gap: 12px; align-items: flex-end;">
             <div style="flex: 1;">
               <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">FPS</label>
               <input type="number" id="gifFps" value="25" min="1" max="60" style="width: 100%;" />
             </div>
             <div style="flex: 1;">
-              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Delay (ms)</label>
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Delay</label>
               <input type="number" id="gifFrameDelay" value="500" min="50" max="5000" step="50" style="width: 100%;" />
-            </div>
-            <div style="flex: 1;">
-              <label style="display: flex; align-items: center; gap: 6px; height: 32px; font-size: 12px; cursor: pointer;">
-                <input type="checkbox" id="gifLoop" checked />
-                Loop
-              </label>
             </div>
           </div>
 
-          <!-- Row 3: Padding X, Padding Y -->
-          <div style="display: flex; gap: 12px; margin-top: 12px;">
+          <!-- Row 2: Padding X, Padding Y, Background Color, Loop -->
+          <div style="display: flex; gap: 8px; align-items: flex-end;">
             <div style="flex: 1;">
-              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Padding X (left/right)</label>
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Pad X</label>
               <input type="number" id="gifPaddingX" value="0" min="0" max="500" style="width: 100%;" />
             </div>
             <div style="flex: 1;">
-              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Padding Y (top/bottom)</label>
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Pad Y</label>
               <input type="number" id="gifPaddingY" value="0" min="0" max="500" style="width: 100%;" />
             </div>
-          </div>
-
-          <!-- Background Color -->
-          <div style="display: flex; gap: 8px; margin-top: 8px;">
             <div style="flex: 1;">
-              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Background Color (empty = transparent)</label>
+              <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Background</label>
               <div style="display: flex; gap: 4px; align-items: center;">
-                <input type="text" id="gifBgColor" placeholder="#FFFFFF or transparent" style="flex: 1;" />
-                <input type="color" id="gifBgColorPicker" value="#ffffff" style="width: 32px; height: 28px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;" />
+                <input type="text" id="gifBgColor" placeholder="#FFFFFF" style="flex: 1;" />
+                <input type="color" id="gifBgColorPicker" value="#ffffff" style="width: 30px; height: 30px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;" />
               </div>
+            </div>
+            <div style="flex: 1;">
+              <label style="display: flex; align-items: center; gap: 4px; height: 30px; font-size: 11px; cursor: pointer;">
+                <input type="checkbox" id="gifLoop" checked />
+                Loop
+              </label>
             </div>
           </div>
 
@@ -3465,6 +3518,7 @@ aton/Buttons</textarea>
       const addMobileFrameBtn = document.getElementById("addMobileFrameBtn");
       const compareFramesList = document.getElementById("compareFramesList");
       const exportCompareBtn = document.getElementById("exportCompareBtn");
+      const exportAllAssetsBtn = document.getElementById("exportAllAssetsBtn");
       const compareExportStatus = document.getElementById("compareExportStatus");
 
       // DOM Elements - Inspector Tab
@@ -4123,6 +4177,7 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         const jpgPatterns = jpgNamePatternsTextarea.value.trim();
         const hasPatterns = buttonPatterns.length > 0 || pngPatterns.length > 0 || jpgPatterns.length > 0;
         exportAllImagesBtn.disabled = !hasValidSelection || !hasPatterns;
+        updateExportAllAssetsButton();
         saveCurrentSettings();
       }
       buttonNamePatternsTextarea.addEventListener("input", updateExportButtonState);
@@ -4237,6 +4292,21 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
 
         // Enable export button if both frames are selected
         exportCompareBtn.disabled = !(compareDesktopFrame && compareMobileFrame);
+
+        // Update Export All Assets button state
+        updateExportAllAssetsButton();
+      }
+
+      // Update Export All Assets button state
+      // Enabled only when: both compare frames selected AND has valid selection AND has patterns
+      function updateExportAllAssetsButton() {
+        const hasCompareFrames = compareDesktopFrame && compareMobileFrame;
+        const hasPatterns = (
+          buttonNamePatternsTextarea.value.trim().length > 0 ||
+          pngNamePatternsTextarea.value.trim().length > 0 ||
+          jpgNamePatternsTextarea.value.trim().length > 0
+        );
+        exportAllAssetsBtn.disabled = !(hasCompareFrames && hasValidSelection && hasPatterns);
       }
 
       window.removeCompareFrame = function(type) {
@@ -4294,6 +4364,129 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           "*"
         );
       });
+
+      // Export All Assets (Compare + Images combined)
+      let allAssetsZip = null;
+      let allAssetsPendingCompare = false;
+      let allAssetsPendingImages = false;
+      let allAssetsImageFolder = null;
+
+      exportAllAssetsBtn.addEventListener("click", () => {
+        if (!compareDesktopFrame || !compareMobileFrame) {
+          compareExportStatus.textContent = "Please select both Desktop and Mobile frames";
+          return;
+        }
+        if (!hasValidSelection) {
+          compareExportStatus.textContent = "Please select a frame for image export";
+          return;
+        }
+
+        const buttonPatterns = buttonNamePatternsTextarea.value
+          .split("\n")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+        const pngPatterns = pngNamePatternsTextarea.value
+          .split("\n")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+        const jpgPatterns = jpgNamePatternsTextarea.value
+          .split("\n")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+
+        if (buttonPatterns.length === 0 && pngPatterns.length === 0 && jpgPatterns.length === 0) {
+          compareExportStatus.textContent = "Please enter at least one image pattern";
+          return;
+        }
+
+        const projectName = compareProjectNameInput.value.trim() || "mail1";
+
+        // Initialize combined zip
+        allAssetsZip = new JSZip();
+        allAssetsPendingCompare = true;
+        allAssetsPendingImages = true;
+
+        // Create timestamp folder for images
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        allAssetsImageFolder = `images_${timestamp}`;
+
+        exportAllAssetsBtn.disabled = true;
+        exportAllAssetsBtn.textContent = "Exporting...";
+        compareExportStatus.textContent = "Preparing combined export...";
+
+        // Start Compare export
+        compareExportZip = allAssetsZip; // Share the same zip
+        comparePendingExports = [
+          { type: 'json', frameType: 'desktop', id: compareDesktopFrame.id },
+          { type: 'json', frameType: 'mobile', id: compareMobileFrame.id },
+          { type: 'screenshot', frameType: 'desktop', id: compareDesktopFrame.id },
+          { type: 'screenshot', frameType: 'mobile', id: compareMobileFrame.id }
+        ];
+
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "EXPORT_COMPARE_DATA",
+              projectName,
+              desktopFrameId: compareDesktopFrame.id,
+              mobileFrameId: compareMobileFrame.id
+            },
+          },
+          "*"
+        );
+
+        // Start Images export
+        const buttonFormat = buttonExportFormatSelect.value || "PNG";
+        const buttonScale = parseFloat(buttonExportScaleInput.value) || 2;
+        const buttonPadding = parseInt(buttonExportPaddingInput.value, 10) || 0;
+        const pngScale = parseFloat(pngExportScaleInput.value) || 2;
+        const jpgScale = parseFloat(jpgExportScaleInput.value) || 2;
+
+        exportZip = allAssetsZip; // Share the same zip
+        pendingExports = [];
+
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "EXPORT_ALL_IMAGES",
+              buttonPatterns,
+              buttonFormat,
+              buttonScale,
+              buttonPadding,
+              pngPatterns,
+              pngScale,
+              jpgPatterns,
+              jpgScale,
+            },
+          },
+          "*"
+        );
+      });
+
+      // Check if all assets export is complete
+      function checkAllAssetsComplete() {
+        if (allAssetsZip && !allAssetsPendingCompare && !allAssetsPendingImages) {
+          // Both exports complete, generate combined zip
+          allAssetsZip.generateAsync({ type: "blob" }).then((content) => {
+            const projectName = compareProjectNameInput.value.trim() || "mail1";
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(content);
+            link.download = `${projectName}_all_assets.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            exportAllAssetsBtn.disabled = false;
+            exportAllAssetsBtn.textContent = "Export All (Compare + Images)";
+            compareExportStatus.textContent = "✓ All assets exported successfully!";
+
+            // Reset
+            allAssetsZip = null;
+            allAssetsImageFolder = null;
+          });
+        }
+      }
 
       // Pattern Match Modal Functions
       function showPatternMatchModal(data) {
@@ -4540,6 +4733,11 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           generateMultipleVersions: generateMultipleVersionsCheckbox.checked,
           preservedComponentNames: preservedComponentNames,
           uiControlPatterns: uiControlPatterns,
+          isSlider: isSliderCheckbox?.checked || false,
+          sliderItemPattern: sliderItemPattern?.value || "",
+          sliderItemsVisible: parseInt(sliderItemsVisible?.value) || 1,
+          sliderPeekNextItem: sliderPeekCheckbox?.checked || false,
+          sliderPeekAmount: parseInt(sliderPeekAmount?.value) || 20,
         };
 
         parent.postMessage(
@@ -4768,6 +4966,23 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
               `✓ Set uiControlPatterns to: ${msg.config.uiControlPatterns}`
             );
 
+            // Restore slider settings (but NOT isSlider checkbox - always starts unchecked)
+            // isSliderCheckbox stays unchecked by default, user must enable each time
+            if (msg.config.sliderItemsVisible !== undefined) {
+              sliderItemsVisible.value = msg.config.sliderItemsVisible;
+            }
+            if (msg.config.sliderPeekNextItem !== undefined) {
+              sliderPeekCheckbox.checked = msg.config.sliderPeekNextItem;
+              sliderPeekAmount.disabled = !msg.config.sliderPeekNextItem;
+            }
+            if (msg.config.sliderPeekAmount !== undefined) {
+              sliderPeekAmount.value = msg.config.sliderPeekAmount;
+            }
+            if (msg.config.sliderItemPattern !== undefined) {
+              sliderItemPattern.value = msg.config.sliderItemPattern;
+            }
+            console.log(`✓ Set slider settings: pattern=${msg.config.sliderItemPattern}, items=${msg.config.sliderItemsVisible}`);
+
             // Restore dark mode skip frames
             if (
               msg.config.darkModeSkipFrames &&
@@ -4959,8 +5174,13 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
 
               // Check for duplicate filename and add number suffix if needed
               let finalFileName = msg.fileName;
+
+              // If part of allAssets, put images in subfolder
+              const imageFolder = allAssetsImageFolder ? `${allAssetsImageFolder}/` : '';
+              const fullPath = imageFolder + finalFileName;
+
               const existingFiles = Object.keys(exportZip.files);
-              if (existingFiles.includes(finalFileName)) {
+              if (existingFiles.includes(fullPath)) {
                 // Extract name and extension
                 const lastDot = finalFileName.lastIndexOf('.');
                 const baseName = lastDot > 0 ? finalFileName.substring(0, lastDot) : finalFileName;
@@ -4968,13 +5188,13 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
 
                 // Find next available number
                 let counter = 2;
-                while (existingFiles.includes(`${baseName}_${counter}${ext}`)) {
+                while (existingFiles.includes(`${imageFolder}${baseName}_${counter}${ext}`)) {
                   counter++;
                 }
                 finalFileName = `${baseName}_${counter}${ext}`;
               }
 
-              exportZip.file(finalFileName, bytes, { binary: true });
+              exportZip.file(imageFolder + finalFileName, bytes, { binary: true });
 
               // Mark as exported (match by id and format)
               const pending = pendingExports.find((p) => p.id === msg.id && p.format === msg.format && !p.exported);
@@ -5016,50 +5236,64 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
               // Add files to ZIP
               const projectName = msg.projectName || "mail1";
 
+              // Determine folder prefix: for allAssets export, no projectName folder
+              const folderPrefix = allAssetsZip ? "" : `${projectName}/`;
+
               // Add JSON files
               if (msg.desktopJson) {
-                compareExportZip.file(`${projectName}/json/desktop.json`, msg.desktopJson);
+                compareExportZip.file(`${folderPrefix}json/desktop.json`, msg.desktopJson);
               }
               if (msg.mobileJson) {
-                compareExportZip.file(`${projectName}/json/mobile.json`, msg.mobileJson);
+                compareExportZip.file(`${folderPrefix}json/mobile.json`, msg.mobileJson);
               }
 
               // Add screenshots (base64 to blob)
               if (msg.desktopScreenshot) {
                 const desktopData = msg.desktopScreenshot.split(',')[1] || msg.desktopScreenshot;
-                compareExportZip.file(`${projectName}/screenshot/desktop.png`, desktopData, {base64: true});
+                compareExportZip.file(`${folderPrefix}screenshot/desktop.png`, desktopData, {base64: true});
               }
               if (msg.mobileScreenshot) {
                 const mobileData = msg.mobileScreenshot.split(',')[1] || msg.mobileScreenshot;
-                compareExportZip.file(`${projectName}/screenshot/mobile.png`, mobileData, {base64: true});
+                compareExportZip.file(`${folderPrefix}screenshot/mobile.png`, mobileData, {base64: true});
               }
 
               // Create empty docx folder with .gitkeep
-              compareExportZip.file(`${projectName}/docx/.gitkeep`, "");
+              compareExportZip.file(`${folderPrefix}docx/.gitkeep`, "");
 
-              // Generate and download ZIP
-              compareExportZip.generateAsync({ type: "blob" }).then((blob) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${projectName}_compare_export.zip`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+              // Check if this is part of allAssets export
+              if (allAssetsZip) {
+                allAssetsPendingCompare = false;
+                compareExportStatus.textContent = "Compare data ready, waiting for images...";
+                checkAllAssetsComplete();
+              } else {
+                // Generate and download ZIP (standalone compare export)
+                compareExportZip.generateAsync({ type: "blob" }).then((blob) => {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${projectName}_compare_export.zip`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
 
-                compareExportStatus.textContent = `✓ Exported ${projectName} (JSON + Screenshots)`;
-                exportCompareBtn.disabled = false;
-                exportCompareBtn.textContent = "Export for Compare";
-              }).catch((err) => {
-                compareExportStatus.textContent = `✗ Failed: ${err.message}`;
-                exportCompareBtn.disabled = false;
-                exportCompareBtn.textContent = "Export for Compare";
-              });
+                  compareExportStatus.textContent = `✓ Exported ${projectName} (JSON + Screenshots)`;
+                  exportCompareBtn.disabled = false;
+                  exportCompareBtn.textContent = "Export for Compare";
+                }).catch((err) => {
+                  compareExportStatus.textContent = `✗ Failed: ${err.message}`;
+                  exportCompareBtn.disabled = false;
+                  exportCompareBtn.textContent = "Export for Compare";
+                });
+              }
             } else {
               compareExportStatus.textContent = `✗ ${msg.error || "Export failed"}`;
               exportCompareBtn.disabled = false;
               exportCompareBtn.textContent = "Export for Compare";
+              if (allAssetsZip) {
+                allAssetsPendingCompare = false;
+                checkAllAssetsComplete();
+              }
             }
             break;
 
@@ -5111,6 +5345,19 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       }
 
       async function finalizeExport() {
+        // Check if this is part of allAssets export
+        if (allAssetsZip) {
+          // Images are already added to allAssetsZip via exportZip reference
+          // Just mark images as complete
+          allAssetsPendingImages = false;
+          exportStatus.textContent = `Images ready (${pendingExports.length} files)`;
+          exportAllImagesBtn.disabled = false;
+          exportAllImagesBtn.textContent = "Export All Images";
+          pendingExports = [];
+          checkAllAssetsComplete();
+          return;
+        }
+
         try {
           const blob = await exportZip.generateAsync({ type: "blob" });
           const url = URL.createObjectURL(blob);
@@ -5226,6 +5473,9 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
                            pngNamePatternsTextarea.value.trim().length > 0 ||
                            jpgNamePatternsTextarea.value.trim().length > 0;
         exportAllImagesBtn.disabled = !hasValidSelection || !hasPatterns;
+
+        // Update Export All Assets button state
+        updateExportAllAssetsButton();
       }
 
       function updateInspectorInfo(info) {
@@ -5308,6 +5558,42 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         manualFramesList.style.opacity = isEnabled ? "1" : "0.5";
         manualFramesList.style.pointerEvents = isEnabled ? "auto" : "none";
       }
+
+      // ============================================================================
+      // SLIDER CONFIGURATION (simple checkbox approach)
+      // ============================================================================
+
+      const isSliderCheckbox = document.getElementById("isSliderCheckbox");
+      const sliderOptions = document.getElementById("sliderOptions");
+      const sliderItemPattern = document.getElementById("sliderItemPattern");
+      const sliderItemsVisible = document.getElementById("sliderItemsVisible");
+      const sliderPeekCheckbox = document.getElementById("sliderPeekCheckbox");
+      const sliderPeekAmount = document.getElementById("sliderPeekAmount");
+
+      // Toggle slider options visibility
+      isSliderCheckbox?.addEventListener("change", (e) => {
+        sliderOptions.style.display = e.target.checked ? "flex" : "none";
+        saveCurrentSettings();
+      });
+
+      // Slider item pattern change
+      sliderItemPattern?.addEventListener("input", saveCurrentSettings);
+
+      // Slider items visible change
+      sliderItemsVisible?.addEventListener("input", saveCurrentSettings);
+
+      // Peek checkbox toggle
+      sliderPeekCheckbox?.addEventListener("change", (e) => {
+        sliderPeekAmount.disabled = !e.target.checked;
+        saveCurrentSettings();
+      });
+
+      // Peek amount change
+      sliderPeekAmount?.addEventListener("input", saveCurrentSettings);
+
+      // ============================================================================
+      // MANUAL FRAMES FUNCTIONS
+      // ============================================================================
 
       function renderManualFramesList() {
         if (manualFrames.length === 0) {
@@ -5453,6 +5739,12 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           jpgNamePatterns: jpgNamePatterns,
           jpgExportScale: parseFloat(jpgExportScaleInput.value) || 2,
           activeTab: currentTab,
+          // Note: isSlider checkbox state is NOT saved (always unchecked on reload)
+          // but slider config values are saved for convenience
+          sliderItemPattern: sliderItemPattern?.value || "",
+          sliderItemsVisible: parseInt(sliderItemsVisible?.value) || 1,
+          sliderPeekNextItem: sliderPeekCheckbox?.checked || false,
+          sliderPeekAmount: parseInt(sliderPeekAmount?.value) || 20,
         };
 
         console.log("💾 UI sending SAVE_SETTINGS:", config);

@@ -34,6 +34,12 @@ export interface PluginConfig {
   pngExportScale?: number;        // Export scale for PNG (default 2)
   jpgNamePatterns?: string[];     // Patterns for JPG export
   jpgExportScale?: number;        // Export scale for JPG (default 2)
+  // Slider configuration
+  isSlider?: boolean;             // Enable slider mode
+  sliderItemPattern?: string;     // Name pattern to find slider items (e.g., "Cards")
+  sliderItemsVisible?: number;    // Number of items visible in slider
+  sliderPeekNextItem?: boolean;   // Show partial next item
+  sliderPeekAmount?: number;      // Amount of next item to show (px)
 }
 
 /**

@@ -1,0 +1,25 @@
+{
+  "project": "mail3",
+  "input": {
+    "json": {
+      "desktop": "desktop.json",
+      "mobile": "mobile.json"
+    },
+    "screenshot": {
+      "desktop": "desktop.png",
+      "mobile": "Mobile.png"
+    },
+    "docx": "docx/"
+  },
+  "output": {
+    "dir": "output"
+  },
+  "rules": {
+    "acceptableVariations": [
+      { "from": "and", "to": ["+", "&"] },
+      { "from": "Number", "to": ["#"] }
+    ],
+    "ignoreCaseDifference": true,
+    "allowYearAddition": true
+  }
+}
