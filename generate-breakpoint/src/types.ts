@@ -145,13 +145,15 @@ export type PluginMessage =
   | { type: 'QA_REQUEST_CONFIG' }
   // Export GIF messages
   | { type: 'GIF_GET_SELECTION_INFO' }
-  | { type: 'GIF_EXPORT_FRAMES'; config: GifExportConfig };
+  | { type: 'GIF_EXPORT_FRAMES'; config: GifExportConfig }
+  // Copy Content messages
+  | { type: 'GET_TEXT_STYLE_INFO' };
 
 export type UIMessage =
   | { type: 'CONVERSION_COMPLETE'; result: TransformResult }
   | { type: 'CONVERSION_ERROR'; errors: string[] }
   | { type: 'VALIDATION_FAILED'; result: ValidationResult }
-  | { type: 'SELECTION_INFO'; hasSelection: boolean; frameName?: string; frameWidth?: number; frameHeight?: number; selectedCount?: number }
+  | { type: 'SELECTION_INFO'; hasSelection: boolean; frameName?: string; frameWidth?: number; frameHeight?: number; selectedCount?: number; textNodeSelected?: boolean; textNodeName?: string; textNodeChars?: number }
   | { type: 'SELECTED_FRAME_INFO'; frame?: AvailableMobileFrame }
   | { type: 'MANUAL_FRAMES_INFO'; frames: AvailableMobileFrame[] }
   | { type: 'SETTINGS_LOADED'; config: PluginConfig }
@@ -180,7 +182,25 @@ export type UIMessage =
   | { type: 'GIF_SELECTION_INFO'; info: GifSelectionInfo | null }
   | { type: 'GIF_FRAMES_DATA'; frames: GifFrameData[]; config: GifExportConfig; overlayDataList?: GifFrameData[] }
   | { type: 'GIF_EXPORT_PROGRESS'; current: number; total: number }
-  | { type: 'GIF_EXPORT_ERROR'; error: string };
+  | { type: 'GIF_EXPORT_ERROR'; error: string }
+  // Copy Content messages
+  | { type: 'TEXT_STYLE_INFO'; info: TextStyleInfo | null }
+  | { type: 'TEXT_STYLE_ERROR'; error: string };
+
+/**
+ * Text style information for Copy Content feature
+ */
+export interface TextStyleInfo {
+  content: string;
+  fontSize: number;
+  lineHeight: number;  // in px
+  fontWeight: number;
+  letterSpacing: number;
+  wordSpacing: number;
+  color: string;  // hex color
+  fontFamily: string;
+  textAlign: 'left' | 'center' | 'right' | 'justify';
+}
 
 // ============================================================================
 // EXPORT GIF TYPES

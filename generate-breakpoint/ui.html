@@ -377,7 +377,8 @@
         background: var(--accent-hover);
       }
 
-      .btn-primary:disabled {
+      .btn-primary:disabled,
+       .btn-secondary:disabled {
         background: var(--bg-tertiary);
         color: var(--text-tertiary);
         cursor: not-allowed;
@@ -1821,6 +1822,93 @@
             </div>
           </div>
         </div>
+
+        <!-- Copy Content -->
+        <div class="section">
+          <div class="section-title" style="cursor: pointer; user-select: none;" onclick="toggleCopyContentSection()">
+            <span id="copyContentSectionToggle">▼</span>
+            Copy Content
+          </div>
+          <div id="copyContentSectionContent">
+            <div
+              class="selection-info"
+              id="copyContentSelectionInfo"
+              style="margin-bottom: 10px"
+            >
+              <div class="selection-icon empty" id="copyContentSelectionIcon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z" />
+                </svg>
+              </div>
+              <div class="selection-details">
+                <div
+                  class="selection-name selection-empty"
+                  id="copyContentSelectionName"
+                >
+                  No text layer selected
+                </div>
+                <div class="selection-meta" id="copyContentSelectionMeta">
+                  Select a text layer to copy
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <button
+                id="copyContentOnlyBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+                disabled
+              >
+                Copy Content
+              </button>
+              <button
+                id="copyTdStyleBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+                disabled
+              >
+                Copy TD Style
+              </button>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button
+                id="copyContentStyleBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+                disabled
+              >
+                Copy Content + Style
+              </button>
+              <button
+                id="copyHtmlImageBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+                disabled
+              >
+                Copy HTML Image
+              </button>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <button
+                id="copyBgHeroBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+              >
+                Copy HTML Banner + Header (HPS)
+              </button>
+              <button
+                id="copyTdBgBtn"
+                class="btn btn-primary"
+                style="flex: 1;"
+              >
+                Copy HTML TD Background
+              </button>
+            </div>
+            <div id="copyContentStatus" class="hint" style="margin-top: 4px"></div>
+          </div>
+        </div>
+
+        <div class="divider" style="margin: 15px 0"></div>
 
         <!-- Dark Mode Conversion -->
         <div class="section">
@@ -3308,6 +3396,7 @@ aton/Buttons</textarea>
       const emailSelectionName = document.getElementById("emailSelectionName");
       const emailSelectionMeta = document.getElementById("emailSelectionMeta");
       const convertDarkModeBtn = document.getElementById("convertDarkModeBtn");
+      const copyHtmlImageBtn = document.getElementById("copyHtmlImageBtn");
       const darkModeSkipFramesTextarea =
         document.getElementById("darkModeSkipFrames");
       const buttonNamePatternsTextarea = document.getElementById("buttonNamePatterns");
@@ -3321,6 +3410,19 @@ aton/Buttons</textarea>
       const exportAllImagesBtn = document.getElementById("exportAllImagesBtn");
       const exportStatus = document.getElementById("exportStatus");
 
+      // DOM Elements - Copy Content section
+      const copyContentStyleBtn = document.getElementById("copyContentStyleBtn");
+      const copyContentOnlyBtn = document.getElementById("copyContentOnlyBtn");
+      const copyTdStyleBtn = document.getElementById("copyTdStyleBtn");
+      const copyBgHeroBtn = document.getElementById("copyBgHeroBtn");
+      const copyTdBgBtn = document.getElementById("copyTdBgBtn");
+      const copyContentStatus = document.getElementById("copyContentStatus");
+      const copyContentSectionContent = document.getElementById("copyContentSectionContent");
+      const copyContentSectionToggle = document.getElementById("copyContentSectionToggle");
+      const copyContentSelectionIcon = document.getElementById("copyContentSelectionIcon");
+      const copyContentSelectionName = document.getElementById("copyContentSelectionName");
+      const copyContentSelectionMeta = document.getElementById("copyContentSelectionMeta");
+
       // Collapsible section elements for Email tab
       const darkModeSectionContent = document.getElementById("darkModeSectionContent");
       const darkModeSectionToggle = document.getElementById("darkModeSectionToggle");
@@ -3328,6 +3430,13 @@ aton/Buttons</textarea>
       const compareExportSectionToggle = document.getElementById("compareExportSectionToggle");
       const exportImagesSectionContent = document.getElementById("exportImagesSectionContent");
       const exportImagesSectionToggle = document.getElementById("exportImagesSectionToggle");
+
+      // Toggle function for Copy Content section (default open)
+      window.toggleCopyContentSection = function() {
+        const isHidden = copyContentSectionContent.style.display === "none";
+        copyContentSectionContent.style.display = isHidden ? "block" : "none";
+        copyContentSectionToggle.textContent = isHidden ? "▼" : "▶";
+      };
 
       // Toggle function for Dark Mode Simulation section (default closed)
       window.toggleDarkModeSection = function() {
@@ -3508,6 +3617,474 @@ aton/Buttons</textarea>
               removeMutedFrame(frameName);
             });
           });
+      }
+
+      // Copy Content + Style button
+      // Track which copy mode was requested
+      let copyContentMode = 'full'; // 'full', 'content', 'style'
+
+      copyContentStyleBtn.addEventListener("click", () => {
+        copyContentMode = 'full';
+        copyContentStyleBtn.textContent = "Getting info...";
+        copyContentStatus.textContent = "";
+        parent.postMessage(
+          {
+            pluginMessage: { type: "GET_TEXT_STYLE_INFO" },
+          },
+          "*"
+        );
+      });
+
+      copyContentOnlyBtn.addEventListener("click", () => {
+        copyContentMode = 'content';
+        copyContentOnlyBtn.textContent = "Getting...";
+        copyContentStatus.textContent = "";
+        parent.postMessage(
+          {
+            pluginMessage: { type: "GET_TEXT_STYLE_INFO" },
+          },
+          "*"
+        );
+      });
+
+      copyTdStyleBtn.addEventListener("click", () => {
+        copyContentMode = 'style';
+        copyTdStyleBtn.textContent = "Getting...";
+        copyContentStatus.textContent = "";
+        parent.postMessage(
+          {
+            pluginMessage: { type: "GET_TEXT_STYLE_INFO" },
+          },
+          "*"
+        );
+      });
+
+      // Copy HTML Image button
+      copyHtmlImageBtn.addEventListener("click", () => {
+        if (currentFrameWidth > 0) {
+          const htmlImg = `<img class="" src="" alt="" width="${currentFrameWidth}" style="font-size:16px;border:none;display:block;outline:none;text-decoration:none;height:auto;text-indent: 0 !important;margin: 0 auto; width: ${currentFrameWidth}px; color:#DE1C21">`;
+          copyTextToClipboard(htmlImg);
+          copyContentStatus.textContent = "✓ Copied to clipboard!";
+          setTimeout(() => {
+            copyContentStatus.textContent = "";
+          }, 3000);
+        } else {
+          copyContentStatus.textContent = "No frame selected";
+        }
+      });
+
+      // Copy Background Hero button
+      copyBgHeroBtn.addEventListener("click", () => {
+        const bgHeroHtml = `<!-- Header -->
+<table align="center" width="600" border="0" cellpadding="0" cellspacing="0" role="presentation"
+class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
+<tr>
+  <td class="bg-header-mb" style="
+        background: url(https://image.em.honda.com/lib/fe38117171640479761270/m/1/1ac5801b-5458-43c0-9a46-f999496214aa.jpg)
+          no-repeat top/cover;
+        background-position: top;
+        background-repeat: no-repeat;
+        vertical-align: top;
+        width: 600px;
+        background-size: cover;
+        max-height: 600px;
+      "
+    background="https://image.em.honda.com/lib/fe38117171640479761270/m/1/1ac5801b-5458-43c0-9a46-f999496214aa.jpg"
+    width="600">
+    <!--[if mso | IE]>
+        <v:image xmlns:v="urn:schemas-microsoft-com:vml"
+          style="
+            behavior: url(#default#VML);
+            display: inline-block;
+            position: absolute;
+            width: 450.75pt;
+            height: 377pt;
+            top: 0;
+            left: 0;
+            border: 0;
+            z-index: -1;"
+          alt="&nbsp;&nbsp;"
+          src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/1ac5801b-5458-43c0-9a46-f999496214aa.jpg"
+        ></v:image>
+        <v:rect
+          xmlns:v="urn:schemas-microsoft-com:vml"
+          fill="true"
+          stroke="false"
+          style="
+            display: inline-block;
+            position: relative;
+            width: 450.75pt;
+            height: 377pt;
+            top: 0;
+            left: 0;
+            border: 0;
+            z-index: -1;
+          ">
+          <v:fill
+            opacity="0%"
+            style="z-index: -1"
+          ></v:fill>
+        </v:rect>
+      <![endif]-->
+    <table class="full" align="center" width="600" border="0" cellpadding="0" cellspacing="0"
+      role="presentation" style="width: 600px;">
+      <tr>
+        <td style="
+              display: block;
+              padding-left: 24px;
+              padding-right: 24px;
+            ">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation"
+            style="width: 100%">
+            <tr>
+              <td align="left" style="display: block">
+                <table border="0" cellpadding="0" cellspacing="0" role="presentation">
+                  <tr>
+                    <td>
+                      <a href="https://powersports.honda.com?cid=eml_spo_dly&pgrcd=%%PROGID%%&cmpcd=%%CAMPAIGNCODE%%&ofrcd=%%OFFERCODE%%"
+                        target="_blank" alias="T08232-C08232_LOGO_HEADER" rel="noopener noreferrer"
+                        style="text-decoration: none;">
+                        <img class="w-mb-78"
+                          src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/ea3dc09b-c509-4714-a85e-c772d537cf18.png"
+                          width="91" alt="Honda Logo" style="
+                              display: block;
+                              text-align: left;
+                              vertical-align: top;
+                              font-size: 12px;
+                              line-height: 30px;
+                              color: #DE1C21;outline:none;text-decoration:none;text-indent: 0 !important; " />
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+              <td align="right" style="vertical-align: top">
+                <table border="0" cellpadding="0" cellspacing="0" role="presentation">
+                  <tr>
+                    <td style="
+                          font-family: Arial, Helvetica, sans-serif;
+                          font-size: 9px;
+                          font-weight: 400;
+                          line-height: 16px;
+                          word-break: break-word;
+                          padding-top: 27px;
+                          text-align: right;
+                        ">
+                      <a href="%%view_email_url%%" alias="T08232-C08232_VIEW_ONLINE"
+                        target="_blank" rel="noopener noreferrer" style="
+                            text-decoration: underline;
+                          ">
+                        <img style="display: block; font-size:9px; color: #DE1C21; outline:none;text-decoration:none;text-indent: 0 !important;" width="87"
+                          src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/11cca429-0a93-4e61-bcf3-5d0961d52b89.png"
+                          alt="View in Browser" />
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td class="d-none-mb" style="height: 409px;" width="600" height="409"></td>
+      </tr>
+      <tr>
+        <td class="d-none-dt full" style="display: none; mso-hide:all;">
+          <img class="full" width="600" style="display: block; height:auto"
+            src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/7438ebe6-26ed-40d3-bcb2-ba10c77eff5e.png"
+            alt="Progressive">
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+</table>
+<!-- End Header -->`;
+        copyTextToClipboard(bgHeroHtml);
+        copyContentStatus.textContent = "✓ Copied to clipboard!";
+        setTimeout(() => {
+          copyContentStatus.textContent = "";
+        }, 3000);
+      });
+
+      // Copy TD Background button
+      copyTdBgBtn.addEventListener("click", () => {
+        const tdBgHtml = `<table border="0" class="full" width="600" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+        <td class="bg-crf-450-mb"
+            style="background: url(https://image.em.honda.com/lib/fe38117171640479761270/m/1/9a1201f2-2dc1-4651-84ee-62531a7e50d1.jpg) no-repeat top right / cover;background-position:top right;background-repeat:no-repeat;vertical-align:top;width: 600px;background-size: cover; font-size:0;max-height: 450px;"
+            background="https://image.em.honda.com/lib/fe38117171640479761270/m/1/9a1201f2-2dc1-4651-84ee-62531a7e50d1.jpg"
+            width="600">
+            <!--[if mso | IE]>
+        <v:image xmlns:v="urn:schemas-microsoft-com:vml" style="behavior: url(#default#VML); display: inline-block; position: absolute; width: 450.75pt; height: 366pt; top: 0; left: 0; border: 0; z-index: -1;" alt="&nbsp;&nbsp;" src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/9a1201f2-2dc1-4651-84ee-62531a7e50d1.jpg" ></v:image>
+        <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="display: inline-block; position: relative; width: 450.75pt; height: 366pt; top: 0; left: 0; border: 0; z-index: -1;">
+        <v:fill opacity="0%" style="z-index: -1;"></v:fill>
+        </v:rect>
+        <![endif]-->
+            <table border="0" class="full" width="600" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                    <td class="d-none-mb" height="350" style="height:350px; line-height:0px;">&nbsp;</td>
+                </tr>
+                <tr>
+                    <td class="d-none-dt" style="display: none; mso-hide:all;">
+                        <img class="full"
+                            src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/d0254c6c-daf3-4d1c-997d-0e1c0640957c.png"
+                            alt="CRF 450R"
+                            style="display: block; color:#DE1C21; font-size:10px;outline:none;text-decoration:none;text-indent: 0 !important; max-height: 350px">
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding-left:24px; padding-right:24px;">
+                        <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%">
+                            <tr>
+                                <td align="left" style="width: 100%; vertical-align: bottom;">
+                                    <table border="0" cellpadding="0" cellspacing="0" role="presentation">
+                                        <tr>
+                                            <td>
+                                                <a href="https://powersports.honda.com/off-road/competition/crf450r/?cid=eml_spo_dly&pgrcd=%%PROGID%%&cmpcd=%%CAMPAIGNCODE%%&ofrcd=%%OFFERCODE%%"
+                                                    alias="T010085-C010085_CRF250R" target="_blank"
+                                                    rel="noopener noreferrer">
+                                                    <img class="w-mb-164"
+                                                        style="display: block; color:#DE1C21; font-size:10px;outline:none;text-decoration:none;text-indent: 0 !important;"
+                                                        width="221"
+                                                        src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/49f98cc0-d6b3-4fe3-a75e-d228d1a6459d.png"
+                                                        alt="Ride Like Jett + Hunter">
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td align="right" style="padding-top: 32px; vertical-align: bottom;">
+                                    <img class="w-mb-90"
+                                        style="display: block; color:#DE1C21; font-size:10px;outline:none;text-decoration:none;text-indent: 0 !important;"
+                                        width="103"
+                                        src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/d695cf93-73ec-40cc-8741-1bec0afa57cc.jpg"
+                                        alt="2026 CRF450R">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="d-none-dt" style="display: none; mso-hide:all;">
+                        <img class="full"
+                            src="https://image.em.honda.com/lib/fe38117171640479761270/m/1/168df8ce-fb12-48a3-8bbf-23c49ea6497c.png"
+                            style="display: block; color:#DE1C21; font-size:10px;outline:none;text-decoration:none;text-indent: 0 !important;"
+                            alt="">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="d-none-mb" height="28" style="height:28px; line-height:0px;">&nbsp;</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>`;
+        copyTextToClipboard(tdBgHtml);
+        copyContentStatus.textContent = "✓ Copied to clipboard!";
+        setTimeout(() => {
+          copyContentStatus.textContent = "";
+        }, 3000);
+      });
+
+      // Helper function to escape HTML special characters
+      function escapeHtml(text) {
+        // First, normalize special spaces to regular space
+        // This must happen BEFORE any HTML entity conversion
+        // Use character-by-character replacement to catch all special characters
+        let normalized = '';
+        for (let i = 0; i < text.length; i++) {
+          const charCode = text.charCodeAt(i);
+          // Replace non-breaking space (160), narrow no-break space (8239), figure space (8199)
+          if (charCode === 160 || charCode === 8239 || charCode === 8199) {
+            normalized += ' ';
+          } else if (charCode === 8288 || charCode === 8232 || charCode === 8233) {
+            // word joiner (8288), line separator (8232), paragraph separator (8233) - remove or convert to space
+            normalized += ' ';
+          } else if (charCode === 8216 || charCode === 8217) {
+            // ' (8216) and ' (8217) curly single quotes → straight quote
+            normalized += "'";
+          } else if (charCode === 8220 || charCode === 8221) {
+            // " (8220) and " (8221) curly double quotes → straight quote
+            normalized += '"';
+          } else if (charCode === 65533 || charCode < 32 && charCode !== 10 && charCode !== 13) {
+            // replacement character (65533) or control characters (except newline/carriage return) → remove
+            continue;
+          } else if (charCode > 65535) {
+            // surrogate pairs / emoji - skip
+            continue;
+          } else {
+            normalized += text[i];
+          }
+        }
+
+        // Also handle already encoded entities and HTML entities for quotes
+        normalized = normalized
+          .replace(/&nbsp;/g, ' ')      // already encoded nbsp → regular space
+          .replace(/&#8217;/g, "'")     // HTML entity for ' → straight quote
+          .replace(/&#8216;/g, "'")     // HTML entity for ' → straight quote
+          .replace(/&#8220;/g, '"')     // HTML entity for " → straight quote
+          .replace(/&#8221;/g, '"')     // HTML entity for " → straight quote
+          .replace(/&#39;/g, "'")       // HTML entity for ' → straight quote
+          .replace(/&rsquo;/g, "'")     // named entity for ' → straight quote
+          .replace(/&lsquo;/g, "'")     // named entity for ' → straight quote
+          .replace(/&rdquo;/g, '"')     // named entity for " → straight quote
+          .replace(/&ldquo;/g, '"')     // named entity for " → straight quote
+          .replace(/[\u2018\u2019\u201B\u2032\u2035]/g, "'")  // all single quote variants → straight
+          .replace(/[\u201C\u201D\u201F\u2033\u2036]/g, '"'); // all double quote variants → straight
+
+        // Now convert special characters to HTML entities
+        const htmlEntities = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '\u00A9': '&copy;',    // ©
+          '\u00AE': '&reg;',     // ®
+          '\u2122': '&trade;',   // ™
+          '\u2014': '&mdash;',   // —
+          '\u2013': '&ndash;',   // –
+          '\u2026': '&hellip;',  // …
+          '\u2022': '&bull;',    // •
+          '\u00B0': '&deg;',     // °
+          '\u00D7': '&times;',   // ×
+          '\u00F7': '&divide;',  // ÷
+          '\u20AC': '&euro;',    // €
+          '\u00A3': '&pound;',   // £
+          '\u00A5': '&yen;',     // ¥
+          '\u00A2': '&cent;',    // ¢
+          '\u00B1': '&plusmn;',  // ±
+          '\u00BC': '&frac14;',  // ¼
+          '\u00BD': '&frac12;',  // ½
+          '\u00BE': '&frac34;',  // ¾
+          '\u00B2': '&sup2;',    // ²
+          '\u00B3': '&sup3;',    // ³
+          '\u00B9': '&sup1;',    // ¹
+        };
+
+        // Match all characters that need HTML entity conversion
+        return normalized.replace(/[&<>\u00A9\u00AE\u2122\u2014\u2013\u2026\u2022\u00B0\u00D7\u00F7\u20AC\u00A3\u00A5\u00A2\u00B1\u00BC\u00BD\u00BE\u00B2\u00B3\u00B9]/g, (char) => {
+          return htmlEntities[char] || char;
+        });
+      }
+
+      // Helper function to wrap last two words in nowrap span
+      function wrapLastTwoWords(text) {
+        const words = text.split(/(\s+)/); // Split keeping whitespace
+        if (words.length < 3) {
+          // If 2 or fewer words, wrap all
+          return `<span style="white-space: nowrap;">${text}</span>`;
+        }
+
+        // Find last two actual words (not whitespace)
+        let wordCount = 0;
+        let lastTwoStartIndex = -1;
+        for (let i = words.length - 1; i >= 0; i--) {
+          if (words[i].trim()) {
+            wordCount++;
+            if (wordCount === 2) {
+              lastTwoStartIndex = i;
+              break;
+            }
+          }
+        }
+
+        if (lastTwoStartIndex === -1) {
+          return text;
+        }
+
+        const beforePart = words.slice(0, lastTwoStartIndex).join('');
+        const lastTwoPart = words.slice(lastTwoStartIndex).join('');
+
+        return `${beforePart}<span style="white-space: nowrap;">${lastTwoPart}</span>`;
+      }
+
+      // Generate HTML td element with inline styles
+      function generateHtmlTd(info) {
+        // Build style string
+        let style = `font-size: ${info.fontSize}px;`;
+        style += ` line-height: ${info.lineHeight}px;`;
+        style += ` font-weight: ${info.fontWeight};`;
+
+        // Only add letter-spacing if not 0
+        if (info.letterSpacing !== 0) {
+          style += ` letter-spacing: ${info.letterSpacing}px;`;
+        }
+
+        // Only add word-spacing if not 0
+        if (info.wordSpacing !== 0) {
+          style += ` word-spacing: ${info.wordSpacing}px;`;
+        }
+
+        style += ` color: ${info.color};`;
+        style += ` font-family: ${info.fontFamily}, Arial, sans-serif;`;
+
+        // Add text-align if not left (default)
+        if (info.textAlign && info.textAlign !== 'left') {
+          style += ` text-align: ${info.textAlign};`;
+        }
+
+        // Process content: escape HTML and wrap last two words
+        const escapedContent = escapeHtml(info.content);
+        const wrappedContent = wrapLastTwoWords(escapedContent);
+
+        return `<td style="${style}">\n    ${wrappedContent}\n</td>`;
+      }
+
+      // Generate content only (with span wrap for last two words)
+      function generateContentOnly(info) {
+        const escapedContent = escapeHtml(info.content);
+        const wrappedContent = wrapLastTwoWords(escapedContent);
+        return wrappedContent;
+      }
+
+      // Generate TD style only (no content)
+      function generateTdStyleOnly(info) {
+        let style = `font-size: ${info.fontSize}px;`;
+        style += ` line-height: ${info.lineHeight}px;`;
+        style += ` font-weight: ${info.fontWeight};`;
+
+        if (info.letterSpacing !== 0) {
+          style += ` letter-spacing: ${info.letterSpacing}px;`;
+        }
+
+        if (info.wordSpacing !== 0) {
+          style += ` word-spacing: ${info.wordSpacing}px;`;
+        }
+
+        style += ` color: ${info.color};`;
+        style += ` font-family: ${info.fontFamily}, Arial, sans-serif;`;
+
+        if (info.textAlign && info.textAlign !== 'left') {
+          style += ` text-align: ${info.textAlign};`;
+        }
+
+        return `<td style="${style}"></td>`;
+      }
+
+      // Copy text to clipboard (for HTML content)
+      function copyTextToClipboard(text) {
+        const tempTextarea = document.createElement("textarea");
+        tempTextarea.value = text;
+        tempTextarea.style.position = "fixed";
+        tempTextarea.style.left = "-9999px";
+        tempTextarea.style.top = "0";
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        tempTextarea.setSelectionRange(0, tempTextarea.value.length);
+
+        try {
+          document.execCommand("copy");
+        } catch (err) {
+          console.error("Copy failed:", err);
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).catch((e) => {
+              console.error("Clipboard API failed:", e);
+            });
+          }
+        }
+
+        document.body.removeChild(tempTextarea);
       }
 
       // Convert to Dark Mode button
@@ -4308,6 +4885,37 @@ aton/Buttons</textarea>
             convertDarkModeBtn.textContent = "Convert to Dark Mode";
             break;
 
+          case "TEXT_STYLE_INFO":
+            if (msg.info) {
+              let result = '';
+              if (copyContentMode === 'full') {
+                result = generateHtmlTd(msg.info);
+              } else if (copyContentMode === 'content') {
+                result = generateContentOnly(msg.info);
+              } else if (copyContentMode === 'style') {
+                result = generateTdStyleOnly(msg.info);
+              }
+              copyTextToClipboard(result);
+              copyContentStatus.textContent = "✓ Copied to clipboard!";
+              setTimeout(() => {
+                copyContentStatus.textContent = "";
+              }, 3000);
+            } else {
+              copyContentStatus.textContent = "No text layer selected";
+            }
+            // Reset button texts
+            copyContentStyleBtn.textContent = "Copy Content + Style";
+            copyContentOnlyBtn.textContent = "Copy Content";
+            copyTdStyleBtn.textContent = "Copy TD Style";
+            break;
+
+          case "TEXT_STYLE_ERROR":
+            copyContentStatus.textContent = `✗ ${msg.error}`;
+            copyContentStyleBtn.textContent = "Copy Content + Style";
+            copyContentOnlyBtn.textContent = "Copy Content";
+            copyTdStyleBtn.textContent = "Copy TD Style";
+            break;
+
           case "PATTERN_MATCH_CONFIRM":
             showPatternMatchModal(msg);
             break;
@@ -4539,8 +5147,12 @@ aton/Buttons</textarea>
         exportZip = null;
       }
 
+      // Store current frame width for Copy HTML Image
+      let currentFrameWidth = 0;
+
       function updateSelectionInfo(info) {
         hasValidSelection = info.hasSelection;
+        currentFrameWidth = info.frameWidth || 0;
 
         if (info.hasSelection) {
           // Generator tab
@@ -4554,6 +5166,9 @@ aton/Buttons</textarea>
           emailSelectionName.textContent = info.frameName;
           emailSelectionName.classList.remove("selection-empty");
           emailSelectionMeta.textContent = `${info.frameWidth}px × ${info.frameHeight}px`;
+
+          // Copy HTML Image button
+          copyHtmlImageBtn.disabled = false;
         } else {
           // Generator tab
           selectionIcon.classList.add("empty");
@@ -4566,6 +5181,38 @@ aton/Buttons</textarea>
           emailSelectionName.textContent = "No frame selected";
           emailSelectionName.classList.add("selection-empty");
           emailSelectionMeta.textContent = "Select a frame to convert";
+
+          // Copy HTML Image button
+          copyHtmlImageBtn.disabled = true;
+        }
+
+        // Update Copy Content section based on text node selection
+        const textChars = info.textNodeChars || 0;
+        if (info.textNodeSelected && textChars > 0) {
+          copyContentSelectionIcon.classList.remove("empty");
+          copyContentSelectionName.textContent = info.textNodeName || "Text layer";
+          copyContentSelectionName.classList.remove("selection-empty");
+          copyContentSelectionMeta.textContent = `${textChars} characters`;
+          copyContentStyleBtn.disabled = false;
+          copyContentOnlyBtn.disabled = false;
+          copyTdStyleBtn.disabled = false;
+        } else if (info.textNodeSelected && textChars === 0) {
+          // Text layer selected but empty
+          copyContentSelectionIcon.classList.remove("empty");
+          copyContentSelectionName.textContent = info.textNodeName || "Text layer";
+          copyContentSelectionName.classList.remove("selection-empty");
+          copyContentSelectionMeta.textContent = "Empty text layer";
+          copyContentStyleBtn.disabled = true;
+          copyContentOnlyBtn.disabled = true;
+          copyTdStyleBtn.disabled = true;
+        } else {
+          copyContentSelectionIcon.classList.add("empty");
+          copyContentSelectionName.textContent = "No text layer selected";
+          copyContentSelectionName.classList.add("selection-empty");
+          copyContentSelectionMeta.textContent = "Select a text layer to copy";
+          copyContentStyleBtn.disabled = true;
+          copyContentOnlyBtn.disabled = true;
+          copyTdStyleBtn.disabled = true;
         }
 
         // Update generate button state based on selection AND selected widths
@@ -5566,10 +6213,10 @@ aton/Buttons</textarea>
                       info.icon
                     } ${info.label.toUpperCase()}</span>
                   </div>
-                  <div class="qa-issue-message">${escapeHtml(
+                  <div class="qa-issue-message">${escapeHtmlSimple(
                     issue.message
                   )}</div>
-                  <div class="qa-issue-node">Node: ${escapeHtml(
+                  <div class="qa-issue-node">Node: ${escapeHtmlSimple(
                     issue.nodeName
                   )}</div>
                   ${
@@ -5862,7 +6509,7 @@ aton/Buttons</textarea>
         return null;
       }
 
-      function escapeHtml(str) {
+      function escapeHtmlSimple(str) {
         const div = document.createElement("div");
         div.textContent = str;
         return div.innerHTML;

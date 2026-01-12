@@ -346,6 +346,11 @@ function sendSelectionInfo(): void {
     node => node.type === 'FRAME' || node.type === 'SECTION' || node.type === 'COMPONENT' || node.type === 'INSTANCE'
   );
 
+  // Check for text node selection
+  const textNodes = selection.filter(node => node.type === 'TEXT');
+  const hasTextNode = textNodes.length > 0;
+  const textNode = hasTextNode ? textNodes[0] as TextNode : null;
+
   console.log('Valid frames count:', validFrames.length);
 
   if (validFrames.length > 0) {
@@ -359,11 +364,17 @@ function sendSelectionInfo(): void {
       frameWidth: Math.round(frame.width),
       frameHeight: Math.round(frame.height),
       selectedCount: validFrames.length,
+      textNodeSelected: hasTextNode,
+      textNodeName: textNode?.name,
+      textNodeChars: textNode?.characters.length,
     });
   } else {
     sendToUI({
       type: 'SELECTION_INFO',
       hasSelection: false,
+      textNodeSelected: hasTextNode,
+      textNodeName: textNode?.name,
+      textNodeChars: textNode?.characters.length,
     });
   }
 }
@@ -603,8 +614,142 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
     case 'GIF_EXPORT_FRAMES':
       handleGifExportFrames(msg.config);
       break;
+
+    // Copy Content messages
+    case 'GET_TEXT_STYLE_INFO':
+      handleGetTextStyleInfo();
+      break;
   }
 };
+
+// ============================================================================
+// COPY CONTENT HANDLERS
+// ============================================================================
+
+/**
+ * Get text style information from selected text node
+ */
+function handleGetTextStyleInfo(): void {
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    sendToUI({ type: 'TEXT_STYLE_INFO', info: null });
+    return;
+  }
+
+  const node = selection[0];
+
+  // Check if it's a text node
+  if (node.type !== 'TEXT') {
+    sendToUI({ type: 'TEXT_STYLE_ERROR', error: 'Please select a text layer' });
+    return;
+  }
+
+  try {
+    const textNode = node as TextNode;
+
+    // Get text content
+    const content = textNode.characters;
+
+    // Get font size (handle mixed fonts)
+    let fontSize = 16;
+    if (typeof textNode.fontSize === 'number') {
+      fontSize = textNode.fontSize;
+    } else {
+      // Mixed fonts - get the first segment's font size
+      const firstChar = textNode.getRangeFontSize(0, 1);
+      if (typeof firstChar === 'number') {
+        fontSize = firstChar;
+      }
+    }
+
+    // Get line height in px
+    let lineHeight = fontSize * 1.2; // default
+    if (textNode.lineHeight !== figma.mixed) {
+      const lh = textNode.lineHeight as LineHeight;
+      if (lh.unit === 'PIXELS') {
+        lineHeight = lh.value;
+      } else if (lh.unit === 'PERCENT') {
+        lineHeight = (lh.value / 100) * fontSize;
+      }
+      // AUTO will use the default
+    }
+
+    // Get font weight
+    let fontWeight = 400;
+    if (textNode.fontWeight !== figma.mixed) {
+      fontWeight = textNode.fontWeight as number;
+    } else {
+      const firstWeight = textNode.getRangeFontWeight(0, 1);
+      if (typeof firstWeight === 'number') {
+        fontWeight = firstWeight;
+      }
+    }
+
+    // Get letter spacing
+    let letterSpacing = 0;
+    if (textNode.letterSpacing !== figma.mixed) {
+      const ls = textNode.letterSpacing as LetterSpacing;
+      if (ls.unit === 'PIXELS') {
+        letterSpacing = ls.value;
+      } else if (ls.unit === 'PERCENT') {
+        letterSpacing = (ls.value / 100) * fontSize;
+      }
+    }
+
+    // Get color (first fill)
+    let color = '#000000';
+    const fills = textNode.fills;
+    if (Array.isArray(fills) && fills.length > 0) {
+      const fill = fills[0];
+      if (fill.type === 'SOLID') {
+        const r = Math.round(fill.color.r * 255);
+        const g = Math.round(fill.color.g * 255);
+        const b = Math.round(fill.color.b * 255);
+        color = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+      }
+    }
+
+    // Get font family
+    let fontFamily = 'Arial';
+    if (textNode.fontName !== figma.mixed) {
+      fontFamily = (textNode.fontName as FontName).family;
+    } else {
+      const firstFont = textNode.getRangeFontName(0, 1);
+      if (firstFont !== figma.mixed) {
+        fontFamily = (firstFont as FontName).family;
+      }
+    }
+
+    // Get text alignment
+    let textAlign: 'left' | 'center' | 'right' | 'justify' = 'left';
+    const alignment = textNode.textAlignHorizontal;
+    if (alignment === 'CENTER') {
+      textAlign = 'center';
+    } else if (alignment === 'RIGHT') {
+      textAlign = 'right';
+    } else if (alignment === 'JUSTIFIED') {
+      textAlign = 'justify';
+    }
+
+    sendToUI({
+      type: 'TEXT_STYLE_INFO',
+      info: {
+        content,
+        fontSize,
+        lineHeight: Math.round(lineHeight * 100) / 100,
+        fontWeight,
+        letterSpacing: Math.round(letterSpacing * 100) / 100,
+        wordSpacing: 0, // Figma doesn't have word-spacing, default to 0
+        color,
+        fontFamily,
+        textAlign
+      }
+    });
+  } catch (error) {
+    sendToUI({ type: 'TEXT_STYLE_ERROR', error: `Failed to get text info: ${error}` });
+  }
+}
 
 // ============================================================================
 // EXPORT GIF HANDLERS
