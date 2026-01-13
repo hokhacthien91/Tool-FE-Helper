@@ -1,6 +1,6 @@
 {
-  "name": "Breakpoint Generator",
-  "id": "breakpoint-generator",
+  "name": "Design Helper",
+  "id": "Design-helper",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",

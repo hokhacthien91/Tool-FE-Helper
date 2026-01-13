@@ -1,6 +1,6 @@
 // ============================================================================
 // MAIN PLUGIN CODE
-// Breakpoint Generator - Simple resize with optional font handling
+// Design Helper - Multi-purpose Figma plugin for FE developers
 // ============================================================================
 
 import {
@@ -34,7 +34,7 @@ import {
 figma.showUI(__html__, {
   width: 550,
   height: 600,
-  title: 'Breakpoint Generator',
+  title: 'Design Helper',
   themeColors: true,
 });
 
