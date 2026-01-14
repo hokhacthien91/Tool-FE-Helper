@@ -258,7 +258,8 @@ const STORAGE_KEYS = {
   history: "design-qa-history",
   inputValues: "design-qa-input-values",
   savedSettings: "design-qa-saved-settings",
-  scanSettings: "design-qa-scan-settings"
+  scanSettings: "design-qa-scan-settings",
+  animationData: "design-qa-animation-data"
 };
 
 const MAX_HISTORY_ENTRIES = 10;
@@ -6172,9 +6173,19 @@ figma.ui.onmessage = async msg => {
     case "scan-animations": {
       const scope = msg.scope || "selection";
       const results = scanAnimations(scope);
+      // Auto-save animation data
+      figma.clientStorage.setAsync(STORAGE_KEYS.animationData, results);
       figma.ui.postMessage({
         type: "animation-results",
         data: results
+      });
+      break;
+    }
+    case "load-animation-data": {
+      const data = await figma.clientStorage.getAsync(STORAGE_KEYS.animationData);
+      figma.ui.postMessage({
+        type: "animation-data-loaded",
+        data: data || null
       });
       break;
     }

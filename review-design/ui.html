@@ -67,6 +67,12 @@
             border-radius...</span
           >
         </button>
+        <button id="btn-scan-animations" class="tooltip">
+          🎬 Scan Interactions
+          <span class="tooltiptext tooltip-right"
+            >Scan all interactions/animations in the design (click, hover, drag, scroll...)</span
+          >
+        </button>
         <button
           id="btn-cancel-scan"
           class="tooltip"
@@ -837,43 +843,18 @@
 
       <!-- Animations Report -->
       <div id="results-animations" class="report-content">
-        <!-- Animation Controls -->
-        <div class="animation-controls" style="padding: 12px 16px; background: #f5f5f7; border-radius: 8px; margin-bottom: 12px;">
-          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
-            <span style="font-weight: 500; color: #1d1d1f; font-size: 13px;">Scope:</span>
-            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-              <input type="radio" name="animation-scope" value="selection" checked style="accent-color: #667eea;" />
-              <span style="font-size: 13px; color: #1d1d1f;">Selected Frame</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-              <input type="radio" name="animation-scope" value="page" style="accent-color: #667eea;" />
-              <span style="font-size: 13px; color: #1d1d1f;">Entire Page</span>
-            </label>
-          </div>
-          <button id="btn-scan-animations" style="
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          ">
-            🔍 Scan Interactions
-          </button>
-        </div>
-
         <!-- Animation Summary (hidden initially) -->
         <div id="animation-summary" style="display: none; padding: 12px 16px; background: linear-gradient(135deg, #e8f5e9 0%, #f3e5f5 100%); border-radius: 8px; margin-bottom: 12px;">
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
             <span style="font-size: 18px;">🎯</span>
-            <span id="animation-total" style="font-weight: 600; color: #1d1d1f; font-size: 14px;">0 nodes with interactions</span>
+            <span id="animation-total" style="font-weight: 600; color: #1d1d1f; font-size: 14px;">0 interactions</span>
+            <span style="color: #86868b;">→</span>
+            <span id="animation-groups" style="font-weight: 500; color: #667eea; font-size: 14px;">0 groups</span>
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <span class="animation-stat active" data-type="all" style="display: flex; align-items: center; gap: 4px; padding: 4px 12px; background: #667eea; color: white; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 500;">
+              All
+            </span>
             <span class="animation-stat" data-type="click" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
               <span>👆</span> Click: <strong id="stat-click">0</strong>
             </span>
@@ -892,19 +873,6 @@
             <span class="animation-stat" data-type="key" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
               <span>⌨️</span> Key: <strong id="stat-key">0</strong>
             </span>
-          </div>
-        </div>
-
-        <!-- Animation Filter -->
-        <div id="animation-filter" style="display: none; margin-bottom: 12px;">
-          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-            <button class="animation-filter-btn active" data-filter="all" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #667eea; color: white; border-radius: 4px; font-size: 12px; cursor: pointer;">All</button>
-            <button class="animation-filter-btn" data-filter="click" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">👆 Click</button>
-            <button class="animation-filter-btn" data-filter="hover" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">🖱️ Hover</button>
-            <button class="animation-filter-btn" data-filter="drag" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">✋ Drag</button>
-            <button class="animation-filter-btn" data-filter="scroll" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">📜 Scroll</button>
-            <button class="animation-filter-btn" data-filter="auto" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">⏱️ Auto</button>
-            <button class="animation-filter-btn" data-filter="key" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">⌨️ Key</button>
           </div>
         </div>
 
@@ -1791,14 +1759,40 @@
     (function() {
       let animationData = null;
       let currentFilter = 'all';
+      let currentAnimationSearch = '';
       let selectedNodeId = null;
+
+      // Restore UI state from saved data
+      function restoreAnimationUI() {
+        if (!animationData || !animationData.results || animationData.results.length === 0) return;
+
+        const summaryPanel = document.getElementById('animation-summary');
+        const countBadge = document.getElementById('animations-count');
+
+        // Show summary
+        if (summaryPanel) summaryPanel.style.display = 'block';
+
+        // Update total
+        document.getElementById('animation-total').textContent =
+          animationData.total + ' interaction' + (animationData.total > 1 ? 's' : '') + ' found';
+
+        // Update stats
+        updateStats(animationData.stats);
+
+        // Update badge
+        if (countBadge) {
+          countBadge.textContent = animationData.total;
+        }
+
+        // Render results
+        renderResults();
+      }
 
       function initAnimationTab() {
         const btnScan = document.getElementById('btn-scan-animations');
-        const resultsContainer = document.getElementById('animation-results');
-        const summaryPanel = document.getElementById('animation-summary');
-        const filterPanel = document.getElementById('animation-filter');
-        const animationsTab = document.querySelector('[data-tab="animations"]');
+
+        // Request saved data from plugin backend
+        parent.postMessage({ pluginMessage: { type: 'load-animation-data' } }, '*');
 
         // Handle tab switching for animations tab
         document.querySelectorAll('.report-tab').forEach(tab => {
@@ -1822,15 +1816,40 @@
             } else if (tabName === 'tokens') {
               document.getElementById('results-tokens').classList.add('active');
             }
+
+            // Handle filter controls visibility for animations tab
+            const filterControls = document.getElementById('filter-controls');
+            const filterButtonsContainer = document.getElementById('filter-buttons');
+            const colorTypeFilter = document.getElementById('color-type-filter');
+
+            if (tabName === 'animations') {
+              // Show search box for animations tab if there's data
+              const hasAnimations = animationData && animationData.results && animationData.results.length > 0;
+              if (filterControls) filterControls.style.display = hasAnimations ? 'flex' : 'none';
+              if (filterButtonsContainer) filterButtonsContainer.style.display = 'none';
+              if (colorTypeFilter) colorTypeFilter.style.display = 'none';
+            } else if (tabName === 'settings') {
+              if (filterControls) filterControls.style.display = 'none';
+            }
+            // Note: issues and tokens tabs handle their own filter controls in main.js
           });
         });
 
-        // Scan button click
+        // Scan button click - use global radio for scope
         if (btnScan) {
           btnScan.addEventListener('click', function() {
-            const scope = document.querySelector('input[name="animation-scope"]:checked').value;
+            // Get scope from global radio (Scan Page / Scan Selection)
+            const scopeRadio = document.querySelector('input[name="scope"]:checked');
+            const scope = scopeRadio && scopeRadio.value === 'page' ? 'page' : 'selection';
+
             btnScan.disabled = true;
-            btnScan.innerHTML = '⏳ Scanning...';
+            btnScan.textContent = '⏳ Scanning...';
+
+            // Switch to Animations tab
+            document.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('.report-tab[data-tab="animations"]').classList.add('active');
+            document.querySelectorAll('.report-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('results-animations').classList.add('active');
 
             parent.postMessage({
               pluginMessage: {
@@ -1841,40 +1860,30 @@
           });
         }
 
-        // Filter button clicks
-        document.querySelectorAll('.animation-filter-btn').forEach(btn => {
-          btn.addEventListener('click', function() {
-            document.querySelectorAll('.animation-filter-btn').forEach(b => {
-              b.classList.remove('active');
-              b.style.background = '#fff';
-              b.style.color = '#1d1d1f';
-            });
-            this.classList.add('active');
-            this.style.background = '#667eea';
-            this.style.color = 'white';
-
-            currentFilter = this.getAttribute('data-filter');
-            renderResults();
-          });
-        });
-
-        // Stat clicks for filtering
+        // Stat clicks for filtering (including "All" button)
         document.querySelectorAll('.animation-stat').forEach(stat => {
           stat.addEventListener('click', function() {
             const type = this.getAttribute('data-type');
             currentFilter = type;
 
-            // Update filter buttons
-            document.querySelectorAll('.animation-filter-btn').forEach(b => {
-              b.classList.remove('active');
-              b.style.background = '#fff';
-              b.style.color = '#1d1d1f';
-              if (b.getAttribute('data-filter') === type) {
-                b.classList.add('active');
-                b.style.background = '#667eea';
-                b.style.color = 'white';
+            // Update stat buttons active state
+            document.querySelectorAll('.animation-stat').forEach(s => {
+              s.classList.remove('active');
+              if (s.getAttribute('data-type') === 'all') {
+                s.style.background = '#fff';
+                s.style.color = '#1d1d1f';
+              } else {
+                s.style.background = '#fff';
               }
             });
+
+            this.classList.add('active');
+            if (type === 'all') {
+              this.style.background = '#667eea';
+              this.style.color = 'white';
+            } else {
+              this.style.background = '#e3f2fd';
+            }
 
             renderResults();
           });
@@ -1893,34 +1902,80 @@
           return;
         }
 
-        // Filter results
+        // Filter results by type
         let filteredResults = animationData.results;
         if (currentFilter !== 'all') {
           filteredResults = animationData.results.filter(r => r.triggerCategory === currentFilter);
         }
 
+        // Filter by search text
+        if (currentAnimationSearch && currentAnimationSearch.trim()) {
+          const searchLower = currentAnimationSearch.toLowerCase().trim();
+          filteredResults = filteredResults.filter(r => {
+            const triggerLabel = (r.triggerLabel || '').toLowerCase();
+            const actionLabel = (r.actionLabel || '').toLowerCase();
+            const targetName = (r.targetName || '').toLowerCase();
+            const nodeName = (r.nodeName || '').toLowerCase();
+            const animationType = formatAnimationType(r.animationType).toLowerCase();
+
+            return triggerLabel.includes(searchLower) ||
+                   actionLabel.includes(searchLower) ||
+                   targetName.includes(searchLower) ||
+                   nodeName.includes(searchLower) ||
+                   animationType.includes(searchLower);
+          });
+        }
+
         if (filteredResults.length === 0) {
+          const filterText = currentFilter !== 'all' ? ` ${currentFilter}` : '';
+          const searchText = currentAnimationSearch ? ` matching "${currentAnimationSearch}"` : '';
           resultsContainer.innerHTML = `
             <div class="empty-state">
               <div class="icon">🔍</div>
-              <p>No ${currentFilter} interactions found</p>
+              <p>No${filterText} interactions found${searchText}</p>
             </div>
           `;
           return;
         }
 
-        // Render results
+        // Group similar interactions by: triggerType + actionType + targetName + animationType (ignore nodeName)
+        const grouped = {};
+        filteredResults.forEach(item => {
+          const key = `${item.triggerType}|${item.actionType}|${item.targetName || ''}|${item.animationType || ''}`;
+          if (!grouped[key]) {
+            grouped[key] = {
+              ...item,
+              count: 1,
+              nodeIds: [item.nodeId]
+            };
+          } else {
+            grouped[key].count++;
+            grouped[key].nodeIds.push(item.nodeId);
+          }
+        });
+
+        const groupedResults = Object.values(grouped);
+
+        // Update groups count
+        const groupsEl = document.getElementById('animation-groups');
+        if (groupsEl) {
+          groupsEl.textContent = groupedResults.length + ' group' + (groupedResults.length > 1 ? 's' : '');
+        }
+
+        // Render grouped results
         let html = '<div class="animation-list">';
-        filteredResults.forEach((item, index) => {
-          const isSelected = selectedNodeId === item.nodeId;
-          const animationInfo = item.animationType ?
-            `<span style="color: #667eea;">${item.animationType}</span>` +
-            (item.duration ? ` (${Math.round(item.duration * 1000)}ms` + (item.easing ? `, ${item.easing}` : '') + ')' : '')
+        groupedResults.forEach((item, index) => {
+          const isSelected = item.nodeIds.includes(selectedNodeId);
+          const animationType = formatAnimationType(item.animationType);
+          const animationInfo = animationType ?
+            `<span style="color: #667eea;">🎬 ${animationType}</span>` +
+            (item.duration ? ` <span style="color: #86868b;">(${Math.round(item.duration * 1000)}ms` + (item.easing ? `, ${item.easing}` : '') + ')</span>' : '')
             : '';
-          const delayInfo = item.delay ? `<span style="color: #ff9800;">Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
+          const delayInfo = item.delay ? `<span style="color: #ff9800;">⏳ Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
+          const countBadge = item.count > 1 ? `<span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">×${item.count}</span>` : '';
 
           html += `
-            <div class="animation-item ${isSelected ? 'selected' : ''}" data-node-id="${item.nodeId}" data-index="${index}" style="
+            <div class="animation-item ${isSelected ? 'selected' : ''}" data-node-ids="${item.nodeIds.join(',')}" data-index="${index}" style="
               padding: 12px 16px;
               background: ${isSelected ? '#e8f5e9' : '#fff'};
               border: 1px solid ${isSelected ? '#4caf50' : '#e5e5e7'};
@@ -1930,13 +1985,8 @@
               transition: all 0.2s;
             ">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 18px;">${item.triggerIcon}</span>
-                  <span style="font-weight: 600; color: #1d1d1f;">${item.triggerLabel}</span>
-                  <span style="color: #86868b;">→</span>
-                  <span style="color: #667eea; font-weight: 500;">${item.actionLabel}</span>
-                </div>
-                <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-id="${item.nodeId}" style="
+                <span style="font-size: 12px; font-weight: 600; color: #86868b;">${index + 1}.</span>
+                <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-ids="${item.nodeIds.join(',')}" style="
                   padding: 4px 12px;
                   background: ${isSelected ? '#4caf50' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                   color: white;
@@ -1944,25 +1994,19 @@
                   border-radius: 4px;
                   font-size: 12px;
                   cursor: pointer;
-                  display: flex;
-                  align-items: center;
-                  gap: 4px;
                 ">
                   ${isSelected ? '✓ Selected' : '📍 Select'}
                 </button>
               </div>
-              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 4px;">
-                <strong>Node:</strong> ${escapeHtml(item.nodeName)}
-                <span style="color: #86868b; font-size: 11px;">(${item.nodeType})</span>
+              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 6px;">
+                <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
               </div>
-              <div style="font-size: 11px; color: #86868b; margin-bottom: 4px; word-break: break-all;">
-                ${escapeHtml(item.nodePath)}
+              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 6px;">
+                <strong>Action:</strong> <span style="color: #667eea; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
               </div>
-              ${item.targetName ? `
-                <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 4px;">
-                  <strong>Target:</strong> ${escapeHtml(item.targetName)}
-                </div>
-              ` : ''}
+              <div style="font-size: 12px; color: #86868b; margin-bottom: 4px;">
+                <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 11px;">(${item.nodeType})</span>
+              </div>
               ${animationInfo || delayInfo ? `
                 <div style="font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
                   ${animationInfo}
@@ -1979,16 +2023,16 @@
         document.querySelectorAll('.btn-select-animation').forEach(btn => {
           btn.addEventListener('click', function(e) {
             e.stopPropagation();
-            const nodeId = this.getAttribute('data-node-id');
-            selectAnimationNode(nodeId);
+            const nodeIds = this.getAttribute('data-node-ids').split(',');
+            selectAnimationNode(nodeIds[0]); // Select first node in group
           });
         });
 
         // Add click handlers for items
         document.querySelectorAll('.animation-item').forEach(item => {
           item.addEventListener('click', function() {
-            const nodeId = this.getAttribute('data-node-id');
-            selectAnimationNode(nodeId);
+            const nodeIds = this.getAttribute('data-node-ids').split(',');
+            selectAnimationNode(nodeIds[0]); // Select first node in group
           });
         });
       }
@@ -2010,6 +2054,22 @@
         return div.innerHTML;
       }
 
+      // Format animation type for display
+      function formatAnimationType(type) {
+        if (!type) return '';
+        const map = {
+          'SMART_ANIMATE': 'Smart Animate',
+          'INSTANT': 'Instant',
+          'DISSOLVE': 'Dissolve',
+          'SLIDE_IN': 'Slide In',
+          'SLIDE_OUT': 'Slide Out',
+          'PUSH': 'Push',
+          'MOVE_IN': 'Move In',
+          'MOVE_OUT': 'Move Out'
+        };
+        return map[type] || type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+      }
+
       function updateStats(stats) {
         document.getElementById('stat-click').textContent = stats.click || 0;
         document.getElementById('stat-hover').textContent = stats.hover || 0;
@@ -2027,26 +2087,27 @@
           if (msg.type === 'animation-results') {
             const btnScan = document.getElementById('btn-scan-animations');
             const summaryPanel = document.getElementById('animation-summary');
-            const filterPanel = document.getElementById('animation-filter');
             const countBadge = document.getElementById('animations-count');
 
             // Reset button
             if (btnScan) {
               btnScan.disabled = false;
-              btnScan.innerHTML = '🔍 Scan Interactions';
+              btnScan.textContent = '🎬 Scan Interactions';
             }
 
             animationData = msg.data;
             selectedNodeId = null;
             currentFilter = 'all';
 
-            // Reset filter buttons
-            document.querySelectorAll('.animation-filter-btn').forEach(b => {
-              b.classList.remove('active');
-              b.style.background = '#fff';
-              b.style.color = '#1d1d1f';
+            // Reset stat buttons to default (All active)
+            document.querySelectorAll('.animation-stat').forEach(s => {
+              s.classList.remove('active');
+              s.style.background = '#fff';
+              if (s.getAttribute('data-type') === 'all') {
+                s.style.color = '#1d1d1f';
+              }
             });
-            const allBtn = document.querySelector('.animation-filter-btn[data-filter="all"]');
+            const allBtn = document.querySelector('.animation-stat[data-type="all"]');
             if (allBtn) {
               allBtn.classList.add('active');
               allBtn.style.background = '#667eea';
@@ -2054,9 +2115,8 @@
             }
 
             if (animationData && animationData.total > 0) {
-              // Show summary and filter
+              // Show summary
               summaryPanel.style.display = 'block';
-              filterPanel.style.display = 'block';
 
               // Update total
               document.getElementById('animation-total').textContent =
@@ -2069,18 +2129,45 @@
               if (countBadge) {
                 countBadge.textContent = animationData.total;
               }
+
+              // Show filter controls (search box only) for animations
+              const filterControls = document.getElementById('filter-controls');
+              const filterButtonsContainer = document.getElementById('filter-buttons');
+              const colorTypeFilter = document.getElementById('color-type-filter');
+              if (filterControls) filterControls.style.display = 'flex';
+              if (filterButtonsContainer) filterButtonsContainer.style.display = 'none';
+              if (colorTypeFilter) colorTypeFilter.style.display = 'none';
             } else {
               summaryPanel.style.display = 'none';
-              filterPanel.style.display = 'none';
               if (countBadge) {
                 countBadge.textContent = '0';
               }
+              // Hide filter controls when no data
+              const filterControls = document.getElementById('filter-controls');
+              if (filterControls) filterControls.style.display = 'none';
             }
 
             renderResults();
           }
+
+          // Handle loaded animation data from storage
+          if (msg.type === 'animation-data-loaded' && msg.data) {
+            animationData = msg.data;
+            restoreAnimationUI();
+          }
         }
       });
+
+      // Expose function for external search (called from main.js)
+      window.searchAnimations = function(searchText) {
+        currentAnimationSearch = searchText || '';
+        renderResults();
+      };
+
+      // Expose function to check if animation data exists
+      window.hasAnimationData = function() {
+        return animationData && animationData.results && animationData.results.length > 0;
+      };
 
       // Initialize when DOM is ready
       if (document.readyState === 'loading') {

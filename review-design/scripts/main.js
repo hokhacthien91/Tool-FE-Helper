@@ -365,17 +365,30 @@ console.log("ui.js loaded");
       }
     });
 
-    // Hide filter controls for settings tab, show for issues/tokens
+    // Hide filter controls for settings tab, show for issues/tokens/animations
     const filterControls = document.getElementById("filter-controls");
+    const filterButtonsContainer = document.getElementById("filter-buttons");
+    const colorTypeFilter = document.getElementById("color-type-filter");
+
     if (filterControls) {
       if (tabName === "settings") {
         filterControls.style.display = "none";
+      } else if (tabName === "animations") {
+        // Show search box for animations tab (hide severity filter buttons and color type filter)
+        const hasAnimations = typeof window.hasAnimationData === 'function' && window.hasAnimationData();
+        filterControls.style.display = hasAnimations ? "flex" : "none";
+        if (filterButtonsContainer) filterButtonsContainer.style.display = "none";
+        if (colorTypeFilter) colorTypeFilter.style.display = "none";
       } else {
         // Show filter controls for issues/tokens tabs (if there's any content)
         const hasContent = (tabName === "issues" && resultsIssues && resultsIssues.querySelector('.issue-group')) ||
                           (tabName === "tokens" && resultsTokens && resultsTokens.querySelector('.token-group'));
         if (hasContent || currentReportData.issues || currentReportData.tokens) {
-          filterControls.style.display = "";
+          filterControls.style.display = "flex";
+        }
+        // Restore filter buttons visibility for issues tab
+        if (tabName === "issues" && filterButtonsContainer) {
+          filterButtonsContainer.style.display = "flex";
         }
       }
     }
@@ -4704,10 +4717,12 @@ console.log("ui.js loaded");
         }
 
         function renderResults(issues = [], resetFilters = false, options = {}) {
-          const { skipSave = false, restoreTimestamp = null } = options;
-          
-          // Switch to issues tab and update badge
-          switchToTab("issues");
+          const { skipSave = false, restoreTimestamp = null, skipTabSwitch = false } = options;
+
+          // Switch to issues tab and update badge (skip when just filtering)
+          if (!skipTabSwitch) {
+            switchToTab("issues");
+          }
           document.getElementById("issues-count").textContent = issues.length;
           
           // Check ignored issues and mark them
@@ -5744,10 +5759,12 @@ console.log("ui.js loaded");
         }
 
         function renderTokens(tokens, resetFilters = false, options = {}) {
-          const { skipSave = false, restoreTimestamp = null } = options;
-          
-          // Switch to tokens tab and update badge
-          switchToTab("tokens");
+          const { skipSave = false, restoreTimestamp = null, skipTabSwitch = false } = options;
+
+          // Switch to tokens tab and update badge (skip when just filtering)
+          if (!skipTabSwitch) {
+            switchToTab("tokens");
+          }
           let totalTokensCount = Object.values(tokens || {}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
           document.getElementById("tokens-count").textContent = totalTokensCount;
           
@@ -7116,20 +7133,39 @@ console.log("ui.js loaded");
   let searchInput, btnClearSearch, filterButtons, colorTypeSelect;
 
   function applyFilters() {
-    console.log("applyFilters called", { 
-      isViewingTokens, 
-      hasTokens: !!currentReportData.tokens, 
+    console.log("applyFilters called", {
+      isViewingTokens,
+      hasTokens: !!currentReportData.tokens,
       hasIssues: !!currentReportData.issues,
       currentFilter,
       currentSearch,
       currentColorTypeFilter
     });
-    if (isViewingTokens && currentReportData.tokens) {
+
+    // Determine which tab is currently active
+    const activeTab = document.querySelector('.report-tab.active');
+    const activeTabName = activeTab ? activeTab.getAttribute('data-tab') : null;
+
+    // Apply filters to the currently active tab's data
+    if (activeTabName === 'animations') {
+      // Search in animations tab (handled by ui.html script)
+      console.log("Applying search to animations");
+      if (typeof window.searchAnimations === 'function') {
+        window.searchAnimations(currentSearch);
+      }
+    } else if (activeTabName === 'tokens' && currentReportData.tokens) {
       console.log("Applying filters to tokens");
-      renderTokens(currentReportData.tokens, false); // Don't reset filters
-    } else if (currentReportData.issues) {
+      renderTokens(currentReportData.tokens, false, { skipTabSwitch: true }); // Don't reset filters, don't switch tab
+    } else if (activeTabName === 'issues' && currentReportData.issues) {
       console.log("Applying filters to issues");
-      renderResults(currentReportData.issues, false); // Don't reset filters
+      renderResults(currentReportData.issues, false, { skipTabSwitch: true }); // Don't reset filters, don't switch tab
+    } else if (isViewingTokens && currentReportData.tokens) {
+      // Fallback to old behavior if active tab detection fails
+      console.log("Applying filters to tokens (fallback)");
+      renderTokens(currentReportData.tokens, false, { skipTabSwitch: true });
+    } else if (currentReportData.issues) {
+      console.log("Applying filters to issues (fallback)");
+      renderResults(currentReportData.issues, false, { skipTabSwitch: true });
     }
   }
 

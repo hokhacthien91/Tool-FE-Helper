@@ -14,7 +14,7 @@ $color-border-hover: #a1a1a6;
 $color-border-subtle: #f0f0f0;
 
 $color-primary: #667eea;
-$color-secondary: #764ba2;
+$color-secondary: #0071e3;
 $color-link: #0071e3;
 $color-link-hover: #0051a2;
 
@@ -26,11 +26,11 @@ $color-warning-hover: #f57c00;
 
 $color-danger: #dc2626;
 
-$gradient-primary: linear-gradient(
-  135deg,
-  $color-primary 0%,
-  $color-secondary 100%
-);
+// $color-link: linear-gradient(
+//   135deg,
+//   $color-primary 0%,
+//   $color-secondary 100%
+// );
 
 // Extra neutrals used across components
 $color-gray-900: #333333;

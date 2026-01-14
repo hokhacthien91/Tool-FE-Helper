@@ -28,7 +28,7 @@ body {
 }
 
 .header {
-  background: $gradient-primary;
+  background: $color-link;
   color: $color-surface;
   padding: 15px 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -89,9 +89,10 @@ body {
 }
 
 #btn-scan,
-#btn-extract-tokens {
+#btn-extract-tokens,
+#btn-scan-animations {
   padding: 10px 10px;
-  background: $gradient-primary;
+  background: $color-link;
   color: $color-surface;
   border: none;
   border-radius: 8px;
@@ -107,7 +108,8 @@ body {
 }
 
 #btn-scan:hover,
-#btn-extract-tokens:hover {
+#btn-extract-tokens:hover,
+#btn-scan-animations:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
 }

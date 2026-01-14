@@ -84,7 +84,8 @@
   }
   
   #btn-scan, 
-  #btn-extract-tokens {
+  #btn-extract-tokens,
+  #btn-scan-animations {
     padding: 10px 10px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -101,7 +102,8 @@
   }
   
   #btn-scan:hover,
-  #btn-extract-tokens:hover {
+  #btn-extract-tokens:hover,
+  #btn-scan-animations:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
   }
