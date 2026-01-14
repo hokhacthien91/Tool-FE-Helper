@@ -8,7 +8,15 @@
     "inspect"
   ],
   "editorType": [
-  "figma",
+    "figma",
     "dev"
-  ]
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://cdnjs.cloudflare.com"
+    ],
+    "devAllowedDomains": [
+      "http://localhost:3001"
+    ]
+  }
 }

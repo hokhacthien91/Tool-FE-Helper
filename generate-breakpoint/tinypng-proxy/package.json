@@ -1,0 +1,14 @@
+{
+  "name": "tinypng-proxy",
+  "version": "1.0.0",
+  "description": "Local proxy server for TinyPNG API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "tinify": "^1.7.1",
+    "cors": "^2.8.5"
+  }
+}

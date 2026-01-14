@@ -2125,6 +2125,14 @@
             </div>
           </div>
 
+          <!-- TinyPNG Option for Compare -->
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <input type="checkbox" id="useCompareOptimize" />
+            <label for="useCompareOptimize" style="font-size: var(--font-size-sm); color: var(--text-secondary);">
+              Optimize with TinyPNG (requires local server)
+            </label>
+          </div>
+
           <button
             id="exportCompareBtn"
             class="btn btn-primary"
@@ -2243,6 +2251,14 @@ aton/Buttons</textarea>
                     <option value="3">3x</option>
                   </select>
                 </div>
+              </div>
+
+              <!-- TinyPNG Option -->
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <input type="checkbox" id="useTinyPng" />
+                <label for="useTinyPng" style="font-size: var(--font-size-sm); color: var(--text-secondary);">
+                  Optimize with TinyPNG (requires local server)
+                </label>
               </div>
 
               <!-- Row 3: Export button -->
@@ -3515,6 +3531,8 @@ atom/Buttons</textarea>
       const jpgExportScaleInput = document.getElementById("jpgExportScale");
       const exportAllImagesBtn = document.getElementById("exportAllImagesBtn");
       const exportStatus = document.getElementById("exportStatus");
+      const useTinyPngCheckbox = document.getElementById("useTinyPng");
+      const useCompareOptimizeCheckbox = document.getElementById("useCompareOptimize");
 
       // DOM Elements - Copy Content section
       const copyContentStyleBtn = document.getElementById("copyContentStyleBtn");
@@ -4258,7 +4276,67 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       let pendingExports = [];
       let exportZip = null;
 
-      exportAllImagesBtn.addEventListener("click", () => {
+      // Track if TinyPNG server is available
+      let tinyPngServerAvailable = false;
+      let tinyPngServerWarning = false; // Track if we showed server warning
+      let totalImagesSaved = 0;
+      let totalBytesOriginal = 0;
+      let totalBytesCompressed = 0;
+
+      // Check if TinyPNG server is running
+      async function checkTinyPngServer() {
+        try {
+          const response = await fetch('http://localhost:3001/', {
+            method: 'GET',
+            signal: AbortSignal.timeout(2000)
+          });
+          return response.ok;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      // TinyPNG compression via local proxy server
+      async function compressWithTinyPNG(imageBytes, format) {
+        // Only compress PNG and JPG
+        if (format !== 'PNG' && format !== 'JPG') {
+          return { bytes: imageBytes, compressed: false };
+        }
+
+        try {
+          const response = await fetch('http://localhost:3001/compress', {
+            method: 'POST',
+            body: imageBytes,
+            headers: {
+              'Content-Type': 'application/octet-stream'
+            }
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Compression failed');
+          }
+
+          const compressedBuffer = await response.arrayBuffer();
+          const originalSize = imageBytes.length;
+          const compressedSize = compressedBuffer.byteLength;
+          const savings = Math.round((1 - compressedSize / originalSize) * 100);
+          console.log(`TinyPNG compress: ${originalSize} -> ${compressedSize} bytes (${savings}% smaller)`);
+
+          // Track stats
+          totalBytesOriginal += originalSize;
+          totalBytesCompressed += compressedSize;
+          totalImagesSaved++;
+
+          return { bytes: new Uint8Array(compressedBuffer), compressed: true };
+        } catch (error) {
+          console.warn('TinyPNG compression error:', error.message);
+          // Return original if compression fails
+          return { bytes: imageBytes, compressed: false };
+        }
+      }
+
+      exportAllImagesBtn.addEventListener("click", async () => {
         if (!hasValidSelection) {
           showMessage("error", "Please select a frame first");
           return;
@@ -4283,6 +4361,22 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           showMessage("error", "Please enter at least one name pattern");
           return;
         }
+
+        // Check TinyPNG server if optimization is enabled
+        tinyPngServerWarning = false;
+        if (useTinyPngCheckbox.checked) {
+          exportStatus.textContent = "Checking TinyPNG server...";
+          tinyPngServerAvailable = await checkTinyPngServer();
+          if (!tinyPngServerAvailable) {
+            tinyPngServerWarning = true;
+            exportStatus.textContent = "⚠ TinyPNG server not running. Exporting without optimization...";
+          }
+        }
+
+        // Reset compression stats
+        totalImagesSaved = 0;
+        totalBytesOriginal = 0;
+        totalBytesCompressed = 0;
 
         // Get format, scale, and padding values for each group
         const buttonFormat = buttonExportFormatSelect.value || "PNG";
@@ -4385,11 +4479,27 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         );
       });
 
-      exportCompareBtn.addEventListener("click", () => {
+      exportCompareBtn.addEventListener("click", async () => {
         if (!compareDesktopFrame || !compareMobileFrame) {
           compareExportStatus.textContent = "Please select both Desktop and Mobile frames";
           return;
         }
+
+        // Check TinyPNG server if optimization is enabled
+        tinyPngServerWarning = false;
+        if (useCompareOptimizeCheckbox.checked) {
+          compareExportStatus.textContent = "Checking TinyPNG server...";
+          tinyPngServerAvailable = await checkTinyPngServer();
+          if (!tinyPngServerAvailable) {
+            tinyPngServerWarning = true;
+            compareExportStatus.textContent = "⚠ TinyPNG server not running. Exporting without optimization...";
+          }
+        }
+
+        // Reset compression stats
+        totalImagesSaved = 0;
+        totalBytesOriginal = 0;
+        totalBytesCompressed = 0;
 
         const projectName = compareProjectNameInput.value.trim() || "mail1";
 
@@ -4424,7 +4534,7 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       let allAssetsPendingImages = false;
       let allAssetsImageFolder = null;
 
-      exportAllAssetsBtn.addEventListener("click", () => {
+      exportAllAssetsBtn.addEventListener("click", async () => {
         if (!compareDesktopFrame || !compareMobileFrame) {
           compareExportStatus.textContent = "Please select both Desktop and Mobile frames";
           return;
@@ -4452,6 +4562,22 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           return;
         }
 
+        // Check TinyPNG server if optimization is enabled
+        tinyPngServerWarning = false;
+        if (useCompareOptimizeCheckbox.checked) {
+          compareExportStatus.textContent = "Checking TinyPNG server...";
+          tinyPngServerAvailable = await checkTinyPngServer();
+          if (!tinyPngServerAvailable) {
+            tinyPngServerWarning = true;
+            compareExportStatus.textContent = "⚠ TinyPNG server not running. Exporting without optimization...";
+          }
+        }
+
+        // Reset compression stats
+        totalImagesSaved = 0;
+        totalBytesOriginal = 0;
+        totalBytesCompressed = 0;
+
         const projectName = compareProjectNameInput.value.trim() || "mail1";
 
         // Initialize combined zip
@@ -4459,10 +4585,8 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         allAssetsPendingCompare = true;
         allAssetsPendingImages = true;
 
-        // Create timestamp folder for images
-        const now = new Date();
-        const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        allAssetsImageFolder = `images_${timestamp}`;
+        // Set images folder name
+        allAssetsImageFolder = `images`;
 
         exportAllAssetsBtn.disabled = true;
         exportAllAssetsBtn.textContent = "Exporting...";
@@ -4523,16 +4647,29 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           // Both exports complete, generate combined zip
           allAssetsZip.generateAsync({ type: "blob" }).then((content) => {
             const projectName = compareProjectNameInput.value.trim() || "mail1";
+            // Only add _Optimized suffix if images were actually compressed
+            const optimizeSuffix = (useCompareOptimizeCheckbox.checked && totalImagesSaved > 0) ? '_Optimized' : '';
             const link = document.createElement("a");
             link.href = URL.createObjectURL(content);
-            link.download = `${projectName}_all_assets.zip`;
+            link.download = `${projectName}_all_assets${optimizeSuffix}.zip`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
 
             exportAllAssetsBtn.disabled = false;
             exportAllAssetsBtn.textContent = "Export All (Compare + Images)";
-            compareExportStatus.textContent = "✓ All assets exported successfully!";
+
+            // Show compression stats if optimized
+            if (totalImagesSaved > 0) {
+              const totalSaved = totalBytesOriginal - totalBytesCompressed;
+              const savedKB = (totalSaved / 1024).toFixed(1);
+              const savedPercent = Math.round((totalSaved / totalBytesOriginal) * 100);
+              compareExportStatus.textContent = `✓ All assets exported! Optimized: ${totalImagesSaved} images, Saved: ${savedKB}KB (${savedPercent}%)`;
+            } else if (tinyPngServerWarning) {
+              compareExportStatus.textContent = `⚠ All assets exported without optimization (TinyPNG server not running)`;
+            } else {
+              compareExportStatus.textContent = "✓ All assets exported successfully!";
+            }
 
             // Reset
             allAssetsZip = null;
@@ -5218,48 +5355,59 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           case "EXPORT_BUTTON_DATA":
             // Received image data for a frame
             if (msg.data && msg.fileName) {
-              // Convert base64 to blob and add to zip
-              const binaryData = atob(msg.data);
-              const bytes = new Uint8Array(binaryData.length);
-              for (let i = 0; i < binaryData.length; i++) {
-                bytes[i] = binaryData.charCodeAt(i);
-              }
-
-              // Check for duplicate filename and add number suffix if needed
-              let finalFileName = msg.fileName;
-
-              // If part of allAssets, put images in subfolder
-              const imageFolder = allAssetsImageFolder ? `${allAssetsImageFolder}/` : '';
-              const fullPath = imageFolder + finalFileName;
-
-              const existingFiles = Object.keys(exportZip.files);
-              if (existingFiles.includes(fullPath)) {
-                // Extract name and extension
-                const lastDot = finalFileName.lastIndexOf('.');
-                const baseName = lastDot > 0 ? finalFileName.substring(0, lastDot) : finalFileName;
-                const ext = lastDot > 0 ? finalFileName.substring(lastDot) : '';
-
-                // Find next available number
-                let counter = 2;
-                while (existingFiles.includes(`${imageFolder}${baseName}_${counter}${ext}`)) {
-                  counter++;
+              (async () => {
+                // Convert base64 to blob and add to zip
+                const binaryData = atob(msg.data);
+                let bytes = new Uint8Array(binaryData.length);
+                for (let i = 0; i < binaryData.length; i++) {
+                  bytes[i] = binaryData.charCodeAt(i);
                 }
-                finalFileName = `${baseName}_${counter}${ext}`;
-              }
 
-              exportZip.file(imageFolder + finalFileName, bytes, { binary: true });
+                // Compress with TinyPNG if enabled (PNG and JPG) and server is available
+                // Use Compare checkbox when exporting as part of allAssets, otherwise use Images checkbox
+                const shouldOptimize = allAssetsZip ? useCompareOptimizeCheckbox.checked : useTinyPngCheckbox.checked;
+                if (shouldOptimize && tinyPngServerAvailable && (msg.format === 'PNG' || msg.format === 'JPG')) {
+                  exportStatus.textContent = `Compressing: ${msg.fileName}...`;
+                  const result = await compressWithTinyPNG(bytes, msg.format);
+                  bytes = result.bytes;
+                }
 
-              // Mark as exported (match by id and format)
-              const pending = pendingExports.find((p) => p.id === msg.id && p.format === msg.format && !p.exported);
-              if (pending) pending.exported = true;
+                // Check for duplicate filename and add number suffix if needed
+                let finalFileName = msg.fileName;
 
-              // Update progress
-              const exportedCount = pendingExports.filter((p) => p.exported).length;
-              exportAllImagesBtn.textContent = `Exporting ${exportedCount}/${pendingExports.length}...`;
-              exportStatus.textContent = `Exported: ${finalFileName}`;
+                // If part of allAssets, put images in subfolder
+                const imageFolder = allAssetsImageFolder ? `${allAssetsImageFolder}/` : '';
+                const fullPath = imageFolder + finalFileName;
 
-              // Request next or finalize
-              requestNextExport();
+                const existingFiles = Object.keys(exportZip.files);
+                if (existingFiles.includes(fullPath)) {
+                  // Extract name and extension
+                  const lastDot = finalFileName.lastIndexOf('.');
+                  const baseName = lastDot > 0 ? finalFileName.substring(0, lastDot) : finalFileName;
+                  const ext = lastDot > 0 ? finalFileName.substring(lastDot) : '';
+
+                  // Find next available number
+                  let counter = 2;
+                  while (existingFiles.includes(`${imageFolder}${baseName}_${counter}${ext}`)) {
+                    counter++;
+                  }
+                  finalFileName = `${baseName}_${counter}${ext}`;
+                }
+
+                exportZip.file(imageFolder + finalFileName, bytes, { binary: true });
+
+                // Mark as exported (match by id and format)
+                const pending = pendingExports.find((p) => p.id === msg.id && p.format === msg.format && !p.exported);
+                if (pending) pending.exported = true;
+
+                // Update progress
+                const exportedCount = pendingExports.filter((p) => p.exported).length;
+                exportAllImagesBtn.textContent = `Exporting ${exportedCount}/${pendingExports.length}...`;
+                exportStatus.textContent = `Exported: ${finalFileName}`;
+
+                // Request next or finalize
+                requestNextExport();
+              })();
             }
             break;
 
@@ -5300,45 +5448,96 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
                 compareExportZip.file(`${folderPrefix}json/mobile.json`, msg.mobileJson);
               }
 
-              // Add screenshots (base64 to blob)
-              if (msg.desktopScreenshot) {
-                const desktopData = msg.desktopScreenshot.split(',')[1] || msg.desktopScreenshot;
-                compareExportZip.file(`${folderPrefix}screenshot/desktop.png`, desktopData, {base64: true});
+              // Helper to process screenshot with optional optimization
+              async function processScreenshot(base64Data, filename) {
+                const data = base64Data.split(',')[1] || base64Data;
+
+                if (useCompareOptimizeCheckbox.checked && tinyPngServerAvailable) {
+                  try {
+                    compareExportStatus.textContent = `Compressing: ${filename}...`;
+                    // Convert base64 to Uint8Array
+                    const binaryString = atob(data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                      bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    // Compress with TinyPNG
+                    const result = await compressWithTinyPNG(bytes, 'PNG');
+                    if (result.compressed) {
+                      return result.bytes;
+                    }
+                    return data; // Return original base64 if compression failed
+                  } catch (error) {
+                    console.warn('Screenshot compression failed:', error);
+                    return data; // Return original base64 on error
+                  }
+                }
+                return data; // Return original base64 if not optimizing
               }
-              if (msg.mobileScreenshot) {
-                const mobileData = msg.mobileScreenshot.split(',')[1] || msg.mobileScreenshot;
-                compareExportZip.file(`${folderPrefix}screenshot/mobile.png`, mobileData, {base64: true});
-              }
 
-              // Create empty docx folder with .gitkeep
-              compareExportZip.file(`${folderPrefix}docx/.gitkeep`, "");
+              // Process screenshots
+              (async () => {
+                try {
+                  // Add screenshots (with optional optimization)
+                  if (msg.desktopScreenshot) {
+                    const desktopData = await processScreenshot(msg.desktopScreenshot, 'desktop.png');
+                    if (desktopData instanceof Uint8Array) {
+                      compareExportZip.file(`${folderPrefix}screenshot/desktop.png`, desktopData);
+                    } else {
+                      compareExportZip.file(`${folderPrefix}screenshot/desktop.png`, desktopData, {base64: true});
+                    }
+                  }
+                  if (msg.mobileScreenshot) {
+                    const mobileData = await processScreenshot(msg.mobileScreenshot, 'mobile.png');
+                    if (mobileData instanceof Uint8Array) {
+                      compareExportZip.file(`${folderPrefix}screenshot/mobile.png`, mobileData);
+                    } else {
+                      compareExportZip.file(`${folderPrefix}screenshot/mobile.png`, mobileData, {base64: true});
+                    }
+                  }
 
-              // Check if this is part of allAssets export
-              if (allAssetsZip) {
-                allAssetsPendingCompare = false;
-                compareExportStatus.textContent = "Compare data ready, waiting for images...";
-                checkAllAssetsComplete();
-              } else {
-                // Generate and download ZIP (standalone compare export)
-                compareExportZip.generateAsync({ type: "blob" }).then((blob) => {
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `${projectName}_compare_export.zip`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
+                  // Create empty docx folder with .gitkeep
+                  compareExportZip.file(`${folderPrefix}docx/.gitkeep`, "");
 
-                  compareExportStatus.textContent = `✓ Exported ${projectName} (JSON + Screenshots)`;
-                  exportCompareBtn.disabled = false;
-                  exportCompareBtn.textContent = "Export for Compare";
-                }).catch((err) => {
+                  // Check if this is part of allAssets export
+                  if (allAssetsZip) {
+                    allAssetsPendingCompare = false;
+                    compareExportStatus.textContent = "Compare data ready, waiting for images...";
+                    checkAllAssetsComplete();
+                  } else {
+                    // Generate and download ZIP (standalone compare export)
+                    const blob = await compareExportZip.generateAsync({ type: "blob" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    // Only add _Optimized suffix if images were actually compressed
+                    const optimizeSuffix = (useCompareOptimizeCheckbox.checked && totalImagesSaved > 0) ? '_Optimized' : '';
+                    a.download = `${projectName}_compare_export${optimizeSuffix}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    // Show compression stats if optimized
+                    if (totalImagesSaved > 0) {
+                      const totalSaved = totalBytesOriginal - totalBytesCompressed;
+                      const savedKB = (totalSaved / 1024).toFixed(1);
+                      const savedPercent = Math.round((totalSaved / totalBytesOriginal) * 100);
+                      compareExportStatus.textContent = `✓ Exported ${projectName}. Optimized: ${totalImagesSaved} images, Saved: ${savedKB}KB (${savedPercent}%)`;
+                    } else if (tinyPngServerWarning) {
+                      compareExportStatus.textContent = `⚠ Exported ${projectName} without optimization (TinyPNG server not running)`;
+                    } else {
+                      compareExportStatus.textContent = `✓ Exported ${projectName} (JSON + Screenshots)`;
+                    }
+                    exportCompareBtn.disabled = false;
+                    exportCompareBtn.textContent = "Export for Compare";
+                  }
+                } catch (err) {
                   compareExportStatus.textContent = `✗ Failed: ${err.message}`;
                   exportCompareBtn.disabled = false;
                   exportCompareBtn.textContent = "Export for Compare";
-                });
-              }
+                }
+              })();
             } else {
               compareExportStatus.textContent = `✗ ${msg.error || "Export failed"}`;
               exportCompareBtn.disabled = false;
@@ -5427,15 +5626,29 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
             String(now.getHours()).padStart(2, "0") +
             String(now.getMinutes()).padStart(2, "0") +
             String(now.getSeconds()).padStart(2, "0");
-          a.download = `images_${timestamp}.zip`;
+          // Only add _Optimized suffix if images were actually compressed
+          const optimizeSuffix = (useTinyPngCheckbox.checked && totalImagesSaved > 0) ? '_Optimized' : '';
+          a.download = `images_${timestamp}${optimizeSuffix}.zip`;
 
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          showMessage("success", `✓ Exported ${pendingExports.length} images`);
-          exportStatus.textContent = `Successfully exported ${pendingExports.length} images`;
+          // Show compression stats if optimized
+          if (totalImagesSaved > 0) {
+            const totalSaved = totalBytesOriginal - totalBytesCompressed;
+            const savedKB = (totalSaved / 1024).toFixed(1);
+            const savedPercent = Math.round((totalSaved / totalBytesOriginal) * 100);
+            showMessage("success", `✓ Exported ${pendingExports.length} images (${totalImagesSaved} optimized, saved ${savedKB}KB / ${savedPercent}%)`);
+            exportStatus.textContent = `Exported ${pendingExports.length} images. Optimized: ${totalImagesSaved}, Saved: ${savedKB}KB (${savedPercent}%)`;
+          } else if (tinyPngServerWarning) {
+            showMessage("warning", `Exported ${pendingExports.length} images (without optimization - server not running)`);
+            exportStatus.textContent = `⚠ Exported ${pendingExports.length} images without optimization (TinyPNG server not running)`;
+          } else {
+            showMessage("success", `✓ Exported ${pendingExports.length} images`);
+            exportStatus.textContent = `Successfully exported ${pendingExports.length} images`;
+          }
         } catch (err) {
           showMessage("error", `✗ Failed to create ZIP: ${err.message}`);
           exportStatus.textContent = "Failed to create ZIP file";
