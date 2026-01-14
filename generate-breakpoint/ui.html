@@ -947,31 +947,45 @@
 
       .qa-filter-btn.active {
         color: white;
-            background: var(--accent-color);
-    border-color: var(--accent-color);
+        background: var(--accent-color);
+        border-color: var(--accent-color);
       }
 
-      .qa-results-stats {
-        display: flex;
-        gap: 12px;
-        margin-bottom: 12px;
-        padding: 8px 12px;
-        background: var(--bg-secondary);
-        border-radius: var(--radius-sm);
+      .qa-filter-count {
+        display: inline-block;
+        min-width: 18px;
+        padding: 1px 5px;
+        margin-left: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.15);
       }
 
-      .qa-stat {
-        font-size: var(--font-size-sm);
-        font-weight: 500;
+      .qa-filter-btn.active .qa-filter-count {
+        background: rgba(255, 255, 255, 0.25);
       }
 
-      .qa-stat-error {
+      .qa-filter-count:empty {
+        display: none;
+      }
+
+      .qa-filter-count.qa-count-error {
         color: var(--error-color);
       }
 
-      .qa-stat-warning {
+      .qa-filter-btn.active .qa-filter-count.qa-count-error {
+        color: white;
+      }
+
+      .qa-filter-count.qa-count-warning {
         color: var(--warning-color);
       }
+
+      .qa-filter-btn.active .qa-filter-count.qa-count-warning {
+        color: white;
+      }
+
 
       .qa-empty-state {
         text-align: center;
@@ -1068,6 +1082,14 @@
         display: block;
       }
 
+      .qa-no-issues {
+        padding: 12px;
+        text-align: center;
+        color: var(--text-tertiary);
+        font-size: var(--font-size-sm);
+        font-style: italic;
+      }
+
       .qa-issue-group.expanded .qa-issue-group-toggle {
         transform: rotate(90deg);
       }
@@ -1090,6 +1112,25 @@
 
       .qa-issue-item.warning {
         border-left: 3px solid var(--warning-color);
+      }
+
+      .qa-issue-item.active {
+        background: rgba(24, 160, 251, 0.08);
+        border-color: var(--primary-color);
+      }
+
+      .qa-issue-item.active.error {
+        border-left: 3px solid var(--error-color);
+        border-right: 2px solid var(--primary-color);
+        border-top: 1px solid var(--primary-color);
+        border-bottom: 1px solid var(--primary-color);
+      }
+
+      .qa-issue-item.active.warning {
+        border-left: 3px solid var(--warning-color);
+        border-right: 2px solid var(--primary-color);
+        border-top: 1px solid var(--primary-color);
+        border-bottom: 1px solid var(--primary-color);
       }
 
       .qa-issue-header {
@@ -1483,6 +1524,9 @@
         margin-top: 4px;
         padding-top: 6px;
         border-top: 1px dashed var(--border-color);
+             white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
       }
       #gifOverlayList label{
         border: none !important;
@@ -2392,31 +2436,16 @@ aton/Buttons</textarea>
               class="qa-search-input"
             />
             <div class="qa-severity-filters">
-              <button class="qa-filter-btn active" data-severity="all">
-                All
+              <button class="qa-filter-btn active" data-severity="all" id="qa-filter-all">
+                All <span class="qa-filter-count" id="qa-total-count"></span>
               </button>
-              <button class="qa-filter-btn" data-severity="error">
-                Errors
+              <button class="qa-filter-btn" data-severity="error" id="qa-filter-error">
+                Errors <span class="qa-filter-count qa-count-error" id="qa-error-count"></span>
               </button>
-              <button class="qa-filter-btn" data-severity="warning">
-                Warnings
+              <button class="qa-filter-btn" data-severity="warning" id="qa-filter-warning">
+                Warnings <span class="qa-filter-count qa-count-warning" id="qa-warning-count"></span>
               </button>
             </div>
-          </div>
-
-          <!-- Results Stats -->
-          <div
-            class="qa-results-stats"
-            id="qa-results-stats"
-            style="display: none"
-          >
-            <span class="qa-stat qa-stat-error" id="qa-error-count"
-              >0 Errors</span
-            >
-            <span class="qa-stat qa-stat-warning" id="qa-warning-count"
-              >0 Warnings</span
-            >
-            <span class="qa-stat" id="qa-total-count">0 Total</span>
           </div>
 
           <!-- Issue Groups -->
@@ -2467,6 +2496,10 @@ aton/Buttons</textarea>
                 Text Style (Variable)</label
               >
               <label class="qa-toggle"
+                ><input type="checkbox" id="qa-check-font-family" checked />
+                Font Family</label
+              >
+              <label class="qa-toggle"
                 ><input type="checkbox" id="qa-check-font-size" checked />
                 Font Size</label
               >
@@ -2486,6 +2519,26 @@ aton/Buttons</textarea>
                 ><input type="checkbox" id="qa-check-color" checked />
                 Color</label
               >
+              <label class="qa-toggle"
+                ><input type="checkbox" id="qa-check-border-radius" checked />
+                Border Radius (Email)</label
+              >
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Border Radius Ignore Names -->
+          <div class="section">
+            <div class="section-title">Border Radius Ignore Names</div>
+            <textarea
+              id="qa-border-radius-ignore"
+              placeholder="Button&#10;atom/Buttons&#10;..."
+              style="min-height: 60px"
+            >Button
+atom/Buttons</textarea>
+            <div class="hint" style="margin-top: 4px">
+              Layer names to ignore border radius check (one per line). Children of matching layers are also ignored.
             </div>
           </div>
 
@@ -2954,7 +3007,7 @@ aton/Buttons</textarea>
         <div id="gifStatus" class="status-message" style="display: none;"></div>
       </div>
 
-      <div class="footer">Design Helper v2.0</div>
+      <div class="footer">Thien Assist v2.0</div>
     </div>
 
     <!-- Pattern Match Confirmation Modal -->
@@ -5783,7 +5836,6 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       const qaProgressFill = document.getElementById("qa-progress-fill");
       const qaSearch = document.getElementById("qa-search");
       const qaSeverityFilters = document.querySelectorAll(".qa-filter-btn");
-      const qaResultsStats = document.getElementById("qa-results-stats");
       const qaErrorCount = document.getElementById("qa-error-count");
       const qaWarningCount = document.getElementById("qa-warning-count");
       const qaTotalCount = document.getElementById("qa-total-count");
@@ -5798,11 +5850,14 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       // QA Settings elements - Check Rules for each category
       const qaCheckTypographyMatch = document.getElementById("qa-check-typography-match");
       const qaCheckTextStyle = document.getElementById("qa-check-text-style");
+      const qaCheckFontFamily = document.getElementById("qa-check-font-family");
       const qaCheckFontSize = document.getElementById("qa-check-font-size");
       const qaCheckLineHeight = document.getElementById("qa-check-line-height");
       const qaCheckContrast = document.getElementById("qa-check-contrast");
       const qaCheckTextSize = document.getElementById("qa-check-text-size");
       const qaCheckColor = document.getElementById("qa-check-color");
+      const qaCheckBorderRadius = document.getElementById("qa-check-border-radius");
+      const qaBorderRadiusIgnore = document.getElementById("qa-border-radius-ignore");
       const qaFontScale = document.getElementById("qa-font-scale");
       const qaFontThreshold = document.getElementById("qa-font-threshold");
       const qaLineheightScale = document.getElementById("qa-lineheight-scale");
@@ -6278,11 +6333,13 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       const categoryInfo = {
         "typography-match": { icon: "📝", label: "Typography Style Match" },
         "text-style": { icon: "🎨", label: "Text Style (Variable)" },
+        "font-family": { icon: "🔤", label: "Font Family" },
         "font-size": { icon: "✍️", label: "Font Size" },
         "line-height": { icon: "📏", label: "Line Height" },
         contrast: { icon: "🌈", label: "Contrast (ADA AA)" },
         "text-size": { icon: "📱", label: "Text Size (ADA)" },
         color: { icon: "🎨", label: "Color" },
+        "border-radius": { icon: "⬜", label: "Border Radius (Email)" },
       };
 
       // QA Sub-tab switching
@@ -6323,11 +6380,17 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
           // Issue category checks
           checkTypographyMatch: qaCheckTypographyMatch.checked,
           checkTextStyle: qaCheckTextStyle.checked,
+          checkFontFamily: qaCheckFontFamily.checked,
           checkFontSize: qaCheckFontSize.checked,
           checkLineHeight: qaCheckLineHeight.checked,
           checkContrast: qaCheckContrast.checked,
           checkTextSize: qaCheckTextSize.checked,
           checkColor: qaCheckColor.checked,
+          checkBorderRadius: qaCheckBorderRadius.checked,
+          borderRadiusIgnoreNames: qaBorderRadiusIgnore.value
+            .split("\n")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0),
           // Legacy checks
           checkTypography: true,
           checkColors: true,
@@ -6350,6 +6413,8 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
             .split("\n")
             .map((s) => s.trim().toLowerCase())
             .filter((s) => s.length > 0),
+          // Scan scope
+          scanScope: document.querySelector('input[name="qa-scope"]:checked').value,
         };
       }
 
@@ -6403,7 +6468,9 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
             <p>Run a QA scan to check your design</p>
           </div>
         `;
-          qaResultsStats.style.display = "none";
+          qaErrorCount.textContent = "";
+          qaWarningCount.textContent = "";
+          qaTotalCount.textContent = "";
           qaExportActions.style.display = "none";
           return;
         }
@@ -6412,17 +6479,40 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         const enabledCategories = {
           'typography-match': qaCheckTypographyMatch.checked,
           'text-style': qaCheckTextStyle.checked,
+          'font-family': qaCheckFontFamily.checked,
           'font-size': qaCheckFontSize.checked,
           'line-height': qaCheckLineHeight.checked,
           'contrast': qaCheckContrast.checked,
           'text-size': qaCheckTextSize.checked,
           'color': qaCheckColor.checked,
+          'border-radius': qaCheckBorderRadius.checked,
         };
 
         // Build groups only for enabled categories
         const allCategories = Object.keys(categoryInfo).filter(
           (category) => enabledCategories[category] !== false
         );
+
+        // Count total errors/warnings from original data (before filtering)
+        let totalErrors = 0;
+        let totalWarnings = 0;
+        allCategories.forEach((category) => {
+          const existingGroup = qaScanResult.issueGroups.find(
+            (g) => g.category === category
+          );
+          if (existingGroup) {
+            existingGroup.issues.forEach((issue) => {
+              if (issue.severity === "error") totalErrors++;
+              else totalWarnings++;
+            });
+          }
+        });
+
+        // Update stats with original counts (not affected by filter)
+        qaErrorCount.textContent = totalErrors;
+        qaWarningCount.textContent = totalWarnings;
+        qaTotalCount.textContent = totalErrors + totalWarnings;
+
         let allGroups = allCategories.map((category) => {
           const existingGroup = qaScanResult.issueGroups.find(
             (g) => g.category === category
@@ -6448,26 +6538,15 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
 
           return { category, issues };
         });
-
-        // Update stats
-        let totalErrors = 0;
-        let totalWarnings = 0;
-        allGroups.forEach((group) => {
-          group.issues.forEach((issue) => {
-            if (issue.severity === "error") totalErrors++;
-            else totalWarnings++;
-          });
-        });
-
-        qaErrorCount.textContent = `${totalErrors} Errors`;
-        qaWarningCount.textContent = `${totalWarnings} Warnings`;
-        qaTotalCount.textContent = `${totalErrors + totalWarnings} Total`;
-        qaResultsStats.style.display = "flex";
         qaExportActions.style.display = "flex";
         qaIssuesBadge.textContent = totalErrors + totalWarnings;
 
-        // Render all groups (including empty ones)
-        qaIssueGroups.innerHTML = allGroups
+        // Render groups - hide empty groups when filtering by error/warning
+        const groupsToRender = qaCurrentFilter === "all"
+          ? allGroups
+          : allGroups.filter(group => group.issues.length > 0);
+
+        qaIssueGroups.innerHTML = groupsToRender
           .map((group) => {
             const info = categoryInfo[group.category] || {
               icon: "📋",
@@ -6493,7 +6572,7 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
               </div>
             </div>
             <div class="qa-issue-group-content">
-              ${group.issues
+              ${group.issues.length === 0 ? '<div class="qa-no-issues">No issues found</div>' : group.issues
                 .map(
                   (issue, idx) => `
                 <div class="qa-issue-item ${issue.severity}" data-issue-id="${
@@ -6734,6 +6813,15 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
 
         qaIssueGroups.querySelectorAll(".select-node").forEach((btn) => {
           btn.addEventListener("click", () => {
+            // Remove active class from all items
+            qaIssueGroups.querySelectorAll(".qa-issue-item.active").forEach((item) => {
+              item.classList.remove("active");
+            });
+            // Add active class to current item
+            const issueItem = btn.closest(".qa-issue-item");
+            if (issueItem) {
+              issueItem.classList.add("active");
+            }
             parent.postMessage(
               {
                 pluginMessage: {
@@ -7215,11 +7303,16 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         // Reset all category checks to true
         qaCheckTypographyMatch.checked = true;
         qaCheckTextStyle.checked = true;
+        qaCheckFontFamily.checked = true;
         qaCheckFontSize.checked = true;
         qaCheckLineHeight.checked = true;
         qaCheckContrast.checked = true;
         qaCheckTextSize.checked = true;
         qaCheckColor.checked = true;
+        qaCheckBorderRadius.checked = true;
+        qaBorderRadiusIgnore.value = "Button\natom/Buttons";
+        // Reset scan scope to selection
+        document.querySelector('input[name="qa-scope"][value="selection"]').checked = true;
         renderColorPaletteGrid();
       });
 
@@ -7415,11 +7508,19 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
               // Restore category check rules
               qaCheckTypographyMatch.checked = msg.config.checkTypographyMatch !== false;
               qaCheckTextStyle.checked = msg.config.checkTextStyle !== false;
+              qaCheckFontFamily.checked = msg.config.checkFontFamily !== false;
               qaCheckFontSize.checked = msg.config.checkFontSize !== false;
               qaCheckLineHeight.checked = msg.config.checkLineHeight !== false;
               qaCheckContrast.checked = msg.config.checkContrast !== false;
               qaCheckTextSize.checked = msg.config.checkTextSize !== false;
               qaCheckColor.checked = msg.config.checkColor !== false;
+              qaCheckBorderRadius.checked = msg.config.checkBorderRadius !== false;
+              // Restore border radius ignore names
+              if (msg.config.borderRadiusIgnoreNames && msg.config.borderRadiusIgnoreNames.length > 0) {
+                qaBorderRadiusIgnore.value = msg.config.borderRadiusIgnoreNames.join("\n");
+              } else {
+                qaBorderRadiusIgnore.value = "Button\natom/Buttons";
+              }
               // Restore typography styles if available
               if (msg.config.typographyStyles && msg.config.typographyStyles.length > 0) {
                 typographyStyles = msg.config.typographyStyles;
@@ -7448,6 +7549,11 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
               } else {
                 qaSkipLayerNames.value = "vector";
               }
+              // Restore scan scope
+              if (msg.config.scanScope) {
+                const scopeRadio = document.querySelector(`input[name="qa-scope"][value="${msg.config.scanScope}"]`);
+                if (scopeRadio) scopeRadio.checked = true;
+              }
               renderColorPaletteGrid();
             }
             break;
@@ -7457,11 +7563,7 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
             if (msg.result) {
               qaScanResult = msg.result;
               renderQAIssues();
-              qaResultsStats.style.display = "block";
               qaExportActions.style.display = "block";
-              qaErrorCount.textContent = msg.result.totalErrors || 0;
-              qaWarningCount.textContent = msg.result.totalWarnings || 0;
-              qaTotalCount.textContent = msg.result.issues?.length || 0;
             }
             break;
 

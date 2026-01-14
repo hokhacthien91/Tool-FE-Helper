@@ -753,11 +753,15 @@
           ⚙️ Settings
         </button>
         <button class="report-tab active" data-tab="issues">
-          📋 Issues
+          📋 Design Review
           <span class="tab-badge" id="issues-count">0</span>
         </button>
+        <button class="report-tab" data-tab="animations">
+          🎬 Animations
+          <span class="tab-badge" id="animations-count">0</span>
+        </button>
         <button class="report-tab" data-tab="tokens">
-          🎨 Design Tokens
+          🎨 Tokens
           <span class="tab-badge" id="tokens-count">0</span>
         </button>
       </div>
@@ -828,6 +832,88 @@
         <div class="empty-state">
           <div class="icon">🎨</div>
           <p>No tokens report yet — press Extract Tokens to start</p>
+        </div>
+      </div>
+
+      <!-- Animations Report -->
+      <div id="results-animations" class="report-content">
+        <!-- Animation Controls -->
+        <div class="animation-controls" style="padding: 12px 16px; background: #f5f5f7; border-radius: 8px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+            <span style="font-weight: 500; color: #1d1d1f; font-size: 13px;">Scope:</span>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="radio" name="animation-scope" value="selection" checked style="accent-color: #667eea;" />
+              <span style="font-size: 13px; color: #1d1d1f;">Selected Frame</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="radio" name="animation-scope" value="page" style="accent-color: #667eea;" />
+              <span style="font-size: 13px; color: #1d1d1f;">Entire Page</span>
+            </label>
+          </div>
+          <button id="btn-scan-animations" style="
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            🔍 Scan Interactions
+          </button>
+        </div>
+
+        <!-- Animation Summary (hidden initially) -->
+        <div id="animation-summary" style="display: none; padding: 12px 16px; background: linear-gradient(135deg, #e8f5e9 0%, #f3e5f5 100%); border-radius: 8px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="font-size: 18px;">🎯</span>
+            <span id="animation-total" style="font-weight: 600; color: #1d1d1f; font-size: 14px;">0 nodes with interactions</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+            <span class="animation-stat" data-type="click" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>👆</span> Click: <strong id="stat-click">0</strong>
+            </span>
+            <span class="animation-stat" data-type="hover" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>🖱️</span> Hover: <strong id="stat-hover">0</strong>
+            </span>
+            <span class="animation-stat" data-type="drag" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>✋</span> Drag: <strong id="stat-drag">0</strong>
+            </span>
+            <span class="animation-stat" data-type="scroll" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>📜</span> Scroll: <strong id="stat-scroll">0</strong>
+            </span>
+            <span class="animation-stat" data-type="auto" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>⏱️</span> Auto: <strong id="stat-auto">0</strong>
+            </span>
+            <span class="animation-stat" data-type="key" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
+              <span>⌨️</span> Key: <strong id="stat-key">0</strong>
+            </span>
+          </div>
+        </div>
+
+        <!-- Animation Filter -->
+        <div id="animation-filter" style="display: none; margin-bottom: 12px;">
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <button class="animation-filter-btn active" data-filter="all" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #667eea; color: white; border-radius: 4px; font-size: 12px; cursor: pointer;">All</button>
+            <button class="animation-filter-btn" data-filter="click" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">👆 Click</button>
+            <button class="animation-filter-btn" data-filter="hover" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">🖱️ Hover</button>
+            <button class="animation-filter-btn" data-filter="drag" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">✋ Drag</button>
+            <button class="animation-filter-btn" data-filter="scroll" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">📜 Scroll</button>
+            <button class="animation-filter-btn" data-filter="auto" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">⏱️ Auto</button>
+            <button class="animation-filter-btn" data-filter="key" style="padding: 6px 12px; border: 1px solid #d2d2d7; background: #fff; color: #1d1d1f; border-radius: 4px; font-size: 12px; cursor: pointer;">⌨️ Key</button>
+          </div>
+        </div>
+
+        <!-- Animation Results List -->
+        <div id="animation-results" class="animation-results">
+          <div class="empty-state">
+            <div class="icon">🎬</div>
+            <p>No animations scanned yet — select a frame and click "Scan Interactions"</p>
+          </div>
         </div>
       </div>
 
@@ -1696,6 +1782,311 @@
         document.addEventListener('DOMContentLoaded', initIssueSelectActive);
       } else {
         initIssueSelectActive();
+      }
+    })();
+
+    // =============================================
+    // ANIMATION TAB LOGIC
+    // =============================================
+    (function() {
+      let animationData = null;
+      let currentFilter = 'all';
+      let selectedNodeId = null;
+
+      function initAnimationTab() {
+        const btnScan = document.getElementById('btn-scan-animations');
+        const resultsContainer = document.getElementById('animation-results');
+        const summaryPanel = document.getElementById('animation-summary');
+        const filterPanel = document.getElementById('animation-filter');
+        const animationsTab = document.querySelector('[data-tab="animations"]');
+
+        // Handle tab switching for animations tab
+        document.querySelectorAll('.report-tab').forEach(tab => {
+          tab.addEventListener('click', function() {
+            const tabName = this.getAttribute('data-tab');
+
+            // Remove active from all tabs
+            document.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            // Hide all content panels
+            document.querySelectorAll('.report-content').forEach(c => c.classList.remove('active'));
+
+            // Show the corresponding content
+            if (tabName === 'settings') {
+              document.getElementById('results-settings').classList.add('active');
+            } else if (tabName === 'issues') {
+              document.getElementById('results-issues').classList.add('active');
+            } else if (tabName === 'animations') {
+              document.getElementById('results-animations').classList.add('active');
+            } else if (tabName === 'tokens') {
+              document.getElementById('results-tokens').classList.add('active');
+            }
+          });
+        });
+
+        // Scan button click
+        if (btnScan) {
+          btnScan.addEventListener('click', function() {
+            const scope = document.querySelector('input[name="animation-scope"]:checked').value;
+            btnScan.disabled = true;
+            btnScan.innerHTML = '⏳ Scanning...';
+
+            parent.postMessage({
+              pluginMessage: {
+                type: 'scan-animations',
+                scope: scope
+              }
+            }, '*');
+          });
+        }
+
+        // Filter button clicks
+        document.querySelectorAll('.animation-filter-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            document.querySelectorAll('.animation-filter-btn').forEach(b => {
+              b.classList.remove('active');
+              b.style.background = '#fff';
+              b.style.color = '#1d1d1f';
+            });
+            this.classList.add('active');
+            this.style.background = '#667eea';
+            this.style.color = 'white';
+
+            currentFilter = this.getAttribute('data-filter');
+            renderResults();
+          });
+        });
+
+        // Stat clicks for filtering
+        document.querySelectorAll('.animation-stat').forEach(stat => {
+          stat.addEventListener('click', function() {
+            const type = this.getAttribute('data-type');
+            currentFilter = type;
+
+            // Update filter buttons
+            document.querySelectorAll('.animation-filter-btn').forEach(b => {
+              b.classList.remove('active');
+              b.style.background = '#fff';
+              b.style.color = '#1d1d1f';
+              if (b.getAttribute('data-filter') === type) {
+                b.classList.add('active');
+                b.style.background = '#667eea';
+                b.style.color = 'white';
+              }
+            });
+
+            renderResults();
+          });
+        });
+      }
+
+      function renderResults() {
+        const resultsContainer = document.getElementById('animation-results');
+        if (!animationData || !animationData.results || animationData.results.length === 0) {
+          resultsContainer.innerHTML = `
+            <div class="empty-state">
+              <div class="icon">🎬</div>
+              <p>No interactions found in the selected scope</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Filter results
+        let filteredResults = animationData.results;
+        if (currentFilter !== 'all') {
+          filteredResults = animationData.results.filter(r => r.triggerCategory === currentFilter);
+        }
+
+        if (filteredResults.length === 0) {
+          resultsContainer.innerHTML = `
+            <div class="empty-state">
+              <div class="icon">🔍</div>
+              <p>No ${currentFilter} interactions found</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Render results
+        let html = '<div class="animation-list">';
+        filteredResults.forEach((item, index) => {
+          const isSelected = selectedNodeId === item.nodeId;
+          const animationInfo = item.animationType ?
+            `<span style="color: #667eea;">${item.animationType}</span>` +
+            (item.duration ? ` (${Math.round(item.duration * 1000)}ms` + (item.easing ? `, ${item.easing}` : '') + ')' : '')
+            : '';
+          const delayInfo = item.delay ? `<span style="color: #ff9800;">Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
+
+          html += `
+            <div class="animation-item ${isSelected ? 'selected' : ''}" data-node-id="${item.nodeId}" data-index="${index}" style="
+              padding: 12px 16px;
+              background: ${isSelected ? '#e8f5e9' : '#fff'};
+              border: 1px solid ${isSelected ? '#4caf50' : '#e5e5e7'};
+              border-radius: 8px;
+              margin-bottom: 8px;
+              cursor: pointer;
+              transition: all 0.2s;
+            ">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 18px;">${item.triggerIcon}</span>
+                  <span style="font-weight: 600; color: #1d1d1f;">${item.triggerLabel}</span>
+                  <span style="color: #86868b;">→</span>
+                  <span style="color: #667eea; font-weight: 500;">${item.actionLabel}</span>
+                </div>
+                <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-id="${item.nodeId}" style="
+                  padding: 4px 12px;
+                  background: ${isSelected ? '#4caf50' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                  color: white;
+                  border: none;
+                  border-radius: 4px;
+                  font-size: 12px;
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                ">
+                  ${isSelected ? '✓ Selected' : '📍 Select'}
+                </button>
+              </div>
+              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 4px;">
+                <strong>Node:</strong> ${escapeHtml(item.nodeName)}
+                <span style="color: #86868b; font-size: 11px;">(${item.nodeType})</span>
+              </div>
+              <div style="font-size: 11px; color: #86868b; margin-bottom: 4px; word-break: break-all;">
+                ${escapeHtml(item.nodePath)}
+              </div>
+              ${item.targetName ? `
+                <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 4px;">
+                  <strong>Target:</strong> ${escapeHtml(item.targetName)}
+                </div>
+              ` : ''}
+              ${animationInfo || delayInfo ? `
+                <div style="font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
+                  ${animationInfo}
+                  ${delayInfo}
+                </div>
+              ` : ''}
+            </div>
+          `;
+        });
+        html += '</div>';
+        resultsContainer.innerHTML = html;
+
+        // Add click handlers for select buttons
+        document.querySelectorAll('.btn-select-animation').forEach(btn => {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const nodeId = this.getAttribute('data-node-id');
+            selectAnimationNode(nodeId);
+          });
+        });
+
+        // Add click handlers for items
+        document.querySelectorAll('.animation-item').forEach(item => {
+          item.addEventListener('click', function() {
+            const nodeId = this.getAttribute('data-node-id');
+            selectAnimationNode(nodeId);
+          });
+        });
+      }
+
+      function selectAnimationNode(nodeId) {
+        selectedNodeId = nodeId;
+        parent.postMessage({
+          pluginMessage: {
+            type: 'select-animation-node',
+            nodeId: nodeId
+          }
+        }, '*');
+        renderResults();
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function updateStats(stats) {
+        document.getElementById('stat-click').textContent = stats.click || 0;
+        document.getElementById('stat-hover').textContent = stats.hover || 0;
+        document.getElementById('stat-drag').textContent = stats.drag || 0;
+        document.getElementById('stat-scroll').textContent = stats.scroll || 0;
+        document.getElementById('stat-auto').textContent = stats.auto || 0;
+        document.getElementById('stat-key').textContent = stats.key || 0;
+      }
+
+      // Listen for messages from plugin
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.pluginMessage) {
+          const msg = event.data.pluginMessage;
+
+          if (msg.type === 'animation-results') {
+            const btnScan = document.getElementById('btn-scan-animations');
+            const summaryPanel = document.getElementById('animation-summary');
+            const filterPanel = document.getElementById('animation-filter');
+            const countBadge = document.getElementById('animations-count');
+
+            // Reset button
+            if (btnScan) {
+              btnScan.disabled = false;
+              btnScan.innerHTML = '🔍 Scan Interactions';
+            }
+
+            animationData = msg.data;
+            selectedNodeId = null;
+            currentFilter = 'all';
+
+            // Reset filter buttons
+            document.querySelectorAll('.animation-filter-btn').forEach(b => {
+              b.classList.remove('active');
+              b.style.background = '#fff';
+              b.style.color = '#1d1d1f';
+            });
+            const allBtn = document.querySelector('.animation-filter-btn[data-filter="all"]');
+            if (allBtn) {
+              allBtn.classList.add('active');
+              allBtn.style.background = '#667eea';
+              allBtn.style.color = 'white';
+            }
+
+            if (animationData && animationData.total > 0) {
+              // Show summary and filter
+              summaryPanel.style.display = 'block';
+              filterPanel.style.display = 'block';
+
+              // Update total
+              document.getElementById('animation-total').textContent =
+                animationData.total + ' interaction' + (animationData.total > 1 ? 's' : '') + ' found';
+
+              // Update stats
+              updateStats(animationData.stats);
+
+              // Update badge
+              if (countBadge) {
+                countBadge.textContent = animationData.total;
+              }
+            } else {
+              summaryPanel.style.display = 'none';
+              filterPanel.style.display = 'none';
+              if (countBadge) {
+                countBadge.textContent = '0';
+              }
+            }
+
+            renderResults();
+          }
+        }
+      });
+
+      // Initialize when DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAnimationTab);
+      } else {
+        initAnimationTab();
       }
     })();
     </script>

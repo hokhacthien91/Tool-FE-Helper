@@ -1,6 +1,6 @@
 // ============================================================================
 // TYPES & INTERFACES
-// Design Helper Plugin
+// Thien Assist Plugin
 // ============================================================================
 
 /**
@@ -328,11 +328,14 @@ export interface QAConfig {
   // Issue category checks - enable/disable each category
   checkTypographyMatch: boolean;  // Typography Style Match
   checkTextStyle: boolean;        // Text Style (Variable)
+  checkFontFamily: boolean;       // Font Family (check if in allowed list from Typography Settings)
   checkFontSize: boolean;         // Font Size
   checkLineHeight: boolean;       // Line Height
   checkContrast: boolean;         // Contrast (ADA AA)
   checkTextSize: boolean;         // Text Size (ADA)
   checkColor: boolean;            // Color
+  checkBorderRadius: boolean;     // Border Radius (Email - not supported)
+  borderRadiusIgnoreNames: string[]; // Layer names to ignore border radius check
   // Legacy checks (keep for backward compatibility)
   checkTypography: boolean;
   checkColors: boolean;
@@ -344,6 +347,8 @@ export interface QAConfig {
   typographyCheckRules: TypographyCheckRules;
   // Skip layer names - layers matching these names will be skipped during QA scan
   skipLayerNames: string[];
+  // Scan scope preference
+  scanScope: 'page' | 'selection';
 }
 
 /**
@@ -362,11 +367,14 @@ export const DEFAULT_QA_CONFIG: QAConfig = {
   // Issue category checks - all enabled by default
   checkTypographyMatch: true,
   checkTextStyle: true,
+  checkFontFamily: true,
   checkFontSize: true,
   checkLineHeight: true,
   checkContrast: true,
   checkTextSize: true,
   checkColor: true,
+  checkBorderRadius: true,
+  borderRadiusIgnoreNames: ['button', 'atom/buttons'],
   // Legacy checks
   checkTypography: true,
   checkColors: true,
@@ -393,6 +401,7 @@ export const DEFAULT_QA_CONFIG: QAConfig = {
     checkWordSpacing: true,
   },
   skipLayerNames: ['vector'],
+  scanScope: 'selection',
 };
 
 /**
@@ -403,7 +412,7 @@ export type IssueSeverity = 'error' | 'warning';
 /**
  * Issue categories
  */
-export type IssueCategory = 'typography-match' | 'text-style' | 'font-size' | 'line-height' | 'contrast' | 'text-size' | 'color';
+export type IssueCategory = 'typography-match' | 'text-style' | 'font-family' | 'font-size' | 'line-height' | 'contrast' | 'text-size' | 'color' | 'border-radius';
 
 /**
  * QA Issue

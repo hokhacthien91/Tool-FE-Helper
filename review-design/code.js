@@ -6169,9 +6169,237 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "scan-animations": {
+      const scope = msg.scope || "selection";
+      const results = scanAnimations(scope);
+      figma.ui.postMessage({
+        type: "animation-results",
+        data: results
+      });
+      break;
+    }
+    case "select-animation-node": {
+      const nodeId = msg.nodeId;
+      const node = figma.getNodeById(nodeId);
+      if (node) {
+        figma.currentPage.selection = [node];
+        figma.viewport.scrollAndZoomIntoView([node]);
+        figma.notify(`Selected: ${node.name}`);
+      } else {
+        figma.notify("Node not found", { error: true });
+      }
+      break;
+    }
     default:
       break;
   }
 };
+
+// =============================================
+// ANIMATION SCANNER
+// =============================================
+
+// Map trigger types to categories
+function getTriggerCategory(triggerType) {
+  const categoryMap = {
+    'ON_CLICK': 'click',
+    'ON_DRAG': 'drag',
+    'ON_HOVER': 'hover',
+    'MOUSE_ENTER': 'hover',
+    'MOUSE_LEAVE': 'hover',
+    'MOUSE_DOWN': 'click',
+    'MOUSE_UP': 'click',
+    'AFTER_TIMEOUT': 'auto',
+    'ON_KEY_DOWN': 'key',
+    'ON_KEY_UP': 'key',
+    'WHILE_HOVERING': 'hover',
+    'WHILE_PRESSING': 'click',
+    'ON_SCROLL': 'scroll'
+  };
+  return categoryMap[triggerType] || 'other';
+}
+
+// Get trigger display info
+function getTriggerDisplay(triggerType) {
+  const displayMap = {
+    'ON_CLICK': { icon: '👆', label: 'Click' },
+    'ON_DRAG': { icon: '✋', label: 'Drag' },
+    'ON_HOVER': { icon: '🖱️', label: 'Hover' },
+    'MOUSE_ENTER': { icon: '🖱️', label: 'Mouse Enter' },
+    'MOUSE_LEAVE': { icon: '🖱️', label: 'Mouse Leave' },
+    'MOUSE_DOWN': { icon: '👆', label: 'Mouse Down' },
+    'MOUSE_UP': { icon: '👆', label: 'Mouse Up' },
+    'AFTER_TIMEOUT': { icon: '⏱️', label: 'After Delay' },
+    'ON_KEY_DOWN': { icon: '⌨️', label: 'Key Down' },
+    'ON_KEY_UP': { icon: '⌨️', label: 'Key Up' },
+    'WHILE_HOVERING': { icon: '🖱️', label: 'While Hovering' },
+    'WHILE_PRESSING': { icon: '👆', label: 'While Pressing' },
+    'ON_SCROLL': { icon: '📜', label: 'On Scroll' }
+  };
+  return displayMap[triggerType] || { icon: '❓', label: triggerType };
+}
+
+// Get action display info
+function getActionDisplay(actionType) {
+  const displayMap = {
+    'NAVIGATE': 'Navigate to',
+    'SMART_ANIMATE': 'Smart Animate to',
+    'OVERLAY': 'Open Overlay',
+    'SWAP': 'Swap with',
+    'SCROLL_TO': 'Scroll to',
+    'CLOSE': 'Close Overlay',
+    'OPEN_URL': 'Open URL',
+    'BACK': 'Go Back',
+    'SET_VARIABLE': 'Set Variable',
+    'NODE': 'Change to'
+  };
+  return displayMap[actionType] || actionType;
+}
+
+// Get easing display
+function getEasingDisplay(easing) {
+  if (!easing) return '';
+  const easingMap = {
+    'LINEAR': 'Linear',
+    'EASE_IN': 'Ease In',
+    'EASE_OUT': 'Ease Out',
+    'EASE_IN_AND_OUT': 'Ease In Out',
+    'EASE_IN_BACK': 'Ease In Back',
+    'EASE_OUT_BACK': 'Ease Out Back',
+    'EASE_IN_AND_OUT_BACK': 'Ease In Out Back',
+    'CUSTOM_SPRING': 'Spring',
+    'CUSTOM_BEZIER': 'Custom Bezier',
+    'GENTLE': 'Gentle',
+    'QUICK': 'Quick',
+    'BOUNCY': 'Bouncy',
+    'SLOW': 'Slow'
+  };
+  return easingMap[easing.type] || easing.type || '';
+}
+
+// Get node path
+function getNodePath(node) {
+  const path = [];
+  let current = node;
+  while (current && current.type !== 'PAGE' && current.type !== 'DOCUMENT') {
+    path.unshift(current.name);
+    current = current.parent;
+  }
+  return path.join(' > ');
+}
+
+// Scan for animations/interactions
+function scanAnimations(scope) {
+  const results = [];
+  const stats = {
+    click: 0,
+    hover: 0,
+    drag: 0,
+    scroll: 0,
+    auto: 0,
+    key: 0,
+    other: 0
+  };
+
+  function processNode(node) {
+    // Check if node has reactions property
+    if ('reactions' in node && Array.isArray(node.reactions) && node.reactions.length > 0) {
+      for (const reaction of node.reactions) {
+        if (!reaction.trigger || !reaction.action) continue;
+
+        const triggerType = reaction.trigger.type;
+        const actionType = reaction.action.type;
+        const category = getTriggerCategory(triggerType);
+        const triggerDisplay = getTriggerDisplay(triggerType);
+        const actionDisplay = getActionDisplay(actionType);
+
+        // Get target info
+        let targetName = '';
+        let targetId = '';
+        if (reaction.action.destinationId) {
+          const targetNode = figma.getNodeById(reaction.action.destinationId);
+          if (targetNode) {
+            targetName = targetNode.name;
+            targetId = targetNode.id;
+          }
+        } else if (reaction.action.navigation === 'NAVIGATE' && reaction.action.destination) {
+          targetName = reaction.action.destination.name || 'Unknown';
+        }
+
+        // Get animation info
+        let animationType = '';
+        let duration = 0;
+        let easing = '';
+
+        if (reaction.action.transition) {
+          animationType = reaction.action.transition.type || '';
+          duration = reaction.action.transition.duration || 0;
+          easing = getEasingDisplay(reaction.action.transition.easing);
+        }
+
+        // Get delay for AFTER_TIMEOUT trigger
+        let delay = 0;
+        if (reaction.trigger.type === 'AFTER_TIMEOUT' && reaction.trigger.timeout) {
+          delay = reaction.trigger.timeout;
+        }
+
+        const result = {
+          nodeId: node.id,
+          nodeName: node.name,
+          nodePath: getNodePath(node),
+          nodeType: node.type,
+          triggerType: triggerType,
+          triggerCategory: category,
+          triggerIcon: triggerDisplay.icon,
+          triggerLabel: triggerDisplay.label,
+          actionType: actionType,
+          actionLabel: actionDisplay,
+          targetName: targetName,
+          targetId: targetId,
+          animationType: animationType,
+          duration: duration,
+          easing: easing,
+          delay: delay
+        };
+
+        results.push(result);
+
+        // Update stats
+        if (stats.hasOwnProperty(category)) {
+          stats[category]++;
+        } else {
+          stats.other++;
+        }
+      }
+    }
+
+    // Traverse children
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        processNode(child);
+      }
+    }
+  }
+
+  // Determine which nodes to scan
+  if (scope === 'selection') {
+    if (figma.currentPage.selection.length === 0) {
+      figma.notify("Please select a frame to scan", { error: true });
+      return { results: [], stats, total: 0 };
+    }
+    for (const node of figma.currentPage.selection) {
+      processNode(node);
+    }
+  } else {
+    // Scan entire page
+    processNode(figma.currentPage);
+  }
+
+  return {
+    results: results,
+    stats: stats,
+    total: results.length
+  };
+}
 
 console.log("code.js loaded");

@@ -1,4 +1,4 @@
-# Design Helper - Figma Plugin
+# Thien Assist - Figma Plugin
 
 Plugin Figma đa năng hỗ trợ FE developer: chuyển đổi desktop frame sang mobile breakpoints, email development tools, QA checker, export GIF và JSON inspector.
 
@@ -67,7 +67,7 @@ npm run typecheck
 ### Basic Usage
 
 1. Chọn một frame desktop trên canvas
-2. Mở plugin (Plugins → Development → Design Helper)
+2. Mở plugin (Plugins → Development → Thien Assist)
 3. Chọn target width(s) - có thể chọn nhiều
 4. Điều chỉnh Container Padding nếu cần
 5. Click "Generate" hoặc "Generate X Breakpoints"

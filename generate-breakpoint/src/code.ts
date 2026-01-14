@@ -1,6 +1,6 @@
 // ============================================================================
 // MAIN PLUGIN CODE
-// Design Helper - Multi-purpose Figma plugin for FE developers
+// Thien Assist - Multi-purpose Figma plugin for FE developers
 // ============================================================================
 
 import {
@@ -34,7 +34,7 @@ import {
 figma.showUI(__html__, {
   width: 550,
   height: 600,
-  title: 'Design Helper',
+  title: 'Thien Assist',
   themeColors: true,
 });
 
@@ -311,16 +311,16 @@ function buildNodeJson(node: SceneNode, depth: number = 0): any {
     }
   }
 
-  // Add children (with depth limit)
+  // Add children (with depth limit), skip hidden nodes
   if (depth < MAX_DEPTH && 'children' in node) {
-    const children = (node as FrameNode).children;
+    const children = (node as FrameNode).children.filter(child => child.visible !== false);
     if (children.length > 0) {
       json.children = children.map(child => buildNodeJson(child, depth + 1));
     }
   } else if (depth >= MAX_DEPTH && 'children' in node) {
-    const childCount = (node as FrameNode).children.length;
-    if (childCount > 0) {
-      json.childrenCount = childCount;
+    const visibleChildren = (node as FrameNode).children.filter(child => child.visible !== false);
+    if (visibleChildren.length > 0) {
+      json.childrenCount = visibleChildren.length;
       json._note = 'Children truncated (max depth reached)';
     }
   }
@@ -4881,13 +4881,18 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
       return;
     }
 
-    // Collect all nodes to process
+    // Collect all nodes to process, skipping nodes whose names match skipLayerNames (and their children)
     const allNodes: SceneNode[] = [];
-    const collectNodes = (nodes: readonly SceneNode[]) => {
+    const skipLayerNamesSet = new Set(config.skipLayerNames?.map(s => s.toLowerCase()) || []);
+    const collectNodes = (nodes: readonly SceneNode[], parentSkipped: boolean = false) => {
       for (const node of nodes) {
-        allNodes.push(node);
+        // Check if this node should be skipped (exact match, case-insensitive)
+        const shouldSkip = parentSkipped || skipLayerNamesSet.has(node.name.toLowerCase());
+        if (!shouldSkip) {
+          allNodes.push(node);
+        }
         if (hasChildren(node)) {
-          collectNodes(node.children);
+          collectNodes(node.children, shouldSkip);
         }
       }
     };
@@ -4895,6 +4900,9 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
 
     const totalNodes = allNodes.length;
     let processed = 0;
+
+    // Track nodes to ignore for border radius check (including their children)
+    const borderRadiusIgnoredNodes = new Set<string>();
 
     // Process each node
     for (const node of allNodes) {
@@ -4910,14 +4918,6 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
         });
       }
 
-      // Skip layers whose names match skipLayerNames
-      if (config.skipLayerNames && config.skipLayerNames.length > 0) {
-        const nodeLowerName = node.name.toLowerCase();
-        if (config.skipLayerNames.some(skipName => nodeLowerName.includes(skipName))) {
-          continue;
-        }
-      }
-
       // Text node checks
       if (isTextNode(node)) {
         // Typography checks (font-size, line-height, text-size)
@@ -4928,6 +4928,11 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
         // Text Style check
         if (config.checkTextStyle !== false) {
           checkTextStyle(node, issues);
+        }
+
+        // Font Family check (check if font is in allowed list from Typography Settings)
+        if (config.checkFontFamily !== false) {
+          checkFontFamily(node, config, issues);
         }
 
         // Typography Style Match check
@@ -4945,6 +4950,11 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
       if (config.checkColor !== false && config.colorPalette.length > 0) {
         checkColors(node, config, issues);
       }
+
+      // Border Radius check (for email compatibility)
+      if (config.checkBorderRadius !== false) {
+        checkBorderRadius(node, config, issues, borderRadiusIgnoredNodes);
+      }
     }
 
     // Filter issues based on enabled categories
@@ -4954,6 +4964,8 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
           return config.checkTypographyMatch !== false;
         case 'text-style':
           return config.checkTextStyle !== false;
+        case 'font-family':
+          return config.checkFontFamily !== false;
         case 'font-size':
           return config.checkFontSize !== false;
         case 'line-height':
@@ -4964,6 +4976,8 @@ async function handleQAScan(config: QAConfig, scope: 'page' | 'selection'): Prom
           return config.checkTextSize !== false;
         case 'color':
           return config.checkColor !== false;
+        case 'border-radius':
+          return config.checkBorderRadius !== false;
         default:
           return true;
       }
@@ -5076,6 +5090,77 @@ function checkTypography(node: TextNode, config: QAConfig, issues: QAIssue[]): v
           });
         }
       }
+    }
+  }
+}
+
+/**
+ * Check if font family is in the allowed list from Typography Settings
+ */
+function checkFontFamily(node: TextNode, config: QAConfig, issues: QAIssue[]): void {
+  // Whitelist fonts - always allowed (system/fallback fonts)
+  const whitelistFonts = new Set(['helvetica', 'arial']);
+
+  // Get allowed font families from typography styles
+  const allowedFontFamilies = new Set(
+    config.typographyStyles.map(style => style.fontFamily.toLowerCase())
+  );
+
+  // If no typography styles defined, skip check
+  if (allowedFontFamilies.size === 0) {
+    return;
+  }
+
+  // Check function that considers both whitelist and allowed list
+  const isFontAllowed = (fontKey: string): boolean => {
+    return whitelistFonts.has(fontKey) || allowedFontFamilies.has(fontKey);
+  };
+
+  const fontFamily = node.fontName;
+  if (fontFamily === figma.mixed) {
+    // Handle mixed fonts - check each segment
+    const len = node.characters.length;
+    const checkedFonts = new Set<string>();
+
+    for (let i = 0; i < len; i++) {
+      const font = node.getRangeFontName(i, i + 1) as FontName;
+      const fontKey = font.family.toLowerCase();
+
+      // Skip if already checked this font
+      if (checkedFonts.has(fontKey)) continue;
+      checkedFonts.add(fontKey);
+
+      if (!isFontAllowed(fontKey)) {
+        issues.push({
+          id: generateIssueId(),
+          nodeId: node.id,
+          nodeName: node.name,
+          category: 'font-family',
+          severity: 'error',
+          message: `Font family "${font.family}" not in allowed list`,
+          details: `Allowed: ${Array.from(allowedFontFamilies).join(', ')}`,
+          currentValue: font.family,
+          suggestedValue: config.typographyStyles[0]?.fontFamily || '',
+          fixable: false,
+        });
+      }
+    }
+  } else {
+    // Single font
+    const fontKey = fontFamily.family.toLowerCase();
+    if (!isFontAllowed(fontKey)) {
+      issues.push({
+        id: generateIssueId(),
+        nodeId: node.id,
+        nodeName: node.name,
+        category: 'font-family',
+        severity: 'error',
+        message: `Font family "${fontFamily.family}" not in allowed list`,
+        details: `Allowed: ${Array.from(allowedFontFamilies).join(', ')}`,
+        currentValue: fontFamily.family,
+        suggestedValue: config.typographyStyles[0]?.fontFamily || '',
+        fixable: false,
+      });
     }
   }
 }
@@ -5314,17 +5399,109 @@ function checkColors(node: SceneNode, config: QAConfig, issues: QAIssue[]): void
 }
 
 /**
+ * Check border radius (not supported in email)
+ */
+function checkBorderRadius(
+  node: SceneNode,
+  config: QAConfig,
+  issues: QAIssue[],
+  ignoredNodes: Set<string>
+): void {
+  // Check if this node or any parent is in ignored list
+  if (ignoredNodes.has(node.id)) {
+    return;
+  }
+
+  // Check if node name matches ignore list (case-insensitive)
+  const ignoreNames = config.borderRadiusIgnoreNames || [];
+  const nodeLowerName = node.name.toLowerCase();
+  const isIgnored = ignoreNames.some(name => nodeLowerName === name.toLowerCase());
+
+  if (isIgnored) {
+    // Add this node and all its children to ignored set
+    ignoredNodes.add(node.id);
+    if ('children' in node) {
+      const addChildrenToIgnored = (parentNode: SceneNode) => {
+        if ('children' in parentNode) {
+          for (const child of (parentNode as FrameNode).children) {
+            ignoredNodes.add(child.id);
+            addChildrenToIgnored(child);
+          }
+        }
+      };
+      addChildrenToIgnored(node);
+    }
+    return;
+  }
+
+  // Check if parent is ignored
+  let parent = node.parent;
+  while (parent && parent.type !== 'PAGE' && parent.type !== 'DOCUMENT') {
+    if (ignoredNodes.has(parent.id)) {
+      ignoredNodes.add(node.id);
+      return;
+    }
+    parent = parent.parent;
+  }
+
+  // Check if node has cornerRadius property
+  if (!('cornerRadius' in node)) {
+    return;
+  }
+
+  const frameNode = node as FrameNode | RectangleNode | ComponentNode | InstanceNode;
+
+  // Check for any border radius
+  let hasBorderRadius = false;
+  let radiusValue: string = '';
+
+  if (typeof frameNode.cornerRadius === 'number' && frameNode.cornerRadius > 0) {
+    hasBorderRadius = true;
+    radiusValue = `${frameNode.cornerRadius}px`;
+  } else if (frameNode.cornerRadius === figma.mixed) {
+    // Check individual corners
+    const corners = [
+      frameNode.topLeftRadius,
+      frameNode.topRightRadius,
+      frameNode.bottomLeftRadius,
+      frameNode.bottomRightRadius,
+    ];
+    const nonZeroCorners = corners.filter(c => c > 0);
+    if (nonZeroCorners.length > 0) {
+      hasBorderRadius = true;
+      radiusValue = `${frameNode.topLeftRadius}/${frameNode.topRightRadius}/${frameNode.bottomRightRadius}/${frameNode.bottomLeftRadius}px`;
+    }
+  }
+
+  if (hasBorderRadius) {
+    issues.push({
+      id: generateIssueId(),
+      nodeId: node.id,
+      nodeName: node.name,
+      category: 'border-radius',
+      severity: 'warning',
+      message: `Border radius ${radiusValue} not supported in email`,
+      details: 'Most email clients do not support border-radius CSS property',
+      currentValue: radiusValue,
+      fixable: false,
+    });
+  }
+}
+
+/**
  * Group issues by category
  */
 function groupIssues(issues: QAIssue[]): IssueGroup[] {
   const categories: { category: IssueCategory; label: string; icon: string }[] = [
     { category: 'typography-match', label: 'Typography Style Match', icon: '📝' },
     { category: 'text-style', label: 'Text Style (Variable)', icon: '🎨' },
+    { category: 'font-family', label: 'Font Family', icon: '🔤' },
     { category: 'font-size', label: 'Font Size', icon: '✍️' },
     { category: 'line-height', label: 'Line Height', icon: '📏' },
     { category: 'contrast', label: 'Contrast (ADA AA)', icon: '🌈' },
     { category: 'text-size', label: 'Text Size (ADA)', icon: '📱' },
     { category: 'color', label: 'Color', icon: '🎨' },
+    { category: 'border-radius', label: 'Border Radius (Email)', icon: '⬜' },
   ];
 
   return categories
