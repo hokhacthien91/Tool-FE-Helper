@@ -1,4 +1,4 @@
-# Design Helper - Figma Plugin
+# Thien Assist - Figma Plugin
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -16,7 +16,7 @@
 
 ## Introduction
 
-**Design Helper** is a multi-purpose Figma Plugin that helps convert desktop designs to mobile breakpoints with advanced features for email development and design QA.
+**Thien Assist** is a multi-purpose Figma Plugin that helps convert desktop designs to mobile breakpoints with advanced features for email development and design QA.
 
 ### Key Features:
 - Automatic layout conversion from Desktop to Mobile
@@ -40,7 +40,7 @@
 ### Step 2: Open Plugin
 
 1. Select the frame to process on canvas
-2. Go to **Menu > Plugins > Development > Design Helper**
+2. Go to **Menu > Plugins > Development > Thien Assist**
 
 *[Screenshot: Open plugin from menu]*
 
@@ -459,7 +459,7 @@ Create GIF animation from component variants or child frames.
 [Select Desktop Frame]
          |
          v
-[Open Plugin > Breakpoint Generator Tab (Design Helper)]
+[Open Plugin > Breakpoint Generator Tab (Thien Assist)]
          |
          v
 [Select Target Breakpoints: 414, 768, 1024]

@@ -81,3 +81,52 @@
     color: $color-surface;
     border-color: $color-primary;
 }
+
+.filter-btn .filter-icon {
+    font-size: 11px;
+}
+
+.filter-btn strong {
+    font-weight: 600;
+    margin-left: 2px;
+}
+
+// Animation Summary Panel
+.animation-summary {
+    display: none;
+    padding: 12px 16px;
+    background: $color-primary-bg;
+    border: 1px solid $color-primary-border;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.animation-summary-header {
+    margin-bottom: 12px;
+}
+
+.animation-summary-total {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: $color-text;
+}
+
+.animation-summary-arrow {
+    color: $color-text-muted;
+    font-weight: 400;
+}
+
+.animation-summary-groups {
+    color: $color-primary;
+    font-weight: 500;
+}
+
+.animation-filter-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}

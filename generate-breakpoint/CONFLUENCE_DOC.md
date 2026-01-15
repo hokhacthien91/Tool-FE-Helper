@@ -1,4 +1,4 @@
-# Design Helper - Figma Plugin
+# Thien Assist - Figma Plugin
 
 ## Muc luc
 1. [Gioi thieu](#gioi-thieu)
@@ -16,7 +16,7 @@
 
 ## Gioi thieu
 
-**Design Helper** la mot Figma Plugin da nang, ho tro chuyen doi design tu desktop sang mobile breakpoints voi nhieu tinh nang nang cao cho email development va design QA.
+**Thien Assist** la mot Figma Plugin da nang, ho tro chuyen doi design tu desktop sang mobile breakpoints voi nhieu tinh nang nang cao cho email development va design QA.
 
 ### Cac tinh nang chinh:
 - Chuyen doi layout tu Desktop sang Mobile tu dong
@@ -40,7 +40,7 @@
 ### Buoc 2: Mo Plugin
 
 1. Chon frame can xu ly tren canvas
-2. Vao **Menu > Plugins > Development > Design Helper**
+2. Vao **Menu > Plugins > Development > Thien Assist**
 
 *[Screenshot: Mo plugin tu menu]*
 
@@ -459,7 +459,7 @@ Tao GIF animation tu component variants hoac child frames.
 [Chon Desktop Frame]
          |
          v
-[Mo Plugin > Tab Breakpoint Generator (Design Helper)]
+[Mo Plugin > Tab Breakpoint Generator (Thien Assist)]
          |
          v
 [Chon Target Breakpoints: 414, 768, 1024]

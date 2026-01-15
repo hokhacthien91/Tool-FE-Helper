@@ -1,4 +1,43 @@
 @use "../variables" as *;
+
+// Primary action button - stands out as main CTA
+.btn-primary {
+  background: linear-gradient(135deg, $color-primary 0%, $color-primary-hover 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba($color-primary, 0.3);
+
+  &:hover {
+    background: linear-gradient(135deg, $color-primary-hover 0%, $color-primary-dark 100%);
+    box-shadow: 0 4px 12px rgba($color-primary, 0.4);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba($color-primary, 0.3);
+  }
+}
+
+// Secondary action button - outlined style
+.btn-secondary {
+  background: transparent;
+  color: $color-primary;
+  border: 1.5px solid $color-primary;
+  font-weight: 500;
+
+  &:hover {
+    background: $color-primary-bg;
+    border-color: $color-primary-hover;
+    color: $color-primary-hover;
+  }
+
+  &:active {
+    background: rgba($color-primary, 0.15);
+  }
+}
+
 .btn-select {
     padding: 6px 12px;
     border: 1px solid $color-border-strong;

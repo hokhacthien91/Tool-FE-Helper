@@ -53,21 +53,21 @@
         </div>
       </div>
       <div class="controls">
-        <button id="btn-scan" class="tooltip">
+        <button id="btn-scan" class="tooltip btn-primary">
           🔍 Run Scan Design
           <span class="tooltiptext left-style"
             >Check design according to the standards: naming, auto-layout,
             spacing, typography, components...</span
           >
         </button>
-        <button id="btn-extract-tokens" class="tooltip">
-          🎨 Extract Design Tokens
+        <button id="btn-extract-tokens" class="tooltip btn-secondary">
+          🎨 Extract Tokens
           <span class="tooltiptext tooltip-right"
             >Extract all design tokens: colors, gradients, fonts, spacing,
             border-radius...</span
           >
         </button>
-        <button id="btn-scan-animations" class="tooltip">
+        <button id="btn-scan-animations" class="tooltip btn-secondary">
           🎬 Scan Interactions
           <span class="tooltiptext tooltip-right"
             >Scan all interactions/animations in the design (click, hover, drag, scroll...)</span
@@ -76,7 +76,7 @@
         <button
           id="btn-cancel-scan"
           class="tooltip"
-          style="display: none; background: #b93129"
+          style="display: none; background: #ef4444"
         >
           ⛔ Cancel Scan
           <span class="tooltiptext tooltip-right"
@@ -123,7 +123,7 @@
               id="scan-progress-bar"
               style="
                 height: 100%;
-                background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                background: #3b82f6;
                 width: 0%;
                 transition: width 0.3s;
               "
@@ -181,7 +181,7 @@
               <button
                 id="btn-save-settings"
                 class="btn-history tooltip"
-                style="background: #28a745; color: #fff"
+                style="background: #3b82f6; color: #fff"
               >
                 💾 Save Settings
                 <span class="tooltiptext left-style"
@@ -191,7 +191,7 @@
               <button
                 id="btn-load-settings"
                 class="btn-history tooltip"
-                style="background: #17a2b8; color: #fff"
+                style="background: #60a5fa; color: #fff"
               >
                 📂 Select Settings
                 <span class="tooltiptext tooltip-right"
@@ -201,7 +201,7 @@
               <button
                 id="btn-export-settings"
                 class="btn-history tooltip"
-                style="background: #6f42c1; color: #fff"
+                style="background: #2563eb; color: #fff"
               >
                 📤 Export Settings
                 <span class="tooltiptext tooltip-right"
@@ -211,7 +211,7 @@
               <button
                 id="btn-import-settings"
                 class="btn-history tooltip"
-                style="background: #fd7e14; color: #fff"
+                style="background: #1d4ed8; color: #fff"
               >
                 📥 Import Settings
                 <span class="tooltiptext tooltip-right"
@@ -234,7 +234,7 @@
               <button
                 id="btn-reset-all"
                 class="btn-history tooltip"
-                style="background: #ff9500; color: #fff"
+                style="background: #64748b; color: #fff"
               >
                 🔄 Reset All
                 <span class="tooltiptext tooltip-right"
@@ -698,7 +698,7 @@
                 <button
                   class="btn-add-typo-style tooltip"
                   id="btn-extract-typo-desktop"
-                  style="background: #28a745"
+                  style="background: #3b82f6"
                 >
                   🖥️ Desktop
                   <span class="tooltiptext" style="width: 250px"
@@ -708,7 +708,7 @@
                 <button
                   class="btn-add-typo-style tooltip"
                   id="btn-extract-typo-tablet"
-                  style="background: #fd7e14"
+                  style="background: #60a5fa"
                 >
                   📱 Tablet
                   <span class="tooltiptext" style="width: 250px"
@@ -719,7 +719,7 @@
                 <button
                   class="btn-add-typo-style tooltip"
                   id="btn-extract-typo-mobile"
-                  style="background: #17a2b8"
+                  style="background: #2563eb"
                 >
                   📱 Mobile
                   <span class="tooltiptext" style="width: 250px"
@@ -730,7 +730,7 @@
                 <button
                   class="btn-add-typo-style tooltip"
                   id="btn-extract-typo-all"
-                  style="background: #6c757d"
+                  style="background: #1d4ed8"
                 >
                   🌐 All
                   <span class="tooltiptext" style="width: 250px"
@@ -740,7 +740,7 @@
                 <button
                   class="btn-add-typo-style tooltip"
                   id="btn-reset-typo-table"
-                  style="background: #dc3545"
+                  style="background: #64748b"
                 >
                   🔄 Reset
                   <span class="tooltiptext" style="width: 200px"
@@ -755,20 +755,26 @@
 
       <!-- Report Tabs -->
       <div class="report-tabs">
-        <button class="report-tab" data-tab="settings">
-          ⚙️ Settings
-        </button>
+      
         <button class="report-tab active" data-tab="issues">
           📋 Design Review
           <span class="tab-badge" id="issues-count">0</span>
+        </button>
+         <button class="report-tab" data-tab="tokens">
+          🎨 Tokens
+          <span class="tab-badge" id="tokens-count">0</span>
         </button>
         <button class="report-tab" data-tab="animations">
           🎬 Animations
           <span class="tab-badge" id="animations-count">0</span>
         </button>
-        <button class="report-tab" data-tab="tokens">
-          🎨 Tokens
-          <span class="tab-badge" id="tokens-count">0</span>
+       
+          <button class="report-tab" data-tab="settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
         </button>
       </div>
 
@@ -795,21 +801,21 @@
         </div>
         <div class="filter-buttons" id="filter-buttons">
           <button class="filter-btn active tooltip" data-filter="all">
-            All
+            All <strong id="filter-count-all">0</strong>
             <span class="tooltiptext">Show all issues</span>
           </button>
           <button class="filter-btn tooltip" data-filter="error">
-            ❌ Errors
+            ❌ Errors <strong id="filter-count-error">0</strong>
             <span class="tooltiptext"
               >Show only critical errors (need to fix immediately)</span
             >
           </button>
           <button class="filter-btn tooltip" data-filter="warn">
-            ⚠️ Warnings
+            ⚠️ Warnings <strong id="filter-count-warn">0</strong>
             <span class="tooltiptext">Show only warnings (need to fix)</span>
           </button>
         </div>
-        <div
+        <!-- <div
           class="color-type-filter"
           id="color-type-filter"
           style="display: none"
@@ -822,7 +828,7 @@
             <option value="shadow">Shadow</option>
             <option value="fill">Fill</option>
           </select>
-        </div>
+        </div> -->
       </div>
 
       <!-- Issues Report -->
@@ -844,35 +850,34 @@
       <!-- Animations Report -->
       <div id="results-animations" class="report-content">
         <!-- Animation Summary (hidden initially) -->
-        <div id="animation-summary" style="display: none; padding: 12px 16px; background: linear-gradient(135deg, #e8f5e9 0%, #f3e5f5 100%); border-radius: 8px; margin-bottom: 12px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <span style="font-size: 18px;">🎯</span>
-            <span id="animation-total" style="font-weight: 600; color: #1d1d1f; font-size: 14px;">0 interactions</span>
-            <span style="color: #86868b;">→</span>
-            <span id="animation-groups" style="font-weight: 500; color: #667eea; font-size: 14px;">0 groups</span>
+        <div id="animation-summary" class="animation-summary">
+          <div class="animation-summary-header">
+            <span class="animation-summary-total">
+              <span id="animation-total">0 interactions</span>
+              <span class="animation-summary-arrow">→</span>
+              <span id="animation-groups" class="animation-summary-groups">0 groups</span>
+            </span>
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-            <span class="animation-stat active" data-type="all" style="display: flex; align-items: center; gap: 4px; padding: 4px 12px; background: #667eea; color: white; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 500;">
-              All
-            </span>
-            <span class="animation-stat" data-type="click" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>👆</span> Click: <strong id="stat-click">0</strong>
-            </span>
-            <span class="animation-stat" data-type="hover" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>🖱️</span> Hover: <strong id="stat-hover">0</strong>
-            </span>
-            <span class="animation-stat" data-type="drag" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>✋</span> Drag: <strong id="stat-drag">0</strong>
-            </span>
-            <span class="animation-stat" data-type="scroll" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>📜</span> Scroll: <strong id="stat-scroll">0</strong>
-            </span>
-            <span class="animation-stat" data-type="auto" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>⏱️</span> Auto: <strong id="stat-auto">0</strong>
-            </span>
-            <span class="animation-stat" data-type="key" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer;">
-              <span>⌨️</span> Key: <strong id="stat-key">0</strong>
-            </span>
+          <div class="animation-filter-buttons">
+            <button class="filter-btn active" data-type="all">All</button>
+            <button class="filter-btn" data-type="click">
+              <span class="filter-icon">👆</span> Click <strong id="stat-click">0</strong>
+            </button>
+            <button class="filter-btn" data-type="hover">
+              <span class="filter-icon">🖱️</span> Hover <strong id="stat-hover">0</strong>
+            </button>
+            <button class="filter-btn" data-type="drag">
+              <span class="filter-icon">✋</span> Drag <strong id="stat-drag">0</strong>
+            </button>
+            <button class="filter-btn" data-type="scroll">
+              <span class="filter-icon">📜</span> Scroll <strong id="stat-scroll">0</strong>
+            </button>
+            <button class="filter-btn" data-type="auto">
+              <span class="filter-icon">⏱️</span> Auto <strong id="stat-auto">0</strong>
+            </button>
+            <button class="filter-btn" data-type="key">
+              <span class="filter-icon">⌨️</span> Key <strong id="stat-key">0</strong>
+            </button>
           </div>
         </div>
 
@@ -958,7 +963,7 @@
                 id="btn-confirm-save-settings"
                 style="
                   padding: 8px 16px;
-                  background: #28a745;
+                  background: #3b82f6;
                   color: white;
                   border: none;
                   border-radius: 6px;
@@ -1051,12 +1056,12 @@
               style="
                 display: none;
                 padding: 12px;
-                background: #e3f2fd;
+                background: #eff6ff;
                 border-radius: 6px;
                 margin-bottom: 16px;
               "
             >
-              <div style="font-size: 12px; color: #1976d2">
+              <div style="font-size: 12px; color: #3b82f6">
                 <strong>Selected file:</strong>
                 <span id="import-file-name"></span>
               </div>
@@ -1064,13 +1069,13 @@
             <div
               style="
                 padding: 12px;
-                background: #e3f2fd;
-                border: 1px solid #1976d2;
+                background: #eff6ff;
+                border: 1px solid #3b82f6;
                 border-radius: 6px;
                 margin-bottom: 16px;
               "
             >
-              <div style="font-size: 12px; color: #1976d2">
+              <div style="font-size: 12px; color: #3b82f6">
                 <strong>ℹ️ Info:</strong> Importing will fill the settings into
                 the input fields. Saved settings will remain unchanged.
               </div>
@@ -1093,7 +1098,7 @@
                 id="btn-confirm-import"
                 style="
                   padding: 8px 16px;
-                  background: #fd7e14;
+                  background: #60a5fa;
                   color: white;
                   border: none;
                   border-radius: 6px;
@@ -1148,7 +1153,7 @@
                 id="btn-confirm-replace"
                 style="
                   padding: 8px 16px;
-                  background: #28a745;
+                  background: #3b82f6;
                   color: white;
                   border: none;
                   border-radius: 6px;
@@ -1170,7 +1175,13 @@
     >
       <div class="settings-modal-content" style="max-width: 400px">
         <div class="settings-modal-header">
-          <h3>⚙️ Scan Settings</h3>
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Scan Settings
+          </h3>
           <button id="btn-close-scan-settings" class="btn-close-history">
             ✕
           </button>
@@ -1181,67 +1192,67 @@
           </p>
           <div class="scan-settings-groups" style="display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto;">
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-naming" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-naming" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📁 Naming Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-autolayout" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-autolayout" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🖼️ Auto Layout</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-spacing" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-spacing" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✏️ Spacing</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-color" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-color" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Color</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-fontsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-fontsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✍️ Font Size</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-textstyle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-textstyle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Text Style (Variable)</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-typography" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-typography" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Typography Style Match</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-lineheight" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-lineheight" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Line Height</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-position" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-position" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📍 Position Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-duplicate" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-duplicate" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🔄 Duplicate Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-group" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-group" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📦 Group Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-component" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-component" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🧩 Component Reusable</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-emptyframe" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-emptyframe" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🗑️ Empty Frame Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-nestedgroup" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-nestedgroup" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📚 Nested Group Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-contrast" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-contrast" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🌈 Contrast (ADA AA)</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
-              <input type="checkbox" id="scan-check-textsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #667eea;" />
+              <input type="checkbox" id="scan-check-textsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📱 Text Size (ADA)</span>
             </label>
           </div>
@@ -1251,7 +1262,7 @@
               style="
                 flex: 1;
                 padding: 8px 12px;
-                background: #6c757d;
+                background: #64748b;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -1266,7 +1277,7 @@
               style="
                 flex: 1;
                 padding: 8px 12px;
-                background: #6c757d;
+                background: #64748b;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -1283,7 +1294,7 @@
               width: 100%;
               margin-top: 12px;
               padding: 12px 16px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
               color: white;
               border: none;
               border-radius: 6px;
@@ -1294,7 +1305,7 @@
           >
             ✓ Apply Settings
           </button>
-          <p id="scan-settings-note" style="margin: 12px 0 0 0; color: #ff9800; font-size: 12px; display: none;">
+          <p id="scan-settings-note" style="margin: 12px 0 0 0; color: #f59e0b; font-size: 12px; display: none;">
             ⚠️ Settings changed. Click "Apply" to update, then re-scan to see changes.
           </p>
         </div>
@@ -1310,22 +1321,27 @@
         position: fixed;
         bottom: 5px;
         right: 5px;
-        width: 35px;
-        height: 35px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         color: #fff;
         border: none;
-        font-size: 27px;
         cursor: pointer;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
         z-index: 9999;
         display: flex;
         align-items: center;
         justify-content: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
       "
+      onmouseover="this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px rgba(59, 130, 246, 0.5)';"
+      onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.4)';"
     >
-      ⚙️
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
     </button>
     </div>
 
@@ -1535,18 +1551,13 @@
             }
           });
 
-          // Update total counts in summary header if it exists
-          const statsContainer = document.querySelector('.results-stats');
-          if (statsContainer) {
-            const errorStat = statsContainer.querySelector('.stat.error');
-            const warnStat = statsContainer.querySelector('.stat.warn');
-            if (errorStat) {
-              errorStat.textContent = totalErrors + ' Error';
-            }
-            if (warnStat) {
-              warnStat.textContent = totalWarnings + ' Warning';
-            }
-          }
+          // Update filter button counts
+          const countAll = document.getElementById('filter-count-all');
+          const countError = document.getElementById('filter-count-error');
+          const countWarn = document.getElementById('filter-count-warn');
+          if (countAll) countAll.textContent = totalErrors + totalWarnings;
+          if (countError) countError.textContent = totalErrors;
+          if (countWarn) countWarn.textContent = totalWarnings;
 
           // Update issues count badge in tab
           const issuesCount = document.getElementById('issues-count');
@@ -1575,10 +1586,10 @@
             // Show confirmation feedback then close modal
             const originalText = btnApply.innerHTML;
             btnApply.innerHTML = '✓ Applied!';
-            btnApply.style.background = '#28a745';
+            btnApply.style.background = '#3b82f6';
             setTimeout(() => {
               btnApply.innerHTML = originalText;
-              btnApply.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+              btnApply.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
               // Close the modal after feedback
               closeModal();
             }, 800);
@@ -1830,8 +1841,18 @@
               if (colorTypeFilter) colorTypeFilter.style.display = 'none';
             } else if (tabName === 'settings') {
               if (filterControls) filterControls.style.display = 'none';
+            } else if (tabName === 'issues') {
+              // Issues tab: show filter buttons if there's data
+              const hasIssues = document.querySelector('#results-issues .issue-group');
+              if (hasIssues) {
+                if (filterControls) filterControls.style.display = 'flex';
+                if (filterButtonsContainer) filterButtonsContainer.style.display = 'flex';
+              }
+              if (colorTypeFilter) colorTypeFilter.style.display = 'none';
+            } else if (tabName === 'tokens') {
+              // Tokens tab: hide filter buttons
+              if (filterButtonsContainer) filterButtonsContainer.style.display = 'none';
             }
-            // Note: issues and tokens tabs handle their own filter controls in main.js
           });
         });
 
@@ -1860,30 +1881,17 @@
           });
         }
 
-        // Stat clicks for filtering (including "All" button)
-        document.querySelectorAll('.animation-stat').forEach(stat => {
-          stat.addEventListener('click', function() {
+        // Filter button clicks for animations
+        document.querySelectorAll('.animation-filter-buttons .filter-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
             const type = this.getAttribute('data-type');
             currentFilter = type;
 
-            // Update stat buttons active state
-            document.querySelectorAll('.animation-stat').forEach(s => {
-              s.classList.remove('active');
-              if (s.getAttribute('data-type') === 'all') {
-                s.style.background = '#fff';
-                s.style.color = '#1d1d1f';
-              } else {
-                s.style.background = '#fff';
-              }
+            // Update filter buttons active state (CSS handles styling via .active class)
+            document.querySelectorAll('.animation-filter-buttons .filter-btn').forEach(b => {
+              b.classList.remove('active');
             });
-
             this.classList.add('active');
-            if (type === 'all') {
-              this.style.background = '#667eea';
-              this.style.color = 'white';
-            } else {
-              this.style.background = '#e3f2fd';
-            }
 
             renderResults();
           });
@@ -1968,17 +1976,17 @@
           const isSelected = item.nodeIds.includes(selectedNodeId);
           const animationType = formatAnimationType(item.animationType);
           const animationInfo = animationType ?
-            `<span style="color: #667eea;">🎬 ${animationType}</span>` +
+            `<span style="color: #3b82f6;">🎬 ${animationType}</span>` +
             (item.duration ? ` <span style="color: #86868b;">(${Math.round(item.duration * 1000)}ms` + (item.easing ? `, ${item.easing}` : '') + ')</span>' : '')
             : '';
-          const delayInfo = item.delay ? `<span style="color: #ff9800;">⏳ Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
-          const countBadge = item.count > 1 ? `<span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">×${item.count}</span>` : '';
+          const delayInfo = item.delay ? `<span style="color: #f59e0b;">⏳ Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
+          const countBadge = item.count > 1 ? `<span style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">×${item.count}</span>` : '';
 
           html += `
             <div class="animation-item ${isSelected ? 'selected' : ''}" data-node-ids="${item.nodeIds.join(',')}" data-index="${index}" style="
               padding: 12px 16px;
-              background: ${isSelected ? '#e8f5e9' : '#fff'};
-              border: 1px solid ${isSelected ? '#4caf50' : '#e5e5e7'};
+              background: ${isSelected ? '#f0fdf4' : '#fff'};
+              border: 1px solid ${isSelected ? '#22c55e' : '#e5e5e7'};
               border-radius: 8px;
               margin-bottom: 8px;
               cursor: pointer;
@@ -1988,7 +1996,7 @@
                 <span style="font-size: 12px; font-weight: 600; color: #86868b;">${index + 1}.</span>
                 <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-ids="${item.nodeIds.join(',')}" style="
                   padding: 4px 12px;
-                  background: ${isSelected ? '#4caf50' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                  background: ${isSelected ? '#22c55e' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'};
                   color: white;
                   border: none;
                   border-radius: 4px;
@@ -2002,7 +2010,7 @@
                 <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
               </div>
               <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 6px;">
-                <strong>Action:</strong> <span style="color: #667eea; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
+                <strong>Action:</strong> <span style="color: #3b82f6; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
               </div>
               <div style="font-size: 12px; color: #86868b; margin-bottom: 4px;">
                 <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 11px;">(${item.nodeType})</span>
@@ -2099,19 +2107,13 @@
             selectedNodeId = null;
             currentFilter = 'all';
 
-            // Reset stat buttons to default (All active)
-            document.querySelectorAll('.animation-stat').forEach(s => {
-              s.classList.remove('active');
-              s.style.background = '#fff';
-              if (s.getAttribute('data-type') === 'all') {
-                s.style.color = '#1d1d1f';
-              }
+            // Reset filter buttons to default (All active)
+            document.querySelectorAll('.animation-filter-buttons .filter-btn').forEach(b => {
+              b.classList.remove('active');
             });
-            const allBtn = document.querySelector('.animation-stat[data-type="all"]');
+            const allBtn = document.querySelector('.animation-filter-buttons .filter-btn[data-type="all"]');
             if (allBtn) {
               allBtn.classList.add('active');
-              allBtn.style.background = '#667eea';
-              allBtn.style.color = 'white';
             }
 
             if (animationData && animationData.total > 0) {

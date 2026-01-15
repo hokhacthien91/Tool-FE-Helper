@@ -527,7 +527,7 @@ console.log("ui.js loaded");
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title" style="color: #dc3545;">⚠️ Error</h2>
+        <h2 class="modal-title" style="color: #ef4444;">⚠️ Error</h2>
       </div>
       <div class="modal-body">
         <div style="padding: 16px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; margin-bottom: 16px;">
@@ -540,7 +540,7 @@ console.log("ui.js loaded");
         </div>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn modal-btn-primary" id="error-modal-ok-btn" style="background: #dc3545; border-color: #dc3545; color: white;">OK</button>
+        <button class="modal-btn modal-btn-primary" id="error-modal-ok-btn" style="background: #ef4444; border-color: #ef4444; color: white;">OK</button>
       </div>
     `;
     
@@ -690,7 +690,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="typography-fix-modal-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="typography-fix-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="typography-fix-modal-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -1097,7 +1097,7 @@ console.log("ui.js loaded");
       <div class="modal-body">
         <div style="margin-bottom: 16px;">
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Action:</div>
-          <div style="padding: 12px; background: #e3f2fd; border-left: 3px solid #0071e3; border-radius: 6px;">
+          <div style="padding: 12px; background: #eff6ff; border-left: 3px solid #0071e3; border-radius: 6px;">
             <div style="font-size: 14px; color: #333; margin-bottom: 8px;">
               <strong>Enable Auto Layout</strong>
             </div>
@@ -1106,7 +1106,7 @@ console.log("ui.js loaded");
             </div>
           </div>
         </div>
-        <div style="padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+        <div style="padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Note:</div>
           <div style="font-size: 12px; color: #333;">
             • Layout direction will be auto-detected (horizontal or vertical)<br>
@@ -1117,7 +1117,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="autolayout-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="autolayout-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="autolayout-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -1201,7 +1201,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Group</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame with Auto-layout</div>
         </div>
@@ -1331,7 +1331,7 @@ console.log("ui.js loaded");
               • Y: <code>${currentY}px</code>
             </div>
           </div>
-          <div style="padding: 12px; background: #e3f2fd; border-radius: 6px;">
+          <div style="padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="font-size: 12px; color: #1976d2; margin-bottom: 8px;"><strong>After Fix:</strong></div>
             <div style="font-size: 11px; color: #1976d2; padding-left: 8px; line-height: 1.6;">
               • X: <code>0px</code><br>
@@ -1429,7 +1429,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="remove-layer-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-danger" id="remove-layer-confirm-apply-btn" style="background: #dc3545; border-color: #dc3545;color: white;">Remove</button>
+        <button class="modal-btn modal-btn-danger" id="remove-layer-confirm-apply-btn" style="background: #ef4444; border-color: #ef4444;color: white;">Remove</button>
       </div>
     `;
     
@@ -1508,7 +1508,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">${escapeHtml(issue.message)}</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame removed, child kept (if applicable)</div>
         </div>
@@ -2068,7 +2068,7 @@ console.log("ui.js loaded");
           <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
             This will replace the frame with an instance of the selected component.
           </p>
-          <div style="padding: 12px; background: #e3f2fd; border-radius: 6px;">
+          <div style="padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="font-size: 12px; color: #1976d2; margin-bottom: 8px;"><strong>Selected Component:</strong></div>
             <div style="font-size: 14px; color: #333; font-weight: 600;">${escapeHtml(component.name)}</div>
             ${component.description ? `<div style="font-size: 11px; color: #666; margin-top: 4px;">${escapeHtml(component.description)}</div>` : ""}
@@ -2405,7 +2405,7 @@ console.log("ui.js loaded");
       <div class="modal-body">
         <div style="margin-bottom: 16px;">
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">Apply Text Style:</div>
-          <div style="padding: 12px; background: #e3f2fd; border-left: 3px solid #0071e3; border-radius: 6px;">
+          <div style="padding: 12px; background: #eff6ff; border-left: 3px solid #0071e3; border-radius: 6px;">
             <div style="font-weight: 600; font-size: 16px; color: #333; margin-bottom: 8px;">${escapeHtml(selectedStyle.name)}</div>
             <div style="font-size: 12px; color: #666; line-height: 1.6;">
               • Font Family: <code>${escapeHtml(selectedStyle.fontFamily)}</code><br>
@@ -2429,7 +2429,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="typography-style-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="typography-style-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="typography-style-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -2539,7 +2539,7 @@ console.log("ui.js loaded");
               ${escapeHtml(style.fontFamily)} ${escapeHtml(style.fontSize)}px ${escapeHtml(style.fontWeight)}
             </div>
           </div>
-          <div style="color: #28a745; font-weight: 600; font-size: 12px;">✓ ADA</div>
+          <div style="color: #22c55e; font-weight: 600; font-size: 12px;">✓ ADA</div>
         </div>
       `;
     }).join('');
@@ -2554,7 +2554,7 @@ console.log("ui.js loaded");
         <div style="margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Font Size:</div>
           <div style="font-size: 16px; font-weight: 600; color: #333;">${issue.fontSize || 12}px</div>
-          <div style="font-size: 11px; color: #dc3545; margin-top: 4px;">Too small for mobile (need >= 14px)</div>
+          <div style="font-size: 11px; color: #ef4444; margin-top: 4px;">Too small for mobile (need >= 14px)</div>
         </div>
         <div style="max-height: 300px; overflow-y: auto;">
           ${styleListHtml}
@@ -2679,9 +2679,9 @@ console.log("ui.js loaded");
     const colorListHtml = allColors.map(color => {
       const contrast = calculateContrastRatio(color.hex, bgColor);
       const passes = contrast >= minContrast;
-      const borderColor = passes ? '#28a745' : '#ddd';
+      const borderColor = passes ? '#22c55e' : '#ddd';
       const colorName = `${escapeHtml(color.name)} <span style="font-size: 11px; color: #666;">(${escapeHtml(color.source)})</span>`;
-      const additionalInfo = `<span style="color: ${passes ? '#28a745' : '#dc3545'};">Contrast: ${contrast.toFixed(2)}:1 ${passes ? '✓' : '✗'} (need >= ${minContrast}:1)</span>`;
+      const additionalInfo = `<span style="color: ${passes ? '#22c55e' : '#ef4444'};">Contrast: ${contrast.toFixed(2)}:1 ${passes ? '✓' : '✗'} (need >= ${minContrast}:1)</span>`;
       
       return createColorPickerItem(color.hex, colorName, borderColor, additionalInfo);
     }).join('');
@@ -2698,7 +2698,7 @@ console.log("ui.js loaded");
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
             <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
-            <div style="font-size: 11px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
+            <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
           </div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">Background: ${escapeHtml(bgColor)}</div>
         </div>
@@ -2796,7 +2796,7 @@ console.log("ui.js loaded");
     
     // Build style info note if style is provided
     const styleNoteHtml = selectedStyle ? `
-      <div style="margin-top: 16px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+      <div style="margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
         <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Text Style sẽ được áp dụng:</div>
         <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
         <div style="font-size: 11px; color: #666; margin-top: 4px;">
@@ -2819,16 +2819,16 @@ console.log("ui.js loaded");
             <div style="font-size: 12px; color: #999;">(Too small for mobile)</div>
           </div>
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="font-weight: 600; font-size: 18px; color: #0071e3;">${selectedSize}px</div>
-            <div style="font-size: 12px; color: #28a745;">✓ ADA compliant (>= 14px)</div>
+            <div style="font-size: 12px; color: #22c55e;">✓ ADA compliant (>= 14px)</div>
           </div>
         </div>
         ${styleNoteHtml}
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="text-size-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="text-size-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="text-size-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -2972,16 +2972,16 @@ console.log("ui.js loaded");
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd;"></div>
             <div>
               <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
-              <div style="font-size: 11px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
+              <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
             </div>
           </div>
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px; margin-bottom: 12px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
             <div>
               <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
               <div style="font-size: 11px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
-              <div style="font-size: 11px; color: #28a745; margin-top: 4px;">Contrast: ${newContrast.toFixed(2)}:1 ✓ (passes >= ${minContrast}:1)</div>
+              <div style="font-size: 11px; color: #22c55e; margin-top: 4px;">Contrast: ${newContrast.toFixed(2)}:1 ✓ (passes >= ${minContrast}:1)</div>
             </div>
           </div>
           <div style="padding: 8px; background: #f0f0f0; border-radius: 4px; font-size: 11px; color: #666;">
@@ -2991,7 +2991,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="contrast-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -3154,7 +3154,7 @@ console.log("ui.js loaded");
         const issueNode = issueEl.querySelector(".issue-node");
         const ignoreTag = document.createElement("div");
         ignoreTag.className = "issue-ignored-tag";
-        ignoreTag.style.cssText = "margin-top: 4px; padding: 4px 8px; background: #e3f2fd; color: #28a745; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;";
+        ignoreTag.style.cssText = "margin-top: 4px; padding: 4px 8px; background: #eff6ff; color: #22c55e; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;";
         ignoreTag.textContent = "✓ Pass with ignore custom";
         if (issueNode) {
           issueNode.parentNode.insertBefore(ignoreTag, issueNode.nextSibling);
@@ -3175,7 +3175,7 @@ console.log("ui.js loaded");
       if (btnIgnore) {
         btnIgnore.removeAttribute("disabled");
         btnIgnore.innerHTML = "Ignored";
-        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #28a745; background: #28a745; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
+        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #22c55e; background: #22c55e; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
       }
     } else {
       // Restore to original state
@@ -3209,7 +3209,7 @@ console.log("ui.js loaded");
       if (btnIgnore) {
         btnIgnore.removeAttribute("disabled");
         btnIgnore.innerHTML = "Ignore";
-        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #6c757d; background: #6c757d; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
+        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #64748b; background: #64748b; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
       }
     }
   }
@@ -3472,12 +3472,12 @@ console.log("ui.js loaded");
             </div>
           </div>
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="
               width: 50px;
               height: 50px;
               border-radius: 6px;
-              background: #e3f2fd;
+              background: #eff6ff;
               border: 2px solid #0071e3;
               display: flex;
               align-items: center;
@@ -3494,7 +3494,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="spacing-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="spacing-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="spacing-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -3706,7 +3706,7 @@ console.log("ui.js loaded");
             </div>
           </div>
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
-          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #e3f2fd; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
             <div>
               <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
@@ -3717,7 +3717,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="color-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="color-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="color-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -3969,7 +3969,7 @@ console.log("ui.js loaded");
             <tr style="border-bottom: 1px solid #ddd;">
               <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Property</th>
               <th style="text-align: left; padding: 8px; font-weight: 600; color: #666;">Current</th>
-              <th style="text-align: left; padding: 8px; font-weight: 600; color: #28a745;">Suggested</th>
+              <th style="text-align: left; padding: 8px; font-weight: 600; color: #22c55e;">Suggested</th>
             </tr>
           </thead>
           <tbody>
@@ -4012,7 +4012,7 @@ console.log("ui.js loaded");
       <div class="modal-body">
         <div style="margin-bottom: 16px;">
           <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">
-            Suggested Style: <span style="color: #28a745;">${escapeHtml(styleName)}</span>
+            Suggested Style: <span style="color: #22c55e;">${escapeHtml(styleName)}</span>
           </div>
           ${issue.bestMatch && issue.bestMatch.percentage ? `
             <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
@@ -4024,7 +4024,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="suggest-modal-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply Style</button>
+        <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply Style</button>
       </div>
     `;
     
@@ -4556,7 +4556,7 @@ console.log("ui.js loaded");
                     <div class="issue-body">${issueBody}</div>
                     ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
                     ${(issue.type === "typography" || issue.type === "line-height") ? `<div style="margin-top: 8px; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404; line-height: 1.5;"><strong>Note:</strong> Check 'Typography Style Match' to resolve this issue.</div>` : ""}
-                    ${issue.ignored ? `<div class="issue-ignored-tag" style="margin-top: 4px; padding: 4px 8px; background: #e3f2fd; color: #1976d2; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;">✓ Pass with ignore custom</div>` : ""}
+                    ${issue.ignored ? `<div class="issue-ignored-tag" style="margin-top: 4px; padding: 4px 8px; background: #eff6ff; color: #1976d2; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;">✓ Pass with ignore custom</div>` : ""}
                   </div>
                   <div class="issue-actions">
                     <button class="btn-select" data-id="${issue.id}">Select</button>
@@ -4579,7 +4579,7 @@ console.log("ui.js loaded");
                     ${issue.type === "contrast" ? `
                       ${getSuggestedContrastColor(issue) ? `<button class="btn-suggest-fix" data-id="${issue.id}">Suggest Fix now</button>` : ""}
                       <button class="btn-fix" data-id="${issue.id}">Select Color</button>
-                      <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #28a745; border-color: #28a745;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
+                      <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #22c55e; border-color: #22c55e;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
                     ` : ""}
                     ${issue.type === "typography-style" ? `
                       ${issue.bestMatch ? `
@@ -6412,7 +6412,7 @@ console.log("ui.js loaded");
       display: inline-block;
       font-size: 10px;
       padding: 2px 6px;
-      background: #667eea;
+      background: #3b82f6;
       color: white;
       border-radius: 4px;
       margin-left: 6px;
@@ -7683,7 +7683,7 @@ console.log("ui.js loaded");
         const issueType = issueEl ? issueEl.getAttribute("data-issue-type") : null;
         
         if (msg.error) {
-          dropdownMenu.innerHTML = `<div style="padding: 8px 12px; color: #dc3545; font-size: 12px;">Error: ${escapeHtml(msg.error)}</div>`;
+          dropdownMenu.innerHTML = `<div style="padding: 8px 12px; color: #ef4444; font-size: 12px;">Error: ${escapeHtml(msg.error)}</div>`;
           // Hide dropdown button if error
           const btnStyleDropdown = issueEl ? issueEl.querySelector("button.btn-style-dropdown") : null;
           if (btnStyleDropdown) {
@@ -7708,7 +7708,7 @@ console.log("ui.js loaded");
           }
           
           dropdownMenu.innerHTML = msg.styles.map(style => `
-            <div class="style-dropdown-item" data-issue-id="${msg.issueId}" data-style-id="${style.id}" data-style-name="${escapeHtml(style.name)}" style="padding: 8px 12px; cursor: pointer; font-size: 12px; ${bestMatchName === style.name ? 'background: #e3f2fd; font-weight: 600;' : ''}" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='${bestMatchName === style.name ? '#e3f2fd' : 'white'}'">
+            <div class="style-dropdown-item" data-issue-id="${msg.issueId}" data-style-id="${style.id}" data-style-name="${escapeHtml(style.name)}" style="padding: 8px 12px; cursor: pointer; font-size: 12px; ${bestMatchName === style.name ? 'background: #eff6ff; font-weight: 600;' : ''}" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='${bestMatchName === style.name ? '#eff6ff' : 'white'}'">
               ${escapeHtml(style.name)} ${bestMatchName === style.name ? '⭐' : ''}
             </div>
           `).join('');

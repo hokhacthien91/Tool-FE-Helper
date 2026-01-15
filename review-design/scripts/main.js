@@ -298,33 +298,8 @@ console.log("ui.js loaded");
     tab.addEventListener("click", () => {
       const tabName = tab.dataset.tab;
 
-      // Update tabs
-      reportTabs.forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-
-      // Update content
-      reportContents.forEach(c => c.classList.remove("active"));
-      const targetContent = document.getElementById(`results-${tabName}`);
-      if (targetContent) {
-        targetContent.classList.add("active");
-      }
-
-      // Hide filter controls for settings tab, show for issues/tokens
-      const filterControls = document.getElementById("filter-controls");
-      if (filterControls) {
-        if (tabName === "settings") {
-          filterControls.style.display = "none";
-        } else {
-          // Show filter controls for issues/tokens tabs (if there's any content)
-          const hasContent = (tabName === "issues" && resultsIssues && resultsIssues.querySelector('.issue-group')) ||
-                            (tabName === "tokens" && resultsTokens && resultsTokens.querySelector('.token-group'));
-          if (hasContent || currentReportData.issues || currentReportData.tokens) {
-            filterControls.style.display = "";
-          }
-        }
-      }
-
-      activeTab = tabName;
+      // Use switchToTab for consistent behavior
+      switchToTab(tabName);
 
       // Save last active tab when user manually switches (only for issues/tokens)
       if (tabName !== "settings" && (currentReportData.issues || currentReportData.tokens)) {
@@ -379,16 +354,31 @@ console.log("ui.js loaded");
         filterControls.style.display = hasAnimations ? "flex" : "none";
         if (filterButtonsContainer) filterButtonsContainer.style.display = "none";
         if (colorTypeFilter) colorTypeFilter.style.display = "none";
-      } else {
-        // Show filter controls for issues/tokens tabs (if there's any content)
-        const hasContent = (tabName === "issues" && resultsIssues && resultsIssues.querySelector('.issue-group')) ||
-                          (tabName === "tokens" && resultsTokens && resultsTokens.querySelector('.token-group'));
-        if (hasContent || currentReportData.issues || currentReportData.tokens) {
+      } else if (tabName === "tokens") {
+        // Tokens tab: show search box only, hide filter buttons
+        const hasContent = resultsTokens && resultsTokens.querySelector('.token-group');
+        if (hasContent || currentReportData.tokens) {
           filterControls.style.display = "flex";
         }
-        // Restore filter buttons visibility for issues tab
-        if (tabName === "issues" && filterButtonsContainer) {
-          filterButtonsContainer.style.display = "flex";
+        if (filterButtonsContainer) filterButtonsContainer.style.display = "none";
+        if (colorTypeFilter && currentReportData.tokens && (currentReportData.tokens.colors || currentReportData.tokens.gradients)) {
+          colorTypeFilter.style.display = "block";
+        } else if (colorTypeFilter) {
+          colorTypeFilter.style.display = "none";
+        }
+      } else if (tabName === "issues") {
+        // Issues tab (Design Review): show filter buttons with counts
+        const hasContent = resultsIssues && resultsIssues.querySelector('.issue-group');
+        const hasIssuesData = currentReportData.issues && currentReportData.issues.length > 0;
+        if (hasContent || hasIssuesData) {
+          filterControls.style.display = "flex";
+          if (filterButtonsContainer) filterButtonsContainer.style.display = "flex";
+        }
+        if (colorTypeFilter) colorTypeFilter.style.display = "none";
+
+        // Update filter button counts if issues data available
+        if (hasIssuesData && typeof updateFilterButtonCounts === 'function') {
+          updateFilterButtonCounts(currentReportData.issues);
         }
       }
     }
@@ -685,7 +675,7 @@ console.log("ui.js loaded");
             </div>
           </div>
         </div>
-        <div style="padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+        <div style="padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Note:</div>
           <div style="font-size: 12px; color: #333;">
             • Layout direction will be auto-detected (horizontal or vertical)<br>
@@ -696,7 +686,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="autolayout-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="autolayout-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="autolayout-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -773,7 +763,7 @@ console.log("ui.js loaded");
             </div>
           </div>
         </div>
-        <div style="padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+        <div style="padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Note:</div>
           <div style="font-size: 12px; color: #333;">
             • Layout direction will be auto-detected (horizontal or vertical)<br>
@@ -783,9 +773,9 @@ console.log("ui.js loaded");
         </div>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="autolayout-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
+        <button class="modal-btn modal-btn-cancel" id="autolayout-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>
         <button class="modal-btn modal-btn-cancel" id="autolayout-fix-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="autolayout-fix-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="autolayout-fix-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -878,7 +868,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Group</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame with Auto-layout</div>
         </div>
@@ -957,13 +947,13 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Group</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame with Auto-layout</div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="group-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
+        <button class="modal-btn modal-btn-cancel" id="group-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>
         <button class="modal-btn modal-btn-cancel" id="group-fix-cancel-btn">Cancel</button>
         <button class="modal-btn modal-btn-primary" id="group-fix-apply-btn">Apply</button>
       </div>
@@ -1210,7 +1200,7 @@ console.log("ui.js loaded");
         </p>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="position-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
+        <button class="modal-btn modal-btn-cancel" id="position-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>
         <button class="modal-btn modal-btn-cancel" id="position-fix-cancel-btn">Cancel</button>
         <button class="modal-btn modal-btn-primary" id="position-fix-apply-btn">Apply</button>
       </div>
@@ -1311,7 +1301,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="remove-layer-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-danger" id="remove-layer-confirm-apply-btn" style="background: #dc3545; border-color: #dc3545;color: white;">Remove</button>
+        <button class="modal-btn modal-btn-danger" id="remove-layer-confirm-apply-btn" style="background: #ef4444; border-color: #ef4444;color: white;">Remove</button>
       </div>
     `;
     
@@ -1390,7 +1380,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">${escapeHtml(issue.message)}</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame removed, child kept (if applicable)</div>
         </div>
@@ -1478,13 +1468,13 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">${escapeHtml(issue.message)}</div>
         </div>
-        <div style="background: #e8f5e9; padding: 12px; border-radius: 6px;">
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">After fix:</div>
           <div style="font-size: 13px; color: #333; font-weight: 500;">Frame removed, child kept (if applicable)</div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn modal-btn-cancel" id="empty-frame-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>
+        <button class="modal-btn modal-btn-cancel" id="empty-frame-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>
         <button class="modal-btn modal-btn-cancel" id="empty-frame-fix-cancel-btn">Cancel</button>
         <button class="modal-btn modal-btn-primary" id="empty-frame-fix-apply-btn">Apply</button>
       </div>
@@ -2513,7 +2503,7 @@ console.log("ui.js loaded");
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="typography-style-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="typography-style-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="typography-style-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
     
@@ -2623,7 +2613,7 @@ console.log("ui.js loaded");
               ${escapeHtml(style.fontFamily)} ${escapeHtml(style.fontSize)}px ${escapeHtml(style.fontWeight)}
             </div>
           </div>
-          <div style="color: #28a745; font-weight: 600; font-size: 12px;">✓ ADA</div>
+          <div style="color: #22c55e; font-weight: 600; font-size: 12px;">✓ ADA</div>
         </div>
       `;
     }).join('');
@@ -2762,9 +2752,9 @@ console.log("ui.js loaded");
     const colorListHtml = allColors.map(color => {
       const contrast = calculateContrastRatio(color.hex, bgColor);
       const passes = contrast >= minContrast;
-      const borderColor = passes ? '#28a745' : '#ddd';
+      const borderColor = passes ? '#22c55e' : '#ddd';
       const colorName = `${escapeHtml(color.name)} <span style="font-size: 11px; color: #666;">(${escapeHtml(color.source)})</span>`;
-      const additionalInfo = `<span style="color: ${passes ? '#28a745' : '#dc3545'};">Contrast: ${contrast.toFixed(2)}:1 ${passes ? '✓' : '✗'} (need >= ${minContrast}:1)</span>`;
+      const additionalInfo = `<span style="color: ${passes ? '#22c55e' : '#ef4444'};">Contrast: ${contrast.toFixed(2)}:1 ${passes ? '✓' : '✗'} (need >= ${minContrast}:1)</span>`;
       
       return createColorPickerItem(color.hex, colorName, borderColor, additionalInfo);
     }).join('');
@@ -2781,7 +2771,7 @@ console.log("ui.js loaded");
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
             <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
-            <div style="font-size: 11px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
+            <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
           </div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">Background: ${escapeHtml(bgColor)}</div>
         </div>
@@ -2955,7 +2945,7 @@ console.log("ui.js loaded");
 
     // Build style info note if style is provided
     const styleNoteHtml = selectedStyle ? `
-      <div style="margin-top: 12px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #28a745;">
+      <div style="margin-top: 12px; padding: 10px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
         <div style="font-size: 11px; color: #666; margin-bottom: 4px;">📝 Text Style sẽ được áp dụng:</div>
         <div style="font-weight: 600; font-size: 13px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
         <div style="font-size: 10px; color: #666; margin-top: 4px;">
@@ -2990,7 +2980,7 @@ console.log("ui.js loaded");
           ">${currentSize}</div>
           <div>
             <div style="font-size: 11px; color: #666;">Current Size:</div>
-            <div style="font-size: 14px; font-weight: 600;">${currentSize}px <span style="font-size: 11px; color: #dc3545;">(Too small)</span></div>
+            <div style="font-size: 14px; font-weight: 600;">${currentSize}px <span style="font-size: 11px; color: #ef4444;">(Too small)</span></div>
           </div>
         </div>
         <div style="font-size: 12px; font-weight: 600; color: #333; margin-bottom: 8px;">
@@ -3002,9 +2992,9 @@ console.log("ui.js loaded");
         ${styleNoteHtml}
       </div>
       <div class="modal-footer">
-        ${window.pendingTextSizeFixAllCallbacks ? `<button class="modal-btn modal-btn-cancel" id="text-size-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ""}
+        ${window.pendingTextSizeFixAllCallbacks ? `<button class="modal-btn modal-btn-cancel" id="text-size-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>` : ""}
         <button class="modal-btn modal-btn-cancel" id="text-size-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="text-size-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;">Apply</button>
+        <button class="modal-btn modal-btn-create" id="text-size-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply</button>
       </div>
     `;
 
@@ -3267,7 +3257,7 @@ console.log("ui.js loaded");
           <div style="flex: 1;">
             <div style="font-weight: 600; font-size: 13px; color: #333;">${escapeHtml(colorData.name)}</div>
             <div style="font-size: 10px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(colorData.color)}</div>
-            <div style="font-size: 10px; color: #28a745; margin-top: 2px;">✓ ${colorData.contrast.toFixed(2)}:1</div>
+            <div style="font-size: 10px; color: #22c55e; margin-top: 2px;">✓ ${colorData.contrast.toFixed(2)}:1</div>
           </div>
           <span style="font-size: 11px; color: #666; background: #f0f0f0; padding: 2px 8px; border-radius: 10px;">${colorData.similarity}%</span>
         </div>
@@ -3312,7 +3302,7 @@ console.log("ui.js loaded");
             <div>
               <div style="font-size: 11px; color: #666;">Current:</div>
               <div style="font-size: 12px; font-weight: 600; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(currentColor)}</div>
-              <div style="font-size: 10px; color: #dc3545;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 ✗</div>
+              <div style="font-size: 10px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 ✗</div>
             </div>
           </div>
           <div style="font-size: 10px; color: #666; padding: 4px 8px; background: #e0e0e0; border-radius: 4px; display: inline-block;">
@@ -3327,9 +3317,9 @@ console.log("ui.js loaded");
         </div>
       </div>
       <div class="modal-footer">
-        ${window.pendingContrastFixAllCallbacks ? `<button class="modal-btn modal-btn-cancel" id="contrast-fix-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ""}
+        ${window.pendingContrastFixAllCallbacks ? `<button class="modal-btn modal-btn-cancel" id="contrast-fix-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>` : ""}
         <button class="modal-btn modal-btn-cancel" id="contrast-fix-confirm-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #28a745; border-color: #28a745;" ${sortedColors.length === 0 ? 'disabled' : ''}>Apply</button>
+        <button class="modal-btn modal-btn-create" id="contrast-fix-confirm-apply-btn" style="background: #22c55e; border-color: #22c55e;" ${sortedColors.length === 0 ? 'disabled' : ''}>Apply</button>
       </div>
     `;
 
@@ -3562,7 +3552,7 @@ console.log("ui.js loaded");
         const issueNode = issueEl.querySelector(".issue-node");
         const ignoreTag = document.createElement("div");
         ignoreTag.className = "issue-ignored-tag";
-        ignoreTag.style.cssText = "margin-top: 4px; padding: 4px 8px; background: #e3f2fd; color: #28a745; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;";
+        ignoreTag.style.cssText = "margin-top: 4px; padding: 4px 8px; background: #e3f2fd; color: #22c55e; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;";
         ignoreTag.textContent = "✓ Pass with ignore custom";
         if (issueNode) {
           issueNode.parentNode.insertBefore(ignoreTag, issueNode.nextSibling);
@@ -3583,7 +3573,7 @@ console.log("ui.js loaded");
       if (btnIgnore) {
         btnIgnore.removeAttribute("disabled");
         btnIgnore.innerHTML = "Ignored";
-        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #28a745; background: #28a745; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
+        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #22c55e; background: #22c55e; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
       }
     } else {
       // Restore to original state
@@ -3617,7 +3607,7 @@ console.log("ui.js loaded");
       if (btnIgnore) {
         btnIgnore.removeAttribute("disabled");
         btnIgnore.innerHTML = "Ignore";
-        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #6c757d; background: #6c757d; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
+        btnIgnore.style.cssText = "padding: 6px 12px; border: 1px solid #64748b; background: #64748b; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; color: white;";
       }
     }
   }
@@ -3635,18 +3625,8 @@ console.log("ui.js loaded");
       total: issues.length
     };
     
-    // Update badges in header
-    const resultsHeader = document.querySelector(".results-header");
-    if (resultsHeader) {
-      const statsEl = resultsHeader.querySelector(".results-stats");
-      if (statsEl) {
-        statsEl.innerHTML = `
-          ${counts.error > 0 ? `<span class="stat error">${counts.error} Error</span>` : ""}
-          ${counts.warn > 0 ? `<span class="stat warn">${counts.warn} Warning</span>` : ""}
-          <span class="stat">${counts.total} Total</span>
-        `;
-      }
-    }
+    // Update filter button counts
+    updateFilterButtonCounts(issues);
     
     // Update group badges - only count non-ignored error/warn issues
     document.querySelectorAll(".issue-group").forEach(groupEl => {
@@ -4110,9 +4090,9 @@ console.log("ui.js loaded");
         </div>
       </div>
       <div class="modal-footer">
-        ${showIgnore ? `<button class="modal-btn modal-btn-cancel" id="suggest-modal-ignore-btn" style="background: #6c757d; border-color: #6c757d; color: white;">Ignore</button>` : ''}
+        ${showIgnore ? `<button class="modal-btn modal-btn-cancel" id="suggest-modal-ignore-btn" style="background: #64748b; border-color: #64748b; color: white;">Ignore</button>` : ''}
         <button class="modal-btn modal-btn-cancel" id="suggest-modal-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #28a745; border-color: #28a745;">Apply Style</button>
+        <button class="modal-btn modal-btn-create" id="suggest-modal-apply-btn" style="background: #22c55e; border-color: #22c55e;">Apply Style</button>
       </div>
     `;
 
@@ -4774,9 +4754,9 @@ console.log("ui.js loaded");
           const filterControls = document.getElementById("filter-controls");
           const colorTypeFilter = document.getElementById("color-type-filter");
           const filterButtonsContainer = document.getElementById("filter-buttons");
-          filterControls.style.display = issues.length > 0 ? "flex" : "none";
-          colorTypeFilter.style.display = "none";
-          filterButtonsContainer.style.display = "flex";
+          if (filterControls) filterControls.style.display = issues.length > 0 ? "flex" : "none";
+          if (colorTypeFilter) colorTypeFilter.style.display = "none";
+          if (filterButtonsContainer) filterButtonsContainer.style.display = "flex";
           
           const exportGroup = document.getElementById("export-group");
           exportGroup.style.display = issues.length > 0 ? "flex" : "none";
@@ -4834,19 +4814,14 @@ console.log("ui.js loaded");
             originalTotal: issues.length
           };
 
-          // Results header
+          // Results header (simplified - counts are now in filter buttons)
           const header = document.createElement("div");
           header.className = "results-header";
-          header.innerHTML = `
-            <h3>Check Result</h3>
-            <div class="results-stats">
-              ${stats.error > 0 ? `<span class="stat error">${stats.error} Error</span>` : ""}
-              ${stats.warn > 0 ? `<span class="stat warn">${stats.warn} Warning</span>` : ""}
-              <span class="stat">${stats.total} Total</span>
-              ${stats.originalTotal !== stats.total ? `<span class="stat" style="opacity: 0.6;">(${stats.originalTotal} total)</span>` : ""}
-            </div>
-          `;
+          header.innerHTML = `<h3>Check Result</h3>`;
           resultsIssues.appendChild(header);
+
+          // Update filter button counts
+          updateFilterButtonCounts(issues);
 
           // Group filtered issues by type
           const grouped = filteredIssues.reduce((acc, i) => {
@@ -5215,7 +5190,7 @@ console.log("ui.js loaded");
                     ${issue.type === "contrast" ? `
                       ${getSuggestedContrastColor(issue) ? `<button class="btn-suggest-fix" data-id="${issue.id}">Suggest Fix now</button>` : ""}
                       <button class="btn-fix" data-id="${issue.id}">Select Color</button>
-                      <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #28a745; border-color: #28a745;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
+                      <button class="btn-ignore" data-id="${issue.id}" ${issue.ignored ? 'style="background: #22c55e; border-color: #22c55e;"' : ''}>${issue.ignored ? 'Ignored' : 'Ignore'}</button>
                     ` : ""}
                     ${issue.type === "typography-style" ? `
                       ${(issue.bestMatch && issue.bestMatch.name && isValidTypographySuggestion(issue)) ? `
@@ -5806,9 +5781,9 @@ console.log("ui.js loaded");
           const filterControls = document.getElementById("filter-controls");
           const colorTypeFilter = document.getElementById("color-type-filter");
           const filterButtonsContainer = document.getElementById("filter-buttons");
-          filterControls.style.display = tokens && Object.keys(tokens).length > 0 ? "flex" : "none";
-          colorTypeFilter.style.display = (tokens && (tokens.colors || tokens.gradients)) ? "block" : "none";
-          filterButtonsContainer.style.display = "none"; // Hide severity filter for tokens
+          if (filterControls) filterControls.style.display = tokens && Object.keys(tokens).length > 0 ? "flex" : "none";
+          if (colorTypeFilter) colorTypeFilter.style.display = (tokens && (tokens.colors || tokens.gradients)) ? "block" : "none";
+          if (filterButtonsContainer) filterButtonsContainer.style.display = "none"; // Hide severity filter for tokens
           
           const exportGroup = document.getElementById("export-group");
           exportGroup.style.display = tokens && Object.keys(tokens).length > 0 ? "flex" : "none";
@@ -6787,7 +6762,7 @@ console.log("ui.js loaded");
         input.type = "text";
         input.value = colorName;
         input.className = "color-swatch-name-input";
-        input.style.cssText = "width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #667eea; border-radius: 4px; text-align: center; box-sizing: border-box;";
+        input.style.cssText = "width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #3b82f6; border-radius: 4px; text-align: center; box-sizing: border-box;";
 
         // Replace name with input
         nameDiv.style.display = "none";
@@ -7131,6 +7106,23 @@ console.log("ui.js loaded");
 
   // Filter and search handlers - setup after DOM is ready
   let searchInput, btnClearSearch, filterButtons, colorTypeSelect;
+
+  // Update filter button counts (All X, Errors X, Warnings X)
+  function updateFilterButtonCounts(issues) {
+    if (!issues) return;
+
+    const errorCount = issues.filter(i => i.severity === "error" && !i.ignored).length;
+    const warnCount = issues.filter(i => i.severity === "warn" && !i.ignored).length;
+    const totalCount = issues.filter(i => !i.ignored).length;
+
+    const countAll = document.getElementById("filter-count-all");
+    const countError = document.getElementById("filter-count-error");
+    const countWarn = document.getElementById("filter-count-warn");
+
+    if (countAll) countAll.textContent = totalCount;
+    if (countError) countError.textContent = errorCount;
+    if (countWarn) countWarn.textContent = warnCount;
+  }
 
   function applyFilters() {
     console.log("applyFilters called", {
@@ -8314,7 +8306,7 @@ console.log("ui.js loaded");
         const issueType = issueEl ? issueEl.getAttribute("data-issue-type") : null;
         
         if (msg.error) {
-          dropdownMenu.innerHTML = `<div style="padding: 8px 12px; color: #dc3545; font-size: 12px;">Error: ${escapeHtml(msg.error)}</div>`;
+          dropdownMenu.innerHTML = `<div style="padding: 8px 12px; color: #ef4444; font-size: 12px;">Error: ${escapeHtml(msg.error)}</div>`;
           // Hide dropdown button if error
           const btnStyleDropdown = issueEl ? issueEl.querySelector("button.btn-style-dropdown") : null;
           if (btnStyleDropdown) {

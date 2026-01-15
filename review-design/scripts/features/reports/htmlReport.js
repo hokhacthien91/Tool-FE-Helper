@@ -198,7 +198,7 @@ export function generateHTMLReport({ reportData, getTypeDisplayName }) {
       display: inline-block;
       font-size: 10px;
       padding: 2px 6px;
-      background: #667eea;
+      background: #3b82f6;
       color: white;
       border-radius: 4px;
       margin-left: 6px;
