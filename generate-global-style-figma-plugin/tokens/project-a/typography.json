@@ -1,0 +1,183 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "typography",
+  "$project": "Project A — Corporate / Enterprise",
+  "textStyles": {
+    "display": {
+      "mobile": {
+        "fontSize": "74px",
+        "lineHeight": "100%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h1": {
+      "mobile": {
+        "fontSize": "60px",
+        "lineHeight": "120%",
+        "fontWeight": "semibold",
+        "letterSpacing": "1px"
+      },
+      "tablet": {
+        "fontSize": "62px",
+        "lineHeight": "125%",
+        "fontWeight": "extrabold",
+        "letterSpacing": "5px"
+      },
+      "desktop": {
+        "fontSize": "64px",
+        "lineHeight": "130%",
+        "fontWeight": "bold",
+        "letterSpacing": "10px"
+      }
+    },
+    "h2": {
+      "mobile": {
+        "fontSize": "56px",
+        "lineHeight": "120%",
+        "fontFamily": "Inter",
+        "fontWeight": "semibold"
+      }
+    },
+    "h3": {
+      "mobile": {
+        "fontSize": "48px",
+        "lineHeight": "120%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h4": {
+      "mobile": {
+        "fontSize": "44px",
+        "lineHeight": "120%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h5": {
+      "mobile": {
+        "fontSize": "42px",
+        "lineHeight": "120%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h6": {
+      "mobile": {
+        "fontSize": "32px",
+        "lineHeight": "120%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h7": {
+      "mobile": {
+        "fontSize": "30px",
+        "lineHeight": "150%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h8": {
+      "mobile": {
+        "fontSize": "28px",
+        "lineHeight": "140%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h9": {
+      "mobile": {
+        "fontSize": "24px",
+        "lineHeight": "150%",
+        "fontWeight": "semibold"
+      }
+    },
+    "h10": {
+      "mobile": {
+        "fontSize": "20px",
+        "lineHeight": "150%",
+        "fontWeight": "semibold"
+      }
+    },
+    "body": {
+      "mobile": {
+        "fontSize": "16px",
+        "lineHeight": "150%",
+        "fontWeight": "regular",
+        "fontFamily": "Lato",
+        "color": "#000000",
+        "tablet": {
+          "fontSize": "17px"
+        },
+        "desktop": {
+          "fontSize": "18px"
+        }
+      }
+    },
+    "body-large": {
+      "mobile": {
+        "fontSize": "18px",
+        "lineHeight": "160%",
+        "fontWeight": "regular"
+      }
+    },
+    "body-small": {
+      "mobile": {
+        "fontSize": "14px",
+        "lineHeight": "140%",
+        "fontWeight": "light"
+      }
+    },
+    "micro-text": {
+      "mobile": {
+        "fontSize": "12px",
+        "lineHeight": "130%",
+        "fontWeight": "regular"
+      }
+    },
+    "quote-small": {
+      "mobile": {
+        "fontSize": "24px",
+        "lineHeight": "160%",
+        "fontWeight": "semibold italic"
+      }
+    },
+    "quote-large": {
+      "mobile": {
+        "fontSize": "36px",
+        "lineHeight": "160%",
+        "fontWeight": "semibold italic"
+      }
+    },
+    "numeric-small": {
+      "mobile": {
+        "fontSize": "28px",
+        "lineHeight": "100%",
+        "fontWeight": "semibold"
+      }
+    },
+    "numeric-medium": {
+      "mobile": {
+        "fontSize": "56px",
+        "lineHeight": "110%",
+        "fontWeight": "bold"
+      }
+    },
+    "numeric-large": {
+      "mobile": {
+        "fontSize": "102px",
+        "lineHeight": "100%",
+        "fontWeight": "bold"
+      }
+    }
+  },
+  "linksColors": {
+    "color": "#4a9fdc",
+    "underline": "none",
+    "font-weight": "inherit",
+    "hover": {
+      "color": "#1e5f94",
+      "underline": "underline",
+      "underline-offset": "0.2em"
+    },
+    "focus": {
+      "color": "#1e5f94",
+      "outline-offset": "3px"
+    }
+  }
+}

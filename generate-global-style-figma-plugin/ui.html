@@ -238,11 +238,61 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    /* Tab Navigation */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .tab {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #666;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      color: #18A0FB;
+    }
+    .tab.active {
+      color: #18A0FB;
+      border-bottom-color: #18A0FB;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .file-list {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #666;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .file-list-item {
+      padding: 2px 0;
+    }
   </style>
 </head>
 <body>
   <h2>Generate Global Style</h2>
 
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <button class="tab active" data-tab="tab1">From JSON / Figma</button>
+    <button class="tab" data-tab="tab2">Import Tokens</button>
+  </div>
+
+  <!-- Tab 1: Existing Functionality -->
+  <div id="tab1" class="tab-content active">
   <div class="options-container">
     <div class="option-card">
       <h3>Option 1: From JSON File</h3>
@@ -268,6 +318,37 @@
       <h3>Option 2: From Figma Variables & Styles</h3>
       <p>Generate from existing Variables and Styles in your Figma file.</p>
       <button id="generateFromFigmaBtn">Generate</button>
+    </div>
+  </div>
+  </div>
+
+  <!-- Tab 2: Import Tokens -->
+  <div id="tab2" class="tab-content">
+    <div class="option-card">
+      <h3>Import Tokens from Folder</h3>
+      <p>Select multiple token JSON files (colors.json, typography.json, spacing.json, etc.)</p>
+      
+      <input type="file" id="tokensFileInput" accept=".json" multiple>
+      <div id="tokensFileList" class="file-list"></div>
+
+      <div class="checkbox-group">
+        <label>
+          <input type="checkbox" id="createTokensVariablesCheckbox" checked>
+          Create Variables & Text Styles
+        </label>
+        <label>
+          <input type="checkbox" id="generateTokensLayoutCheckbox" checked>
+          Generate Layout Preview
+        </label>
+      </div>
+
+      <div class="prefix-input show">
+        <label for="tokensPrefixInput">Project Prefix:</label>
+        <input type="text" id="tokensPrefixInput" placeholder="e.g., Project A">
+        <div class="prefix-hint">Used for collection names: Colors - [Prefix], Spacing - [Prefix]</div>
+      </div>
+
+      <button id="importTokensBtn" disabled>Import Tokens</button>
     </div>
   </div>
 
@@ -306,6 +387,110 @@
 
     // Store pending data for after user choice
     let pendingGenerateData = null;
+
+    // Tab Navigation
+    const tabs = document.querySelectorAll('.tab');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const targetTab = tab.getAttribute('data-tab');
+        
+        // Remove active class from all tabs and contents
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(tc => tc.classList.remove('active'));
+        
+        // Add active class to clicked tab and corresponding content
+        tab.classList.add('active');
+        document.getElementById(targetTab).classList.add('active');
+      });
+    });
+
+    // Tab 2: Import Tokens
+    const tokensFileInput = document.getElementById('tokensFileInput');
+    const tokensFileList = document.getElementById('tokensFileList');
+    const importTokensBtn = document.getElementById('importTokensBtn');
+    const createTokensVariablesCheckbox = document.getElementById('createTokensVariablesCheckbox');
+    const generateTokensLayoutCheckbox = document.getElementById('generateTokensLayoutCheckbox');
+    const tokensPrefixInput = document.getElementById('tokensPrefixInput');
+
+    tokensFileInput.addEventListener('change', () => {
+      const files = Array.from(tokensFileInput.files);
+      importTokensBtn.disabled = files.length === 0;
+      
+      if (files.length > 0) {
+        let html = '<strong>Selected files:</strong><br>';
+        files.forEach(file => {
+          html += `<div class="file-list-item">• ${file.name}</div>`;
+        });
+        tokensFileList.innerHTML = html;
+      } else {
+        tokensFileList.innerHTML = '';
+      }
+      message.className = 'message';
+    });
+
+    importTokensBtn.addEventListener('click', async () => {
+      const files = Array.from(tokensFileInput.files);
+      if (files.length === 0) return;
+
+      const createVariables = createTokensVariablesCheckbox.checked;
+      const generateLayout = generateTokensLayoutCheckbox.checked;
+      const prefix = tokensPrefixInput.value.trim() || 'Project';
+
+      showLoading('Reading token files...');
+      importTokensBtn.disabled = true;
+
+      try {
+        const tokenFiles = {};
+        
+        // Read all files
+        for (const file of files) {
+          const text = await readFileAsText(file);
+          const json = JSON.parse(text);
+          const fileName = file.name.toLowerCase();
+          
+          // Determine token type from filename or $type
+          let tokenType = json.$type || '';
+          if (!tokenType) {
+            if (fileName.includes('color')) tokenType = 'color';
+            else if (fileName.includes('typography')) tokenType = 'typography';
+            else if (fileName.includes('spacing')) tokenType = 'spacing';
+            else if (fileName.includes('shadow')) tokenType = 'shadow';
+            else if (fileName.includes('border')) tokenType = 'border';
+            else if (fileName.includes('opacity')) tokenType = 'opacity';
+            else if (fileName.includes('z-index')) tokenType = 'z-index';
+            else if (fileName.includes('transition')) tokenType = 'transition';
+          }
+          
+          tokenFiles[tokenType] = json;
+        }
+
+        showLoading('Importing tokens...');
+        parent.postMessage({
+          pluginMessage: {
+            type: 'importTokens',
+            tokenFiles: tokenFiles,
+            createVariables: createVariables,
+            generateLayout: generateLayout,
+            prefix: prefix
+          }
+        }, '*');
+      } catch (err) {
+        message.textContent = `Error reading files: ${err.message}`;
+        message.className = 'message error show';
+        importTokensBtn.disabled = false;
+      }
+    });
+
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsText(file);
+      });
+    }
 
     fileInput.addEventListener('change', () => {
       generateBtn.disabled = !fileInput.files.length;
@@ -466,6 +651,7 @@
     function hideLoading() {
       generateBtn.disabled = !fileInput.files.length;
       generateFromFigmaBtn.disabled = false;
+      importTokensBtn.disabled = tokensFileInput.files.length === 0;
     }
 
     window.onmessage = (event) => {

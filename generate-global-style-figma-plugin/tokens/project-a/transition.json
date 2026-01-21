@@ -1,0 +1,32 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "transition",
+  "$project": "Project A — Corporate / Enterprise",
+  "transition": {
+    "duration": {
+      "fast": { "value": "100ms", "description": "Fast transition" },
+      "base": { "value": "200ms", "description": "Base transition duration" },
+      "slow": { "value": "300ms", "description": "Slow transition" },
+      "slower": { "value": "500ms", "description": "Slower transition" },
+      "default": { "value": "150ms", "description": "Default transition duration" },
+      "0": { "value": "0ms", "description": "0ms transition duration" },
+      "1000": { "value": "1000ms", "description": "1000ms transition duration" }
+    },
+    "easing": {
+      "default": { "value": "cubic-bezier(0.4, 0, 0.2, 1)", "description": "Default easing" },
+      "in": { "value": "cubic-bezier(0.4, 0, 1, 1)", "description": "Ease in" },
+      "out": { "value": "cubic-bezier(0, 0, 0.2, 1)", "description": "Ease out" },
+      "in-out": { "value": "cubic-bezier(0.4, 0, 0.2, 1)", "description": "Ease in-out" },
+      "custom": { "value": "cubic-bezier(0.26, 0.9, 0.71, 1.04)", "description": "Custom easing" }
+    },
+    "property": {
+      "DEFAULT": { "value": "background-color, border-color, color, fill, stroke, opacity, box-shadow, transform", "description": "Default transition property" },
+      "none": { "value": "none", "description": "No transition property" },
+      "all": { "value": "all", "description": "All transition property" },
+      "colors": { "value": "background-color, border-color, color, fill, stroke", "description": "Colors transition property" },
+      "opacity": { "value": "opacity", "description": "Opacity transition property" },
+      "shadow": { "value": "box-shadow", "description": "Shadow transition property" },
+      "transform": { "value": "transform", "description": "Transform transition property" }
+    }
+  }
+}
