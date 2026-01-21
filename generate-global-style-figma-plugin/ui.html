@@ -461,6 +461,8 @@
             else if (fileName.includes('opacity')) tokenType = 'opacity';
             else if (fileName.includes('z-index')) tokenType = 'z-index';
             else if (fileName.includes('transition')) tokenType = 'transition';
+            else if (fileName.includes('button')) tokenType = 'button';
+            else if (fileName.includes('breakpoint')) tokenType = 'breakpoint';
           }
           
           tokenFiles[tokenType] = json;

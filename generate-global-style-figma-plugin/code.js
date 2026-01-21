@@ -782,14 +782,7 @@ function createSpacingSection(parent, spacingScale) {
   parent.appendChild(section);
 }
 
-function hexToRgb(hex) {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16) / 255,
-    g: parseInt(result[2], 16) / 255,
-    b: parseInt(result[3], 16) / 255
-  } : { r: 0, g: 0, b: 0 };
-}
+// hexToRgb function moved to line 3670 (duplicate removed)
 
 function rgbToHex(r, g, b) {
   const toHex = (val) => {
@@ -1986,7 +1979,8 @@ function parseAllTokens(tokenFiles) {
     spacing: [],
     shadows: [],
     borders: { radius: [], width: [] },
-    breakpoints: []
+    breakpoints: [],
+    buttons: null
   };
 
   // Parse colors
@@ -2019,6 +2013,30 @@ function parseAllTokens(tokenFiles) {
   // Parse breakpoints
   if (tokenFiles.breakpoint && tokenFiles.breakpoint.breakpoint) {
     parsed.breakpoints = parseBreakpointTokens(tokenFiles.breakpoint);
+  }
+
+  // Parse buttons (support both old format with button.buttons and new format with button.button)
+  if (tokenFiles.button) {
+    const hasOldFormat = tokenFiles.button.buttons;
+    const hasNewFormat = tokenFiles.button.button;
+    
+    console.log('=== PARSING BUTTON TOKENS ===');
+    console.log('tokenFiles.button keys:', Object.keys(tokenFiles.button));
+    console.log('  - hasOldFormat (button.buttons):', !!hasOldFormat);
+    console.log('  - hasNewFormat (button.button):', !!hasNewFormat);
+    
+    if (hasOldFormat || hasNewFormat) {
+      parsed.buttons = parseButtonTokens(tokenFiles.button);
+      console.log('✓ Parsed buttons result:');
+      console.log('  - format:', parsed.buttons.format);
+      console.log('  - has button:', !!parsed.buttons.button);
+      console.log('  - has textLink:', !!parsed.buttons.textLink);
+    } else {
+      console.warn('⚠ Button data exists but no recognized format (missing button.buttons or button.button)');
+    }
+    console.log('=== END PARSING BUTTON TOKENS ===');
+  } else {
+    console.log('⚠ No button data found in tokenFiles');
   }
 
   return parsed;
@@ -2381,6 +2399,481 @@ function parseBreakpointTokens(breakpointData) {
   return breakpoints;
 }
 
+// ============================================
+// VALIDATE BUTTON JSON (NEW FORMAT)
+// ============================================
+
+function validateButtonJSON(data) {
+  const errors = [];
+  
+  // Check button structure
+  if (!data.button) {
+    errors.push('Missing "button" key');
+  } else {
+    if (!data.button.variants) {
+      errors.push('Missing "button.variants"');
+    }
+    if (!data.button.styles) {
+      errors.push('Missing "button.styles"');
+    }
+    if (!data.button.base) {
+      errors.push('Missing "button.base"');
+    } else {
+      // Validate base properties
+      if (data.button.base.layout) {
+        if (typeof data.button.base.layout.gap !== 'number') {
+          errors.push('button.base.layout.gap must be a number');
+        }
+      }
+      if (typeof data.button.base.borderRadius !== 'number') {
+        errors.push('button.base.borderRadius must be a number');
+      }
+      if (typeof data.button.base.borderWidth !== 'number') {
+        errors.push('button.base.borderWidth must be a number');
+      }
+      if (data.button.base.font) {
+        if (typeof data.button.base.font.size !== 'object' && typeof data.button.base.font.size !== 'number') {
+          errors.push('button.base.font.size must be a number or object');
+        }
+        // fontFamily is optional - can be inherited from body typography style
+        // weight is optional - defaults to 400/Regular
+      }
+    }
+    if (data.button.sizes) {
+      for (const [size, sizeData] of Object.entries(data.button.sizes)) {
+        if (sizeData.padding) {
+          if (typeof sizeData.padding.x !== 'number' || typeof sizeData.padding.y !== 'number') {
+            errors.push(`button.sizes.${size}.padding.x and .y must be numbers`);
+          }
+        }
+      }
+    }
+    // Validate color values in styles are strings (token paths)
+    if (data.button.styles) {
+      for (const [type, typeStyles] of Object.entries(data.button.styles)) {
+        for (const [color, colorStyles] of Object.entries(typeStyles)) {
+          for (const [state, stateStyles] of Object.entries(colorStyles)) {
+            if (stateStyles.text && typeof stateStyles.text !== 'string') {
+              errors.push(`button.styles.${type}.${color}.${state}.text must be a string (token path)`);
+            }
+            if (stateStyles.background && typeof stateStyles.background !== 'string') {
+              errors.push(`button.styles.${type}.${color}.${state}.background must be a string (token path)`);
+            }
+            if (stateStyles.border && typeof stateStyles.border !== 'string') {
+              errors.push(`button.styles.${type}.${color}.${state}.border must be a string (token path)`);
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Check textLink structure
+  if (!data.textLink) {
+    errors.push('Missing "textLink" key');
+  } else {
+    if (!data.textLink.styles) {
+      errors.push('Missing "textLink.styles"');
+    }
+    if (data.textLink.base && data.textLink.base.gap && typeof data.textLink.base.gap !== 'number') {
+      errors.push('textLink.base.gap must be a number');
+    }
+    if (data.textLink.base && data.textLink.base.font) {
+      if (typeof data.textLink.base.font.size !== 'number') {
+        errors.push('textLink.base.font.size must be a number');
+      }
+      // fontFamily is optional - can be inherited from body typography style
+      // weight is optional - defaults to 400/Regular
+    }
+    // Validate color values in textLink styles are strings
+    if (data.textLink.styles) {
+      for (const [color, colorStyles] of Object.entries(data.textLink.styles)) {
+        for (const [state, stateStyles] of Object.entries(colorStyles)) {
+          if (stateStyles.text && typeof stateStyles.text !== 'string') {
+            errors.push(`textLink.styles.${color}.${state}.text must be a string (token path)`);
+          }
+        }
+      }
+    }
+  }
+  
+  if (errors.length > 0) {
+    throw new Error('JSON Validation failed:\n' + errors.join('\n'));
+  }
+  
+  return true;
+}
+
+// ============================================
+// RESOLVE COLOR TOKEN TO FIGMA VARIABLE
+// ============================================
+
+function resolveColorToken(tokenPath, colorVariables) {
+  if (!tokenPath || typeof tokenPath !== 'string') {
+    throw new Error(`Invalid token path: ${tokenPath}`);
+  }
+  
+  // Handle transparent
+  if (tokenPath === 'color.transparent' || tokenPath === 'transparent') {
+    return null; // Return null for transparent (no fill)
+  }
+  
+  // Find variable by exact name match
+  for (const variable of colorVariables) {
+    if (variable.name === tokenPath) {
+      return variable;
+    }
+  }
+  
+  // Try to find by partial match (e.g., "color.primary.500" might be stored as "Primary/500")
+  const parts = tokenPath.split('.');
+  if (parts.length >= 2 && parts[0] === 'color') {
+    const colorName = parts[1];
+    const shade = parts[2];
+    
+    // Try different naming patterns
+    const patterns = [];
+    
+    if (shade) {
+      // Has shade: "color.primary.500"
+      const colorNameCap = colorName.charAt(0).toUpperCase() + colorName.slice(1);
+      patterns.push(`${colorNameCap}/${shade}`);
+      patterns.push(`${colorName}/${shade}`);
+      patterns.push(`${colorNameCap}-${shade}`);
+      patterns.push(`${colorName}-${shade}`);
+    } else {
+      // No shade: "color.white" or "color.primary"
+      const colorNameCap = colorName.charAt(0).toUpperCase() + colorName.slice(1);
+      patterns.push(colorNameCap);
+      patterns.push(colorName);
+      patterns.push(`color/${colorNameCap}`);
+      patterns.push(`color/${colorName}`);
+    }
+    
+    // Try each pattern
+    for (const pattern of patterns) {
+      for (const variable of colorVariables) {
+        const varName = variable.name.toLowerCase();
+        const patternLower = pattern.toLowerCase();
+        
+        // Exact match
+        if (variable.name === pattern) {
+          return variable;
+        }
+        
+        // Case-insensitive match
+        if (varName === patternLower) {
+          return variable;
+        }
+        
+        // Ends with pattern
+        if (varName.endsWith(`/${patternLower}`) || varName.endsWith(`-${patternLower}`)) {
+          return variable;
+        }
+        
+        // Contains pattern (for nested structures)
+        if (varName.includes(patternLower)) {
+          return variable;
+        }
+      }
+    }
+  }
+  
+  // Last attempt: case-insensitive search for any part of the token path
+  const searchTerms = tokenPath.toLowerCase().split('.');
+  for (const term of searchTerms) {
+    if (term === 'color') continue; // Skip 'color' prefix
+    
+    for (const variable of colorVariables) {
+      const varName = variable.name.toLowerCase();
+      if (varName === term || varName.includes(term)) {
+        console.log(`Found color variable by partial match: "${tokenPath}" -> "${variable.name}"`);
+        return variable;
+      }
+    }
+  }
+  
+  throw new Error(`Color token not found: ${tokenPath}. Please ensure the variable exists in Figma.`);
+}
+
+// ============================================
+// HELPER: RESOLVE CONFIG VALUE
+// ============================================
+
+function resolveConfigValue(value, config) {
+  if (typeof value !== 'string') return value;
+  
+  // Handle {config.examples.defaultText} format
+  const match = value.match(/\{config\.(.+)\}/);
+  if (match) {
+    const path = match[1].split('.');
+    let result = config;
+    for (const key of path) {
+      if (result && result[key] !== undefined) {
+        result = result[key];
+      } else {
+        return value; // Return original if path not found
+      }
+    }
+    return result;
+  }
+  
+  return value;
+}
+
+// ============================================
+// PARSE BUTTON TOKENS (NEW FORMAT)
+// ============================================
+
+function parseButtonTokens(buttonData) {
+  console.log('=== parseButtonTokens START ===');
+  console.log('buttonData keys:', buttonData ? Object.keys(buttonData) : 'null');
+  console.log('buttonData.button exists?', !!(buttonData && buttonData.button));
+  console.log('buttonData.buttons exists?', !!(buttonData && buttonData.buttons));
+  console.log('buttonData.button.variants exists?', !!(buttonData && buttonData.button && buttonData.button.variants));
+  
+  // Validate JSON structure first
+  try {
+    console.log('Validating JSON structure...');
+    validateButtonJSON(buttonData);
+    console.log('✓ JSON validation passed');
+  } catch (error) {
+    console.error('❌ Button JSON validation failed:', error.message);
+    throw error;
+  }
+  
+  // Check if this is new format (has button.variants) or old format (has button.buttons)
+  const isNewFormat = buttonData.button && buttonData.button.variants;
+  const isOldFormat = buttonData.buttons;
+  
+  console.log('Format detection:');
+  console.log('  - isNewFormat:', isNewFormat);
+  console.log('  - isOldFormat:', isOldFormat);
+  
+  if (isOldFormat && !isNewFormat) {
+    console.log('Using OLD format parser');
+    // Old format - use existing parser
+    return parseButtonTokensOld(buttonData);
+  }
+  
+  if (!isNewFormat) {
+    console.error('❌ Invalid button JSON format: missing button.variants or buttons');
+    throw new Error('Invalid button JSON format: missing button.variants or buttons');
+  }
+  
+  console.log('Using NEW format parser');
+  
+  const button = buttonData.button;
+  const textLink = buttonData.textLink;
+  const config = buttonData.config || {};
+  
+  // Parse button variants
+  const buttonVariants = {
+    state: button.variants.state || ['default', 'hover', 'disabled'],
+    color: button.variants.color || [],
+    size: button.variants.size || ['large', 'small'],
+    type: button.variants.type || ['fill', 'outline']
+  };
+  
+  // Parse button base
+  const buttonBase = {
+    layout: {
+      direction: (button.base.layout && button.base.layout.direction) || 'horizontal',
+      align: (button.base.layout && button.base.layout.align) || 'center',
+      gap: (button.base.layout && button.base.layout.gap) || 8
+    },
+    borderRadius: button.base.borderRadius || 4,
+    borderWidth: button.base.borderWidth || 2,
+    minHeight: button.base.minHeight || {},
+    font: button.base.font || {
+      family: 'Inter',
+      weight: 600,
+      size: { large: 16, small: 14 },
+      lineHeight: { large: 24, small: 20 }
+    }
+  };
+  
+  // Parse button sizes
+  const buttonSizes = button.sizes || {};
+  
+  // Parse button styles (already validated)
+  const buttonStyles = button.styles || {};
+  
+  // Parse button properties
+  const buttonProperties = button.properties || {};
+  
+  // Parse textLink variants
+  const textLinkVariants = {
+    state: (textLink.variants && textLink.variants.state) || ['default', 'hover', 'disabled'],
+    color: (textLink.variants && textLink.variants.color) || []
+  };
+  
+  // Parse textLink base
+  const textLinkBase = {
+    font: (textLink.base && textLink.base.font) || {
+      family: 'Inter',
+      weight: 500,
+      size: 16,
+      lineHeight: 24
+    },
+    gap: (textLink.base && textLink.base.gap) || 4
+  };
+  
+  // Parse textLink styles
+  const textLinkStyles = textLink.styles || {};
+  
+  // Parse textLink properties
+  const textLinkProperties = textLink.properties || {};
+  
+  const result = {
+    format: 'new',
+    button: {
+      variants: buttonVariants,
+      base: buttonBase,
+      sizes: buttonSizes,
+      styles: buttonStyles,
+      properties: buttonProperties
+    },
+    textLink: {
+      variants: textLinkVariants,
+      base: textLinkBase,
+      styles: textLinkStyles,
+      properties: textLinkProperties
+    },
+    config: config
+  };
+  
+  console.log('=== parseButtonTokens END ===');
+  console.log('Parsed result format:', result.format);
+  console.log('Button variants count:', result.button.variants.type.length * result.button.variants.color.length * result.button.variants.size.length * result.button.variants.state.length);
+  console.log('TextLink variants count:', result.textLink.variants.color.length * result.textLink.variants.state.length);
+  console.log('Result keys:', Object.keys(result));
+  
+  return result;
+}
+
+// ============================================
+// PARSE BUTTON TOKENS (OLD FORMAT - BACKWARD COMPATIBILITY)
+// ============================================
+
+function parseButtonTokensOld(buttonData) {
+  console.log('parseButtonTokensOld called with:', buttonData);
+  const buttons = buttonData.buttons || {};
+  const config = buttonData.config || {};
+  
+  const defaultProps = buttons.default || {};
+  const smallProps = buttons.small || {};
+  
+  // Parse button variants
+  const buttonVariants = [];
+  const textLinkVariants = (config.textLinks && config.textLinks.variants) ? config.textLinks.variants : [];
+  
+  console.log('Button variants to parse:', Object.keys(buttons));
+  
+  // Button variants mapping
+  const variantMap = {
+    'primary': { type: 'Fill', color: 'Primary' },
+    'outline-primary': { type: 'Outline', color: 'Primary' },
+    'secondary': { type: 'Fill', color: 'Secondary' },
+    'outline-secondary': { type: 'Outline', color: 'Secondary' },
+    'gray': { type: 'Fill', color: 'Gray' },
+    'outline-gray': { type: 'Outline', color: 'Gray' },
+    'white': { type: 'Fill', color: 'White' },
+    'outline-white': { type: 'Outline', color: 'White' },
+    'dark': { type: 'Fill', color: 'Dark' },
+    'tertiary': { type: 'Fill', color: 'Tertiary' },
+    'outline-tertiary': { type: 'Outline', color: 'Tertiary' }
+  };
+  
+  // Parse each button variant
+  for (const [key, value] of Object.entries(buttons)) {
+    if (key === 'default' || key === 'small') continue;
+    
+    const mapping = variantMap[key];
+    if (!mapping) continue;
+    
+    // Get default state
+    const defaultState = {
+      color: value.color || '#000000',
+      backgroundColor: value['background-color'] || 'transparent',
+      borderColor: value['border-color'] || 'transparent'
+    };
+    
+    // Get hover state
+    const hoverState = value.hover ? {
+      color: value.hover.color || defaultState.color,
+      backgroundColor: value.hover['background-color'] || defaultState.backgroundColor,
+      borderColor: value.hover['border-color'] || defaultState.borderColor
+    } : defaultState;
+    
+    // Get disable state (default if not provided)
+    const disableState = value.disable ? {
+      color: value.disable.color || '#cccccc',
+      backgroundColor: value.disable['background-color'] || '#e0e0e0',
+      borderColor: value.disable['border-color'] || '#e0e0e0'
+    } : {
+      color: '#cccccc',
+      backgroundColor: '#e0e0e0',
+      borderColor: '#e0e0e0'
+    };
+    
+    buttonVariants.push({
+      name: key,
+      type: mapping.type,
+      color: mapping.color,
+      states: {
+        default: defaultState,
+        hover: hoverState,
+        disable: disableState
+      }
+    });
+  }
+  
+  // Parse text link variants
+  const textLinks = [];
+  for (const variant of textLinkVariants) {
+    // Extract color from variant name (e.g., "text-link-primary" -> "Primary")
+    const colorMatch = variant.match(/text-link-(.+)/);
+    if (colorMatch) {
+      const colorName = colorMatch[1].charAt(0).toUpperCase() + colorMatch[1].slice(1);
+      textLinks.push({
+        name: variant,
+        color: colorName,
+        states: {
+          default: { color: '#6fb7e8' }, // Default colors, can be enhanced
+          hover: { color: '#4a9fdc' },
+          disable: { color: '#cccccc' }
+        }
+      });
+    }
+  }
+  
+  return {
+    variants: buttonVariants,
+    textLinks: textLinks,
+    defaultProps: {
+      paddingLeft: parseValue(defaultProps['padding-left'] || '2.75rem'),
+      paddingRight: parseValue(defaultProps['padding-right'] || '2.75rem'),
+      paddingTop: parseValue(defaultProps['padding-top'] || '20px'),
+      paddingBottom: parseValue(defaultProps['padding-bottom'] || '20px'),
+      fontWeight: defaultProps['font-weight'] || '700',
+      borderRadius: parseValue(defaultProps['border-radius'] || '0.125rem'),
+      borderWidth: parseValue(defaultProps['border-width'] || '2px')
+    },
+    smallProps: {
+      paddingLeft: parseValue(smallProps['padding-left'] || '2rem'),
+      paddingRight: parseValue(smallProps['padding-right'] || '2rem'),
+      paddingTop: parseValue(smallProps['padding-top'] || '1rem'),
+      paddingBottom: parseValue(smallProps['padding-bottom'] || '1rem')
+    },
+    config: {
+      defaultText: (config.examples && config.examples.defaultText) ? config.examples.defaultText : 'Button',
+      textLinkText: (config.examples && config.examples.textLinkText) ? config.examples.textLinkText : 'Text link',
+      iconClass: (config.icon && config.icon.class) ? config.icon.class : 'icomoon icon-chevron-right'
+    }
+  };
+}
+
 function mapFontWeightToFigma(fontWeight) {
   // Map fontWeight from JSON to Figma font style
   // Handles: numeric values (e.g., "600"), spaced values (e.g., "semi bold"), case variations, and compound weights (e.g., "semibold italic")
@@ -2682,82 +3175,121 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
     const figmaFontWeight = mapFontWeightToFigma(style.fontWeight);
     console.log(`Mapped fontWeight: "${style.fontWeight}" -> "${figmaFontWeight}"`);
 
-    const fontName = { family: fontFamily, style: figmaFontWeight };
+    // For Inter font, try alternative names first (Inter uses "Semi Bold" not "Semibold")
+    let fontName = { family: fontFamily, style: figmaFontWeight };
     let fontLoaded = false;
+    
+    // Special handling for Inter font - try common alternative names first
+    if (fontFamily === 'Inter' && figmaFontWeight === 'Semibold') {
+      // Inter uses "Semi Bold" (with space), try that first
+      try {
+        await figma.loadFontAsync({ family: fontFamily, style: 'Semi Bold' });
+        fontName = { family: fontFamily, style: 'Semi Bold' };
+        fontLoaded = true;
+      } catch (e) {
+        // Continue to try "Semibold" below
+      }
+    } else if (fontFamily === 'Inter' && figmaFontWeight === 'ExtraBold') {
+      // Inter might use "Extra Bold" (with space), try that first
+      try {
+        await figma.loadFontAsync({ family: fontFamily, style: 'Extra Bold' });
+        fontName = { family: fontFamily, style: 'Extra Bold' };
+        fontLoaded = true;
+      } catch (e) {
+        // Continue to try "ExtraBold" below
+      }
+    } else if (fontFamily === 'Inter' && figmaFontWeight === 'ExtraLight') {
+      // Inter might use "Extra Light" (with space), try that first
+      try {
+        await figma.loadFontAsync({ family: fontFamily, style: 'Extra Light' });
+        fontName = { family: fontFamily, style: 'Extra Light' };
+        fontLoaded = true;
+      } catch (e) {
+        // Continue to try "ExtraLight" below
+      }
+    }
 
-    try {
-      await figma.loadFontAsync(fontName);
-      fontLoaded = true;
-      console.log(`✓ Successfully loaded font: ${fontName.family} ${fontName.style}`);
-    } catch (e) {
-      console.warn(`✗ Failed to load font: ${fontName.family} ${fontName.style}, trying fallbacks...`);
-      // Try fallbacks - try similar weights first, then lighter weights
-      const fallbacks = [];
-      
-      // If trying Semibold, also try alternative names (with space, different case)
-      if (figmaFontWeight === 'Semibold') {
-        fallbacks.push(
-          { family: fontFamily, style: 'Semi Bold' },
-          { family: fontFamily, style: 'SemiBold' },
-          { family: fontFamily, style: 'semibold' }
-        );
-      }
-      
-      // If trying ExtraBold, try alternative names and similar heavy weights
-      if (figmaFontWeight === 'ExtraBold') {
-        fallbacks.push(
-          { family: fontFamily, style: 'Extra Bold' },  // With space
-          { family: fontFamily, style: 'extrabold' },  // Lowercase
-          { family: fontFamily, style: 'Black' },
-          { family: fontFamily, style: 'Bold' },
-          { family: fontFamily, style: 'Semibold' }
-        );
-      }
-      
-      // If trying ExtraLight, try alternative names and similar light weights
-      if (figmaFontWeight === 'ExtraLight') {
-        fallbacks.push(
-          { family: fontFamily, style: 'Extra Light' },  // With space
-          { family: fontFamily, style: 'extralight' },    // Lowercase
-          { family: fontFamily, style: 'Light' },
-          { family: fontFamily, style: 'Thin' }
-        );
-      }
-      
-      // If trying Bold, try similar weights
-      if (figmaFontWeight === 'Bold') {
-        fallbacks.push(
-          { family: fontFamily, style: 'ExtraBold' },
-          { family: fontFamily, style: 'Semibold' },
-          { family: fontFamily, style: 'Medium' }
-        );
-      }
-      
-      // Standard fallbacks - try lighter weights
-      if (figmaFontWeight !== 'Regular' && figmaFontWeight !== 'Medium') {
-        fallbacks.push(
-          { family: fontFamily, style: 'Medium' },
-          { family: fontFamily, style: 'Regular' }
-        );
-      } else {
-        // If already trying Regular or Medium, just try the other one
-        fallbacks.push(
-          { family: fontFamily, style: figmaFontWeight === 'Regular' ? 'Medium' : 'Regular' }
-        );
-      }
+    // Try the mapped font weight if not already loaded
+    if (!fontLoaded) {
+      try {
+        await figma.loadFontAsync(fontName);
+        fontLoaded = true;
+        console.log(`✓ Successfully loaded font: ${fontName.family} ${fontName.style}`);
+      } catch (e) {
+        // Try fallbacks - try similar weights first, then lighter weights
+        const fallbacks = [];
+        
+        // If trying Semibold, also try alternative names (with space, different case)
+        if (figmaFontWeight === 'Semibold') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Semi Bold' },
+            { family: fontFamily, style: 'SemiBold' },
+            { family: fontFamily, style: 'semibold' }
+          );
+        }
+        
+        // If trying ExtraBold, try alternative names and similar heavy weights
+        if (figmaFontWeight === 'ExtraBold') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Extra Bold' },  // With space
+            { family: fontFamily, style: 'extrabold' },  // Lowercase
+            { family: fontFamily, style: 'Black' },
+            { family: fontFamily, style: 'Bold' },
+            { family: fontFamily, style: 'Semibold' }
+          );
+        }
+        
+        // If trying ExtraLight, try alternative names and similar light weights
+        if (figmaFontWeight === 'ExtraLight') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Extra Light' },  // With space
+            { family: fontFamily, style: 'extralight' },    // Lowercase
+            { family: fontFamily, style: 'Light' },
+            { family: fontFamily, style: 'Thin' }
+          );
+        }
+        
+        // If trying Bold, try similar weights
+        if (figmaFontWeight === 'Bold') {
+          fallbacks.push(
+            { family: fontFamily, style: 'ExtraBold' },
+            { family: fontFamily, style: 'Semibold' },
+            { family: fontFamily, style: 'Medium' }
+          );
+        }
+        
+        // Standard fallbacks - try lighter weights
+        if (figmaFontWeight !== 'Regular' && figmaFontWeight !== 'Medium') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Medium' },
+            { family: fontFamily, style: 'Regular' }
+          );
+        } else {
+          // If already trying Regular or Medium, just try the other one
+          fallbacks.push(
+            { family: fontFamily, style: figmaFontWeight === 'Regular' ? 'Medium' : 'Regular' }
+          );
+        }
 
-      for (const fallback of fallbacks) {
-        try {
-          await figma.loadFontAsync(fallback);
-          fontName.family = fallback.family;
-          fontName.style = fallback.style;
-          fontLoaded = true;
-          console.warn(`Using fallback font: ${fallback.family} ${fallback.style}`);
-          break;
-        } catch (fallbackError) {
-          // Continue
+        for (const fallback of fallbacks) {
+          try {
+            await figma.loadFontAsync(fallback);
+            fontName.family = fallback.family;
+            fontName.style = fallback.style;
+            fontLoaded = true;
+            // Only log fallback if it's different from what we tried first
+            if (fallback.style !== figmaFontWeight) {
+              console.log(`Using fallback font: ${fallback.family} ${fallback.style} (instead of ${figmaFontWeight})`);
+            }
+            break;
+          } catch (fallbackError) {
+            // Continue
+          }
         }
       }
+    } else {
+      // Font already loaded with alternative name
+      console.log(`✓ Successfully loaded font: ${fontName.family} ${fontName.style}`);
     }
 
     if (!fontLoaded) {
@@ -3170,6 +3702,367 @@ async function createBreakpointVariablesFromParsedTokens(breakpoints, prefix, du
 // GENERATE LAYOUT FROM PARSED TOKENS
 // ============================================
 
+// Helper function to create icon from SVG
+function createIconFromSVG(fillColor = { r: 1, g: 1, b: 1 }, fontToUse = null) {
+  // Create a clean arrow icon - prefer text character if font is available
+  // Otherwise use simple shapes
+  
+  // If font is provided, use text character (best quality)
+  if (fontToUse) {
+    try {
+      const icon = figma.createText();
+      icon.name = "Icon";
+      icon.characters = "→"; // Right arrow character
+      icon.fontSize = 16;
+      icon.fontName = fontToUse;
+      icon.fills = [{ type: 'SOLID', color: fillColor }];
+      icon.strokes = [];
+      icon.textAutoResize = "WIDTH_AND_HEIGHT";
+      return icon;
+    } catch (e) {
+      console.warn('Failed to create arrow from text, using shapes:', e);
+    }
+  }
+  
+  // Fallback: create arrow using simple shapes (no background, clean design)
+  const arrowGroup = figma.createFrame();
+  arrowGroup.name = "Icon";
+  arrowGroup.layoutMode = "HORIZONTAL";
+  arrowGroup.primaryAxisAlignItems = "CENTER";
+  arrowGroup.counterAxisAlignItems = "CENTER";
+  arrowGroup.fills = []; // No background
+  arrowGroup.strokes = []; // No border
+  arrowGroup.itemSpacing = -2; // Overlap for seamless look
+  
+  // Create arrow body (horizontal line - thinner and cleaner)
+  const body = figma.createRectangle();
+  body.name = "Arrow Body";
+  body.resize(8, 1.2);
+  body.fills = [{ type: 'SOLID', color: fillColor }];
+  body.strokes = [];
+  body.cornerRadius = 0.6;
+  
+  // Create arrow head - use a smaller, properly positioned diamond
+  const head = figma.createRectangle();
+  head.name = "Arrow Head";
+  head.resize(4, 4);
+  head.fills = [{ type: 'SOLID', color: fillColor }];
+  head.strokes = [];
+  head.rotation = 45; // Rotate to form diamond/triangle
+  head.x = 5.5; // Position right after body with slight overlap
+  
+  arrowGroup.appendChild(body);
+  arrowGroup.appendChild(head);
+  arrowGroup.resize(14, 14);
+  arrowGroup.primaryAxisSizingMode = "AUTO";
+  arrowGroup.counterAxisSizingMode = "AUTO";
+  
+  return arrowGroup;
+}
+
+// Helper function to convert hex color to RGB
+function hexToRgb(hex) {
+  if (!hex || hex === 'transparent') {
+    return { r: 0, g: 0, b: 0, a: 0 };
+  }
+  
+  // Remove # if present
+  hex = hex.replace('#', '');
+  
+  // Handle 8-digit hex (with alpha)
+  if (hex.length === 8) {
+    const r = parseInt(hex.substring(0, 2), 16) / 255;
+    const g = parseInt(hex.substring(2, 4), 16) / 255;
+    const b = parseInt(hex.substring(4, 6), 16) / 255;
+    const a = parseInt(hex.substring(6, 8), 16) / 255;
+    return { r, g, b, a };
+  }
+  
+  // Handle 6-digit hex
+  if (hex.length === 6) {
+    const r = parseInt(hex.substring(0, 2), 16) / 255;
+    const g = parseInt(hex.substring(2, 4), 16) / 255;
+    const b = parseInt(hex.substring(4, 6), 16) / 255;
+    return { r, g, b, a: 1 };
+  }
+  
+  // Handle 3-digit hex
+  if (hex.length === 3) {
+    const r = parseInt(hex[0] + hex[0], 16) / 255;
+    const g = parseInt(hex[1] + hex[1], 16) / 255;
+    const b = parseInt(hex[2] + hex[2], 16) / 255;
+    return { r, g, b, a: 1 };
+  }
+  
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+
+// Helper function to find color variable by name
+function findColorVariable(colorName, colorVariables) {
+  if (!colorVariables || colorVariables.length === 0) return null;
+  
+  // Try exact match first
+  for (const variable of colorVariables) {
+    if (variable.name === colorName || variable.name.toLowerCase() === colorName.toLowerCase()) {
+      return variable;
+    }
+  }
+  
+  // Try partial match (e.g., "primary/500" for "primary")
+  const normalizedName = colorName.toLowerCase();
+  for (const variable of colorVariables) {
+    const varName = variable.name.toLowerCase();
+    if (varName.includes(normalizedName) || normalizedName.includes(varName.split('/')[0])) {
+      return variable;
+    }
+  }
+  
+  return null;
+}
+
+// Function to create Button Component with variants
+async function createButtonComponent(buttonData, colorVariables, prefix) {
+  if (!buttonData || !buttonData.variants || buttonData.variants.length === 0) {
+    return null;
+  }
+
+  // Load fonts
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+
+  const componentName = prefix ? `Button - ${prefix}` : 'Button';
+  
+  // Create base component frame
+  const baseComponent = figma.createComponent();
+  baseComponent.name = componentName;
+  baseComponent.layoutMode = "HORIZONTAL";
+  baseComponent.primaryAxisAlignItems = "CENTER";
+  baseComponent.counterAxisAlignItems = "CENTER";
+  baseComponent.paddingLeft = buttonData.defaultProps.paddingLeft;
+  baseComponent.paddingRight = buttonData.defaultProps.paddingRight;
+  baseComponent.paddingTop = buttonData.defaultProps.paddingTop;
+  baseComponent.paddingBottom = buttonData.defaultProps.paddingBottom;
+  baseComponent.cornerRadius = buttonData.defaultProps.borderRadius;
+  baseComponent.strokeWeight = buttonData.defaultProps.borderWidth;
+  baseComponent.itemSpacing = 8;
+  baseComponent.fills = [{ type: 'SOLID', color: { r: 0.4, g: 0.7, b: 0.9 } }];
+  baseComponent.strokes = [{ type: 'SOLID', color: { r: 0.4, g: 0.7, b: 0.9 } }];
+
+  // Create text node
+  const textNode = figma.createText();
+  textNode.name = "Text Button";
+  textNode.characters = buttonData.config.defaultText;
+  textNode.fontName = { family: "Inter", style: "Bold" };
+  textNode.fontSize = 16;
+  textNode.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  textNode.textAutoResize = "WIDTH_AND_HEIGHT";
+
+  // Create right icon - use same font as text
+  const iconNode = createIconFromSVG({ r: 1, g: 1, b: 1 }, textNode.fontName);
+  iconNode.name = "Right Icon";
+
+  baseComponent.appendChild(textNode);
+  baseComponent.appendChild(iconNode);
+
+  // Set component properties
+  baseComponent.addComponentProperty("Text Button", "TEXT", buttonData.config.defaultText);
+  baseComponent.addComponentProperty("Left icon", "BOOLEAN", false);
+  baseComponent.addComponentProperty("Right icon", "BOOLEAN", true);
+  baseComponent.addComponentProperty("Icon", "TEXT", "arrow--right");
+
+  // Create variants for State, Color, Size, Type
+  const states = ['Default', 'Hover', 'Disable'];
+  const sizes = ['Large', 'Small'];
+  const types = ['Fill', 'Outline'];
+  const colors = ['Primary', 'Secondary', 'Gray', 'White', 'Dark', 'Tertiary'];
+
+  // Add variant properties
+  baseComponent.addVariantProperty("State", states);
+  baseComponent.addVariantProperty("Color", colors);
+  baseComponent.addVariantProperty("Size", sizes);
+  baseComponent.addVariantProperty("Type", types);
+
+  // Create all variant instances
+  const variantInstances = [];
+  
+  for (const variant of buttonData.variants) {
+    const stateKeys = ['default', 'hover', 'disable'];
+    
+    for (let stateIdx = 0; stateIdx < states.length; stateIdx++) {
+      const state = states[stateIdx];
+      const stateKey = stateKeys[stateIdx];
+      const stateData = variant.states[stateKey];
+      
+      if (!stateData) continue;
+
+      // Find matching size
+      const size = sizes[0]; // Default to Large, can be enhanced
+      
+      // Create instance
+      const instance = baseComponent.createInstance();
+      instance.name = `${variant.type} - ${variant.color} - ${size} - ${state}`;
+      
+      // Set variant properties
+      instance.setProperties({
+        "State": state,
+        "Color": variant.color,
+        "Size": size,
+        "Type": variant.type
+      });
+
+      // Apply colors
+      const bgColor = hexToRgb(stateData.backgroundColor);
+      const textColor = hexToRgb(stateData.color);
+      const borderColor = hexToRgb(stateData.borderColor);
+
+      // Check if we can use variables
+      const colorVar = findColorVariable(variant.color.toLowerCase(), colorVariables);
+      
+      if (variant.type === 'Fill') {
+        if (colorVar && stateData.backgroundColor !== 'transparent') {
+          try {
+            instance.fills = [
+              figma.variables.setBoundVariableForPaint(
+                { type: 'SOLID', color: bgColor },
+                'color',
+                colorVar
+              )
+            ];
+          } catch (e) {
+            instance.fills = [{ type: 'SOLID', color: bgColor }];
+          }
+        } else {
+          instance.fills = [{ type: 'SOLID', color: bgColor }];
+        }
+      } else {
+        // Outline: transparent fill
+        instance.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 0 } }];
+      }
+
+      instance.strokes = [{ type: 'SOLID', color: borderColor }];
+      
+      // Update text and icon colors
+      const textChild = instance.findOne(n => n.name === "Text Button");
+      const iconChild = instance.findOne(n => n.name === "Right Icon");
+      
+      if (textChild && textChild.type === 'TEXT') {
+        textChild.fills = [{ type: 'SOLID', color: textColor }];
+      }
+      if (iconChild) {
+        iconChild.fills = [{ type: 'SOLID', color: textColor }];
+      }
+
+      // Apply size
+      if (size === 'Small') {
+        instance.paddingLeft = buttonData.smallProps.paddingLeft;
+        instance.paddingRight = buttonData.smallProps.paddingRight;
+        instance.paddingTop = buttonData.smallProps.paddingTop;
+        instance.paddingBottom = buttonData.smallProps.paddingBottom;
+      }
+
+      variantInstances.push(instance);
+    }
+  }
+
+  // Clean up: remove base component if we created instances
+  if (variantInstances.length > 0) {
+    baseComponent.remove();
+    return variantInstances[0].mainComponent; // Return the main component
+  }
+
+  return baseComponent;
+}
+
+// Function to create Text Link Component with variants
+async function createTextLinkComponent(textLinkData, colorVariables, prefix) {
+  if (!textLinkData || !textLinkData.textLinks || textLinkData.textLinks.length === 0) {
+    return null;
+  }
+
+  // Load fonts
+  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+
+  const componentName = prefix ? `Text Link - ${prefix}` : 'Text Link';
+  
+  // Create base component
+  const baseComponent = figma.createComponent();
+  baseComponent.name = componentName;
+  baseComponent.layoutMode = "HORIZONTAL";
+  baseComponent.primaryAxisAlignItems = "CENTER";
+  baseComponent.counterAxisAlignItems = "CENTER";
+  baseComponent.itemSpacing = 8;
+  baseComponent.fills = [];
+
+  // Create text node
+  const textNode = figma.createText();
+  textNode.name = "Text Link";
+  textNode.characters = textLinkData.config.textLinkText;
+  textNode.fontName = { family: "Inter", style: "Regular" };
+  textNode.fontSize = 16;
+  textNode.fills = [{ type: 'SOLID', color: { r: 0.4, g: 0.7, b: 0.9 } }];
+  textNode.textAutoResize = "WIDTH_AND_HEIGHT";
+  textNode.textDecoration = "UNDERLINE";
+
+  baseComponent.appendChild(textNode);
+
+  // Set component properties
+  baseComponent.addComponentProperty("Text Link", "TEXT", textLinkData.config.textLinkText);
+  baseComponent.addComponentProperty("Icon", "TEXT", "arrow--right");
+
+  // Create variants
+  const states = ['Default', 'Hover', 'Disable'];
+  const colors = [];
+
+  for (const link of textLinkData.textLinks) {
+    if (!colors.includes(link.color)) {
+      colors.push(link.color);
+    }
+  }
+
+  baseComponent.addVariantProperty("State", states);
+  baseComponent.addVariantProperty("Color", colors);
+
+  // Create variant instances
+  const variantInstances = [];
+  
+  for (const link of textLinkData.textLinks) {
+    const stateKeys = ['default', 'hover', 'disable'];
+    
+    for (let stateIdx = 0; stateIdx < states.length; stateIdx++) {
+      const state = states[stateIdx];
+      const stateKey = stateKeys[stateIdx];
+      const stateData = link.states[stateKey];
+      
+      if (!stateData) continue;
+
+      const instance = baseComponent.createInstance();
+      instance.name = `${link.color} - ${state}`;
+      
+      instance.setProperties({
+        "State": state,
+        "Color": link.color
+      });
+
+      const textColor = hexToRgb(stateData.color);
+      const textChild = instance.findOne(n => n.name === "Text Link");
+      
+      if (textChild && textChild.type === 'TEXT') {
+        textChild.fills = [{ type: 'SOLID', color: textColor }];
+      }
+
+      variantInstances.push(instance);
+    }
+  }
+
+  if (variantInstances.length > 0) {
+    baseComponent.remove();
+    return variantInstances[0].mainComponent;
+  }
+
+  return baseComponent;
+}
+
 async function generateLayoutFromParsedTokens(parsedTokens, prefix, useVariables = false) {
   // Load fonts
   const fontsToLoad = new Set();
@@ -3245,6 +4138,56 @@ async function generateLayoutFromParsedTokens(parsedTokens, prefix, useVariables
   if (parsedTokens.breakpoints.length > 0) {
     await generateBreakpointLayoutFromTokens(mainFrame, parsedTokens.breakpoints);
   }
+
+  // Generate button section
+  console.log('=== BUTTON GENERATION DEBUG ===');
+  console.log('parsedTokens.buttons exists?', !!parsedTokens.buttons);
+  console.log('parsedTokens.buttons:', parsedTokens.buttons);
+  
+  if (parsedTokens.buttons) {
+    try {
+      console.log('Button data format:', parsedTokens.buttons.format);
+      console.log('Button data keys:', Object.keys(parsedTokens.buttons));
+      const colorVariables = useVariables ? figma.variables.getLocalVariables('COLOR') : [];
+      console.log('Color variables found:', colorVariables.length);
+      
+      // Check if new format
+      if (parsedTokens.buttons.format === 'new') {
+        console.log('✓ Detected NEW format, generating Grid Layout...');
+        
+        // New format: Generate Grid Layout (like screenshot)
+        console.log('Calling generateButtonGridLayout...');
+        await generateButtonGridLayout(
+          mainFrame,
+          parsedTokens.buttons,
+          colorVariables,
+          parsedTokens.buttons.config || {},
+          parsedTokens
+        );
+        
+        console.log('Calling generateTextLinkGridLayout...');
+        await generateTextLinkGridLayout(
+          mainFrame,
+          parsedTokens.buttons,
+          colorVariables,
+          parsedTokens.buttons.config || {},
+          parsedTokens
+        );
+      } else {
+        console.log('Detected OLD format, generating layout...');
+        // Old format: Generate layout
+        await generateButtonLayoutFromTokens(mainFrame, parsedTokens.buttons, colorVariables, prefix);
+      }
+    } catch (e) {
+      console.error('❌ Failed to generate button components:', e);
+      console.error('Error stack:', e.stack);
+      figma.ui.postMessage({ type: 'status', message: `Error generating buttons: ${e.message}`, error: true });
+    }
+  } else {
+    console.log('⚠ No button data found in parsedTokens');
+    console.log('parsedTokens keys:', Object.keys(parsedTokens));
+  }
+  console.log('=== END BUTTON GENERATION DEBUG ===');
 
   mainFrame.primaryAxisSizingMode = "AUTO";
   mainFrame.counterAxisSizingMode = "AUTO";
@@ -3968,5 +4911,1395 @@ async function generateBreakpointLayoutFromTokens(parent, breakpoints) {
   });
 
   section.appendChild(table);
+  parent.appendChild(section);
+}
+
+// ============================================
+// GENERATE BUTTON COMPONENTS (NEW FORMAT)
+// ============================================
+
+// Helper: Get fontFamily from body typography style
+function getFontFamilyFromBodyStyle(parsedTokens) {
+  if (!parsedTokens || !parsedTokens.typography) {
+    return null;
+  }
+  
+  // Find body style
+  for (const style of parsedTokens.typography) {
+    if (style.displayName === 'body' || style.name.toLowerCase().includes('body')) {
+      // Try to get fontFamily from any breakpoint
+      if (style.fontFamily) {
+        return style.fontFamily;
+      }
+    }
+  }
+  
+  return null;
+}
+
+async function generateButtonComponents(buttonData, colorVariables, config, parsedTokens) {
+  console.log('=== generateButtonComponents START ===');
+  console.log('buttonData:', buttonData);
+  console.log('buttonData.format:', buttonData ? buttonData.format : 'undefined');
+  console.log('colorVariables count:', colorVariables ? colorVariables.length : 0);
+  console.log('config:', config);
+  
+  if (!buttonData || buttonData.format !== 'new') {
+    console.log('❌ Skipping: not new format or missing button data');
+    console.log('  - buttonData exists?', !!buttonData);
+    console.log('  - format:', buttonData ? buttonData.format : 'N/A');
+    return null;
+  }
+  
+  const button = buttonData.button;
+  const variants = button.variants;
+  const base = button.base;
+  const sizes = button.sizes;
+  const styles = button.styles;
+  const properties = button.properties;
+  
+  console.log('Button variants:', variants);
+  console.log('Button base:', base);
+  console.log('Button sizes:', sizes);
+  console.log('Button styles keys:', styles ? Object.keys(styles) : 'none');
+  console.log('Button properties:', properties);
+  
+  // Get fontFamily - from button config, or from body style, or error
+  let fontFamily = base.font.family;
+  if (!fontFamily && parsedTokens) {
+    fontFamily = getFontFamilyFromBodyStyle(parsedTokens);
+    console.log('Got fontFamily from body style:', fontFamily);
+  }
+  
+  if (!fontFamily) {
+    const errorMsg = 'Font family not found. Please set fontFamily in button.base.font or ensure body typography style has fontFamily.';
+    console.error('❌', errorMsg);
+    figma.ui.postMessage({ type: 'status', message: errorMsg, error: true });
+    throw new Error(errorMsg);
+  }
+  
+  const fontWeight = mapFontWeightToFigma(base.font.weight);
+  console.log('Using fontFamily:', fontFamily, 'fontWeight:', fontWeight);
+  
+  // Create a parent frame to hold all components (Component Set will be created automatically)
+  const componentSetFrame = figma.createFrame();
+  componentSetFrame.name = 'Button';
+  componentSetFrame.layoutMode = 'VERTICAL';
+  componentSetFrame.itemSpacing = 20;
+  componentSetFrame.fills = [];
+  
+  // Generate all variant combinations
+  const components = [];
+  const totalCombinations = variants.type.length * variants.color.length * variants.size.length * variants.state.length;
+  console.log(`Generating ${totalCombinations} button component variants...`);
+  let createdCount = 0;
+  let skippedCount = 0;
+  
+  for (const type of variants.type) {
+    for (const color of variants.color) {
+      for (const size of variants.size) {
+        for (const state of variants.state) {
+          // Get style data for this variant
+          const styleData = styles[type] && styles[type][color] && styles[type][color][state];
+          if (!styleData) {
+            console.warn(`⚠ Missing style for ${type}/${color}/${state}`);
+            skippedCount++;
+            continue;
+          }
+          
+          console.log(`Creating component: ${type}/${color}/${size}/${state}`);
+          
+          // Create component
+          const component = figma.createComponent();
+          
+          // Name component - Figma will auto-create variant properties when components are in same frame
+          // Format: "Type=Value1, Color=Value2, Size=Value3, State=Value4"
+          const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+          const colorName = color.charAt(0).toUpperCase() + color.slice(1);
+          const sizeName = size.charAt(0).toUpperCase() + size.slice(1);
+          const stateName = state.charAt(0).toUpperCase() + state.slice(1);
+          // Use pattern that Figma recognizes for variant properties
+          component.name = `Type=${typeName}, Color=${colorName}, Size=${sizeName}, State=${stateName}`;
+          
+          // Configure Auto Layout
+          const layoutDirection = base.layout.direction === 'horizontal' ? 'HORIZONTAL' : 'VERTICAL';
+          const layoutAlign = base.layout.align === 'center' ? 'CENTER' : 
+                             base.layout.align === 'start' ? 'MIN' : 
+                             base.layout.align === 'end' ? 'MAX' : 'CENTER';
+          
+          component.layoutMode = layoutDirection;
+          component.primaryAxisAlignItems = layoutAlign;
+          component.counterAxisAlignItems = 'CENTER';
+          component.itemSpacing = base.layout.gap;
+          
+          // Apply padding
+          const sizeData = sizes[size];
+          if (sizeData && sizeData.padding) {
+            component.paddingLeft = sizeData.padding.x;
+            component.paddingRight = sizeData.padding.x;
+            component.paddingTop = sizeData.padding.y;
+            component.paddingBottom = sizeData.padding.y;
+          }
+          
+          // Apply minHeight
+          if (base.minHeight && base.minHeight[size]) {
+            component.minHeight = base.minHeight[size];
+          }
+          
+          // Apply border radius and width
+          component.cornerRadius = base.borderRadius;
+          component.strokeWeight = base.borderWidth;
+          
+          // Apply colors (bind to variables)
+          try {
+            // Background
+            if (styleData.background && styleData.background !== 'color.transparent') {
+              const bgVariable = resolveColorToken(styleData.background, colorVariables);
+              if (bgVariable) {
+                component.fills = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    bgVariable
+                  )
+                ];
+              }
+            } else {
+              component.fills = [];
+            }
+            
+            // Border
+            if (styleData.border && styleData.border !== 'color.transparent') {
+              const borderVariable = resolveColorToken(styleData.border, colorVariables);
+              if (borderVariable) {
+                component.strokes = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    borderVariable
+                  )
+                ];
+              } else {
+                component.strokes = [];
+              }
+            } else {
+              component.strokes = [];
+            }
+            
+            // Opacity
+            if (styleData.opacity !== undefined) {
+              component.opacity = styleData.opacity;
+            }
+          } catch (error) {
+            console.error(`Error applying colors for ${type}/${color}/${state}:`, error);
+            throw error;
+          }
+          
+          // Create text layer
+          const textNode = figma.createText();
+          const defaultText = resolveConfigValue(
+            properties.text ? properties.text.default : '{config.examples.defaultText}',
+            config
+          );
+          textNode.characters = defaultText || 'Button';
+          
+          // Apply typography
+          const fontSize = typeof base.font.size === 'object' 
+            ? (base.font.size[size] || base.font.size.large || 16)
+            : (base.font.size || 16);
+          const lineHeight = typeof base.font.lineHeight === 'object'
+            ? (base.font.lineHeight[size] || base.font.lineHeight.large || 24)
+            : (base.font.lineHeight || 24);
+          
+          // Load font before setting fontName (with fallback logic)
+          const figmaFontWeight = mapFontWeightToFigma(base.font.weight);
+          let fontToUse = { family: fontFamily, style: figmaFontWeight };
+          let fontLoaded = false;
+          
+          // Try to load font with fallback (similar to typography styles)
+          try {
+            await figma.loadFontAsync(fontToUse);
+            fontLoaded = true;
+          } catch (e) {
+            console.warn(`Failed to load font: ${fontToUse.family} ${fontToUse.style}, trying fallbacks...`);
+            
+            // Special handling for Inter font
+            if (fontFamily === 'Inter' && figmaFontWeight === 'Semibold') {
+              try {
+                await figma.loadFontAsync({ family: fontFamily, style: 'Semi Bold' });
+                fontToUse = { family: fontFamily, style: 'Semi Bold' };
+                fontLoaded = true;
+              } catch (e2) {
+                // Continue to other fallbacks
+              }
+            }
+            
+            // Try fallbacks
+            if (!fontLoaded) {
+              const fallbacks = [];
+              if (figmaFontWeight === 'Semibold') {
+                fallbacks.push(
+                  { family: fontFamily, style: 'Semi Bold' },
+                  { family: fontFamily, style: 'Bold' },
+                  { family: fontFamily, style: 'Medium' }
+                );
+              } else if (figmaFontWeight === 'ExtraBold') {
+                fallbacks.push(
+                  { family: fontFamily, style: 'Extra Bold' },
+                  { family: fontFamily, style: 'Bold' },
+                  { family: fontFamily, style: 'Semibold' }
+                );
+              } else if (figmaFontWeight !== 'Regular' && figmaFontWeight !== 'Medium') {
+                fallbacks.push(
+                  { family: fontFamily, style: 'Medium' },
+                  { family: fontFamily, style: 'Regular' }
+                );
+              } else {
+                fallbacks.push(
+                  { family: fontFamily, style: figmaFontWeight === 'Regular' ? 'Medium' : 'Regular' }
+                );
+              }
+              
+              for (const fallback of fallbacks) {
+                try {
+                  await figma.loadFontAsync(fallback);
+                  fontToUse = fallback;
+                  fontLoaded = true;
+                  console.log(`Using fallback font: ${fallback.family} ${fallback.style}`);
+                  break;
+                } catch (fallbackError) {
+                  // Continue
+                }
+              }
+            }
+          }
+          
+          if (!fontLoaded) {
+            throw new Error(`Could not load font: ${fontFamily} ${figmaFontWeight} for button component`);
+          }
+          
+          textNode.fontName = fontToUse;
+          textNode.fontSize = fontSize;
+          textNode.lineHeight = { value: lineHeight, unit: 'PIXELS' };
+          
+          // Apply text color
+          try {
+            if (styleData.text) {
+              const textVariable = resolveColorToken(styleData.text, colorVariables);
+              if (textVariable) {
+                textNode.fills = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    textVariable
+                  )
+                ];
+              }
+            }
+          } catch (error) {
+            console.error(`Error applying text color for ${type}/${color}/${state}:`, error);
+          }
+          
+          textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
+          textNode.name = 'Text';
+          
+          // Create icon containers (initially hidden, controlled by properties)
+          const leftIconContainer = figma.createFrame();
+          leftIconContainer.name = 'Left Icon';
+          leftIconContainer.layoutMode = 'HORIZONTAL';
+          leftIconContainer.primaryAxisAlignItems = 'CENTER';
+          leftIconContainer.counterAxisAlignItems = 'CENTER';
+          leftIconContainer.resize(0, 0);
+          leftIconContainer.visible = false;
+          
+          const rightIconContainer = figma.createFrame();
+          rightIconContainer.name = 'Right Icon';
+          rightIconContainer.layoutMode = 'HORIZONTAL';
+          rightIconContainer.primaryAxisAlignItems = 'CENTER';
+          rightIconContainer.counterAxisAlignItems = 'CENTER';
+          rightIconContainer.resize(0, 0);
+          rightIconContainer.visible = false;
+          
+          // Add Component Properties
+          if (properties.leftIcon) {
+            component.addComponentProperty('leftIcon', 'BOOLEAN', properties.leftIcon.default || false);
+          }
+          if (properties.rightIcon) {
+            component.addComponentProperty('rightIcon', 'BOOLEAN', properties.rightIcon.default || false);
+          }
+          if (properties.text) {
+            const textDefault = resolveConfigValue(properties.text.default, config);
+            component.addComponentProperty('text', 'TEXT', textDefault || 'Button');
+          }
+          if (properties.icon) {
+            const iconDefault = resolveConfigValue(properties.icon.default, config);
+            component.addComponentProperty('icon', 'TEXT', iconDefault || '');
+          }
+          
+          // Append children (leftIcon, text, rightIcon)
+          component.appendChild(leftIconContainer);
+          component.appendChild(textNode);
+          component.appendChild(rightIconContainer);
+          
+          // Add to component set frame
+          componentSetFrame.appendChild(component);
+          components.push(component);
+          createdCount++;
+          console.log(`✓ Created component ${createdCount}/${totalCombinations}: ${type}/${color}/${size}/${state}`);
+        }
+      }
+    }
+  }
+  
+  // Figma will automatically create a Component Set if components have variantProperties
+  // and are children of the same frame
+  console.log(`=== generateButtonComponents END ===`);
+  console.log(`✓ Created ${createdCount} button components`);
+  console.log(`⚠ Skipped ${skippedCount} components (missing styles)`);
+  console.log(`Component set frame children: ${componentSetFrame.children.length}`);
+  
+  // Return the frame (which will become a Component Set automatically)
+  return componentSetFrame;
+}
+
+// ============================================
+// GENERATE BUTTON GRID LAYOUT (NEW FORMAT - LIKE SCREENSHOT)
+// ============================================
+
+async function generateButtonGridLayout(parent, buttonData, colorVariables, config, parsedTokens) {
+  console.log('=== generateButtonGridLayout START ===');
+  
+  if (!buttonData || buttonData.format !== 'new') {
+    console.log('❌ Skipping: not new format or missing button data');
+    return;
+  }
+  
+  const button = buttonData.button;
+  const variants = button.variants;
+  const base = button.base;
+  const sizes = button.sizes;
+  const styles = button.styles;
+  const properties = button.properties;
+  
+  // Get fontFamily
+  let fontFamily = base.font.family;
+  if (!fontFamily && parsedTokens) {
+    fontFamily = getFontFamilyFromBodyStyle(parsedTokens);
+  }
+  if (!fontFamily) {
+    const errorMsg = 'Font family not found. Please set fontFamily in button.base.font or ensure body typography style has fontFamily.';
+    console.error('❌', errorMsg);
+    figma.ui.postMessage({ type: 'status', message: errorMsg, error: true });
+    throw new Error(errorMsg);
+  }
+  
+  // Load fonts
+  const fontWeight = mapFontWeightToFigma(base.font.weight);
+  let fontToUse = { family: fontFamily, style: fontWeight };
+  try {
+    await figma.loadFontAsync(fontToUse);
+  } catch (e) {
+    try {
+      await figma.loadFontAsync({ family: fontFamily, style: 'Regular' });
+      fontToUse = { family: fontFamily, style: 'Regular' };
+    } catch (e2) {
+      console.error('Could not load font:', fontFamily, fontWeight);
+      throw new Error(`Could not load font: ${fontFamily} ${fontWeight}`);
+    }
+  }
+  
+  // Load Inter for UI text
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+  
+  // Create section
+  const section = figma.createFrame();
+  section.name = "Buttons";
+  section.layoutMode = "VERTICAL";
+  section.itemSpacing = 20;
+  section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  section.paddingLeft = 40;
+  section.paddingRight = 40;
+  section.paddingTop = 40;
+  section.paddingBottom = 40;
+  section.cornerRadius = 8;
+  section.counterAxisSizingMode = "FIXED";
+  section.resize(1200, 100);
+  
+  // Title
+  const title = figma.createText();
+  title.characters = "Buttons";
+  title.fontSize = 32;
+  title.fontName = { family: "Inter", style: "Bold" };
+  section.appendChild(title);
+  
+  // Create grid table
+  const grid = figma.createFrame();
+  grid.name = "Button Grid";
+  grid.layoutMode = "VERTICAL";
+  grid.itemSpacing = 1;
+  grid.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
+  grid.counterAxisSizingMode = "AUTO";
+  
+  // Define column widths (consistent across header and data rows)
+  const COLUMN_WIDTHS = {
+    variant: 200,
+    state: 300
+  };
+  
+  // Header row - auto height
+  const headerRow = figma.createFrame();
+  headerRow.name = "Header";
+  headerRow.layoutMode = "HORIZONTAL";
+  headerRow.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
+  headerRow.paddingLeft = 16;
+  headerRow.paddingRight = 16;
+  headerRow.paddingTop = 12;
+  headerRow.paddingBottom = 12;
+  headerRow.itemSpacing = 0; // No spacing between cells
+  headerRow.counterAxisSizingMode = "AUTO"; // Auto height
+  
+  // Header cells - wrap in fixed width containers
+    const variantHeaderCell = figma.createFrame();
+    variantHeaderCell.layoutMode = "HORIZONTAL";
+    variantHeaderCell.primaryAxisAlignItems = "MIN";
+    variantHeaderCell.counterAxisAlignItems = "CENTER";
+    variantHeaderCell.fills = [];
+    variantHeaderCell.resize(COLUMN_WIDTHS.variant, 1); // Will auto-resize
+    variantHeaderCell.primaryAxisSizingMode = "FIXED";
+    variantHeaderCell.counterAxisSizingMode = "AUTO"; // Auto height
+  
+  const variantHeader = figma.createText();
+  variantHeader.characters = "Type - Color - Size";
+  variantHeader.fontSize = 14;
+  variantHeader.fontName = { family: "Inter", style: "Bold" };
+  variantHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  variantHeader.textAutoResize = "WIDTH_AND_HEIGHT";
+  variantHeaderCell.appendChild(variantHeader);
+  headerRow.appendChild(variantHeaderCell);
+  
+  const states = ['Default', 'Hover', 'Disable'];
+  const stateKeys = ['default', 'hover', 'disabled'];
+  states.forEach(state => {
+    const stateHeaderCell = figma.createFrame();
+    stateHeaderCell.layoutMode = "HORIZONTAL";
+    stateHeaderCell.primaryAxisAlignItems = "MIN";
+    stateHeaderCell.counterAxisAlignItems = "CENTER";
+    stateHeaderCell.fills = [];
+    stateHeaderCell.resize(COLUMN_WIDTHS.state, 1); // Will auto-resize
+    stateHeaderCell.primaryAxisSizingMode = "FIXED";
+    stateHeaderCell.counterAxisSizingMode = "AUTO"; // Auto height
+    
+    const stateHeader = figma.createText();
+    stateHeader.characters = state;
+    stateHeader.fontSize = 14;
+    stateHeader.fontName = { family: "Inter", style: "Bold" };
+    stateHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    stateHeader.textAutoResize = "WIDTH_AND_HEIGHT";
+    stateHeaderCell.appendChild(stateHeader);
+    headerRow.appendChild(stateHeaderCell);
+  });
+  
+  grid.appendChild(headerRow);
+  
+  // Generate rows for each variant combination (type, color, size)
+  for (const type of variants.type) {
+    for (const color of variants.color) {
+      for (const size of variants.size) {
+        const row = figma.createFrame();
+        row.name = `${type} - ${color} - ${size}`;
+        row.layoutMode = "HORIZONTAL";
+        row.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 } }];
+        row.paddingLeft = 16;
+        row.paddingRight = 16;
+        row.paddingTop = 12;
+        row.paddingBottom = 12;
+        row.itemSpacing = 0; // No spacing between cells for perfect alignment
+        row.counterAxisSizingMode = "AUTO"; // Auto height to fit button content
+        
+        // Variant label cell - fixed width, auto height
+        const variantLabelCell = figma.createFrame();
+        variantLabelCell.layoutMode = "HORIZONTAL";
+        variantLabelCell.primaryAxisAlignItems = "MIN";
+        variantLabelCell.counterAxisAlignItems = "CENTER";
+        variantLabelCell.fills = [];
+        variantLabelCell.resize(COLUMN_WIDTHS.variant, 1); // Will auto-resize
+        variantLabelCell.primaryAxisSizingMode = "FIXED";
+        variantLabelCell.counterAxisSizingMode = "AUTO"; // Auto height
+        
+        const variantLabel = figma.createText();
+        const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        const colorName = color.charAt(0).toUpperCase() + color.slice(1);
+        const sizeName = size.charAt(0).toUpperCase() + size.slice(1);
+        variantLabel.characters = `${typeName} - ${colorName} - ${sizeName}`;
+        variantLabel.fontSize = 12;
+        variantLabel.fontName = { family: "Inter", style: "Regular" };
+        variantLabel.textAutoResize = "WIDTH_AND_HEIGHT";
+        variantLabelCell.appendChild(variantLabel);
+        row.appendChild(variantLabelCell);
+        
+        // Create button instance for each state
+        for (let stateIdx = 0; stateIdx < states.length; stateIdx++) {
+          const state = states[stateIdx];
+          const stateKey = stateKeys[stateIdx];
+          
+          // Get style data
+          const styleData = styles[type] && styles[type][color] && styles[type][color][stateKey];
+          
+          // Create cell container with fixed width, auto height - align left
+          const cellContainer = figma.createFrame();
+          cellContainer.layoutMode = "HORIZONTAL";
+          cellContainer.primaryAxisAlignItems = "MIN"; // Left align
+          cellContainer.counterAxisAlignItems = "CENTER";
+          cellContainer.fills = [];
+          cellContainer.resize(COLUMN_WIDTHS.state, 1); // Will auto-resize
+          cellContainer.primaryAxisSizingMode = "FIXED";
+          cellContainer.counterAxisSizingMode = "AUTO"; // Auto height to fit button
+          
+          if (!styleData) {
+            row.appendChild(cellContainer);
+            continue;
+          }
+          
+          // Create button frame
+          const buttonFrame = figma.createFrame();
+          buttonFrame.name = `${typeName} ${colorName} ${sizeName} ${state}`;
+          buttonFrame.layoutMode = "HORIZONTAL";
+          buttonFrame.primaryAxisAlignItems = "CENTER";
+          buttonFrame.counterAxisAlignItems = "CENTER";
+          
+          // Apply padding
+          const sizeData = sizes[size];
+          if (sizeData && sizeData.padding) {
+            buttonFrame.paddingLeft = sizeData.padding.x;
+            buttonFrame.paddingRight = sizeData.padding.x;
+            buttonFrame.paddingTop = sizeData.padding.y;
+            buttonFrame.paddingBottom = sizeData.padding.y;
+          }
+          
+          // Apply minHeight
+          if (base.minHeight && base.minHeight[size]) {
+            buttonFrame.minHeight = base.minHeight[size];
+          }
+          
+          // Apply border radius and width
+          buttonFrame.cornerRadius = base.borderRadius;
+          buttonFrame.strokeWeight = base.borderWidth;
+          buttonFrame.itemSpacing = base.layout.gap;
+          
+          // Apply colors
+          try {
+            // Background
+            if (styleData.background && styleData.background !== 'color.transparent') {
+              const bgVariable = resolveColorToken(styleData.background, colorVariables);
+              if (bgVariable) {
+                buttonFrame.fills = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    bgVariable
+                  )
+                ];
+              }
+            } else {
+              buttonFrame.fills = [];
+            }
+            
+            // Border
+            if (styleData.border && styleData.border !== 'color.transparent') {
+              const borderVariable = resolveColorToken(styleData.border, colorVariables);
+              if (borderVariable) {
+                buttonFrame.strokes = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    borderVariable
+                  )
+                ];
+              } else {
+                buttonFrame.strokes = [];
+              }
+            } else {
+              buttonFrame.strokes = [];
+            }
+            
+            // Opacity
+            if (styleData.opacity !== undefined) {
+              buttonFrame.opacity = styleData.opacity;
+            }
+          } catch (error) {
+            console.error(`Error applying colors for ${type}/${color}/${size}/${stateKey}:`, error);
+            buttonFrame.fills = [];
+            buttonFrame.strokes = [];
+          }
+          
+          // Create text
+          const textNode = figma.createText();
+          const defaultText = resolveConfigValue(
+            properties.text ? properties.text.default : '{config.examples.defaultText}',
+            config
+          );
+          textNode.characters = defaultText || 'Button';
+          
+          // Apply typography
+          const fontSize = typeof base.font.size === 'object' 
+            ? (base.font.size[size] || base.font.size.large || 16)
+            : (base.font.size || 16);
+          const lineHeight = typeof base.font.lineHeight === 'object'
+            ? (base.font.lineHeight[size] || base.font.lineHeight.large || 24)
+            : (base.font.lineHeight || 24);
+          
+          // Load font for this text node
+          let textFontToUse = fontToUse;
+          try {
+            await figma.loadFontAsync(textFontToUse);
+          } catch (e) {
+            try {
+              await figma.loadFontAsync({ family: fontFamily, style: 'Regular' });
+              textFontToUse = { family: fontFamily, style: 'Regular' };
+            } catch (e2) {
+              console.warn('Could not load font for text');
+            }
+          }
+          
+          textNode.fontName = textFontToUse;
+          textNode.fontSize = fontSize;
+          textNode.lineHeight = { value: lineHeight, unit: 'PIXELS' };
+          
+          // Apply text color
+          try {
+            if (styleData.text) {
+              const textVariable = resolveColorToken(styleData.text, colorVariables);
+              if (textVariable) {
+                textNode.fills = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    textVariable
+                  )
+                ];
+              }
+            }
+          } catch (error) {
+            console.error(`Error applying text color for ${type}/${color}/${size}/${stateKey}:`, error);
+            textNode.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }];
+          }
+          
+          textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
+          textNode.name = 'Text';
+          
+          // Get text color for icon (should match text color)
+          let iconColor = { r: 0, g: 0, b: 0 };
+          let iconFill = null;
+          if (styleData.text) {
+            try {
+              const textVariable = resolveColorToken(styleData.text, colorVariables);
+              if (textVariable) {
+                // Use the same variable binding as text
+                iconFill = [
+                  figma.variables.setBoundVariableForPaint(
+                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                    'color',
+                    textVariable
+                  )
+                ];
+              }
+            } catch (error) {
+              console.warn('Could not resolve text color for icon:', error);
+            }
+          }
+          
+          // Create icon (right arrow) - pass font and color
+          const iconNode = createIconFromSVG(iconColor, textFontToUse);
+          iconNode.name = 'Icon';
+          
+          // Apply the same color variable binding as text
+          if (iconFill) {
+            iconNode.fills = iconFill;
+          }
+          
+          buttonFrame.appendChild(textNode);
+          buttonFrame.appendChild(iconNode);
+          
+          buttonFrame.primaryAxisSizingMode = "AUTO";
+          buttonFrame.counterAxisSizingMode = "AUTO";
+          
+          // Center button in cell
+          cellContainer.appendChild(buttonFrame);
+          row.appendChild(cellContainer);
+        }
+        
+        grid.appendChild(row);
+      }
+    }
+  }
+  
+  section.appendChild(grid);
+  parent.appendChild(section);
+  
+  console.log('=== generateButtonGridLayout END ===');
+}
+
+// ============================================
+// GENERATE TEXT LINK GRID LAYOUT (NEW FORMAT - LIKE SCREENSHOT)
+// ============================================
+
+async function generateTextLinkGridLayout(parent, buttonData, colorVariables, config, parsedTokens) {
+  console.log('=== generateTextLinkGridLayout START ===');
+  
+  if (!buttonData || buttonData.format !== 'new' || !buttonData.textLink) {
+    console.log('❌ Skipping: not new format or missing textLink data');
+    return;
+  }
+  
+  const textLink = buttonData.textLink;
+  const variants = textLink.variants;
+  const base = textLink.base;
+  const styles = textLink.styles;
+  const properties = textLink.properties;
+  
+  // Get fontFamily
+  let fontFamily = base.font.family;
+  if (!fontFamily && parsedTokens) {
+    fontFamily = getFontFamilyFromBodyStyle(parsedTokens);
+  }
+  if (!fontFamily) {
+    const errorMsg = 'Font family not found. Please set fontFamily in textLink.base.font or ensure body typography style has fontFamily.';
+    console.error('❌', errorMsg);
+    figma.ui.postMessage({ type: 'status', message: errorMsg, error: true });
+    throw new Error(errorMsg);
+  }
+  
+  // Load fonts
+  const fontWeight = mapFontWeightToFigma(base.font.weight);
+  let fontToUse = { family: fontFamily, style: fontWeight };
+  try {
+    await figma.loadFontAsync(fontToUse);
+  } catch (e) {
+    try {
+      await figma.loadFontAsync({ family: fontFamily, style: 'Regular' });
+      fontToUse = { family: fontFamily, style: 'Regular' };
+    } catch (e2) {
+      console.error('Could not load font:', fontFamily, fontWeight);
+      throw new Error(`Could not load font: ${fontFamily} ${fontWeight}`);
+    }
+  }
+  
+  // Load Inter for UI text
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+  
+  // Create section
+  const section = figma.createFrame();
+  section.name = "Text Links";
+  section.layoutMode = "VERTICAL";
+  section.itemSpacing = 20;
+  section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  section.paddingLeft = 40;
+  section.paddingRight = 40;
+  section.paddingTop = 40;
+  section.paddingBottom = 40;
+  section.cornerRadius = 8;
+  section.counterAxisSizingMode = "FIXED";
+  section.resize(1200, 100);
+  
+  // Title
+  const title = figma.createText();
+  title.characters = "Text Links";
+  title.fontSize = 32;
+  title.fontName = { family: "Inter", style: "Bold" };
+  section.appendChild(title);
+  
+  // Create grid table
+  const grid = figma.createFrame();
+  grid.name = "Text Link Grid";
+  grid.layoutMode = "VERTICAL";
+  grid.itemSpacing = 1;
+  grid.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
+  grid.counterAxisSizingMode = "AUTO";
+  
+  // Define column widths (consistent across header and data rows)
+  const COLUMN_WIDTHS = {
+    variant: 200,
+    state: 300
+  };
+  
+  // Header row - auto height
+  const headerRow = figma.createFrame();
+  headerRow.name = "Header";
+  headerRow.layoutMode = "HORIZONTAL";
+  headerRow.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
+  headerRow.paddingLeft = 16;
+  headerRow.paddingRight = 16;
+  headerRow.paddingTop = 12;
+  headerRow.paddingBottom = 12;
+  headerRow.itemSpacing = 0; // No spacing between cells
+  headerRow.counterAxisSizingMode = "AUTO"; // Auto height
+  
+  // Header cells - wrap in fixed width containers
+    const variantHeaderCell = figma.createFrame();
+    variantHeaderCell.layoutMode = "HORIZONTAL";
+    variantHeaderCell.primaryAxisAlignItems = "MIN";
+    variantHeaderCell.counterAxisAlignItems = "CENTER";
+    variantHeaderCell.fills = [];
+    variantHeaderCell.resize(COLUMN_WIDTHS.variant, 1); // Will auto-resize
+    variantHeaderCell.primaryAxisSizingMode = "FIXED";
+    variantHeaderCell.counterAxisSizingMode = "AUTO"; // Auto height
+  
+  const variantHeader = figma.createText();
+  variantHeader.characters = "Color";
+  variantHeader.fontSize = 14;
+  variantHeader.fontName = { family: "Inter", style: "Bold" };
+  variantHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  variantHeader.textAutoResize = "WIDTH_AND_HEIGHT";
+  variantHeaderCell.appendChild(variantHeader);
+  headerRow.appendChild(variantHeaderCell);
+  
+  const states = ['Default', 'Hover', 'Disable'];
+  const stateKeys = ['default', 'hover', 'disabled'];
+  states.forEach(state => {
+    const stateHeaderCell = figma.createFrame();
+    stateHeaderCell.layoutMode = "HORIZONTAL";
+    stateHeaderCell.primaryAxisAlignItems = "MIN";
+    stateHeaderCell.counterAxisAlignItems = "CENTER";
+    stateHeaderCell.fills = [];
+    stateHeaderCell.resize(COLUMN_WIDTHS.state, 1); // Will auto-resize
+    stateHeaderCell.primaryAxisSizingMode = "FIXED";
+    stateHeaderCell.counterAxisSizingMode = "AUTO"; // Auto height
+    
+    const stateHeader = figma.createText();
+    stateHeader.characters = state;
+    stateHeader.fontSize = 14;
+    stateHeader.fontName = { family: "Inter", style: "Bold" };
+    stateHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    stateHeader.textAutoResize = "WIDTH_AND_HEIGHT";
+    stateHeaderCell.appendChild(stateHeader);
+    headerRow.appendChild(stateHeaderCell);
+  });
+  
+  grid.appendChild(headerRow);
+  
+  // Generate rows for each color variant
+  for (const color of variants.color) {
+    const row = figma.createFrame();
+    row.name = color;
+    row.layoutMode = "HORIZONTAL";
+    row.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 } }];
+    row.paddingLeft = 16;
+    row.paddingRight = 16;
+    row.paddingTop = 12;
+    row.paddingBottom = 12;
+    row.itemSpacing = 0; // No spacing between cells for perfect alignment
+    row.counterAxisSizingMode = "AUTO"; // Auto height to fit content
+    
+    // Color label cell - fixed width, auto height
+    const colorLabelCell = figma.createFrame();
+    colorLabelCell.layoutMode = "HORIZONTAL";
+    colorLabelCell.primaryAxisAlignItems = "MIN";
+    colorLabelCell.counterAxisAlignItems = "CENTER";
+    colorLabelCell.fills = [];
+    colorLabelCell.resize(COLUMN_WIDTHS.variant, 1); // Will auto-resize
+    colorLabelCell.primaryAxisSizingMode = "FIXED";
+    colorLabelCell.counterAxisSizingMode = "AUTO"; // Auto height
+    
+    const colorLabel = figma.createText();
+    const colorName = color.charAt(0).toUpperCase() + color.slice(1);
+    colorLabel.characters = colorName;
+    colorLabel.fontSize = 12;
+    colorLabel.fontName = { family: "Inter", style: "Regular" };
+    colorLabel.textAutoResize = "WIDTH_AND_HEIGHT";
+    colorLabelCell.appendChild(colorLabel);
+    row.appendChild(colorLabelCell);
+    
+    // Create text link for each state
+    for (let stateIdx = 0; stateIdx < states.length; stateIdx++) {
+      const state = states[stateIdx];
+      const stateKey = stateKeys[stateIdx];
+      
+      // Get style data
+      const styleData = styles[color] && styles[color][stateKey];
+      
+      // Create cell container with fixed width, auto height - align left
+      const cellContainer = figma.createFrame();
+      cellContainer.layoutMode = "HORIZONTAL";
+      cellContainer.primaryAxisAlignItems = "MIN"; // Left align
+      cellContainer.counterAxisAlignItems = "CENTER";
+      cellContainer.fills = [];
+      cellContainer.resize(COLUMN_WIDTHS.state, 1); // Will auto-resize
+      cellContainer.primaryAxisSizingMode = "FIXED";
+      cellContainer.counterAxisSizingMode = "AUTO"; // Auto height to fit content
+      
+      if (!styleData) {
+        row.appendChild(cellContainer);
+        continue;
+      }
+      
+      // Create text link frame
+      const linkFrame = figma.createFrame();
+      linkFrame.name = `${colorName} ${state}`;
+      linkFrame.layoutMode = "HORIZONTAL";
+      linkFrame.primaryAxisAlignItems = "CENTER";
+      linkFrame.counterAxisAlignItems = "CENTER";
+      linkFrame.itemSpacing = base.gap;
+      linkFrame.fills = [];
+      linkFrame.strokes = [];
+      
+      // Opacity
+      if (styleData.opacity !== undefined) {
+        linkFrame.opacity = styleData.opacity;
+      }
+      
+      // Create text
+      const textNode = figma.createText();
+      const defaultText = resolveConfigValue(
+        properties.text ? properties.text.default : '{config.examples.textLinkText}',
+        config
+      );
+      textNode.characters = defaultText || 'Text link';
+      
+      // Apply typography
+      let textFontToUse = fontToUse;
+      try {
+        await figma.loadFontAsync(textFontToUse);
+      } catch (e) {
+        try {
+          await figma.loadFontAsync({ family: fontFamily, style: 'Regular' });
+          textFontToUse = { family: fontFamily, style: 'Regular' };
+        } catch (e2) {
+          console.warn('Could not load font for text link');
+        }
+      }
+      
+      textNode.fontName = textFontToUse;
+      textNode.fontSize = base.font.size || 16;
+      textNode.lineHeight = { value: base.font.lineHeight || 24, unit: 'PIXELS' };
+      
+      // Apply text color
+      try {
+        if (styleData.text) {
+          const textVariable = resolveColorToken(styleData.text, colorVariables);
+          if (textVariable) {
+            textNode.fills = [
+              figma.variables.setBoundVariableForPaint(
+                { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                'color',
+                textVariable
+              )
+            ];
+          }
+        }
+      } catch (error) {
+        console.error(`Error applying text color for textLink ${color}/${stateKey}:`, error);
+        textNode.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }];
+      }
+      
+      textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
+      textNode.name = 'Text';
+      
+      linkFrame.appendChild(textNode);
+      linkFrame.primaryAxisSizingMode = "AUTO";
+      linkFrame.counterAxisSizingMode = "AUTO";
+      
+      // Center link in cell
+      cellContainer.appendChild(linkFrame);
+      row.appendChild(cellContainer);
+    }
+    
+    grid.appendChild(row);
+  }
+  
+  section.appendChild(grid);
+  parent.appendChild(section);
+  
+  console.log('=== generateTextLinkGridLayout END ===');
+}
+
+// ============================================
+// GENERATE TEXT LINK COMPONENTS (NEW FORMAT)
+// ============================================
+
+async function generateTextLinkComponents(buttonData, colorVariables, config, parsedTokens) {
+  console.log('=== generateTextLinkComponents START ===');
+  console.log('buttonData:', buttonData);
+  console.log('buttonData.format:', buttonData ? buttonData.format : 'undefined');
+  console.log('buttonData.textLink:', buttonData ? buttonData.textLink : 'undefined');
+  
+  if (!buttonData || buttonData.format !== 'new' || !buttonData.textLink) {
+    console.log('❌ Skipping: not new format or missing textLink data');
+    console.log('  - buttonData exists?', !!buttonData);
+    console.log('  - format:', buttonData ? buttonData.format : 'N/A');
+    console.log('  - textLink exists?', !!(buttonData && buttonData.textLink));
+    return null;
+  }
+  
+  const textLink = buttonData.textLink;
+  const variants = textLink.variants;
+  const base = textLink.base;
+  const styles = textLink.styles;
+  const properties = textLink.properties;
+  
+  console.log('TextLink variants:', variants);
+  console.log('TextLink base:', base);
+  console.log('TextLink styles keys:', styles ? Object.keys(styles) : 'none');
+  console.log('TextLink properties:', properties);
+  
+  // Get fontFamily - from textLink config, or from body style, or error
+  let fontFamily = base.font.family;
+  if (!fontFamily && parsedTokens) {
+    fontFamily = getFontFamilyFromBodyStyle(parsedTokens);
+    console.log('Got fontFamily from body style:', fontFamily);
+  }
+  
+  if (!fontFamily) {
+    const errorMsg = 'Font family not found. Please set fontFamily in textLink.base.font or ensure body typography style has fontFamily.';
+    console.error('❌', errorMsg);
+    figma.ui.postMessage({ type: 'status', message: errorMsg, error: true });
+    throw new Error(errorMsg);
+  }
+  
+  const fontWeight = mapFontWeightToFigma(base.font.weight);
+  console.log('Using fontFamily:', fontFamily, 'fontWeight:', fontWeight);
+  
+  // Create a parent frame to hold all components (Component Set will be created automatically)
+  const componentSetFrame = figma.createFrame();
+  componentSetFrame.name = 'Text Link';
+  componentSetFrame.layoutMode = 'VERTICAL';
+  componentSetFrame.itemSpacing = 20;
+  componentSetFrame.fills = [];
+  
+  // Generate all variant combinations
+  const components = [];
+  const totalCombinations = variants.color.length * variants.state.length;
+  console.log(`Generating ${totalCombinations} text link component variants...`);
+  let createdCount = 0;
+  let skippedCount = 0;
+  
+  for (const color of variants.color) {
+    for (const state of variants.state) {
+      // Get style data for this variant
+      const styleData = styles[color] && styles[color][state];
+      if (!styleData) {
+        console.warn(`⚠ Missing style for textLink ${color}/${state}`);
+        skippedCount++;
+        continue;
+      }
+      
+      console.log(`Creating text link component: ${color}/${state}`);
+      
+      // Create component
+      const component = figma.createComponent();
+      
+      // Name component - Figma will auto-create variant properties when components are in same frame
+      // Format: "Color=Value1, State=Value2"
+      const colorName = color.charAt(0).toUpperCase() + color.slice(1);
+      const stateName = state.charAt(0).toUpperCase() + state.slice(1);
+      // Use pattern that Figma recognizes for variant properties
+      component.name = `Color=${colorName}, State=${stateName}`;
+      
+      // Configure Auto Layout
+      component.layoutMode = 'HORIZONTAL';
+      component.primaryAxisAlignItems = 'CENTER';
+      component.counterAxisAlignItems = 'CENTER';
+      component.itemSpacing = base.gap;
+      
+      // No padding, border, or background for text links
+      component.fills = [];
+      component.strokes = [];
+      
+      // Opacity
+      if (styleData.opacity !== undefined) {
+        component.opacity = styleData.opacity;
+      }
+      
+      // Create text layer
+      const textNode = figma.createText();
+      const defaultText = resolveConfigValue(
+        properties.text ? properties.text.default : '{config.examples.textLinkText}',
+        config
+      );
+      textNode.characters = defaultText || 'Text link';
+      
+      // Load font before setting fontName (with fallback logic)
+      const figmaFontWeight = mapFontWeightToFigma(base.font.weight);
+      let fontToUse = { family: fontFamily, style: figmaFontWeight };
+      let fontLoaded = false;
+      
+      // Try to load font with fallback
+      try {
+        await figma.loadFontAsync(fontToUse);
+        fontLoaded = true;
+      } catch (e) {
+        console.warn(`Failed to load font: ${fontToUse.family} ${fontToUse.style}, trying fallbacks...`);
+        
+        // Try fallbacks
+        const fallbacks = [];
+        if (figmaFontWeight === 'Semibold') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Semi Bold' },
+            { family: fontFamily, style: 'Bold' },
+            { family: fontFamily, style: 'Medium' }
+          );
+        } else if (figmaFontWeight !== 'Regular' && figmaFontWeight !== 'Medium') {
+          fallbacks.push(
+            { family: fontFamily, style: 'Medium' },
+            { family: fontFamily, style: 'Regular' }
+          );
+        } else {
+          fallbacks.push(
+            { family: fontFamily, style: figmaFontWeight === 'Regular' ? 'Medium' : 'Regular' }
+          );
+        }
+        
+        for (const fallback of fallbacks) {
+          try {
+            await figma.loadFontAsync(fallback);
+            fontToUse = fallback;
+            fontLoaded = true;
+            console.log(`Using fallback font: ${fallback.family} ${fallback.style}`);
+            break;
+          } catch (fallbackError) {
+            // Continue
+          }
+        }
+      }
+      
+      if (!fontLoaded) {
+        throw new Error(`Could not load font: ${fontFamily} ${figmaFontWeight} for text link component`);
+      }
+      
+      // Apply typography
+      textNode.fontName = fontToUse;
+      textNode.fontSize = base.font.size || 16;
+      textNode.lineHeight = { value: base.font.lineHeight || 24, unit: 'PIXELS' };
+      
+      // Apply text color
+      try {
+        if (styleData.text) {
+          const textVariable = resolveColorToken(styleData.text, colorVariables);
+          if (textVariable) {
+            textNode.fills = [
+              figma.variables.setBoundVariableForPaint(
+                { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+                'color',
+                textVariable
+              )
+            ];
+          }
+        }
+      } catch (error) {
+        console.error(`Error applying text color for textLink ${color}/${state}:`, error);
+      }
+      
+      textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
+      textNode.name = 'Text';
+      
+      // Create icon container (optional, controlled by property)
+      const iconContainer = figma.createFrame();
+      iconContainer.name = 'Icon';
+      iconContainer.layoutMode = 'HORIZONTAL';
+      iconContainer.primaryAxisAlignItems = 'CENTER';
+      iconContainer.counterAxisAlignItems = 'CENTER';
+      iconContainer.resize(0, 0);
+      iconContainer.visible = false;
+      
+      // Add Component Properties
+      if (properties.text) {
+        const textDefault = resolveConfigValue(properties.text.default, config);
+        component.addComponentProperty('text', 'TEXT', textDefault || 'Text link');
+      }
+      if (properties.icon) {
+        const iconDefault = properties.icon.optional 
+          ? (resolveConfigValue(properties.icon.default, config) || '')
+          : (resolveConfigValue(properties.icon.default, config) || '');
+        component.addComponentProperty('icon', 'TEXT', iconDefault);
+      }
+      
+      // Append children (text, icon)
+      component.appendChild(textNode);
+      component.appendChild(iconContainer);
+      
+      // Add to component set frame
+      componentSetFrame.appendChild(component);
+      components.push(component);
+      createdCount++;
+      console.log(`✓ Created text link component ${createdCount}/${totalCombinations}: ${color}/${state}`);
+    }
+  }
+  
+  // Figma will automatically create a Component Set if components have variantProperties
+  // and are children of the same frame
+  console.log(`=== generateTextLinkComponents END ===`);
+  console.log(`✓ Created ${createdCount} text link components`);
+  console.log(`⚠ Skipped ${skippedCount} components (missing styles)`);
+  console.log(`Component set frame children: ${componentSetFrame.children.length}`);
+  
+  // Return the frame (which will become a Component Set automatically)
+  return componentSetFrame;
+}
+
+// ============================================
+// GENERATE BUTTON LAYOUT FROM TOKENS (OLD FORMAT - BACKWARD COMPATIBILITY)
+// ============================================
+
+async function generateButtonLayoutFromTokens(parent, buttonData, colorVariables, prefix) {
+  console.log('generateButtonLayoutFromTokens called with:', {
+    hasButtonData: !!buttonData,
+    hasVariants: !!(buttonData && buttonData.variants),
+    variantsLength: buttonData && buttonData.variants ? buttonData.variants.length : 0
+  });
+  
+  if (!buttonData || !buttonData.variants || buttonData.variants.length === 0) {
+    console.log('Skipping button layout: no variants found');
+    return;
+  }
+
+  // Load fonts
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+
+  const section = figma.createFrame();
+  section.name = "Buttons";
+  section.layoutMode = "VERTICAL";
+  section.itemSpacing = 40;
+  section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  section.paddingLeft = 40;
+  section.paddingRight = 40;
+  section.paddingTop = 40;
+  section.paddingBottom = 40;
+  section.cornerRadius = 8;
+  section.counterAxisSizingMode = "FIXED";
+  section.resize(1200, 100);
+
+  const title = figma.createText();
+  title.characters = "Buttons";
+  title.fontSize = 32;
+  title.fontName = { family: "Inter", style: "Bold" };
+  section.appendChild(title);
+
+  // Create grid: Rows = variants, Columns = states (Default, Hover, Disable)
+  const states = ['Default', 'Hover', 'Disable'];
+  const stateKeys = ['default', 'hover', 'disable'];
+
+  const grid = figma.createFrame();
+  grid.name = "Button Grid";
+  grid.layoutMode = "VERTICAL";
+  grid.itemSpacing = 20;
+  grid.fills = [];
+  grid.primaryAxisSizingMode = "AUTO";
+  grid.counterAxisSizingMode = "FIXED";
+  grid.resize(1200, 100);
+
+  // Header row
+  const headerRow = figma.createFrame();
+  headerRow.name = "Header";
+  headerRow.layoutMode = "HORIZONTAL";
+  headerRow.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
+  headerRow.paddingLeft = 16;
+  headerRow.paddingRight = 16;
+  headerRow.paddingTop = 10;
+  headerRow.paddingBottom = 10;
+  headerRow.primaryAxisSizingMode = "AUTO";
+  headerRow.counterAxisSizingMode = "AUTO";
+
+  const variantHeader = figma.createText();
+  variantHeader.characters = "Variant";
+  variantHeader.fontSize = 16;
+  variantHeader.fontName = { family: "Inter", style: "Bold" };
+  variantHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  variantHeader.resize(200, variantHeader.height);
+  headerRow.appendChild(variantHeader);
+
+  states.forEach(state => {
+    const stateHeader = figma.createText();
+    stateHeader.characters = state;
+    stateHeader.fontSize = 16;
+    stateHeader.fontName = { family: "Inter", style: "Bold" };
+    stateHeader.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    stateHeader.resize(300, stateHeader.height);
+    headerRow.appendChild(stateHeader);
+  });
+
+  grid.appendChild(headerRow);
+
+  // Create button instances for each variant and state
+  for (const variant of buttonData.variants) {
+    const row = figma.createFrame();
+    row.name = `${variant.type} - ${variant.color}`;
+    row.layoutMode = "HORIZONTAL";
+    row.fills = [];
+    row.paddingLeft = 16;
+    row.paddingRight = 16;
+    row.paddingTop = 10;
+    row.paddingBottom = 10;
+    row.primaryAxisSizingMode = "AUTO";
+    row.counterAxisSizingMode = "AUTO";
+    row.itemSpacing = 20;
+
+    // Variant label
+    const variantLabel = figma.createText();
+    variantLabel.characters = `${variant.type} - ${variant.color}`;
+    variantLabel.fontSize = 14;
+    variantLabel.fontName = { family: "Inter", style: "Regular" };
+    variantLabel.resize(200, variantLabel.height);
+    row.appendChild(variantLabel);
+
+    // Create button instance for each state
+    for (let stateIdx = 0; stateIdx < states.length; stateIdx++) {
+      const state = states[stateIdx];
+      const stateKey = stateKeys[stateIdx];
+      const stateData = variant.states[stateKey];
+
+      if (!stateData) continue;
+
+      // Create button frame
+      const buttonFrame = figma.createFrame();
+      buttonFrame.name = `${variant.type} - ${variant.color} - ${state}`;
+      buttonFrame.layoutMode = "HORIZONTAL";
+      buttonFrame.primaryAxisAlignItems = "CENTER";
+      buttonFrame.counterAxisAlignItems = "CENTER";
+      buttonFrame.paddingLeft = buttonData.defaultProps.paddingLeft;
+      buttonFrame.paddingRight = buttonData.defaultProps.paddingRight;
+      buttonFrame.paddingTop = buttonData.defaultProps.paddingTop;
+      buttonFrame.paddingBottom = buttonData.defaultProps.paddingBottom;
+      buttonFrame.cornerRadius = buttonData.defaultProps.borderRadius;
+      buttonFrame.strokeWeight = buttonData.defaultProps.borderWidth;
+      buttonFrame.itemSpacing = 8;
+      buttonFrame.resize(300, 50);
+
+      // Apply colors
+      const bgColor = hexToRgb(stateData.backgroundColor);
+      const textColor = hexToRgb(stateData.color);
+      const borderColor = hexToRgb(stateData.borderColor);
+
+      if (variant.type === 'Fill') {
+        buttonFrame.fills = [{ type: 'SOLID', color: bgColor }];
+      } else {
+        buttonFrame.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 0 } }];
+      }
+      buttonFrame.strokes = [{ type: 'SOLID', color: borderColor }];
+
+      // Create text
+      const textNode = figma.createText();
+      textNode.name = "Text";
+      textNode.characters = buttonData.config.defaultText;
+      textNode.fontName = { family: "Inter", style: "Bold" };
+      textNode.fontSize = 16;
+      textNode.fills = [{ type: 'SOLID', color: textColor }];
+      textNode.textAutoResize = "WIDTH_AND_HEIGHT";
+
+      // Create icon - use same font as text
+      const iconNode = createIconFromSVG(textColor, { family: "Inter", style: "Bold" });
+      iconNode.name = "Icon";
+
+      buttonFrame.appendChild(textNode);
+      buttonFrame.appendChild(iconNode);
+
+      row.appendChild(buttonFrame);
+    }
+
+    grid.appendChild(row);
+  }
+
+  section.appendChild(grid);
   parent.appendChild(section);
 }
