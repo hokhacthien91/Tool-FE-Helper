@@ -7,6 +7,7 @@
       content="camera=(), microphone=(), clipboard-write=(), display-capture=(), local-network-access=()"
     />
     <title>Generate Global Style</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     body {
       font-family: sans-serif;
@@ -58,6 +59,7 @@
     }
     button:hover:not(:disabled) {
       background: #0d8de5;
+      color: #fff;
     }
     input[type="file"] {
       width: 100%;
@@ -66,7 +68,8 @@
       padding: 4px 0;
     }
     .message {
-      margin-top: 16px;
+      margin-top: 0;
+      margin-bottom: 12px;
       padding: 8px 12px;
       border-radius: 4px;
       font-size: 12px;
@@ -261,7 +264,8 @@
       color: #18A0FB;
     }
     .tab.active {
-      color: #18A0FB;
+      color: #fff;
+      background: #18A0FB;
       border-bottom-color: #18A0FB;
     }
     .tab-content {
@@ -290,6 +294,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="tab1">From JSON / Figma</button>
     <button class="tab" data-tab="tab2">Import Tokens</button>
+    <button class="tab" data-tab="tab3">Export Tokens</button>
   </div>
 
   <!-- Tab 1: Existing Functionality -->
@@ -312,6 +317,7 @@
         </div>
       </div>
 
+      <div id="generateMessage" class="message"></div>
       <button id="generateBtn" disabled>Generate</button>
     </div>
 
@@ -349,11 +355,58 @@
         <div class="prefix-hint">Used for collection names: Colors - [Prefix], Spacing - [Prefix]</div>
       </div>
 
+      <div id="importMessage" class="message"></div>
       <button id="importTokensBtn" disabled>Import Tokens</button>
     </div>
   </div>
 
-  <div id="message" class="message"></div>
+  <!-- Tab 3: Export Tokens -->
+  <div id="tab3" class="tab-content">
+    <div class="option-card">
+      <h3>Export Tokens from Figma</h3>
+      <p>Export Variables & Styles from Figma to JSON token files</p>
+      
+      <div class="checkbox-group">
+        <label>
+          <input type="checkbox" data-token="color" checked>
+          Colors (colors.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="typography" checked>
+          Typography (typography.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="spacing" checked>
+          Spacing (spacing.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="shadow" checked>
+          Shadow (shadow.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="border" checked>
+          Border (border.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="breakpoint" checked>
+          Breakpoints (breakpoints.json)
+        </label>
+        <label>
+          <input type="checkbox" data-token="button" checked>
+          Button (button.json)
+        </label>
+      </div>
+
+      <div class="prefix-input show">
+        <label for="exportProjectName">Project Name:</label>
+        <input type="text" id="exportProjectName" placeholder="e.g., Project A — Corporate / Enterprise">
+        <div class="prefix-hint">Used for $project field in exported JSON files</div>
+      </div>
+
+      <div id="exportMessage" class="message"></div>
+      <button id="exportTokensBtn">Export & Download</button>
+    </div>
+  </div>
 
   <!-- Duplicate Confirmation Modal -->
   <div id="duplicateModal" class="modal-overlay" style="display: none;">
@@ -373,7 +426,10 @@
     const fileInput = document.getElementById('fileInput');
     const generateBtn = document.getElementById('generateBtn');
     const generateFromFigmaBtn = document.getElementById('generateFromFigmaBtn');
-    const message = document.getElementById('message');
+    const message = document.getElementById('message'); // Keep for backward compatibility
+    const generateMessage = document.getElementById('generateMessage');
+    const importMessage = document.getElementById('importMessage');
+    const exportMessage = document.getElementById('exportMessage');
     const createVariablesCheckbox = document.getElementById('createVariablesCheckbox');
     const prefixInputContainer = document.getElementById('prefixInputContainer');
     const prefixInput = document.getElementById('prefixInput');
@@ -428,7 +484,7 @@
       } else {
         tokensFileList.innerHTML = '';
       }
-      message.className = 'message';
+      if (importMessage) importMessage.className = 'message';
     });
 
     importTokensBtn.addEventListener('click', async () => {
@@ -437,7 +493,7 @@
 
       const createVariables = createTokensVariablesCheckbox.checked;
       const generateLayout = generateTokensLayoutCheckbox.checked;
-      const prefix = tokensPrefixInput.value.trim() || 'Project';
+      const prefix = tokensPrefixInput.value.trim();
 
       showLoading('Reading token files...');
       importTokensBtn.disabled = true;
@@ -480,8 +536,10 @@
           }
         }, '*');
       } catch (err) {
-        message.textContent = `Error reading files: ${err.message}`;
-        message.className = 'message error show';
+        if (importMessage) {
+          importMessage.textContent = `Error reading files: ${err.message}`;
+          importMessage.className = 'message error show';
+        }
         importTokensBtn.disabled = false;
       }
     });
@@ -497,7 +555,7 @@
 
     fileInput.addEventListener('change', () => {
       generateBtn.disabled = !fileInput.files.length;
-      message.className = 'message';
+      if (generateMessage) generateMessage.className = 'message';
     });
 
     // Toggle prefix input visibility when checkbox is checked/unchecked
@@ -547,8 +605,10 @@
             }, '*');
           }
         } catch (err) {
-          message.textContent = 'Invalid JSON file.';
-          message.className = 'message error show';
+          if (generateMessage) {
+            generateMessage.textContent = 'Invalid JSON file.';
+            generateMessage.className = 'message error show';
+          }
         }
       };
       reader.readAsText(file);
@@ -559,6 +619,37 @@
       generateBtn.disabled = true;
       generateFromFigmaBtn.disabled = true;
       parent.postMessage({ pluginMessage: { type: 'generateFromFigma' } }, '*');
+    });
+
+    // Export Tokens
+    const exportTokensBtn = document.getElementById('exportTokensBtn');
+    const exportProjectName = document.getElementById('exportProjectName');
+
+    exportTokensBtn.addEventListener('click', () => {
+      // Get selected token types
+      const checkboxes = document.querySelectorAll('#tab3 input[type="checkbox"][data-token]');
+      const selectedTokens = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.getAttribute('data-token'));
+
+      if (selectedTokens.length === 0) {
+        message.textContent = 'Please select at least one token type to export.';
+        message.className = 'message error show';
+        return;
+      }
+
+      const projectName = exportProjectName.value.trim() || 'Project A — Corporate / Enterprise';
+
+      showLoading('Exporting tokens from Figma...');
+      exportTokensBtn.disabled = true;
+      
+      parent.postMessage({
+        pluginMessage: {
+          type: 'exportTokens',
+          tokenTypes: selectedTokens,
+          projectName: projectName
+        }
+      }, '*');
     });
 
     // Modal button handlers
@@ -647,8 +738,28 @@
     }
 
     function showLoading(text) {
-      message.innerHTML = '<span class="spinner"></span>' + text;
-      message.className = 'message loading show';
+      // Determine which tab is active and show loading in the correct message element
+      const activeTab = document.querySelector('.tab.active');
+      let targetMessage = null;
+      
+      if (activeTab) {
+        const tabId = activeTab.getAttribute('data-tab');
+        if (tabId === 'tab1') {
+          targetMessage = generateMessage || message;
+        } else if (tabId === 'tab2') {
+          targetMessage = importMessage || message;
+        } else if (tabId === 'tab3') {
+          targetMessage = exportMessage || message;
+        }
+      }
+      
+      // Fallback to main message if no specific message found
+      if (!targetMessage) targetMessage = message;
+      
+      if (targetMessage) {
+        targetMessage.innerHTML = '<span class="spinner"></span>' + text;
+        targetMessage.className = 'message loading show';
+      }
     }
 
     function hideLoading() {
@@ -663,8 +774,28 @@
 
       if (msg.type === 'status') {
         hideLoading();
-        message.textContent = msg.message;
-        message.className = msg.error ? 'message error show' : 'message success show';
+        // Determine which tab is active and show message in the correct place
+        const activeTab = document.querySelector('.tab.active');
+        let targetMessage = null;
+        
+        if (activeTab) {
+          const tabId = activeTab.getAttribute('data-tab');
+          if (tabId === 'tab1') {
+            targetMessage = generateMessage || message;
+          } else if (tabId === 'tab2') {
+            targetMessage = importMessage || message;
+          } else if (tabId === 'tab3') {
+            targetMessage = exportMessage || message;
+          }
+        }
+        
+        // Fallback to main message if no specific message found
+        if (!targetMessage) targetMessage = message;
+        
+        targetMessage.textContent = msg.message;
+        targetMessage.className = msg.error ? 'message error show' : 'message success show';
+        if (exportTokensBtn) exportTokensBtn.disabled = false;
+        if (importTokensBtn) importTokensBtn.disabled = false;
       } else if (msg.type === 'duplicatesFound') {
         hideLoading();
         showModal(msg.duplicates);
@@ -673,8 +804,85 @@
         if (pendingGenerateData) {
           proceedWithGenerate('skip');
         }
+      } else if (msg.type === 'tokensExported') {
+        hideLoading();
+        const tokens = msg.tokens;
+        const projectName = msg.projectName;
+        
+        // Create zip file with all token files
+        downloadTokensAsZip(tokens, projectName);
+        
+        const downloadCount = Object.keys(tokens).length;
+        if (exportMessage) {
+          exportMessage.textContent = `Successfully exported ${downloadCount} token file(s) as ZIP!`;
+          exportMessage.className = 'message success show';
+        }
+        exportTokensBtn.disabled = false;
       }
     };
+
+    function getFileNameForTokenType(tokenType) {
+      const mapping = {
+        'color': 'colors.json',
+        'typography': 'typography.json',
+        'spacing': 'spacing.json',
+        'shadow': 'shadow.json',
+        'border': 'border.json',
+        'breakpoint': 'breakpoints.json',
+        'button': 'button.json'
+      };
+      return mapping[tokenType] || `${tokenType}.json`;
+    }
+
+    async function downloadTokensAsZip(tokens, projectName) {
+      try {
+        const zip = new JSZip();
+        
+        // Add each token file to zip
+        Object.keys(tokens).forEach(tokenType => {
+          const tokenData = tokens[tokenType];
+          const fileName = getFileNameForTokenType(tokenType);
+          const jsonString = JSON.stringify(tokenData, null, 2);
+          zip.file(fileName, jsonString);
+        });
+        
+        // Generate zip file
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        
+        // Download zip file
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Create zip filename from project name or default
+        const zipFileName = projectName 
+          ? `${projectName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-tokens.zip`
+          : 'tokens.zip';
+        a.download = zipFileName;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error creating zip file:', error);
+        message.textContent = `Error creating zip file: ${error.message}`;
+        message.className = 'message error show';
+      }
+    }
+
+    function downloadJSON(fileName, data) {
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
   </script>
 </body>
 </html>

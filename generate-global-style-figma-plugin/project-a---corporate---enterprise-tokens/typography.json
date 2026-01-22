@@ -3,6 +3,39 @@
   "$type": "typography",
   "$project": "Project A — Corporate / Enterprise",
   "textStyles": {
+    "large": {
+      "mobile": {
+        "fontSize": "40px",
+        "lineHeight": "40px",
+        "fontWeight": "bold",
+        "fontFamily": "Figtree"
+      }
+    },
+    "medium": {
+      "mobile": {
+        "fontSize": "32px",
+        "lineHeight": "32px",
+        "fontWeight": "bold",
+        "fontFamily": "Figtree"
+      }
+    },
+    "small": {
+      "mobile": {
+        "fontSize": "24px",
+        "lineHeight": "30px",
+        "fontWeight": "semibold",
+        "fontFamily": "Figtree"
+      }
+    },
+    "links": {
+      "mobile": {
+        "fontSize": "12px",
+        "lineHeight": "18px",
+        "fontWeight": "bold",
+        "fontFamily": "Figtree",
+        "letterSpacing": "0.4000000059604645px"
+      }
+    },
     "display": {
       "mobile": {
         "fontSize": "74px",
@@ -16,17 +49,14 @@
         "lineHeight": "120%",
         "fontWeight": "semibold",
         "letterSpacing": "1px"
-      },
-      "desktop": {
-        "fontSize": "64px"
       }
     },
     "h2": {
       "mobile": {
         "fontSize": "56px",
         "lineHeight": "120%",
-        "fontFamily": "Inter",
-        "fontWeight": "semibold"
+        "fontWeight": "semibold",
+        "fontFamily": "Inter"
       }
     },
     "h3": {
@@ -89,15 +119,7 @@
       "mobile": {
         "fontSize": "16px",
         "lineHeight": "150%",
-        "fontWeight": "regular",
-        "fontFamily": "Lato",
-        "color": "#000000",
-        "tablet": {
-          "fontSize": "17px"
-        },
-        "desktop": {
-          "fontSize": "18px"
-        }
+        "fontWeight": "regular"
       }
     },
     "body-large": {
@@ -125,14 +147,14 @@
       "mobile": {
         "fontSize": "24px",
         "lineHeight": "160%",
-        "fontWeight": "semibold italic"
+        "fontWeight": "medium"
       }
     },
     "quote-large": {
       "mobile": {
         "fontSize": "36px",
         "lineHeight": "160%",
-        "fontWeight": "semibold italic"
+        "fontWeight": "medium"
       }
     },
     "numeric-small": {
@@ -154,6 +176,24 @@
         "fontSize": "102px",
         "lineHeight": "100%",
         "fontWeight": "bold"
+      }
+    },
+    "default": {
+      "mobile": {
+        "fontSize": "16px",
+        "fontWeight": "regular"
+      }
+    },
+    "hover": {
+      "mobile": {
+        "fontSize": "16px",
+        "fontWeight": "regular"
+      }
+    },
+    "focus": {
+      "mobile": {
+        "fontSize": "16px",
+        "fontWeight": "regular"
       }
     }
   },

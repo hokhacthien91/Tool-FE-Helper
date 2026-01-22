@@ -1,145 +1,161 @@
 {
-  "buttons": {
-    "default": {
-      "padding-left": "2.75rem",
-      "padding-right": "2.75rem",
-      "padding-top": "20px",
-      "padding-bottom": "20px",
-      "font-weight": "700",
-      "display": "inline-block",
-      "user-select": "none",
-      "vertical-align": "middle",
-      "border-radius": "0.125rem",
-      "text-decoration-line": "none",
-      "margin-bottom": "1.5rem",
-      "margin-right": "1.5rem",
-      "border-width": "2px",
-      "text-decoration": "none"
+  "config": {
+    "examples": {
+      "defaultText": "Button",
+      "textLinkText": "Text link"
     },
-    "primary": {
-      "color": "#ffffff",
-      "background-color": "#6fb7e8",
-      "border-color": "#6fb7e8",
-      "hover": {
-        "background-color": "#4a9fdc",
-        "border-color": "#4a9fdc",
-        "color": "#ffffff"
-      }
-    },
-    "outline-primary": {
-      "color": "#6fb7e8",
-      "border-color": "#6fb7e8",
-      "hover": {
-        "color": "#ffffff",
-        "background-color": "#6fb7e8"
-      }
-    },
-    "secondary": {
-      "color": "#ffffff",
-      "background-color": "#b8c5d1",
-      "border-color": "#b8c5d1",
-      "hover": {
-        "background-color": "#96a8b8",
-        "border-color": "#96a8b8",
-        "color": "#ffffff"
-      }
-    },
-    "outline-secondary": {
-      "color": "#b8c5d1",
-      "border-color": "#b8c5d1",
-      "hover": {
-        "color": "#ffffff",
-        "background-color": "#b8c5d1"
-      }
-    },
-    "gray": {
-      "color": "#ffffff",
-      "background-color": "#adb5bd",
-      "border-color": "#adb5bd",
-      "hover": {
-        "background-color": "#adb5bd",
-        "border-color": "#adb5bd",
-        "color": "#ffffff"
-      }
-    },
-    "outline-gray": {
-      "color": "#adb5bd",
-      "border-color": "#adb5bd",
-      "hover": {
-        "color": "#ffffff",
-        "background-color": "#adb5bd"
-      }
-    },
-    "dark": {
-      "color": "#ffffff",
-      "hover": {
-        "color": "#ffffff"
-      }
-    },
-    "white": {
-      "border-color": "#000000",
-      "background-color": "#ffffff",
-      "hover": {
-        "background-color": "#000000",
-        "color": "#ffffff"
-      }
-    },
-    "outline-white": {
-      "color": "#ffffff",
-      "border-color": "#ffffff",
-      "hover": {
-        "background-color": "#ffffff"
-      }
-    },
-    "tertiary": {
-      "color": "#ffffff",
-      "background-color": "#6b8299",
-      "border-color": "#6b8299",
-      "hover": {
-        "background-color": "#6b8299"
-      }
-    },
-    "outline-tertiary": {
-      "color": "#6b8299",
-      "border-color": "#6b8299",
-      "hover": {
-        "background-color": "#6b8299"
-      }
-    },
-    "small": {
-      "padding-left": "2rem",
-      "padding-right": "2rem",
-      "padding-top": "1rem",
-      "padding-bottom": "1rem"
+    "icons": {
+      "default": "arrow--right"
     }
   },
-  "config": {
-    "wrapper": {
-      "class": "container py-10"
+
+  "button": {
+    "variants": {
+      "state": ["default", "hover", "disabled"],
+      "color": ["primary", "secondary", "light", "dark", "tertiary"],
+      "size": ["large", "small"],
+      "type": ["fill", "outline"]
     },
-    "icon": {
-      "class": "icomoon icon-chevron-right",
-      "ariaHidden": true
+
+    "base": {
+      "layout": {
+        "direction": "horizontal",
+        "align": "center",
+        "gap": 8
+      },
+      "borderRadius": 4,
+      "borderWidth": 1,
+      "minHeight": {
+        "large": 48,
+        "small": 40
+      },
+      "font": {
+        "family": "Lato",
+        "weight": 600,
+        "size": {
+          "large": 16,
+          "small": 14
+        },
+        "lineHeight": {
+          "large": 24,
+          "small": 20
+        }
+      }
     },
-    "textLinks": {
-      "prefix": "btn-text",
-      "decorationThickness": "2px",
-      "variants": [
-        "text-link-primary",
-        "text-link-secondary",
-        "text-link-gray",
-        "text-link-dark",
-        "text-link-white"
-      ]
+
+    "sizes": {
+      "large": { "padding": { "x": 24, "y": 12 } },
+      "small": { "padding": { "x": 16, "y": 8 } }
     },
-    "examples": {
-      "defaultVariant": "btn-primary",
-      "defaultText": "Button",
-      "textLinkText": "Text link",
-      "smallText": "btn-primary btn-small"
+
+    "styles": {
+      "fill": {
+        "primary": {
+          "default": { "text": "color.white", "background": "color.primary.300", "border": "color.primary.300" },
+          "hover": { "text": "color.white", "background": "color.primary.400", "border": "color.primary.400" },
+          "disabled": { "text": "color.white", "background": "color.primary.300", "border": "color.primary.300", "opacity": 0.7 }
+        },
+        "secondary": {
+          "default": { "text": "color.white", "background": "color.secondary.300", "border": "color.secondary.300" },
+          "hover": { "text": "color.white", "background": "color.secondary.400", "border": "color.secondary.400" },
+          "disabled": { "text": "color.white", "background": "color.secondary.300", "border": "color.secondary.300", "opacity": 0.7 }
+        },
+        "light": {
+          "default": { "text": "color.black", "background": "color.white", "border": "color.white" },
+          "hover": { "text": "color.white", "background": "color.black", "border": "color.black" },
+          "disabled": { "text": "color.black", "background": "color.white", "border": "color.white", "opacity": 0.7 }
+        },
+        "dark": {
+          "default": { "text": "color.white", "background": "color.black", "border": "color.black" },
+          "hover": { "text": "color.white", "background": "color.gray.600", "border": "color.gray.600" },
+          "disabled": { "text": "color.white", "background": "color.black", "border": "color.black", "opacity": 0.7 }
+        },
+        "tertiary": {
+          "default": { "text": "color.white", "background": "color.secondary.300", "border": "color.secondary.300" },
+          "hover": { "text": "color.white", "background": "color.secondary.400", "border": "color.secondary.400" },
+          "disabled": { "text": "color.white", "background": "color.secondary.300", "border": "color.secondary.300", "opacity": 0.7 }
+        }
+      },
+
+      "outline": {
+        "primary": {
+          "default": { "text": "color.primary.300", "background": "color.transparent", "border": "color.primary.300" },
+          "hover": { "text": "color.white", "background": "color.primary.400", "border": "color.primary.400" },
+          "disabled": { "text": "color.primary.300", "background": "color.transparent", "border": "color.primary.300", "opacity": 0.7 }
+        },
+        "secondary": {
+          "default": { "text": "color.secondary.300", "background": "color.transparent", "border": "color.secondary.300" },
+          "hover": { "text": "color.white", "background": "color.secondary.400", "border": "color.secondary.400" },
+          "disabled": { "text": "color.secondary.300", "background": "color.transparent", "border": "color.secondary.300", "opacity": 0.7 }
+        },
+        "light": {
+          "default": { "text": "color.white", "background": "color.transparent", "border": "color.white" },
+          "hover": { "text": "color.black", "background": "color.white", "border": "color.white" },
+          "disabled": { "text": "color.white", "background": "color.transparent", "border": "color.white", "opacity": 0.7 }
+        },
+        "dark": {
+          "default": { "text": "color.black", "background": "color.transparent", "border": "color.black" },
+          "hover": { "text": "color.white", "background": "color.gray.600", "border": "color.gray.600" },
+          "disabled": { "text": "color.black", "background": "color.transparent", "border": "color.black", "opacity": 0.7 }
+        },
+        "tertiary": {
+          "default": { "text": "color.secondary.300", "background": "color.transparent", "border": "color.secondary.300" },
+          "hover": { "text": "color.white", "background": "color.secondary.400", "border": "color.secondary.400" },
+          "disabled": { "text": "color.secondary.300", "background": "color.transparent", "border": "color.secondary.300", "opacity": 0.7 }
+        }
+      }
     },
-    "backgrounds": {
-      "dark": "bg-gray-500"
+
+    "properties": {
+      "leftIcon": { "type": "boolean", "default": false },
+      "rightIcon": { "type": "boolean", "default": false },
+      "text": { "type": "text", "default": "{config.examples.defaultText}" },
+      "icon": { "type": "text", "default": "{config.icons.default}" }
+    }
+  },
+
+  "textLink": {
+    "variants": {
+      "state": ["default", "hover", "disabled"],
+      "color": ["primary", "secondary", "dark", "light"]
+    },
+
+    "base": {
+      "font": {
+        "family": "Inter",
+        "weight": 500,
+        "size": 16,
+        "lineHeight": 24
+      },
+      "gap": 4
+    },
+
+    "styles": {
+      "primary": {
+        "default": { "text": "color.primary.300" },
+        "hover": { "text": "color.primary.400" },
+        "disabled": { "text": "color.primary.300", "opacity": 0.7 }
+      },
+      "secondary": {
+        "default": { "text": "color.secondary.300" },
+        "hover": { "text": "color.secondary.400" },
+        "disabled": { "text": "color.secondary.300", "opacity": 0.7 }
+      },
+      "dark": {
+        "default": { "text": "color.gray.500" },
+        "hover": { "text": "color.gray.600" },
+        "disabled": { "text": "color.gray.500", "opacity": 0.7 }
+      },
+      "light": {
+        "default": { "text": "color.white" },
+        "hover": { "text": "color.white" },
+        "disabled": { "text": "color.white", "opacity": 0.7 }
+      }
+    },
+
+    "properties": {
+      "text": { "type": "text", "default": "{config.examples.textLinkText}" },
+      "icon": { "type": "text", "optional": true }
     }
   }
 }

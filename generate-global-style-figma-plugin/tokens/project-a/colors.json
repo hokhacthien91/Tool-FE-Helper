@@ -4,56 +4,30 @@
   "$project": "Project A — Corporate / Enterprise",
   "color": {
     "primary": {
-      "50": { "value": "#e8f4fc", "description": "Primary tint lightest" },
-      "100": { "value": "#c5e2f6", "description": "Primary tint lighter" },
-      "200": { "value": "#9dcef0", "description": "Primary tint light" },
-      "300": { "value": "#6fb7e8", "description": "Primary tint" },
-      "400": { "value": "#4a9fdc", "description": "Primary light" },
-      "500": { "value": "#2b7cba", "description": "Primary base" },
-      "600": { "value": "#1e5f94", "description": "Primary dark" },
-      "700": { "value": "#164872", "description": "Primary darker" },
-      "800": { "value": "#103454", "description": "Primary darkest" },
-      "900": { "value": "#0a2239", "description": "Primary shade" }
+      "100": { "value": "#9dcef0", "description": "Primary tint" },
+      "200": { "value": "#6fb7e8", "description": "Primary light" },
+      "300": { "value": "#4a9fdc", "description": "Primary base" },
+      "400": { "value": "#2b7cba", "description": "Primary dark" }
     },
     "secondary": {
-      "50": { "value": "#f5f7f9", "description": "Secondary tint lightest" },
-      "100": { "value": "#e8ecf0", "description": "Secondary tint lighter" },
-      "200": { "value": "#d4dce4", "description": "Secondary tint light" },
-      "300": { "value": "#b8c5d1", "description": "Secondary tint" },
-      "400": { "value": "#96a8b8", "description": "Secondary light" },
-      "500": { "value": "#6b8299", "description": "Secondary base" },
-      "600": { "value": "#526980", "description": "Secondary dark" },
-      "700": { "value": "#3f5166", "description": "Secondary darker" },
-      "800": { "value": "#2e3d4d", "description": "Secondary darkest" },
-      "900": { "value": "#1f2a36", "description": "Secondary shade" }
+      "100": { "value": "#e0f7fa", "description": "Secondary tint" },
+      "200": { "value": "#b2ebf2", "description": "Secondary light" },
+      "300": { "value": "#80deea", "description": "Secondary base" },
+      "400": { "value": "#4dd0e1", "description": "Secondary dark" }
     },
       "gray": {
-      "0": { "value": "#ffffff", "description": "Pure white" },
-      "50": { "value": "#f8f9fa", "description": "Near white" },
-      "100": { "value": "#f1f3f5", "description": "Lightest gray" },
-      "200": { "value": "#e9ecef", "description": "Lighter gray" },
-      "300": { "value": "#dee2e6", "description": "Light gray" },
-      "400": { "value": "#adb5bd", "description": "Medium gray" },
-      "500": { "value": "#868e96", "description": "Gray" },
-      "600": { "value": "#495057", "description": "Dark gray" },
-      "700": { "value": "#343a40", "description": "Darker gray" },
-      "800": { "value": "#212529", "description": "Darkest gray" },
-      "900": { "value": "#16191d", "description": "Near black" },
-      "1000": { "value": "#0d0f12", "description": "Pure black" }
+      "100": { "value": "#f8f9fa", "description": "Gray tint" },
+      "200": { "value": "#e9ecef", "description": "Gray light" },
+      "300": { "value": "#dee2e6", "description": "Gray base" },
+      "400": { "value": "#adb5bd", "description": "Gray" },
+      "500": { "value": "#868e96", "description": "Gray dark" },
+      "600": { "value": "#495057", "description": "Gray darkest" }
     },
     "semantic": {
       "success": { "value": "#2e7d32", "description": "Success state" },
       "warning": { "value": "#ed6c02", "description": "Warning state" },
       "error": { "value": "#c62828", "description": "Error state" },
       "info": { "value": "#0277bd", "description": "Info state" }
-    },
-    "surface": {
-      "background": { "value": "#ffffff", "description": "Default page background" },
-      "foreground": { "value": "#212529", "description": "Default text color" },
-      "muted": { "value": "#f8f9fa", "description": "Muted background" },
-      "muted-foreground": { "value": "#6c757d", "description": "Muted text color" },
-      "border": { "value": "#dee2e6", "description": "Default border color" },
-      "ring": { "value": "#2b7cba", "description": "Focus ring color" }
     },
     "black": { "value": "#000", "description": "Pure black" },
     "white": { "value": "#fff", "description": "Pure white" },
