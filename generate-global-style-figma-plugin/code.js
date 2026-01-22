@@ -1604,15 +1604,57 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null, styleN
   if (style.fills && style.fills.length > 0) {
     const fill = style.fills[0];
     if (fill.type === 'SOLID') {
+      // Check if color is bound to a variable
+      if (fill.boundVariables && fill.boundVariables.color) {
+        try {
+          const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
+          if (variable) {
+            const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
+            if (collection && collection.modes.length > 0) {
+              const modeId = collection.modes[0].modeId;
+              let value = variable.valuesByMode[modeId];
+              value = resolveVariableValue(value);
+              styleObj.color = colorToHexString(value);
+            }
+          }
+        } catch (e) {
+          console.warn(`Could not resolve color variable:`, e);
+          if (fill.color) {
       styleObj.color = colorToHexString(fill.color);
+          }
+        }
+      } else if (fill.color) {
+        styleObj.color = colorToHexString(fill.color);
+      }
     }
   } else if (baseStyle && baseStyle.fills && baseStyle.fills.length > 0) {
     const fill = baseStyle.fills[0];
     if (fill.type === 'SOLID') {
+      // Check if color is bound to a variable
+      if (fill.boundVariables && fill.boundVariables.color) {
+        try {
+          const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
+          if (variable) {
+            const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
+            if (collection && collection.modes.length > 0) {
+              const modeId = collection.modes[0].modeId;
+              let value = variable.valuesByMode[modeId];
+              value = resolveVariableValue(value);
+              styleObj.color = colorToHexString(value);
+            }
+          }
+        } catch (e) {
+          console.warn(`Could not resolve color variable:`, e);
+          if (fill.color) {
       styleObj.color = colorToHexString(fill.color);
+          }
+        }
+      } else if (fill.color) {
+        styleObj.color = colorToHexString(fill.color);
+      }
     }
-  } else if (styleName === 'body' && style.id) {
-    // For body style, try to find color from text nodes using this style
+  } else if (style.id) {
+    // For all styles, try to find color from text nodes using this style
     try {
       const allPages = figma.root.children;
       let textNodes = [];
@@ -1628,13 +1670,34 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null, styleN
         const firstTextNode = textNodes[0];
         if (firstTextNode.fills && firstTextNode.fills.length > 0) {
           const fill = firstTextNode.fills[0];
-          if (fill.type === 'SOLID' && fill.color) {
-            styleObj.color = colorToHexString(fill.color);
+          if (fill.type === 'SOLID') {
+            // Check if color is bound to a variable
+            if (fill.boundVariables && fill.boundVariables.color) {
+              try {
+                const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
+                if (variable) {
+                  const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
+                  if (collection && collection.modes.length > 0) {
+                    const modeId = collection.modes[0].modeId;
+                    let value = variable.valuesByMode[modeId];
+                    value = resolveVariableValue(value);
+                    styleObj.color = colorToHexString(value);
+                  }
+                }
+              } catch (e) {
+                console.warn(`Could not resolve color variable from text node:`, e);
+                if (fill.color) {
+                  styleObj.color = colorToHexString(fill.color);
+                }
+              }
+            } else if (fill.color) {
+              styleObj.color = colorToHexString(fill.color);
+            }
           }
         }
       }
     } catch (e) {
-      console.warn(`Could not extract color from body style:`, e);
+      console.warn(`Could not extract color from style ${styleName}:`, e);
     }
   }
   
@@ -4777,7 +4840,8 @@ function parseTypographyTokens(textStylesData) {
             lineHeight: value.lineHeight !== undefined ? value.lineHeight : baseProps.lineHeight,
             fontWeight: value.fontWeight !== undefined ? value.fontWeight : baseProps.fontWeight,
             fontFamily: value.fontFamily !== undefined ? value.fontFamily : baseProps.fontFamily,
-            letterSpacing: value.letterSpacing !== undefined ? value.letterSpacing : baseProps.letterSpacing
+            letterSpacing: value.letterSpacing !== undefined ? value.letterSpacing : baseProps.letterSpacing,
+            color: value.color !== undefined ? value.color : baseProps.color
           };
 
           // Check if this breakpoint has nested breakpoints (e.g., body.mobile.tablet)
@@ -4794,7 +4858,8 @@ function parseTypographyTokens(textStylesData) {
               lineHeight: mergedProps.lineHeight,
               fontWeight: mergedProps.fontWeight,
               fontFamily: mergedProps.fontFamily,
-              letterSpacing: mergedProps.letterSpacing
+              letterSpacing: mergedProps.letterSpacing,
+              color: mergedProps.color
             });
             
             // Then recurse to handle nested breakpoints (tablet, desktop) with merged props as base
@@ -4810,7 +4875,8 @@ function parseTypographyTokens(textStylesData) {
               lineHeight: mergedProps.lineHeight,
               fontWeight: mergedProps.fontWeight,
               fontFamily: mergedProps.fontFamily,
-              letterSpacing: mergedProps.letterSpacing
+              letterSpacing: mergedProps.letterSpacing,
+              color: mergedProps.color
             });
           }
         } else {
@@ -4827,6 +4893,7 @@ function parseTypographyTokens(textStylesData) {
             const fontWeight = value.fontWeight; // Don't set default, let fillMissingBreakpoints handle
             const fontFamily = value.fontFamily;
             const letterSpacing = value.letterSpacing;
+            const color = value.color;
 
             styles.push({
               name: finalStyleName,
@@ -4836,7 +4903,8 @@ function parseTypographyTokens(textStylesData) {
               lineHeight: lineHeight,
               fontWeight: fontWeight,
               fontFamily: fontFamily,
-              letterSpacing: letterSpacing
+              letterSpacing: letterSpacing,
+              color: color
             });
           } else {
             // Extract base properties from this level (if any)
@@ -4846,7 +4914,8 @@ function parseTypographyTokens(textStylesData) {
               lineHeight: value.lineHeight !== undefined ? value.lineHeight : baseProps.lineHeight,
               fontWeight: value.fontWeight !== undefined ? value.fontWeight : baseProps.fontWeight,
               fontFamily: value.fontFamily !== undefined ? value.fontFamily : baseProps.fontFamily,
-              letterSpacing: value.letterSpacing !== undefined ? value.letterSpacing : baseProps.letterSpacing
+              letterSpacing: value.letterSpacing !== undefined ? value.letterSpacing : baseProps.letterSpacing,
+              color: value.color !== undefined ? value.color : baseProps.color
             };
 
             // Recurse with new style name
@@ -4899,7 +4968,8 @@ function fillMissingBreakpoints(styles) {
           lineHeight: existingBreakpoints[bp].lineHeight,
           fontWeight: existingBreakpoints[bp].fontWeight,
           fontFamily: existingBreakpoints[bp].fontFamily,
-          letterSpacing: existingBreakpoints[bp].letterSpacing
+          letterSpacing: existingBreakpoints[bp].letterSpacing,
+          color: existingBreakpoints[bp].color
         };
         break;
       }
@@ -4929,7 +4999,8 @@ function fillMissingBreakpoints(styles) {
           lineHeight: existing.lineHeight !== undefined ? existing.lineHeight : inheritFrom.lineHeight,
           fontWeight: existing.fontWeight !== undefined ? existing.fontWeight : inheritFrom.fontWeight,
           fontFamily: existing.fontFamily !== undefined ? existing.fontFamily : inheritFrom.fontFamily,
-          letterSpacing: existing.letterSpacing !== undefined ? existing.letterSpacing : inheritFrom.letterSpacing
+          letterSpacing: existing.letterSpacing !== undefined ? existing.letterSpacing : inheritFrom.letterSpacing,
+          color: existing.color !== undefined ? existing.color : inheritFrom.color
         };
         
         // Update last processed props for next breakpoint
@@ -4943,7 +5014,8 @@ function fillMissingBreakpoints(styles) {
             lineHeight: lastProcessedProps.lineHeight,
             fontWeight: lastProcessedProps.fontWeight,
             fontFamily: lastProcessedProps.fontFamily,
-            letterSpacing: lastProcessedProps.letterSpacing
+            letterSpacing: lastProcessedProps.letterSpacing,
+            color: lastProcessedProps.color
           };
         } else {
           // Fallback to base props (shouldn't happen if mobile exists)
@@ -4952,7 +5024,8 @@ function fillMissingBreakpoints(styles) {
             lineHeight: baseProps.lineHeight,
             fontWeight: baseProps.fontWeight,
             fontFamily: baseProps.fontFamily,
-            letterSpacing: baseProps.letterSpacing
+            letterSpacing: baseProps.letterSpacing,
+            color: baseProps.color
           };
         }
         
@@ -4974,7 +5047,8 @@ function fillMissingBreakpoints(styles) {
         lineHeight: styleProps.lineHeight,
         fontWeight: styleProps.fontWeight,
         fontFamily: styleProps.fontFamily,
-        letterSpacing: styleProps.letterSpacing
+        letterSpacing: styleProps.letterSpacing,
+        color: styleProps.color
       });
     }
   }
@@ -5659,13 +5733,13 @@ async function createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAc
   }
 
   // Create typography styles
+  // Get color variables first (they should already be created)
+  const colorVariables = figma.variables.getLocalVariables('COLOR');
   if (parsedTokens.typography.length > 0) {
-    await createTypographyStylesFromParsedTokens(parsedTokens.typography, prefix, duplicateAction, selections);
+    await createTypographyStylesFromParsedTokens(parsedTokens.typography, prefix, duplicateAction, selections, colorVariables);
   }
   
   // Create link styles from linksColors
-  // Get color variables after creating them
-  const colorVariables = figma.variables.getLocalVariables('COLOR');
   if (parsedTokens.linksColors) {
     await createLinkStylesFromParsedTokens(parsedTokens.linksColors, prefix, duplicateAction, colorVariables, selections);
   }
@@ -5760,7 +5834,7 @@ async function createColorVariablesFromParsedTokens(colors, prefix, duplicateAct
   }
 }
 
-async function createTypographyStylesFromParsedTokens(typography, prefix, duplicateAction, selections = null) {
+async function createTypographyStylesFromParsedTokens(typography, prefix, duplicateAction, selections = null, colorVariables = []) {
   console.log(`Creating typography styles. Total: ${typography.length}`);
   const existingStyles = figma.getLocalTextStyles();
   const existingStyleMap = new Map(existingStyles.map(s => [s.name, s]));
@@ -5784,18 +5858,25 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
 
   // Create a map of breakpoint -> fontFamily from body
   const bodyFontFamilyMap = new Map();
+  // Create a map of breakpoint -> color from body
+  const bodyColorMap = new Map();
   for (const bodyStyle of bodyStyles) {
     const breakpoint = bodyStyle.breakpoint || 'mobile';
-    console.log(`Processing body style: ${bodyStyle.name}, breakpoint: ${breakpoint}, fontFamily: ${bodyStyle.fontFamily || '(none)'}`);
+    console.log(`Processing body style: ${bodyStyle.name}, breakpoint: ${breakpoint}, fontFamily: ${bodyStyle.fontFamily || '(none)'}, color: ${bodyStyle.color || '(none)'}`);
     if (bodyStyle.fontFamily) {
       bodyFontFamilyMap.set(breakpoint, bodyStyle.fontFamily);
       console.log(`Added to map: ${breakpoint} -> ${bodyStyle.fontFamily}`);
     } else {
       console.warn(`Body style ${bodyStyle.name} (${breakpoint}) does not have fontFamily!`);
     }
+    if (bodyStyle.color) {
+      bodyColorMap.set(breakpoint, bodyStyle.color);
+      console.log(`Added color to map: ${breakpoint} -> ${bodyStyle.color}`);
+    }
   }
 
   console.log('Body fontFamily map:', Array.from(bodyFontFamilyMap.entries()));
+  console.log('Body color map:', Array.from(bodyColorMap.entries()));
 
   // Check if body has fontFamily for at least one breakpoint
   if (bodyFontFamilyMap.size === 0 && bodyStyles.length > 0) {
@@ -5820,6 +5901,10 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
   }
   
   console.log(`Body fontFamily available for breakpoints: ${Array.from(bodyFontFamilyMap.keys()).join(', ')}`);
+
+  // Create color variable map
+  const colorVariableMap = new Map(colorVariables.map(v => [v.name, v]));
+  console.log(`[TYPOGRAPHY COLOR] Total color variables available: ${colorVariables.length}`);
 
   for (const style of typography) {
     // Build style name with prefix
@@ -5860,7 +5945,17 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
       console.log(`Style ${styleName} has explicit fontFamily: ${fontFamily}`);
     }
 
-    console.log(`Processing style: ${styleName}, fontSize: ${style.fontSize}, fontFamily: ${fontFamily}, fontWeight: ${style.fontWeight}`);
+    // Get color: use style's color, or body's color for same breakpoint
+    let color = style.color;
+    if (!color) {
+      const bodyColor = bodyColorMap.get(breakpoint);
+      if (bodyColor) {
+        color = bodyColor;
+        console.log(`Style ${styleName} missing color, using body's color for ${breakpoint}: ${color}`);
+      }
+    }
+
+    console.log(`Processing style: ${styleName}, fontSize: ${style.fontSize}, fontFamily: ${fontFamily}, fontWeight: ${style.fontWeight}, color: ${color || '(none)'}`);
 
     const existingStyle = existingStyleMap.get(styleName);
     if (existingStyle) {
@@ -6027,27 +6122,32 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
     }
 
     try {
-      if (existingStyle && duplicateAction === 'overwrite') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+      
+      let textStyle = null;
+      if (existingStyle && itemAction === 'overwrite') {
+        textStyle = existingStyle;
         const fontSize = typeof style.fontSize === 'number' ? style.fontSize : parseValue(style.fontSize);
-        existingStyle.fontName = fontName;
-        existingStyle.fontSize = fontSize;
+        textStyle.fontName = fontName;
+        textStyle.fontSize = fontSize;
         if (style.lineHeight) {
           if (style.lineHeight === 'auto' || style.lineHeight === 'Auto') {
-            existingStyle.lineHeight = { unit: 'AUTO' };
+            textStyle.lineHeight = { unit: 'AUTO' };
           } else if (String(style.lineHeight).endsWith('%')) {
-            existingStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PERCENT' };
+            textStyle.lineHeight = { value: parseFloat(style.lineHeight), unit: 'PERCENT' };
           } else {
-            existingStyle.lineHeight = { value: parseValue(style.lineHeight), unit: 'PIXELS' };
+            textStyle.lineHeight = { value: parseValue(style.lineHeight), unit: 'PIXELS' };
           }
         }
         if (style.letterSpacing) {
           if (String(style.letterSpacing).endsWith('%')) {
-            existingStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PERCENT' };
+            textStyle.letterSpacing = { value: parseFloat(style.letterSpacing), unit: 'PERCENT' };
           } else {
-            existingStyle.letterSpacing = { value: parseValue(style.letterSpacing), unit: 'PIXELS' };
+            textStyle.letterSpacing = { value: parseValue(style.letterSpacing), unit: 'PIXELS' };
           }
         }
-      } else {
+      } else if (!existingStyle || itemAction === 'overwrite') {
         // Ensure fontSize is a number
         const fontSize = typeof style.fontSize === 'number' ? style.fontSize : parseValue(style.fontSize);
         if (!fontSize || fontSize <= 0) {
@@ -6055,7 +6155,7 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
           continue;
         }
 
-        const textStyle = figma.createTextStyle();
+        textStyle = existingStyle && itemAction === 'overwrite' ? existingStyle : figma.createTextStyle();
         textStyle.name = styleName;
         textStyle.fontName = fontName;
         textStyle.fontSize = fontSize;
@@ -6077,7 +6177,21 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
             textStyle.letterSpacing = { value: parseValue(style.letterSpacing), unit: 'PIXELS' };
           }
         }
+      } else {
+        // Skip existing style
+        console.log(`Skipping existing style: ${styleName}`);
+        continue;
       }
+
+      // Note: Text styles in Figma don't support fills property
+      // Color will be set on text nodes in the layout instead
+      // When exporting, color will be extracted from text nodes using this style
+      if (color) {
+        console.log(`[TYPOGRAPHY COLOR] Color ${color} will be applied to text nodes in layout for style ${styleName}`);
+      } else {
+        console.log(`[TYPOGRAPHY COLOR] No color specified for ${styleName} (neither in style nor inherited from body)`);
+      }
+
       console.log(`Created text style: ${styleName}`);
     } catch (e) {
       console.error(`Failed to create text style ${styleName}:`, e);
@@ -7150,7 +7264,7 @@ async function generateLayoutFromParsedTokens(parsedTokens, prefix, useVariables
 
   // Generate typography section
   if (parsedTokens.typography.length > 0) {
-    await generateTypographyLayoutFromTokens(mainFrame, parsedTokens.typography, textStyleMap, prefix);
+    await generateTypographyLayoutFromTokens(mainFrame, parsedTokens.typography, textStyleMap, prefix, colorVariableMap);
   }
   
   // Generate linksColors section in typography layout
@@ -7515,7 +7629,25 @@ async function generateColorsLayoutFromTokens(parent, colors, variableMap) {
   parent.appendChild(section);
 }
 
-async function generateTypographyLayoutFromTokens(parent, typography, textStyleMap, prefix) {
+async function generateTypographyLayoutFromTokens(parent, typography, textStyleMap, prefix, colorVariableMap = null) {
+  // Find body styles to get color for inheritance
+  const bodyStyles = typography.filter(s => {
+    const nameParts = s.name.split('/');
+    const styleName = nameParts.length > 1 ? nameParts[1] : nameParts[0];
+    return styleName.toLowerCase() === 'body';
+  });
+  
+  // Create a map of breakpoint -> color from body
+  const bodyColorMap = new Map();
+  for (const bodyStyle of bodyStyles) {
+    const breakpoint = bodyStyle.breakpoint || 'mobile';
+    if (bodyStyle.color) {
+      bodyColorMap.set(breakpoint, bodyStyle.color);
+      console.log(`[LAYOUT COLOR] Added body color to map: ${breakpoint} -> ${bodyStyle.color}`);
+    }
+  }
+  console.log(`[LAYOUT COLOR] Body color map:`, Array.from(bodyColorMap.entries()));
+  
   // Group by breakpoint
   const groupedByBreakpoint = {};
   typography.forEach(style => {
@@ -7665,6 +7797,69 @@ async function generateTypographyLayoutFromTokens(parent, typography, textStyleM
         } catch (fontError) {
           console.warn(`Font load failed for ${s.name}`);
         }
+      }
+
+      // Get color: use style's color, or body's color for same breakpoint
+      let color = s.color;
+      const breakpoint = s.breakpoint || 'mobile';
+      if (!color) {
+        const bodyColor = bodyColorMap.get(breakpoint);
+        if (bodyColor) {
+          color = bodyColor;
+          console.log(`[LAYOUT COLOR] Style ${s.name} missing color, using body's color for ${breakpoint}: ${color}`);
+        }
+      }
+      
+      // Set color if available (from style or inherited from body)
+      console.log(`[LAYOUT COLOR] Checking color for ${s.name}: s.color=${s.color || '(none)'}, inherited color=${color || '(none)'}, styleName=${styleName}`);
+      if (color) {
+        try {
+          console.log(`[LAYOUT COLOR] Starting to set color for ${s.name}, hex: ${color}`);
+          console.log(`[LAYOUT COLOR] colorVariableMap available: ${colorVariableMap ? 'yes' : 'no'}, size: ${colorVariableMap ? colorVariableMap.size : 0}`);
+          
+          // Check if color exists as a variable
+          const colorVariable = colorVariableMap ? findColorVariableByHex(color, colorVariableMap) : null;
+          console.log(`[LAYOUT COLOR] Found variable:`, colorVariable ? colorVariable.name : 'none');
+          
+          if (colorVariable) {
+            // Bind to color variable
+            const paintObj = { type: 'SOLID', color: { r: 0, g: 0, b: 0 } };
+            const boundPaint = figma.variables.setBoundVariableForPaint(paintObj, 'color', colorVariable);
+            console.log(`[LAYOUT COLOR] Paint object after binding:`, boundPaint);
+            console.log(`[LAYOUT COLOR] boundVariables:`, boundPaint.boundVariables);
+            sample.fills = [boundPaint];
+            console.log(`[LAYOUT COLOR] Set fills to sample, current fills:`, sample.fills);
+            console.log(`[LAYOUT COLOR] Fills boundVariables:`, sample.fills[0] && sample.fills[0].boundVariables);
+            console.log(`[LAYOUT COLOR] Successfully bound color variable ${colorVariable.name} to text node for ${s.name}`);
+          } else {
+            // Use direct color
+            const hex = color.replace('#', '');
+            const r = parseInt(hex.substring(0, 2), 16) / 255;
+            const g = parseInt(hex.substring(2, 4), 16) / 255;
+            const b = parseInt(hex.substring(4, 6), 16) / 255;
+            const rgbColor = { r: r, g: g, b: b };
+            console.log(`[LAYOUT COLOR] Converting hex ${color} to RGB:`, rgbColor);
+            sample.fills = [{ type: 'SOLID', color: rgbColor }];
+            console.log(`[LAYOUT COLOR] Set fills with direct color:`, sample.fills);
+            console.log(`[LAYOUT COLOR] Set direct color ${color} (RGB: ${r}, ${g}, ${b}) for text node ${s.name}`);
+          }
+          
+          // Verify fills after setting
+          console.log(`[LAYOUT COLOR] Final fills for ${s.name}:`, sample.fills);
+          if (sample.fills && sample.fills.length > 0) {
+            const fill = sample.fills[0];
+            if (fill.boundVariables && fill.boundVariables.color) {
+              console.log(`[LAYOUT COLOR] Fill is bound to variable:`, fill.boundVariables.color);
+            } else if (fill.color) {
+              console.log(`[LAYOUT COLOR] Fill has direct color:`, fill.color);
+            }
+          }
+        } catch (colorError) {
+          console.error(`[LAYOUT COLOR] Failed to set color for ${s.name}:`, colorError);
+          console.error(`[LAYOUT COLOR] Error stack:`, colorError.stack);
+        }
+      } else {
+        console.log(`[LAYOUT COLOR] No color specified for ${s.name} in parsed tokens`);
       }
 
       sample.characters = sampleText;

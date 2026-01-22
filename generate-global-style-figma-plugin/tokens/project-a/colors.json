@@ -29,7 +29,7 @@
       "error": { "value": "#c62828", "description": "Error state" },
       "info": { "value": "#0277bd", "description": "Info state" }
     },
-    "black": { "value": "#000", "description": "Pure black" },
+    "black": { "value": "#212121", "description": "Pure black" },
     "white": { "value": "#fff", "description": "Pure white" },
     "transparent": { "value": "transparent", "description": "Transparent color" }
   }

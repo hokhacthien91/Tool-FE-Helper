@@ -3,27 +3,6 @@
   "$type": "typography",
   "$project": "Project A — Corporate / Enterprise",
   "textStyles": {
-    "default": {
-      "mobile": {
-        "fontSize": "16px",
-        "fontWeight": "regular",
-        "fontFamily": "Inter"
-      }
-    },
-    "hover": {
-      "mobile": {
-        "fontSize": "16px",
-        "fontWeight": "regular",
-        "fontFamily": "Inter"
-      }
-    },
-    "focus": {
-      "mobile": {
-        "fontSize": "16px",
-        "fontWeight": "regular",
-        "fontFamily": "Inter"
-      }
-    },
     "display": {
       "mobile": {
         "fontSize": "74px",
@@ -146,14 +125,14 @@
       "mobile": {
         "fontSize": "24px",
         "lineHeight": "160%",
-        "fontWeight": "medium"
+        "fontWeight": "semibold italic"
       }
     },
     "quote-large": {
       "mobile": {
         "fontSize": "36px",
         "lineHeight": "160%",
-        "fontWeight": "medium"
+        "fontWeight": "semibold italic"
       }
     },
     "numeric-small": {

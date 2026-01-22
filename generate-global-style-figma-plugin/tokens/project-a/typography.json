@@ -15,7 +15,6 @@
         "fontSize": "60px",
         "lineHeight": "120%",
         "fontWeight": "semibold",
-        "color": "#6fb7e8",
         "letterSpacing": "1px"
       },
       "desktop": {
@@ -92,7 +91,7 @@
         "lineHeight": "150%",
         "fontWeight": "regular",
         "fontFamily": "Lato",
-        "color": "#2b7cba",
+        "color": "#212121",
         "tablet": {
           "fontSize": "17px"
         },
