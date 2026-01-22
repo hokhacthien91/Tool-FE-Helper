@@ -13,13 +13,21 @@ figma.ui.onmessage = async (msg) => {
 
     const globalStyle = data[0].values;
     const prefix = msg.prefix || '';
+    const createVariables = msg.createVariables !== undefined ? msg.createVariables : true; // Default to true for checkDuplicates
 
     try {
       const duplicates = await checkForDuplicates(globalStyle, prefix);
       const hasDuplicates = duplicates.colors.length > 0 || duplicates.spacing.length > 0 || duplicates.textStyles.length > 0;
 
       if (hasDuplicates) {
-        figma.ui.postMessage({ type: 'duplicatesFound', duplicates: duplicates });
+        figma.ui.postMessage({ 
+          type: 'duplicatesFound', 
+          duplicates: duplicates,
+          action: 'generate',
+          json: data,
+          createVariables: createVariables,
+          prefix: prefix
+        });
       } else {
         figma.ui.postMessage({ type: 'noDuplicates' });
       }
@@ -69,13 +77,38 @@ figma.ui.onmessage = async (msg) => {
       const createVariables = msg.createVariables || false;
       const generateLayout = msg.generateLayout || false;
       const prefix = (msg.prefix || '').trim();
+      const duplicateAction = msg.duplicateAction || 'skip';
 
       // Parse tokens
       const parsedTokens = parseAllTokens(tokenFiles);
 
-      // Create variables if requested
+      // Check for duplicates if creating variables
       if (createVariables) {
-        await createVariablesFromParsedTokens(parsedTokens, prefix, 'skip');
+        const duplicates = await checkForDuplicatesFromParsedTokens(parsedTokens, prefix);
+        const totalDuplicates = (duplicates.colors && duplicates.colors.length ? duplicates.colors.length : 0) + 
+                                (duplicates.spacing && duplicates.spacing.length ? duplicates.spacing.length : 0) + 
+                                (duplicates.textStyles && duplicates.textStyles.length ? duplicates.textStyles.length : 0) +
+                                (duplicates.borders && duplicates.borders.length ? duplicates.borders.length : 0) +
+                                (duplicates.breakpoints && duplicates.breakpoints.length ? duplicates.breakpoints.length : 0);
+
+        if (totalDuplicates > 0) {
+          // Send duplicates to UI for user to choose
+          figma.ui.postMessage({ 
+            type: 'duplicatesFound', 
+            duplicates: duplicates,
+            action: 'importTokens',
+            tokenFiles: tokenFiles,
+            createVariables: createVariables,
+            generateLayout: generateLayout,
+            prefix: prefix
+          });
+          return;
+        }
+      }
+
+      // No duplicates or user already chose, proceed with import
+      if (createVariables) {
+        await createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAction);
       }
 
       // Generate layout if requested
@@ -88,6 +121,99 @@ figma.ui.onmessage = async (msg) => {
         : createVariables
         ? 'Tokens imported successfully! Variables created.'
         : 'Tokens imported successfully! Layout generated.';
+      figma.ui.postMessage({ type: 'status', message: successMsg });
+    } catch (error) {
+      console.error(error);
+      figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
+    }
+  } else if (msg.type === 'importTokensWithAction') {
+    // Handle import after user chose action
+    try {
+      const tokenFiles = msg.tokenFiles || {};
+      const createVariables = msg.createVariables || false;
+      const generateLayout = msg.generateLayout || false;
+      const prefix = (msg.prefix || '').trim();
+      const duplicateAction = msg.duplicateAction || 'skip';
+
+      // Parse tokens
+      const parsedTokens = parseAllTokens(tokenFiles);
+
+      // Create variables if requested
+      if (createVariables) {
+        await createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAction);
+      }
+
+      // Generate layout if requested
+      if (generateLayout) {
+        await generateLayoutFromParsedTokens(parsedTokens, prefix, createVariables);
+      }
+
+      const successMsg = createVariables && generateLayout
+        ? 'Tokens imported successfully! Variables created and layout generated.'
+        : createVariables
+        ? 'Tokens imported successfully! Variables created.'
+        : 'Tokens imported successfully! Layout generated.';
+      figma.ui.postMessage({ type: 'status', message: successMsg });
+    } catch (error) {
+      console.error(error);
+      figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
+    }
+  } else if (msg.type === 'importTokensWithSelections') {
+    // Handle import with individual selections
+    try {
+      const tokenFiles = msg.tokenFiles || {};
+      const createVariables = msg.createVariables || false;
+      const generateLayout = msg.generateLayout || false;
+      const prefix = (msg.prefix || '').trim();
+      const selections = msg.selections || {};
+
+      // Parse tokens
+      const parsedTokens = parseAllTokens(tokenFiles);
+
+      // Create variables if requested
+      if (createVariables) {
+        await createVariablesFromParsedTokens(parsedTokens, prefix, 'skip', selections);
+      }
+
+      // Generate layout if requested
+      if (generateLayout) {
+        await generateLayoutFromParsedTokens(parsedTokens, prefix, createVariables);
+      }
+
+      const successMsg = createVariables && generateLayout
+        ? 'Tokens imported successfully! Variables created and layout generated.'
+        : createVariables
+        ? 'Tokens imported successfully! Variables created.'
+        : 'Tokens imported successfully! Layout generated.';
+      figma.ui.postMessage({ type: 'status', message: successMsg });
+    } catch (error) {
+      console.error(error);
+      figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
+    }
+  } else if (msg.type === 'generateWithSelections') {
+    // Handle generate with individual selections
+    try {
+      const data = msg.data;
+      if (!data || !data.length) {
+        figma.ui.postMessage({ type: 'status', message: 'No data found in JSON.', error: true });
+        return;
+      }
+
+      const globalStyle = data[0].values;
+      const createVariables = msg.createVariables || false;
+      const prefix = msg.prefix || '';
+      const selections = msg.selections || {};
+
+      // Create Variables and Text Styles if checkbox is checked
+      if (createVariables) {
+        await createVariablesAndStyles(globalStyle, prefix, 'skip', selections);
+      }
+
+      await generateGlobalStyle(globalStyle, createVariables ? prefix : '');
+
+      const successMsg = createVariables
+        ? 'Global Style generated successfully! Variables & Text Styles created.'
+        : 'Global Style generated successfully!';
       figma.ui.postMessage({ type: 'status', message: successMsg });
     } catch (error) {
       console.error(error);
@@ -929,6 +1055,9 @@ function exportColorTokens(colorVariables, projectName) {
 async function exportTypographyTokens(textStyles, projectName) {
   const textStylesData = {};
   
+  // Styles to skip - these are already exported in linksColors
+  const skipStyles = ['default', 'hover', 'focus'];
+  
   // First pass: collect all styles grouped by style name
   const stylesByName = {};
   
@@ -936,6 +1065,11 @@ async function exportTypographyTokens(textStyles, projectName) {
     const parsed = parseTextStyleName(style.name);
     const styleName = parsed.styleName;
     const breakpoint = parsed.breakpoint;
+    
+    // Skip styles that are part of linksColors
+    if (skipStyles.includes(styleName)) {
+      return;
+    }
     
     if (!stylesByName[styleName]) {
       stylesByName[styleName] = {};
@@ -964,25 +1098,47 @@ async function exportTypographyTokens(textStyles, projectName) {
     // Start with mobile (base)
     if (breakpointStyles.mobile && breakpointStyles.mobile.length > 0) {
       const mobileStyle = breakpointStyles.mobile[0];
-      const mobileObj = buildStyleObject(mobileStyle, null, bodyFontFamily);
+      const mobileObj = buildStyleObject(mobileStyle, null, bodyFontFamily, styleName);
       
       // Check if there are nested breakpoints (tablet, desktop) within mobile
-      // This happens when we have "Body/Mobile/Tablet" structure
-      let current = mobileObj;
+      // This happens when we have "Body/Mobile/Tablet" or "H1/Mobile/Desktop" structure
+      // Both tablet and desktop are nested under mobile, not tablet nested under desktop
       
       // Handle tablet nested in mobile
+      // Only include properties that differ from mobile
       if (breakpointStyles.tablet && breakpointStyles.tablet.length > 0) {
         const tabletStyle = breakpointStyles.tablet[0];
-        const tabletObj = buildStyleObject(tabletStyle, mobileStyle, bodyFontFamily);
-        current.tablet = tabletObj;
-        current = tabletObj;
+        const tabletObj = buildStyleObject(tabletStyle, mobileStyle, bodyFontFamily, styleName);
+        // Filter out properties that are the same as mobile
+        const filteredTabletObj = {};
+        Object.keys(tabletObj).forEach(key => {
+          if (JSON.stringify(tabletObj[key]) !== JSON.stringify(mobileObj[key])) {
+            filteredTabletObj[key] = tabletObj[key];
+          }
+        });
+        // Only add tablet if it has at least one different property
+        if (Object.keys(filteredTabletObj).length > 0) {
+          mobileObj.tablet = filteredTabletObj;
+        }
       }
       
-      // Handle desktop nested in mobile or tablet
+      // Handle desktop nested in mobile (not in tablet)
+      // Only include properties that differ from mobile
       if (breakpointStyles.desktop && breakpointStyles.desktop.length > 0) {
         const desktopStyle = breakpointStyles.desktop[0];
-        const desktopObj = buildStyleObject(desktopStyle, current, bodyFontFamily);
-        current.desktop = desktopObj;
+        // Desktop is nested under mobile, use mobileStyle as base
+        const desktopObj = buildStyleObject(desktopStyle, mobileStyle, bodyFontFamily, styleName);
+        // Filter out properties that are the same as mobile
+        const filteredDesktopObj = {};
+        Object.keys(desktopObj).forEach(key => {
+          if (JSON.stringify(desktopObj[key]) !== JSON.stringify(mobileObj[key])) {
+            filteredDesktopObj[key] = desktopObj[key];
+          }
+        });
+        // Only add desktop if it has at least one different property
+        if (Object.keys(filteredDesktopObj).length > 0) {
+          mobileObj.desktop = filteredDesktopObj;
+        }
       }
       
       textStylesData[styleName] = { mobile: mobileObj };
@@ -991,7 +1147,7 @@ async function exportTypographyTokens(textStyles, projectName) {
       const firstBreakpoint = Object.keys(breakpointStyles)[0];
       if (firstBreakpoint && breakpointStyles[firstBreakpoint].length > 0) {
         const style = breakpointStyles[firstBreakpoint][0];
-        textStylesData[styleName] = { [firstBreakpoint]: buildStyleObject(style, null, bodyFontFamily) };
+        textStylesData[styleName] = { [firstBreakpoint]: buildStyleObject(style, null, bodyFontFamily, styleName) };
       }
     }
   });
@@ -1262,7 +1418,7 @@ function parseLinkDescription(description) {
   return properties;
 }
 
-function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
+function buildStyleObject(style, baseStyle = null, bodyFontFamily = null, styleName = null) {
   const styleObj = {};
   
   // fontSize
@@ -1315,18 +1471,21 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
   // Map from Figma font style names (Semibold, Regular, Bold) to lowercase token format
   if (style.fontName && style.fontName.style) {
     // Extract weight from Figma font style name and convert to lowercase token format
-    const styleName = style.fontName.style;
-    const lowerStyle = styleName.toLowerCase();
+    const fontStyleName = style.fontName.style;
+    const lowerStyle = fontStyleName.toLowerCase();
+    // Check for italic first (before checking weight)
+    const isItalic = lowerStyle.includes('italic') || lowerStyle.includes('oblique');
+    
     if (lowerStyle.includes('semibold') || lowerStyle.includes('semi-bold') || lowerStyle.includes('semi bold')) {
-      styleObj.fontWeight = lowerStyle.includes('italic') ? 'semibold italic' : 'semibold';
+      styleObj.fontWeight = isItalic ? 'semibold italic' : 'semibold';
     } else if (lowerStyle.includes('bold') && !lowerStyle.includes('semi')) {
-      styleObj.fontWeight = lowerStyle.includes('italic') ? 'bold italic' : 'bold';
+      styleObj.fontWeight = isItalic ? 'bold italic' : 'bold';
     } else if (lowerStyle.includes('medium')) {
-      styleObj.fontWeight = lowerStyle.includes('italic') ? 'medium italic' : 'medium';
+      styleObj.fontWeight = isItalic ? 'medium italic' : 'medium';
     } else if (lowerStyle.includes('light')) {
-      styleObj.fontWeight = lowerStyle.includes('italic') ? 'light italic' : 'light';
+      styleObj.fontWeight = isItalic ? 'light italic' : 'light';
     } else if (lowerStyle.includes('regular') || lowerStyle.includes('normal')) {
-      styleObj.fontWeight = lowerStyle.includes('italic') ? 'regular italic' : 'regular';
+      styleObj.fontWeight = isItalic ? 'regular italic' : 'regular';
     } else {
       // Fallback: use lowercase version of style name
       styleObj.fontWeight = lowerStyle;
@@ -1349,16 +1508,18 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
     // Inherit from base style
     const baseStyleName = baseStyle.fontName.style;
     const lowerBaseStyle = baseStyleName.toLowerCase();
+    const isItalic = lowerBaseStyle.includes('italic') || lowerBaseStyle.includes('oblique');
+    
     if (lowerBaseStyle.includes('semibold') || lowerBaseStyle.includes('semi-bold') || lowerBaseStyle.includes('semi bold')) {
-      styleObj.fontWeight = lowerBaseStyle.includes('italic') ? 'semibold italic' : 'semibold';
+      styleObj.fontWeight = isItalic ? 'semibold italic' : 'semibold';
     } else if (lowerBaseStyle.includes('bold') && !lowerBaseStyle.includes('semi')) {
-      styleObj.fontWeight = lowerBaseStyle.includes('italic') ? 'bold italic' : 'bold';
+      styleObj.fontWeight = isItalic ? 'bold italic' : 'bold';
     } else if (lowerBaseStyle.includes('medium')) {
-      styleObj.fontWeight = lowerBaseStyle.includes('italic') ? 'medium italic' : 'medium';
+      styleObj.fontWeight = isItalic ? 'medium italic' : 'medium';
     } else if (lowerBaseStyle.includes('light')) {
-      styleObj.fontWeight = lowerBaseStyle.includes('italic') ? 'light italic' : 'light';
+      styleObj.fontWeight = isItalic ? 'light italic' : 'light';
     } else if (lowerBaseStyle.includes('regular') || lowerBaseStyle.includes('normal')) {
-      styleObj.fontWeight = lowerBaseStyle.includes('italic') ? 'regular italic' : 'regular';
+      styleObj.fontWeight = isItalic ? 'regular italic' : 'regular';
     } else if (baseStyle.fontWeight !== undefined) {
       // Convert numeric fontWeight to token format string
       const weightMap = {
@@ -1376,7 +1537,7 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
     }
   }
   
-  // fontFamily - only include if different from body fontFamily
+  // fontFamily - always include for body style, otherwise only if different from body fontFamily
   let currentFontFamily = null;
   if (style.fontName && style.fontName.family) {
     currentFontFamily = style.fontName.family;
@@ -1384,9 +1545,11 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
     currentFontFamily = baseStyle.fontName.family;
   }
   
-  // Only include fontFamily if it's different from body fontFamily
-  if (currentFontFamily && currentFontFamily !== bodyFontFamily) {
+  // Always include fontFamily for body style, otherwise only if different from body fontFamily
+  if (currentFontFamily) {
+    if (styleName === 'body' || currentFontFamily !== bodyFontFamily) {
     styleObj.fontFamily = currentFontFamily;
+    }
   }
   
   // letterSpacing - only include if not 0% or 0px
@@ -1437,6 +1600,7 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
   }
   
   // color
+  // Text styles don't have fills directly, need to find from text nodes using this style
   if (style.fills && style.fills.length > 0) {
     const fill = style.fills[0];
     if (fill.type === 'SOLID') {
@@ -1446,6 +1610,31 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null) {
     const fill = baseStyle.fills[0];
     if (fill.type === 'SOLID') {
       styleObj.color = colorToHexString(fill.color);
+    }
+  } else if (styleName === 'body' && style.id) {
+    // For body style, try to find color from text nodes using this style
+    try {
+      const allPages = figma.root.children;
+      let textNodes = [];
+      
+      for (const page of allPages) {
+        const nodes = page.findAll(node => {
+          return node.type === 'TEXT' && node.textStyleId === style.id;
+        });
+        textNodes = textNodes.concat(nodes);
+      }
+      
+      if (textNodes.length > 0) {
+        const firstTextNode = textNodes[0];
+        if (firstTextNode.fills && firstTextNode.fills.length > 0) {
+          const fill = firstTextNode.fills[0];
+          if (fill.type === 'SOLID' && fill.color) {
+            styleObj.color = colorToHexString(fill.color);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Could not extract color from body style:`, e);
     }
   }
   
@@ -1899,10 +2088,10 @@ function exportButtonTokens(projectName) {
       message: `Error exporting buttons: ${error.message}`, 
       error: true 
     });
-    return {
-      "$schema": "https://gravity-flex.dev/schemas/tokens.json",
-      "$type": "button",
-      "$project": projectName,
+  return {
+    "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+    "$type": "button",
+    "$project": projectName,
       "config": {
         "examples": {
           "defaultText": "Button",
@@ -3690,6 +3879,129 @@ async function createTypographyFromStyles(parent, textStyles) {
 // CHECK FOR DUPLICATES BEFORE CREATING
 // ============================================
 
+async function checkForDuplicatesFromParsedTokens(parsedTokens, prefix) {
+  const duplicates = {
+    colors: [],
+    spacing: [],
+    textStyles: [],
+    borders: [],
+    shadows: [],
+    breakpoints: []
+  };
+
+  // Check Color Variables
+  if (parsedTokens.colors && parsedTokens.colors.length > 0) {
+    const collectionName = prefix ? `Colors - ${prefix}` : 'Colors';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    const collection = existingCollections.find(c => c.name === collectionName);
+
+    if (collection) {
+      const existingVariables = figma.variables.getLocalVariables('COLOR')
+        .filter(v => v.variableCollectionId === collection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+
+      for (const color of parsedTokens.colors) {
+        if (existingNames.has(color.name)) {
+          duplicates.colors.push(color.name);
+        }
+      }
+    }
+  }
+
+  // Check Spacing Variables
+  if (parsedTokens.spacing && parsedTokens.spacing.length > 0) {
+    const collectionName = prefix ? `Spacing - ${prefix}` : 'Spacing';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    const collection = existingCollections.find(c => c.name === collectionName);
+
+    if (collection) {
+      const existingVariables = figma.variables.getLocalVariables('FLOAT')
+        .filter(v => v.variableCollectionId === collection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+
+      for (const spacing of parsedTokens.spacing) {
+        if (existingNames.has(spacing.name)) {
+          duplicates.spacing.push(spacing.name);
+        }
+      }
+    }
+  }
+
+  // Check Text Styles
+  if (parsedTokens.typography && parsedTokens.typography.length > 0) {
+    const existingStyles = figma.getLocalTextStyles();
+    const existingNames = new Set(existingStyles.map(s => s.name));
+
+    for (const style of parsedTokens.typography) {
+      let styleName = style.name;
+      if (prefix) {
+        if (style.name.includes('/')) {
+          const [breakpoint, name] = style.name.split('/');
+          styleName = `${breakpoint} - ${prefix}/${name}`;
+        } else {
+          styleName = `${prefix}/${style.name}`;
+        }
+      }
+      if (existingNames.has(styleName)) {
+        duplicates.textStyles.push(styleName);
+      }
+    }
+  }
+
+  // Check Border Variables
+  if (parsedTokens.borders) {
+    const radiusCollectionName = prefix ? `Border Radius - ${prefix}` : 'Border Radius';
+    const widthCollectionName = prefix ? `Border Width - ${prefix}` : 'Border Width';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    
+    const radiusCollection = existingCollections.find(c => c.name === radiusCollectionName);
+    const widthCollection = existingCollections.find(c => c.name === widthCollectionName);
+
+    if (radiusCollection && parsedTokens.borders.radius.length > 0) {
+      const existingVariables = figma.variables.getLocalVariables('FLOAT')
+        .filter(v => v.variableCollectionId === radiusCollection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+      for (const border of parsedTokens.borders.radius) {
+        if (existingNames.has(border.name)) {
+          duplicates.borders.push(`Radius: ${border.name}`);
+        }
+      }
+    }
+
+    if (widthCollection && parsedTokens.borders.width.length > 0) {
+      const existingVariables = figma.variables.getLocalVariables('FLOAT')
+        .filter(v => v.variableCollectionId === widthCollection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+      for (const border of parsedTokens.borders.width) {
+        if (existingNames.has(border.name)) {
+          duplicates.borders.push(`Width: ${border.name}`);
+        }
+      }
+    }
+  }
+
+  // Check Breakpoint Variables
+  if (parsedTokens.breakpoints && parsedTokens.breakpoints.length > 0) {
+    const collectionName = prefix ? `Breakpoint - ${prefix}` : 'Breakpoint';
+    const existingCollections = figma.variables.getLocalVariableCollections();
+    const collection = existingCollections.find(c => c.name === collectionName);
+
+    if (collection) {
+      const existingVariables = figma.variables.getLocalVariables('FLOAT')
+        .filter(v => v.variableCollectionId === collection.id);
+      const existingNames = new Set(existingVariables.map(v => v.name));
+
+      for (const bp of parsedTokens.breakpoints) {
+        if (existingNames.has(bp.name)) {
+          duplicates.breakpoints.push(bp.name);
+        }
+      }
+    }
+  }
+
+  return duplicates;
+}
+
 async function checkForDuplicates(values, prefix) {
   const duplicates = {
     colors: [],
@@ -5332,46 +5644,54 @@ function parseValue(value) {
 // CREATE VARIABLES FROM PARSED TOKENS
 // ============================================
 
-async function createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAction = 'skip') {
+// Helper function to get action for a specific item
+function getItemAction(itemName, category, duplicateAction, selections) {
+  if (selections && selections[category] && selections[category][itemName]) {
+    return selections[category][itemName]; // 'skip' or 'overwrite'
+  }
+  return duplicateAction; // Fallback to default action
+}
+
+async function createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAction = 'skip', selections = null) {
   // Create color variables
   if (parsedTokens.colors.length > 0) {
-    await createColorVariablesFromParsedTokens(parsedTokens.colors, prefix, duplicateAction);
+    await createColorVariablesFromParsedTokens(parsedTokens.colors, prefix, duplicateAction, selections);
   }
 
   // Create typography styles
   if (parsedTokens.typography.length > 0) {
-    await createTypographyStylesFromParsedTokens(parsedTokens.typography, prefix, duplicateAction);
+    await createTypographyStylesFromParsedTokens(parsedTokens.typography, prefix, duplicateAction, selections);
   }
   
   // Create link styles from linksColors
   // Get color variables after creating them
   const colorVariables = figma.variables.getLocalVariables('COLOR');
   if (parsedTokens.linksColors) {
-    await createLinkStylesFromParsedTokens(parsedTokens.linksColors, prefix, duplicateAction, colorVariables);
+    await createLinkStylesFromParsedTokens(parsedTokens.linksColors, prefix, duplicateAction, colorVariables, selections);
   }
 
   // Create spacing variables
   if (parsedTokens.spacing.length > 0) {
-    await createSpacingVariablesFromParsedTokens(parsedTokens.spacing, prefix, duplicateAction);
+    await createSpacingVariablesFromParsedTokens(parsedTokens.spacing, prefix, duplicateAction, selections);
   }
 
   // Create border variables
   if (parsedTokens.borders.radius.length > 0 || parsedTokens.borders.width.length > 0) {
-    await createBorderVariablesFromParsedTokens(parsedTokens.borders, prefix, duplicateAction);
+    await createBorderVariablesFromParsedTokens(parsedTokens.borders, prefix, duplicateAction, selections);
   }
 
   // Create shadow effects
   if (parsedTokens.shadows.length > 0) {
-    await createShadowEffectsFromParsedTokens(parsedTokens.shadows, prefix, duplicateAction);
+    await createShadowEffectsFromParsedTokens(parsedTokens.shadows, prefix, duplicateAction, selections);
   }
 
   // Create breakpoint variables
   if (parsedTokens.breakpoints.length > 0) {
-    await createBreakpointVariablesFromParsedTokens(parsedTokens.breakpoints, prefix, duplicateAction);
+    await createBreakpointVariablesFromParsedTokens(parsedTokens.breakpoints, prefix, duplicateAction, selections);
   }
 }
 
-async function createColorVariablesFromParsedTokens(colors, prefix, duplicateAction) {
+async function createColorVariablesFromParsedTokens(colors, prefix, duplicateAction, selections = null) {
   const collectionName = prefix ? `Colors - ${prefix}` : 'Colors';
   
   let collection = figma.variables.getLocalVariableCollections().find(c => c.name === collectionName);
@@ -5394,7 +5714,9 @@ async function createColorVariablesFromParsedTokens(colors, prefix, duplicateAct
 
     const existingVariable = existingVariableMap.get(color.name);
     if (existingVariable) {
-      if (duplicateAction === 'overwrite') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(color.name, '🎨 Color Variables', duplicateAction, selections);
+      if (itemAction === 'overwrite') {
         try {
           const rgb = hexToRgb(color.hex);
           existingVariable.setValueForMode(modeId, rgb);
@@ -5438,7 +5760,7 @@ async function createColorVariablesFromParsedTokens(colors, prefix, duplicateAct
   }
 }
 
-async function createTypographyStylesFromParsedTokens(typography, prefix, duplicateAction) {
+async function createTypographyStylesFromParsedTokens(typography, prefix, duplicateAction, selections = null) {
   console.log(`Creating typography styles. Total: ${typography.length}`);
   const existingStyles = figma.getLocalTextStyles();
   const existingStyleMap = new Map(existingStyles.map(s => [s.name, s]));
@@ -5541,9 +5863,14 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
     console.log(`Processing style: ${styleName}, fontSize: ${style.fontSize}, fontFamily: ${fontFamily}, fontWeight: ${style.fontWeight}`);
 
     const existingStyle = existingStyleMap.get(styleName);
-    if (existingStyle && duplicateAction === 'skip') {
+    if (existingStyle) {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+      if (itemAction === 'skip') {
       console.log(`Skipping existing style: ${styleName}`);
       continue;
+      }
+      // If overwrite, continue to update the style below
     }
 
     // Map fontWeight using helper function
@@ -5581,6 +5908,15 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
         fontLoaded = true;
       } catch (e) {
         // Continue to try "ExtraLight" below
+      }
+    } else if (figmaFontWeight === 'Semibold Italic') {
+      // Try alternative names for Semibold Italic (some fonts use "Semi Bold Italic" with space)
+      try {
+        await figma.loadFontAsync({ family: fontFamily, style: 'Semi Bold Italic' });
+        fontName = { family: fontFamily, style: 'Semi Bold Italic' };
+        fontLoaded = true;
+      } catch (e) {
+        // Continue to try "Semibold Italic" below
       }
     }
 
@@ -5634,6 +5970,9 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
         }
         
         // Standard fallbacks - try lighter weights
+        // But don't fallback to non-italic if trying to load italic font
+        const isItalic = figmaFontWeight.includes('Italic') || figmaFontWeight.includes('italic');
+        if (!isItalic) {
         if (figmaFontWeight !== 'Regular' && figmaFontWeight !== 'Medium') {
           fallbacks.push(
             { family: fontFamily, style: 'Medium' },
@@ -5644,6 +5983,16 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
           fallbacks.push(
             { family: fontFamily, style: figmaFontWeight === 'Regular' ? 'Medium' : 'Regular' }
           );
+          }
+        } else {
+          // For italic fonts, try alternative italic names but don't fallback to non-italic
+          if (figmaFontWeight === 'Semibold Italic') {
+            fallbacks.push(
+              { family: fontFamily, style: 'Semi Bold Italic' },
+              { family: fontFamily, style: 'SemiBold Italic' }
+            );
+          }
+          // Don't fallback to non-italic - if italic font not found, should error
         }
 
         for (const fallback of fallbacks) {
@@ -5736,7 +6085,7 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
   }
 }
 
-async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAction, colorVariables = []) {
+async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAction, colorVariables = [], selections = null) {
   console.log('Creating link styles from linksColors...');
   
   const existingStyles = figma.getLocalTextStyles();
@@ -5766,7 +6115,9 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
     const styleName = prefix ? `${prefix}/Link/Default` : 'Link/Default';
     const existingStyle = existingStyleMap.get(styleName);
     
-      if (existingStyle && duplicateAction === 'skip') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+      if (existingStyle && itemAction === 'skip') {
       console.log(`[UPDATE EXISTING] Skipping existing link style: ${styleName} - but updating description with color`);
       // Update description to include color
       const description = buildLinkDescription({
@@ -5789,7 +6140,8 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
         });
         
         // Create text style
-        const textStyle = existingStyle && duplicateAction === 'overwrite' 
+        const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+        const textStyle = existingStyle && itemAction === 'overwrite' 
           ? existingStyle 
           : figma.createTextStyle();
         
@@ -5849,7 +6201,9 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
     const styleName = prefix ? `${prefix}/Link/Hover` : 'Link/Hover';
     const existingStyle = existingStyleMap.get(styleName);
     
-    if (existingStyle && duplicateAction === 'skip') {
+    // Check if there's a specific selection for this item
+    const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+    if (existingStyle && itemAction === 'skip') {
       console.log(`Skipping existing link style: ${styleName} - but updating description with color`);
       // Update description to include color
       const description = buildLinkDescription({
@@ -5872,7 +6226,8 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
         });
         
         // Create text style
-        const textStyle = existingStyle && duplicateAction === 'overwrite' 
+        const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+        const textStyle = existingStyle && itemAction === 'overwrite' 
           ? existingStyle 
           : figma.createTextStyle();
         
@@ -5916,7 +6271,9 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
     const styleName = prefix ? `${prefix}/Link/Focus` : 'Link/Focus';
     const existingStyle = existingStyleMap.get(styleName);
     
-    if (existingStyle && duplicateAction === 'skip') {
+    // Check if there's a specific selection for this item
+    const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+    if (existingStyle && itemAction === 'skip') {
       console.log(`Skipping existing link style: ${styleName} - but updating description with color`);
       // Update description to include color
       const description = buildLinkDescription({
@@ -5937,7 +6294,8 @@ async function createLinkStylesFromParsedTokens(linksColors, prefix, duplicateAc
         });
         
         // Create text style
-        const textStyle = existingStyle && duplicateAction === 'overwrite' 
+        const itemAction = getItemAction(styleName, '✍️ Text Styles', duplicateAction, selections);
+        const textStyle = existingStyle && itemAction === 'overwrite' 
           ? existingStyle 
           : figma.createTextStyle();
         
@@ -6003,7 +6361,7 @@ function buildLinkDescription(properties) {
   return parts.join(', ');
 }
 
-async function createSpacingVariablesFromParsedTokens(spacing, prefix, duplicateAction) {
+async function createSpacingVariablesFromParsedTokens(spacing, prefix, duplicateAction, selections = null) {
   const collectionName = prefix ? `Spacing - ${prefix}` : 'Spacing';
   
   let collection = figma.variables.getLocalVariableCollections().find(c => c.name === collectionName);
@@ -6041,7 +6399,9 @@ async function createSpacingVariablesFromParsedTokens(spacing, prefix, duplicate
     const existingVariable = existingVariableMap.get(variableName);
 
     if (existingVariable) {
-      if (duplicateAction === 'overwrite') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(variableName, '📏 Spacing Variables', duplicateAction, selections);
+      if (itemAction === 'overwrite') {
         try {
           existingVariable.setValueForMode(modes['Mobile'], spacingItem.mobile);
           existingVariable.setValueForMode(modes['Tablet'], spacingItem.tablet);
@@ -6065,7 +6425,7 @@ async function createSpacingVariablesFromParsedTokens(spacing, prefix, duplicate
   }
 }
 
-async function createBorderVariablesFromParsedTokens(borders, prefix, duplicateAction) {
+async function createBorderVariablesFromParsedTokens(borders, prefix, duplicateAction, selections = null) {
   const collectionName = prefix ? `Border - ${prefix}` : 'Border';
   
   let collection = figma.variables.getLocalVariableCollections().find(c => c.name === collectionName);
@@ -6084,7 +6444,9 @@ async function createBorderVariablesFromParsedTokens(borders, prefix, duplicateA
     const existingVariable = existingVariableMap.get(variableName);
     
     if (existingVariable) {
-      if (duplicateAction === 'overwrite') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(`Radius: ${radius.name}`, '🔲 Border Variables', duplicateAction, selections);
+      if (itemAction === 'overwrite') {
         try {
           existingVariable.setValueForMode(modeId, radius.value);
           if (radius.description) {
@@ -6124,7 +6486,9 @@ async function createBorderVariablesFromParsedTokens(borders, prefix, duplicateA
     const existingVariable = existingVariableMap.get(variableName);
     
     if (existingVariable) {
-      if (duplicateAction === 'overwrite') {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(`Width: ${width.name}`, '🔲 Border Variables', duplicateAction, selections);
+      if (itemAction === 'overwrite') {
         try {
           existingVariable.setValueForMode(modeId, width.value);
           if (width.description) {
@@ -6159,7 +6523,7 @@ async function createBorderVariablesFromParsedTokens(borders, prefix, duplicateA
   }
 }
 
-async function createShadowEffectsFromParsedTokens(shadows, prefix, duplicateAction) {
+async function createShadowEffectsFromParsedTokens(shadows, prefix, duplicateAction, selections = null) {
   const existingEffects = figma.getLocalEffectStyles();
   const existingEffectMap = new Map(existingEffects.map(s => [s.name, s]));
 
@@ -6168,8 +6532,13 @@ async function createShadowEffectsFromParsedTokens(shadows, prefix, duplicateAct
     const styleName = prefix ? `shadow - ${prefix}/${shadow.name}` : `shadow/${shadow.name}`;
     const existingStyle = existingEffectMap.get(styleName);
     
-    if (existingStyle && duplicateAction === 'skip') {
+    if (existingStyle) {
+      // Check if there's a specific selection for this item
+      const itemAction = getItemAction(styleName, 'Shadow Effects', duplicateAction, selections);
+      if (itemAction === 'skip') {
       continue;
+      }
+      // If overwrite, continue to update the style below
     }
 
     // Handle "none" shadow - create empty effects array
@@ -6283,7 +6652,7 @@ function parseShadowString(shadowStr) {
   return effects;
 }
 
-async function createBreakpointVariablesFromParsedTokens(breakpoints, prefix, duplicateAction) {
+async function createBreakpointVariablesFromParsedTokens(breakpoints, prefix, duplicateAction, selections = null) {
   const collectionName = prefix ? `Breakpoint - ${prefix}` : 'Breakpoint';
   
   let collection = figma.variables.getLocalVariableCollections().find(c => c.name === collectionName);
@@ -8344,10 +8713,10 @@ async function generateButtonComponents(buttonData, colorVariables, config, pars
                 try {
                   await figma.loadFontAsync({ family: fontFamily, style: altStyle });
                   fontToUse = { family: fontFamily, style: altStyle };
-                  fontLoaded = true;
+                fontLoaded = true;
                   console.log(`✓ Loaded font: ${fontFamily} ${altStyle}`);
                   break;
-                } catch (e2) {
+              } catch (e2) {
                   // Continue to next alternative
                 }
               }
@@ -8555,14 +8924,14 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
   console.log(`[generateButtonGridLayout] Loading font: ${fontFamily} ${fontWeight}`);
   
   let fontLoaded = false;
-  try {
-    await figma.loadFontAsync(fontToUse);
+    try {
+      await figma.loadFontAsync(fontToUse);
     fontLoaded = true;
-    console.log(`✓ [generateButtonGridLayout] Successfully loaded font: ${fontFamily} ${fontWeight}`);
-  } catch (e) {
+      console.log(`✓ [generateButtonGridLayout] Successfully loaded font: ${fontFamily} ${fontWeight}`);
+    } catch (e) {
     // Try alternative names for Semibold (different fonts use different naming)
     // Some fonts use "Semi Bold" (with space), "SemiBold" (camelCase), etc.
-    if (fontWeight === 'Semibold') {
+      if (fontWeight === 'Semibold') {
       const alternatives = ['Semi Bold', 'SemiBold', 'semibold'];
       for (const altStyle of alternatives) {
         try {
@@ -8957,8 +9326,8 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
                     textFontToUse = { family: fontFamily, style: altStyle };
                     textFontLoaded = true;
                     console.log(`✓ Loaded font for button: ${fontFamily} ${altStyle}`);
-                    break;
-                  } catch (e2) {
+                  break;
+                } catch (e2) {
                     // Continue to next alternative
                   }
                 }
@@ -9898,3 +10267,4 @@ async function generateButtonLayoutFromTokens(parent, buttonData, colorVariables
   section.appendChild(grid);
   parent.appendChild(section);
 }
+

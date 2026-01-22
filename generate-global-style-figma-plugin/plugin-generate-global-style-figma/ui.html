@@ -190,13 +190,35 @@
       margin-top: 0;
     }
     .duplicate-list .dup-item {
-      padding: 2px 0 2px 12px;
+      padding: 4px 0 4px 12px;
       color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .duplicate-list .dup-item input[type="radio"] {
+      margin: 0;
+      cursor: pointer;
+    }
+    .duplicate-list .dup-item label {
+      flex: 1;
+      cursor: pointer;
+      margin: 0;
+      font-size: 12px;
     }
     .modal-buttons {
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .modal-buttons-row {
+      display: flex;
       flex-direction: row;
       gap: 8px;
+    }
+    .modal-buttons-row button {
+      flex: 1;
     }
     .modal-buttons button {
       padding: 10px 16px;
@@ -206,19 +228,26 @@
       cursor: pointer;
       border: none;
     }
-    .btn-skip {
+    .btn-skip-all {
       background: #ff9800 !important;
       color: white !important;
     }
-    .btn-skip:hover {
+    .btn-skip-all:hover {
       background: #f57c00 !important;
     }
-    .btn-overwrite {
+    .btn-overwrite-all {
       background: #d32f2f !important;
       color: white !important;
     }
-    .btn-overwrite:hover {
+    .btn-overwrite-all:hover {
       background: #b71c1c !important;
+    }
+    .btn-apply {
+      background: #18A0FB !important;
+      color: white !important;
+    }
+    .btn-apply:hover {
+      background: #0d8de5 !important;
     }
     .btn-cancel {
       background: #e0e0e0 !important;
@@ -412,12 +441,17 @@
   <div id="duplicateModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
       <h3>⚠️ Duplicate Names Found</h3>
-      <p id="duplicateMessage">Some variable/style names already exist in Figma.</p>
+      <p id="duplicateMessage">Some variable/style names already exist in Figma. Select action for each item:</p>
       <div id="duplicateList" class="duplicate-list"></div>
       <div class="modal-buttons">
-        <button id="btnSkipDuplicates" class="btn-skip">Skip Duplicates</button>
-        <button id="btnOverwriteDuplicates" class="btn-overwrite">Overwrite Duplicates</button>
-        <button id="btnCancelDuplicates" class="btn-cancel">Cancel (Edit Prefix)</button>
+        <div class="modal-buttons-row">
+          <button id="btnSkipAll" class="btn-skip-all">Skip All</button>
+          <button id="btnOverwriteAll" class="btn-overwrite-all">Overwrite All</button>
+        </div>
+        <div class="modal-buttons-row">
+          <button id="btnApplySelection" class="btn-apply">Apply Selection</button>
+          <button id="btnCancelDuplicates" class="btn-cancel">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -438,12 +472,14 @@
     const duplicateModal = document.getElementById('duplicateModal');
     const duplicateMessage = document.getElementById('duplicateMessage');
     const duplicateList = document.getElementById('duplicateList');
-    const btnSkipDuplicates = document.getElementById('btnSkipDuplicates');
-    const btnOverwriteDuplicates = document.getElementById('btnOverwriteDuplicates');
+    const btnSkipAll = document.getElementById('btnSkipAll');
+    const btnOverwriteAll = document.getElementById('btnOverwriteAll');
+    const btnApplySelection = document.getElementById('btnApplySelection');
     const btnCancelDuplicates = document.getElementById('btnCancelDuplicates');
 
     // Store pending data for after user choice
     let pendingGenerateData = null;
+    let pendingImportData = null;
 
     // Tab Navigation
     const tabs = document.querySelectorAll('.tab');
@@ -586,6 +622,7 @@
               pluginMessage: {
                 type: 'checkDuplicates',
                 data: json,
+                createVariables: createVariables,
                 prefix: prefix
               }
             }, '*');
@@ -653,17 +690,46 @@
     });
 
     // Modal button handlers
-    btnSkipDuplicates.addEventListener('click', () => {
-      hideModal();
-      if (pendingGenerateData) {
-        proceedWithGenerate('skip');
-      }
+    btnSkipAll.addEventListener('click', () => {
+      // Set all radio buttons to "skip"
+      const skipRadios = duplicateList.querySelectorAll('input[value="skip"]');
+      skipRadios.forEach(radio => radio.checked = true);
     });
 
-    btnOverwriteDuplicates.addEventListener('click', () => {
+    btnOverwriteAll.addEventListener('click', () => {
+      // Set all radio buttons to "overwrite"
+      const overwriteRadios = duplicateList.querySelectorAll('input[value="overwrite"]');
+      overwriteRadios.forEach(radio => radio.checked = true);
+    });
+
+    btnApplySelection.addEventListener('click', () => {
+      // Collect individual selections
+      const selections = {};
+      const items = duplicateList.querySelectorAll('.dup-item');
+      
+      items.forEach(item => {
+        const nameInput = item.querySelector('.dup-item-name');
+        const categoryInput = item.querySelector('.dup-item-category');
+        const selectedRadio = item.querySelector('input[type="radio"]:checked');
+        
+        if (nameInput && categoryInput && selectedRadio) {
+          const name = nameInput.value;
+          const category = categoryInput.value;
+          const action = selectedRadio.value;
+          
+          if (!selections[category]) {
+            selections[category] = {};
+          }
+          selections[category][name] = action;
+        }
+      });
+
       hideModal();
+      
       if (pendingGenerateData) {
-        proceedWithGenerate('overwrite');
+        proceedWithGenerateWithSelections(selections);
+      } else if (pendingImportData) {
+        proceedWithImportWithSelections(selections);
       }
     });
 
@@ -671,10 +737,52 @@
       hideModal();
       hideLoading();
       pendingGenerateData = null;
-      // Focus on prefix input
-      prefixInput.focus();
-      prefixInput.select();
+      pendingImportData = null;
+      // Focus on prefix input based on which tab is active
+      const activeTab = document.querySelector('.tab.active');
+      if (activeTab && activeTab.getAttribute('data-tab') === 'tab1') {
+        prefixInput.focus();
+        prefixInput.select();
+      } else if (activeTab && activeTab.getAttribute('data-tab') === 'tab2') {
+        tokensPrefixInput.focus();
+        tokensPrefixInput.select();
+      }
+      importTokensBtn.disabled = tokensFileInput.files.length === 0;
     });
+
+    function proceedWithImport(duplicateAction) {
+      if (pendingImportData) {
+        showLoading('Importing tokens...');
+        parent.postMessage({
+          pluginMessage: {
+            type: 'importTokensWithAction',
+            tokenFiles: pendingImportData.tokenFiles,
+            createVariables: pendingImportData.createVariables,
+            generateLayout: pendingImportData.generateLayout,
+            prefix: pendingImportData.prefix,
+            duplicateAction: duplicateAction
+          }
+        }, '*');
+        pendingImportData = null;
+      }
+    }
+
+    function proceedWithImportWithSelections(selections) {
+      if (pendingImportData) {
+        showLoading('Importing tokens...');
+        parent.postMessage({
+          pluginMessage: {
+            type: 'importTokensWithSelections',
+            tokenFiles: pendingImportData.tokenFiles,
+            createVariables: pendingImportData.createVariables,
+            generateLayout: pendingImportData.generateLayout,
+            prefix: pendingImportData.prefix,
+            selections: selections
+          }
+        }, '*');
+        pendingImportData = null;
+      }
+    }
 
     function proceedWithGenerate(duplicateAction) {
       showLoading('Generating global style from JSON...');
@@ -690,39 +798,66 @@
       pendingGenerateData = null;
     }
 
+    function proceedWithGenerateWithSelections(selections) {
+      showLoading('Generating global style from JSON...');
+      parent.postMessage({
+        pluginMessage: {
+          type: 'generateWithSelections',
+          data: pendingGenerateData.json,
+          createVariables: pendingGenerateData.createVariables,
+          prefix: pendingGenerateData.prefix,
+          selections: selections
+        }
+      }, '*');
+      pendingGenerateData = null;
+    }
+
     function showModal(duplicates) {
-      // Build duplicate list HTML
+      // Build duplicate list HTML with radio buttons for each item
       let html = '';
-      if (duplicates.colors && duplicates.colors.length > 0) {
-        html += '<div class="dup-category">🎨 Color Variables (' + duplicates.colors.length + '):</div>';
-        duplicates.colors.slice(0, 10).forEach(name => {
-          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
+      let itemIndex = 0;
+      
+      function renderItemList(items, category) {
+        if (!items || items.length === 0) return '';
+        let categoryHtml = '<div class="dup-category">' + category + ' (' + items.length + '):</div>';
+        items.forEach(name => {
+          const itemId = 'dup-item-' + itemIndex;
+          categoryHtml += '<div class="dup-item">' +
+            '<input type="radio" name="' + itemId + '" id="' + itemId + '-skip" value="skip" checked>' +
+            '<label for="' + itemId + '-skip">Skip</label>' +
+            '<input type="radio" name="' + itemId + '" id="' + itemId + '-overwrite" value="overwrite">' +
+            '<label for="' + itemId + '-overwrite">Overwrite</label>' +
+            '<span style="margin-left: 8px;">' + escapeHtml(name) + '</span>' +
+            '<input type="hidden" class="dup-item-name" value="' + escapeHtml(name) + '">' +
+            '<input type="hidden" class="dup-item-category" value="' + category + '">' +
+            '</div>';
+          itemIndex++;
         });
-        if (duplicates.colors.length > 10) {
-          html += '<div class="dup-item">... and ' + (duplicates.colors.length - 10) + ' more</div>';
-        }
-      }
-      if (duplicates.spacing && duplicates.spacing.length > 0) {
-        html += '<div class="dup-category">📏 Spacing Variables (' + duplicates.spacing.length + '):</div>';
-        duplicates.spacing.slice(0, 10).forEach(name => {
-          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
-        });
-        if (duplicates.spacing.length > 10) {
-          html += '<div class="dup-item">... and ' + (duplicates.spacing.length - 10) + ' more</div>';
-        }
-      }
-      if (duplicates.textStyles && duplicates.textStyles.length > 0) {
-        html += '<div class="dup-category">✍️ Text Styles (' + duplicates.textStyles.length + '):</div>';
-        duplicates.textStyles.slice(0, 10).forEach(name => {
-          html += '<div class="dup-item">• ' + escapeHtml(name) + '</div>';
-        });
-        if (duplicates.textStyles.length > 10) {
-          html += '<div class="dup-item">... and ' + (duplicates.textStyles.length - 10) + ' more</div>';
-        }
+        return categoryHtml;
       }
 
-      const totalDuplicates = (duplicates.colors?.length || 0) + (duplicates.spacing?.length || 0) + (duplicates.textStyles?.length || 0);
-      duplicateMessage.textContent = totalDuplicates + ' duplicate name(s) found in Figma:';
+      if (duplicates.colors && duplicates.colors.length > 0) {
+        html += renderItemList(duplicates.colors, '🎨 Color Variables');
+      }
+      if (duplicates.spacing && duplicates.spacing.length > 0) {
+        html += renderItemList(duplicates.spacing, '📏 Spacing Variables');
+      }
+      if (duplicates.textStyles && duplicates.textStyles.length > 0) {
+        html += renderItemList(duplicates.textStyles, '✍️ Text Styles');
+      }
+      if (duplicates.borders && duplicates.borders.length > 0) {
+        html += renderItemList(duplicates.borders, '🔲 Border Variables');
+      }
+      if (duplicates.breakpoints && duplicates.breakpoints.length > 0) {
+        html += renderItemList(duplicates.breakpoints, '📱 Breakpoint Variables');
+      }
+
+      const totalDuplicates = (duplicates.colors?.length || 0) + 
+                              (duplicates.spacing?.length || 0) + 
+                              (duplicates.textStyles?.length || 0) +
+                              (duplicates.borders?.length || 0) +
+                              (duplicates.breakpoints?.length || 0);
+      duplicateMessage.textContent = totalDuplicates + ' duplicate name(s) found in Figma. Select action for each item:';
       duplicateList.innerHTML = html;
       duplicateModal.style.display = 'flex';
     }
@@ -799,6 +934,21 @@
       } else if (msg.type === 'duplicatesFound') {
         hideLoading();
         showModal(msg.duplicates);
+        // Store pending data based on action type
+        if (msg.action === 'generate') {
+          pendingGenerateData = {
+            json: msg.json,
+            createVariables: msg.createVariables,
+            prefix: msg.prefix
+          };
+        } else if (msg.action === 'importTokens') {
+          pendingImportData = {
+            tokenFiles: msg.tokenFiles,
+            createVariables: msg.createVariables,
+            generateLayout: msg.generateLayout,
+            prefix: msg.prefix
+          };
+        }
       } else if (msg.type === 'noDuplicates') {
         // No duplicates, proceed with generation
         if (pendingGenerateData) {

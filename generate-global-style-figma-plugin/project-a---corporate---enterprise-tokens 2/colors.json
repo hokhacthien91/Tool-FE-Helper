@@ -1,0 +1,99 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "color",
+  "$project": "Project A — Corporate / Enterprise",
+  "color": {
+    "primary": {
+      "100": {
+        "value": "#9dcef0",
+        "description": "Primary tint"
+      },
+      "200": {
+        "value": "#6fb7e8",
+        "description": "Primary light"
+      },
+      "300": {
+        "value": "#4a9fdc",
+        "description": "Primary base"
+      },
+      "400": {
+        "value": "#2b7cba",
+        "description": "Primary dark"
+      }
+    },
+    "secondary": {
+      "100": {
+        "value": "#e0f7fa",
+        "description": "Secondary tint"
+      },
+      "200": {
+        "value": "#b2ebf2",
+        "description": "Secondary light"
+      },
+      "300": {
+        "value": "#80deea",
+        "description": "Secondary base"
+      },
+      "400": {
+        "value": "#4dd0e1",
+        "description": "Secondary dark"
+      }
+    },
+    "gray": {
+      "100": {
+        "value": "#f8f9fa",
+        "description": "Gray tint"
+      },
+      "200": {
+        "value": "#e9ecef",
+        "description": "Gray light"
+      },
+      "300": {
+        "value": "#dee2e6",
+        "description": "Gray base"
+      },
+      "400": {
+        "value": "#adb5bd",
+        "description": "Gray"
+      },
+      "500": {
+        "value": "#868e96",
+        "description": "Gray dark"
+      },
+      "600": {
+        "value": "#495057",
+        "description": "Gray darkest"
+      }
+    },
+    "semantic": {
+      "success": {
+        "value": "#2e7d32",
+        "description": "Success state"
+      },
+      "warning": {
+        "value": "#ed6c02",
+        "description": "Warning state"
+      },
+      "error": {
+        "value": "#c62828",
+        "description": "Error state"
+      },
+      "info": {
+        "value": "#0277bd",
+        "description": "Info state"
+      }
+    },
+    "black": {
+      "value": "#000000",
+      "description": "Pure black"
+    },
+    "white": {
+      "value": "#ffffff",
+      "description": "Pure white"
+    },
+    "transparent": {
+      "value": "transparent",
+      "description": "Transparent color"
+    }
+  }
+}

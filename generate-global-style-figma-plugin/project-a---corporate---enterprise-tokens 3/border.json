@@ -43,10 +43,6 @@
       "full": {
         "value": "9999px",
         "description": "Full border radius (pill shape)"
-      },
-      "radius": {
-        "value": "2rem",
-        "description": "4X large border radius (32px)"
       }
     },
     "width": {
