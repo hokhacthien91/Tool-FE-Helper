@@ -1,64 +1,225 @@
-# Plugin Documentation
+# Design QA Checker - Figma Plugin
 
-Table of Contents
+## Design QA Checker - Figma Plugin
 
-- Introduction
-- Installation
-- Main Tabs
-  - Tab 1: Breakpoint Generator
-  - Tab 2: For Email
-  - Tab 3: Export JSON
-  - Tab 4: QA Checker
-  - Tab 5: Export GIF
-- Detailed Workflows (screenshot placeholders)
-- Troubleshooting & FAQ
-- Changelog
+### Table of Contents
+
+1. [Introduction](#introduction)
+2. [Installation](#installation)
+3. [Overview](#overview)
+4. [Scan Controls](#scan-controls)
+5. [Sub-tabs](#sub-tabs)
+   - [Issues Tab](#issues-tab)
+   - [Design Tokens Tab](#design-tokens-tab)
+   - [Animations Tab](#animations-tab)
+   - [Settings Tab](#settings-tab)
+6. [Issue Types](#issue-types)
+7. [Fix Operations](#fix-operations)
+8. [Export Features](#export-features)
+9. [Settings Management](#settings-management)
+10. [History & Restore](#history--restore)
+11. [Detailed Workflows](#detailed-workflows)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Introduction
 
-Plugin này giúp hỗ trợ quy trình kiểm tra thiết kế và xuất assets từ Figma/ứng dụng tương thích. Mục tiêu chính: tự động hoá breakpoint, tối ưu email, xuất JSON cho dev, kiểm tra QA nhanh và tạo GIF minh hoạ.
+**Design QA Checker** is a Figma Plugin that helps design teams verify design consistency, extract design tokens, and ensure accessibility compliance.
+
+**Key Features:**
+
+- QA scan for typography, colors, spacing, structure, and accessibility issues
+- Design tokens extraction (colors, typography, spacing, border radius)
+- Interaction/animation scanning and documentation
+- Auto-fix and suggest-fix for detected issues
+- Export QA reports as HTML or JSON
+- Settings management with presets and import/export
+- Scan history with restore capability
+
+---
 
 ## Installation
 
-Prerequisites:
+### Step 1: Import Plugin to Figma
 
-- Node.js (nếu plugin dùng build step)
-- Quyền truy cập file/design từ Figma (nếu áp dụng)
+1. Open Figma Desktop
+2. Go to **Menu > Plugins > Development > Import plugin from manifest...**
+3. Select the file `review-design/manifest.json`
 
-Steps:
+### Step 2: Open Plugin
 
-1. Tải plugin vào Figma hoặc copy thư mục vào environment của bạn.
-2. Nếu có build step, chạy:
+1. Select the frame or page to check on canvas
+2. Go to **Menu > Plugins > Development > Design QA Checker**
 
+> [Screenshot: Plugin menu showing Design QA Checker]
 
-## Tab 4: QA Checker
+---
 
-Purpose
+## Overview
 
-Check design consistency with defined rules and extract tokens for developer handoff.
+The plugin provides a single-purpose QA interface with **4 sub-tabs** for organized content:
 
-Features
+| Tab | Main Function |
+|---|---|
+| **Issues** | Display and manage detected design issues |
+| **Design Tokens** | View extracted design tokens |
+| **Animations** | List all interactions and animations |
+| **Settings** | Configure check rules and design scales |
 
-1. Scan Controls
+> [Screenshot: Plugin overview showing tabs and scan controls]
+
+---
+
+## Scan Controls
+
+### Scan Scope
 
 | Option | Description |
 |---|---|
-| Scan Page | Scan entire current page |
-| Scan Selection | Only scan selected frame |
-| Run QA Scan | Start scanning and find issues |
-| Extract Tokens | Extract design tokens from selection |
+| **Scan Page** | Scan the entire current Figma page |
+| **Scan Selection** | Only scan the selected frame(s) |
 
-![QA Scan UI](image-20260113-081342.png)
+### Scan Actions
 
-2. Sub-tabs
+| Button | Description |
+|---|---|
+| **Run Scan Design** | Start QA scanning and detect issues |
+| **Extract Tokens** | Extract design tokens from the design |
+| **Scan Interactions** | Scan all interactions and animations |
 
-- Issues Tab: Displays list of found issues, grouped by category (Typography Style Match, Font Size, Line Height, Contrast (ADA AA), Text Size (ADA), Color). Filter controls: search by node name, severity filter (All / Errors / Warnings).
-- Design Tokens Tab: Displays extracted tokens: Colors (by type: text, background, border), Typography (font family, size, weight, line height), Spacing, Border radius.
-- Settings Tab: Enable/disable checks and configure rules (font size scale, line height scale, baseline min, color palette, typography styles, skip layer names).
+> [Screenshot: Scan controls area with scope toggle and action buttons]
 
-Settings examples:
+### Scan Progress
+
+During scanning, a progress bar displays:
+- Current progress percentage
+- Node count (current / total)
+- Cancel button to stop the scan
+
+> [Screenshot: Scan progress bar during scanning]
+
+---
+
+## Sub-tabs
+
+### Issues Tab
+
+Displays the list of detected issues, grouped by category.
+
+#### Issue Categories
+
+| Category | Icon | Description |
+|---|---|---|
+| **Typography Style Match** | | Text doesn't match any defined typography style |
+| **Text Style (Variable)** | | Text doesn't use a Figma text style |
+| **Font Size** | | Font size not in the defined scale |
+| **Line Height** | | Line height doesn't meet the defined standard |
+| **Color** | | Color not in the defined palette |
+| **Color Variable** | | Color not bound to a Figma variable |
+| **Contrast (ADA AA)** | | Insufficient contrast ratio (< 4.5:1 normal, < 3:1 large text) |
+| **Text Size (ADA)** | | Text too small for mobile (< 16px normal, < 14px bold) |
+| **Spacing** | | Gap or padding not following the spacing scale |
+| **Auto Layout** | | Frame missing auto-layout |
+| **Group** | | Use of Group instead of Frame + Auto-layout |
+| **Empty Frame** | | Empty or redundant frame detected |
+| **Position** | | Negative or problematic positioning |
+| **Naming** | | Layer naming convention violation |
+| **Duplicate** | | Possible duplicate frames that should be componentized |
+| **Component** | | Frame that should be turned into a reusable component |
+
+#### Filter Controls
+
+- **Search box**: Search issues by node name or message
+- **Severity filter**: All / Errors / Warnings
+
+#### Issue Header
+
+Each issue group shows:
+- Category icon and name
+- Issue count badge
+- **Fix all now** button (for fixable categories)
+- Expand/collapse toggle
+
+#### Individual Issue Actions
+
+Each issue item shows:
+- Node name and path
+- Issue description with current vs expected values
+- **Select** button - highlight the node in Figma canvas
+- **Fix** or **Suggest Fix** button - apply or choose a fix
+- **Ignore** button - mark issue as ignored
+
+> [Screenshot: Issues tab showing grouped issues with badges and filter controls]
+
+> [Screenshot: Expanded issue group showing individual issues with action buttons]
+
+---
+
+### Design Tokens Tab
+
+Displays extracted design tokens organized by type.
+
+#### Token Types
+
+| Token Type | Description |
+|---|---|
+| **Colors** | All colors used (text, background, border, shadow) with hex values |
+| **Gradients** | Linear, radial, angular gradient definitions |
+| **Font Size** | All font sizes used, sorted by value |
+| **Font Weight** | Font weights with family breakdown |
+| **Line Height (%)** | Line heights converted to percentages |
+| **Font Family** | All font families with style variants |
+| **Spacing** | Gap and padding values used |
+| **Border Radius** | Corner radius values used |
+
+Each token shows:
+- Token value
+- Usage count (number of nodes using this token)
+- Click to expand and see all nodes using the token
+
+> [Screenshot: Design Tokens tab showing color tokens with usage counts]
+
+> [Screenshot: Design Tokens tab showing typography and spacing tokens]
+
+---
+
+### Animations Tab
+
+Lists all interactions and animations found in the design.
+
+#### Animation Categories
+
+| Category | Description |
+|---|---|
+| **Click** | Triggered on tap/click |
+| **Hover** | Triggered on mouse hover |
+| **Drag** | Triggered on drag gesture |
+| **Scroll** | Triggered on scroll |
+| **Auto** | Triggered automatically (After Timeout) |
+| **Keyboard** | Triggered by keyboard events |
+| **Other** | Other trigger types |
+
+Each animation entry shows:
+- Trigger type (Click, Hover, Drag, Scroll, After Timeout, etc.)
+- Action type (Navigate, Change Frame, etc.)
+- Target frame/page
+- Transition type and duration
+- Easing function
+- Delay (for timed triggers)
+- Click to select the source node in Figma
+
+> [Screenshot: Animations tab showing list of interactions grouped by category]
+
+---
+
+### Settings Tab
+
+Configure all check rules and design scales.
+
+#### Check Rules
+
+Enable or disable each check type:
 
 | Rule | Default |
 |---|---|
@@ -68,587 +229,475 @@ Settings examples:
 | Line Height | On |
 | Contrast (ADA AA) | On |
 | Text Size (ADA) | On |
+| Color | On |
+| Spacing | On |
+| Auto Layout | On |
+| Group | On |
+| Empty Frame | On |
+| Position | On |
+| Naming | On |
 
-Font Size Scale (example): `12,14,16,18,20,24,32,40,48,64`.
+> [Screenshot: Check Rules toggles in Settings tab]
 
-![Design Tokens](image-20260113-081502.png)
-![Settings Tab](image-20260113-081530.png)
+#### Spacing Scale
 
-Results & Output
+Define valid spacing values used in the design.
 
-- Issues list with severity, node path, message and `Goto` link.
-- Export QA report as JSON for CI integration.
+- **Input**: Comma-separated pixel values (e.g., `0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96`)
+- **Threshold**: Values above this are ignored (default: `100`)
+- **Use tokens**: Auto-fill from extracted design tokens
+
+> [Screenshot: Spacing scale configuration]
+
+#### Font Size Scale
+
+Define valid font size values.
+
+- **Input**: Comma-separated pixel values (e.g., `12, 14, 16, 18, 20, 24, 32, 40, 48, 64`)
+- **Threshold**: Values above this are ignored (default: `100`)
+- **Use tokens**: Auto-fill from extracted tokens
+- **Use Typography**: Auto-fill from typography styles table
+
+> [Screenshot: Font size scale configuration]
+
+#### Line Height Scale
+
+Define valid line height values.
+
+- **Input**: Comma-separated percentage values (e.g., `auto, 100, 120, 140, 150, 160, 180, 200`)
+- **Baseline Min**: Minimum line height value (default: `120%`)
+- **Use tokens**: Auto-fill from extracted tokens
+- **Use Typography**: Auto-fill from typography styles table
+
+> [Screenshot: Line height scale configuration]
+
+#### Color Palette
+
+Define valid colors used in the design.
+
+- **Input**: Comma-separated hex codes (e.g., `#000000, #FFFFFF, #FF0000`)
+- **Use tokens**: Auto-fill from extracted color tokens
+- **Extract Styles**: Import all Figma Paint Styles
+- **Extract Variables**: Import all Figma Color Variables
+- **Color preview panel**: Visual display of configured colors with hex values and names
+
+> [Screenshot: Color palette configuration with color preview swatches]
+
+#### Typography Styles
+
+Define standard text styles for the design system.
+
+| Column | Description |
+|---|---|
+| **Style Name** | Style name (e.g., H1, H2, Body) |
+| **Font Family** | Font family (e.g., Inter, Roboto) |
+| **Size (px)** | Font size in pixels |
+| **Weight** | Font weight (100-900) |
+| **Line Height** | Calculated as percentage (%) |
+| **Letter Sp.** | Letter spacing in pixels |
+| **Word Sp.** | Word spacing in pixels |
+
+**Typography Check Rules** (toggles):
+- Check Typography Style (100% match with defined styles)
+- Check Font Family
+- Check Font Size
+- Check Font Weight
+- Check Line Height
+- Check Letter Spacing
+- Check Word Spacing
+
+**Quick Actions:**
+- **+ Add Style**: Add a new typography style row
+- **Desktop**: Extract text styles for desktop breakpoint
+- **Tablet**: Extract text styles for tablet breakpoint
+- **Mobile**: Extract text styles for mobile breakpoint
+- **All**: Extract all text styles (all breakpoints)
+- **Reset**: Reset to default typography styles
+
+> [Screenshot: Typography styles table with check rules and quick actions]
+
+#### Skip Layer Names
+
+List of layer names to skip during QA scan (one per line or comma-separated).
+
+Default: `not check design, sticky note, vector, Clip path group, Clip path`
+
+Layers containing these substrings will be completely ignored.
+
+> [Screenshot: Skip layer names configuration]
 
 ---
 
-## Tab 5: Export GIF
+## Issue Types
 
-Purpose
+### Structure & Organization Issues
 
-Create GIF animation from component variants or child frames.
+#### Group
+- **Severity**: Warning
+- **Description**: A Group node is used instead of Frame + Auto-layout
+- **Why it matters**: Groups don't support auto-layout and responsive behavior
+- **Fix**: Convert group to frame with auto-layout
 
-Requirements
+#### Auto Layout
+- **Severity**: Warning
+- **Description**: A frame is missing auto-layout
+- **Why it matters**: Frames without auto-layout require manual positioning
+- **Fix**: Enable auto-layout on the frame
 
-Select a Component Instance with multiple variants, OR select a Frame containing multiple child frames.
+#### Empty Frame
+- **Severity**: Warning
+- **Description**: An empty or redundant frame is detected
+- **Why it matters**: Empty frames add unnecessary complexity
+- **Fix**: Remove the empty frame
 
-Configuration
+#### Position
+- **Severity**: Warning
+- **Description**: A node has negative or problematic positioning
+- **Why it matters**: Negative positions can cause layout overflow
+- **Fix**: Reset position to (0, 0) or remove the layer
 
-| Setting | Description | Default |
-|---|---:|---:|
-| Width | Output width | 600px |
-| Height | Output height | 400px |
-| Scale | Export scale (0.5x - 3x) | 2x |
-| FPS | Frames per second | 25 |
-| Delay | Delay between frames (ms) | 500ms |
-| Pad X | Left/right padding | 0 |
-| Pad Y | Top/bottom padding | 0 |
-| Background | Background color | #FFFFFF |
-| Loop | Loop forever | On |
+#### Naming
+- **Severity**: Info
+- **Description**: Layer naming doesn't follow conventions
+- **Why it matters**: Consistent naming helps developer handoff
+- **Fix**: Rename the layer
 
-Overlay Layers: Select layers at the same level as frame to overlay on GIF (e.g., cursor, highlight).
+#### Duplicate
+- **Severity**: Info
+- **Description**: Multiple similar frames that could be a component
+- **Why it matters**: Duplicates increase maintenance overhead
+- **Fix**: Create a reusable component
 
-![GIF Settings](image-20260113-081804.png)
+#### Component
+- **Severity**: Info
+- **Description**: A frame that should be turned into a component
+- **Why it matters**: Components enable reuse and consistency
+- **Fix**: Convert to component
 
-Export GIF Workflow
+### Typography Issues
 
-1. Select component instance or frame containing animations
-2. Plugin displays number of frames
-3. Adjust settings (size, delay, scale)
-4. (Optional) Select overlay layers
-5. Click "Preview" to preview
-6. Click "Download" to download GIF
+#### Typography Style Match
+- **Severity**: Error
+- **Description**: Text properties don't match any defined typography style
+- **Shows**: Current font properties vs closest matching style with similarity percentage
+- **Fix**: Apply the suggested matching style
 
-![GIF Preview](image-20260113-081816.png)
+#### Text Style (Variable)
+- **Severity**: Warning
+- **Description**: Text node doesn't use a Figma text style
+- **Why it matters**: Text styles ensure typography consistency
+- **Fix**: Apply a matching Figma text style
+
+#### Font Size
+- **Severity**: Warning
+- **Description**: Font size is not in the defined font size scale
+- **Shows**: Current size vs nearest valid sizes
+- **Fix**: Change to the nearest valid font size
+
+#### Line Height
+- **Severity**: Warning
+- **Description**: Line height doesn't match the defined scale or is below baseline minimum
+- **Shows**: Current line height vs nearest valid values
+- **Fix**: Change to the nearest valid line height
+
+### Color & Accessibility Issues
+
+#### Color
+- **Severity**: Warning
+- **Description**: Color fill or stroke is not in the defined color palette
+- **Shows**: Current color vs nearest palette color
+- **Fix**: Change to the nearest palette color
+
+#### Color Variable
+- **Severity**: Warning
+- **Description**: Color is not bound to a Figma variable
+- **Shows**: Current color and matching variable (if found)
+- **Fix**: Bind the color to the matching variable
+
+#### Contrast (ADA AA)
+- **Severity**: Error
+- **Description**: Text contrast ratio fails WCAG AA standards
+- **Standards**: Normal text minimum 4.5:1, Large text (>=18pt or >=14pt bold) minimum 3:1
+- **Shows**: Current contrast ratio and background/text colors
+- **Fix**: Adjust text or background color to meet contrast requirements
+
+#### Text Size (ADA)
+- **Severity**: Warning
+- **Description**: Text size is too small for mobile accessibility
+- **Standards**: Minimum 16px for normal text, 14px for bold text
+- **Fix**: Increase font size to meet minimum
+
+### Spacing Issues
+
+#### Spacing
+- **Severity**: Warning
+- **Description**: Gap (itemSpacing) or padding values don't follow the spacing scale
+- **Shows**: Current spacing vs nearest valid values
+- **Fix**: Change to the nearest valid spacing value
+
+---
+
+## Fix Operations
+
+### Header "Fix all now" Button
+
+Located at the top of the issues list, this button auto-fixes:
+
+1. **Typography 100% matches**: Applies the text style when a node's properties match a defined style 100%
+2. **Color variable bindings**: Binds colors to matching Figma variables
+
+The button shows a count of fixable issues and is hidden when count is 0.
+
+### Group-level "Fix all now" Buttons
+
+Each issue group with fixable issues shows its own "Fix all now" button. These process issues sequentially with a modal for each, allowing you to:
+- **Apply** the suggested fix
+- **Skip** to the next issue
+- **Cancel** to stop processing
+
+### Individual Fix Buttons
+
+Each issue has a **Suggest Fix** button that opens a modal with:
+- Current value vs suggested value
+- Preview of the change
+- Apply / Skip / Cancel options
+
+### Progress Bar
+
+During batch fix operations, a progress bar shows:
+- Current progress (X / Total)
+- Progress percentage bar
+- Cancel button to stop the operation
+
+> [Screenshot: Fix all now button with progress bar during batch operation]
+
+> [Screenshot: Suggest fix modal for typography issue]
+
+> [Screenshot: Suggest fix modal for spacing issue]
+
+> [Screenshot: Suggest fix modal for color issue]
+
+---
+
+## Export Features
+
+### Export HTML Report
+
+Generates a self-contained HTML report with:
+- Scan context (file name, page name, timestamp)
+- All issues grouped by category
+- Issue severity, node name, and description
+- Styled for easy reading and sharing
+
+### Export JSON Report
+
+Generates a machine-readable JSON file with:
+- Complete issue data with all properties
+- Scan metadata and context
+- Suitable for CI/CD integration
+
+Access via the **Export** dropdown at the bottom of the Issues tab.
+
+> [Screenshot: Export dropdown showing HTML and JSON options]
+
+---
+
+## Settings Management
+
+### Save & Load Settings
+
+| Action | Description |
+|---|---|
+| **Save Settings** | Save current configuration as a named preset |
+| **Select Settings** | Load a previously saved preset |
+| **Export Settings** | Export settings to a JSON file for sharing |
+| **Import Settings** | Import settings from a JSON file |
+| **Reset All** | Reset all settings to defaults and clear history |
+
+Settings include all check rules, scales, color palette, typography styles, and skip names.
+
+> [Screenshot: Settings management buttons (Save, Select, Export, Import, Reset)]
+
+---
+
+## History & Restore
+
+### Scan History
+
+- Plugin stores the **last 10 scans** with full data
+- Access via the **History** button
+- Each entry shows:
+  - Timestamp
+  - Scan scope (Page / Selection)
+  - Scan context (file name, page name, selected frames)
+  - Issue count
+
+### Auto-Restore
+
+- On plugin startup, the last scan is automatically restored
+- User settings are preserved between sessions
+- Issue ignore list is maintained across scans
+
+> [Screenshot: History panel showing recent scans]
 
 ---
 
 ## Detailed Workflows
 
-Below are the primary workflows with steps and placeholders for screenshots.
+### Workflow 1: Run QA Check
 
-### Workflow 1: Convert Desktop to Mobile
+```
+[Select Frame to Check]
+        |
+        v
+[Open Plugin > Design QA Checker]
+        |
+        v
+[Configure Settings (Scales, Colors, Typography)]
+        |
+        v
+[Click "Run Scan Design"]
+        |
+        v
+[Review Issues]
+        |
+    +----+----+
+    |         |
+[Auto Fix]  [Manual Fix in Figma]
+    |         |
+    v         v
+[Verify] ----> [Re-scan]
+```
 
-[Select Desktop Frame] -> Open Plugin > Breakpoint Generator Tab -> Select Target Breakpoints: 414, 768, 1024 -> Adjust Padding & Max Gap -> Click Generate -> Review Results -> [OK | Needs Fix]
+> [Screenshot: Complete QA workflow from scan to fix]
 
-If Needs Fix: Manual Adjust in Figma.
+### Workflow 2: Extract Design Tokens
 
-### Workflow 2: Email Development
+```
+[Select Frame or Page]
+        |
+        v
+[Click "Extract Tokens"]
+        |
+        v
+[Switch to Design Tokens Tab]
+        |
+        v
+[Review Tokens (Colors, Typography, Spacing, etc.)]
+        |
+        v
+[Use "Use tokens" buttons to populate Settings]
+```
 
-Design Desktop Email -> Export Images (For Email Tab) -> Copy Content + Styles for each section -> Generate Dark Mode Simulation -> Review Dark Mode -> Export for Compare (DOCX)
+> [Screenshot: Token extraction workflow]
 
-### Workflow 3: QA Check Design
+### Workflow 3: Scan Interactions
 
-Select Frame to Check -> Open Plugin > QA Checker Tab -> Configure Settings (Font Scale, Colors, Typography) -> Click Run QA Scan -> Review Issues -> [Auto Fix | Manual Fix in Figma] -> Verify -> Re-scan
+```
+[Select Frame or Page]
+        |
+        v
+[Click "Scan Interactions"]
+        |
+        v
+[Switch to Animations Tab]
+        |
+        v
+[Review Interactions grouped by category]
+        |
+        v
+[Click items to select source nodes in Figma]
+```
+
+> [Screenshot: Interactions scanning workflow]
+
+### Workflow 4: Export QA Report
+
+```
+[Run QA Scan]
+        |
+        v
+[Review and Fix Issues]
+        |
+        v
+[Click Export dropdown]
+        |
+    +----+----+
+    |         |
+[HTML]     [JSON]
+    |         |
+    v         v
+[Share with   [Integrate
+ team]        with CI/CD]
+```
+
+> [Screenshot: Export workflow]
 
 ---
 
 ## Troubleshooting
 
-Issue 1: Icons are distorted/scaled after generate
+### Issue 1: QA Scan doesn't find issues
 
-Cause: Icon not properly identified
+**Cause:** Check rules may be disabled or scales not configured.
 
-Solution:
+**Solution:**
+- Go to **Settings** tab and verify Check Rules are enabled
+- Ensure Font Size Scale, Line Height Scale, and Color Palette are configured
+- Try **Scan Page** instead of **Scan Selection**
 
-- Ensure icon is in frame ≤ 120px
-- Icon frame must contain VECTOR or GROUP nodes
-- Or name frame containing "icon" or "logo"
+### Issue 2: Typography Style Match shows too many issues
 
-Issue 2: Frame width still larger than mobile
+**Cause:** Typography styles table may not match your design system.
 
-Cause: GROUP nodes exist or constraints are wrong
+**Solution:**
+- Use **Extract Styles** buttons (Desktop / Tablet / Mobile / All) to import styles from Figma
+- Verify the typography styles table matches your design system
+- Disable specific check rules (e.g., Letter Spacing, Word Spacing) if not needed
 
-Solution:
+### Issue 3: Color check shows false positives
 
-- Plugin auto-ungroups - verify again
-- Check constraints of children
+**Cause:** Color palette may be incomplete.
 
-Issue 3: Layout doesn't convert to vertical
+**Solution:**
+- Use **Extract Styles** to import Figma Paint Styles
+- Use **Extract Variables** to import Figma Color Variables
+- Use **Use tokens** after extracting tokens to auto-fill the palette
 
-Cause: Frame matches UI control pattern
+### Issue 4: Scan is slow on large designs
 
-Solution:
+**Cause:** Scanning a page with many nodes takes time.
 
-- When modal appears, select "Skip Matching" to convert to vertical
-- Or modify UI Control Patterns in Advanced Settings
+**Solution:**
+- Use **Scan Selection** to scan specific frames instead of the entire page
+- The plugin shows a warning for designs with >5000 nodes
+- Use the Cancel button to stop if needed
 
-Issue 4: Manual sections not replaced
+### Issue 5: Fix operations don't work
 
-Checklist:
+**Cause:** Some fixes require specific conditions.
 
-- [ ] Section name has suffix `- manual` (space before dash)
-- [ ] Added frame containing mobile sections
-- [ ] Enabled checkbox "Enable Manual Section Replacement"
+**Solution:**
+- **Typography fix**: Requires a text style to exist in Figma that matches the defined style
+- **Color variable fix**: Requires a matching Figma variable to exist
+- **Contrast fix**: Opens a color picker to choose a compliant color
+- Check the Figma console for error messages
 
-Issue 5: QA Scan doesn't find issues
+### Issue 6: Settings are lost between sessions
 
-Solution:
+**Cause:** Settings may not have been saved.
 
-- Check `Settings > Check Rules` are enabled
-- Check Font Scale and Color Palette are configured
-- Try scanning entire Page instead of Selection
-
-Contact & Support
-
-Version: 2.0
-
-Author: Thien Ho
-
-Issues: [Report bugs here]
-3. Click "Add Selected Frame" to add frame containing mobile sections.
-4. Enable checkbox "Enable manual section replacement".
-
-![Manual Sections](image-20260113-074510.png)
-
-5. Advanced Settings
-
-| Setting | Description |
-|---|---|
-| Preserved Components | List of component names that won't be detached (keep instance intact) |
-| UI Control Patterns | Patterns to identify UI controls (will keep horizontal layout) |
-| Muted Frames | Frames that selected "Don't ask again" - will auto-apply previous choice |
-
-![Advanced Settings](image-20260113-074525.png)
-
-6. Font Size Options
-
-| Option | Description |
-|---|---|
-| Keep font size | Keep original font sizes unchanged |
-| Map text styles | Convert Desktop/H1 -> Mobile/H1 (if style exists) |
-| Scale font size | Multiply font size by factor (default: 0.85) |
-
-![Font Options](image-20260113-074553.png)
-
-Generate Breakpoint Workflow
-
-1. Select desktop frame on canvas
-2. Plugin displays frame information
-3. Select target breakpoints (414, 768, 1024)
-4. Adjust padding and max gap for each breakpoint
-5. (Optional) Configure slider mode
-6. (Optional) Add manual source frames
-7. Click "Generate" or "Generate X Breakpoints"
-8. Plugin creates new frames next to original frame
-
-Automatic Features (Behind the Scenes)
-When you click "Generate", the plugin automatically performs these optimizations:
-
-Layout Conversion
-
-| Feature | Description |
-|---|---|
-| Horizontal → Vertical | Auto-convert HORIZONTAL layouts to VERTICAL when children don't fit in target width |
-| FILL width | Children are set to layoutSizingHorizontal: FILL for responsive sizing |
-| Spacing adjustment | Auto-adjust itemSpacing when converting layout (capped by Max Gap setting) |
-| Ungroup GROUPs | Auto-ungroup all GROUP nodes so children can resize properly |
-| Auto height | VERTICAL frames set to primaryAxisSizingMode: AUTO to grow with content |
-
-Font/Text Processing
-
-| Feature | Description |
-|---|---|
-| Map text styles | Auto-map Desktop/H1 → Mobile/H1 (if Mobile style exists in Figma) |
-| Scale font size | Multiply font size by scale factor (default: 0.85), minimum 10px |
-| Mixed fonts support | Handle text with multiple fonts (styled text) character by character |
-
-Figma Variables Support
-
-| Feature | Description |
-|---|---|
-| Auto-detect modes | Detect Figma Variables with modes (Desktop/Mobile/Tablet) |
-| Apply target mode | Auto-apply spacing values from the mode matching target breakpoint |
-| Properties processed | itemSpacing, paddingTop, paddingRight, paddingBottom, paddingLeft |
-
-Image & Media Handling
-
-| Feature | Description |
-|---|---|
-| Store aspect ratios | Save original image aspect ratios from desktop frame BEFORE cloning |
-| Restore aspect ratios | Restore image aspect ratios after frame resize |
-| Background cover | Background images resize using background-size: cover; background-position: center logic |
-| Media containers | Preserve aspect ratio or fixed height for video/image frames |
-
-Icon Preservation
-
-| Feature | Description |
-|---|---|
-| Icon detection | Identify icons: frame ≤ 120px containing VECTOR/GROUP, or name contains "icon"/"logo" |
-| Store icon sizes | Save icon sizes BEFORE cloning |
-| Restore icon sizes | Restore icon sizes after resize (icons are NOT scaled with parent) |
-
-Instance/Component Handling
-
-| Feature | Description |
-|---|---|
-| Auto-detach instances | Auto-detach all nested instances to allow layout modifications |
-| Preserved Components | Components in "Preserved" list will NOT be detached |
-
-UI Controls Detection
-
-| Feature | Description |
-|---|---|
-| Pattern matching | Identify UI controls (button, btn, cta, input, tab, search...) |
-| Keep horizontal | UI controls keep HORIZONTAL layout instead of converting to VERTICAL |
-| Keep natural size | UI controls keep their natural size (no FILL width) |
-
-Absolute Positioning Fix
-
-| Feature | Description |
-|---|---|
-| Overflow detection | Detect absolute-positioned content that overflows |
-| Auto-center | Auto-center overflowing content within available width |
-| Constraint fix | Change constraint from CENTER/SCALE to MIN (left) to prevent "snap back" |
-
-
-Details & Behavior:
-
-- Inputs accepted: single frame, multiple selected frames, hoặc toàn bộ artboard folder. Nếu không có selection, plugin gợi ý chọn artboard.
-- Breakpoint naming: hỗ trợ templates (ví dụ `sm`, `md`, `lg`) hoặc custom names. Có preview cho mỗi tên.
-- Units: `px` và `rem`. Khi chọn `rem`, plugin chuyển giá trị theo base font-size do user nhập (mặc định 16px).
-- Output formats:
-
-Purpose
-
-Provide tools to support HTML email development: copy content, inline styles, dark-mode simulation, and bulk image export.
-
-Features
-
-1. Copy Content
-
-Select a text layer on canvas and use the buttons to copy various email-friendly outputs.
-
-| Button | Output |
-|---|---|
-| Copy Content | Copy plain text content |
-| Copy TD Style | Copy inline CSS for `<td>` tag |
-| Copy Content + Style | Copy text with full inline style |
-| Copy HTML Image | Copy `<img>` tag with src placeholder |
-| Copy HTML Banner + Header (HPS) | Copy HTML for banner + header structure |
-| Copy HTML TD Background | Copy `<td>` with background image |
-
-![Copy Content UI](image-20260113-080822.png)
-
-2. Dark Mode Simulation
-
-Clone frame and invert colors to simulate email in dark mode.
-
-How to use:
-
-1. Select email frame
-2. Enter names of frames not to convert (e.g., Logo, Social icons)
-3. Click "Convert to Dark Mode"
-4. Plugin creates new frame with `-dark` suffix
-
-Skip Frames: Enter frame names (case-insensitive), one name per line.
-
-![Dark Mode](image-20260113-081035.png)
-
-3. Export for Compare (DOCX vs Design)
-
-Export JSON structure and screenshot to compare with DOCX.
-
-How to use:
-
-1. Enter Project Name (e.g., `mail1`)
-2. Click "+ Add Desktop Frame" after selecting desktop frame
-3. Click "+ Add Mobile Frame" after selecting mobile frame
-4. Click "Export for Compare"
-
-![Export for Compare](image-20260113-081126.png)
-
-4. Export All Images
-
-Export all images in frame by pattern name.
-
-| Image Type | Config |
-|---|---|
-| Button/Icon | Pattern, Format (PNG/SVG/JPG), Scale, Padding |
-| PNG | Pattern, Scale |
-| JPG | Pattern, Scale |
-
-Pattern matching: Frames with exact name (case-insensitive) will be exported.
-
-Example Pattern:
-
-```
-Button
-aton/Buttons
-```
-
-Frames named "Button" or "aton/Buttons" will be exported.
-
-![Export Images](image-20260113-081234.png)
+**Solution:**
+- Click **Save Settings** to create a named preset
+- Use **Export Settings** to save configuration as a JSON file
+- Settings are auto-restored on plugin startup, but explicit saves ensure persistence
 
 ---
 
-## Tab 3: Export JSON
+## Contact & Support
 
-Purpose
-
-View and copy JSON structure of selected node, useful for debugging and design analysis.
-
-Interface
-
-| Section | Description |
-|---|---|
-| Selected Node | Name and type of selected node |
-| Preview | Preview image of node |
-| Node Structure (JSON) | JSON tree of node and children |
-| Properties | Details about position, size, padding |
-
-![Export JSON UI](image-20260113-081307.png)
-
-JSON Output Options
-
-- Minify JSON output: Reduce JSON size by removing whitespace
-
-Displayed Properties
-
-| Property | Description |
-|---|---|
-| x, y | Node position |
-| width, height | Dimensions |
-| paddingLeft/Right/Top/Bottom | Padding (only for auto-layout frames) |
-
-1. Chọn frame/artboard email.
-2. Điều chỉnh settings (width, inline images).
-3. Nhấn `Export` → nhận HTML sẵn dùng copy/paste.
-
-Details & Behavior:
-
-- Output HTML được tối ưu cho client email: tất cả style chính (layout, padding, widths) được chuyển thành inline CSS khi chọn `Inline CSS`.
-- Image handling:
-  - `Embed Images`: convert ảnh thành base64 và nhúng vào `src` nếu kích thước < threshold (mặc định 50KB). Có tùy chọn force-embed.
-  - Nếu hình lớn hơn threshold, plugin gợi ý host externally và tạo placeholder URL list.
-- Table-based layout: bật `Use Tables` để xuất layout dạng bảng (nên dùng cho Outlook legacy).
-- Fonts: thay font-family custom bằng fallback hoặc gợi ý sử dụng web-safe fonts (tùy chọn `Replace non-webfonts`).
-- Sanitization: loại bỏ script, font-face phức tạp và các thuộc tính CSS không hỗ trợ mail client (ví dụ `position: absolute`).
-
-Validation & Notes:
-
-- Kiểm tra width: nếu frame width > 1200px plugin cảnh báo (email thường dùng < 700px).
-- Nếu có linked components/variants phức tạp, kết quả có thể khác so với rendering trong Figma.
+- **Version**: 2.0
+- **Author**: Thien Ho
+- **Plugin ID**: design-qa-checker
 
 ---
-
-## Tab 3: Export JSON
-
-Purpose:
-
-- Xuất dữ liệu design (tokens, màu, spacing, typography) dưới dạng JSON cho dev.
-
-UI & Controls:
-
-- Selections: `Tokens`, `Colors`, `Spacing`, `Typography`.
-- Options: flatten hierarchy, include raw values, naming convention.
-
-Output Structure (ví dụ):
-
-```json
-{
-  "colors": { "primary": "#FF0000" },
-  "typography": { "h1": {"size": 32, "weight": 700} }
-}
-```
-
-Workflow:
-
-1. Chọn các category cần export.
-2. Chọn format/option.
-3. Nhấn `Export JSON` → tải file hoặc copy nội dung.
-
-Details & Schema:
-
-- Categories exported:
-  - `tokens` (design tokens grouped by category),
-  - `colors` (with hex and optional rgba/alpha),
-  - `spacing` (numeric values + unit),
-  - `typography` (font-family, weight, size, lineHeight, letterSpacing),
-  - `assets` (image references: name + path + exportedSizes).
-- Options explained:
-  - `Flatten hierarchy`: bỏ nested groups, xuất thành key path (e.g. `button.primary.bg`).
-  - `Include raw values`: giữ cả giá trị gốc từ Figma (px) và normalized values (rem, percentage).
-  - `Naming convention`: hỗ trợ `kebab-case`, `camelCase`, `snake_case`.
-- JSON Schema (short):
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "colors": {"type":"object"},
-    "typography": {"type":"object"}
-  }
-}
-```
-
-Error handling:
-
-- Nếu token duplicate (cùng tên khác value), plugin sẽ warn và thêm suffix `_dupN` nếu user cho phép auto-rename.
-- Nếu có value undefined (ví dụ color node bị xóa), sẽ skip và báo trong log.
-
----
-
-## Tab 4: QA Checker
-
-Purpose:
-
-- Tự động kiểm tra các vấn đề phổ biến trong design trước khi chuyển cho dev hoặc gửi QA.
-
-Checks (có thể tuỳ chỉnh):
-
-- Contrast ratio (WCAG), color contrast warnings.
-- Spacing consistency (grid/column misalignment).
-- Missing fonts or fallback fonts.
-- Images without alt / missing assets.
-
-UI & Controls:
-
-- Toggler cho từng rule, `Run Check` button, results panel với mức độ `Error/Warning/Info`.
-
-Interpreting results:
-
-- Results hiển thị danh sách items, mỗi item có `Goto` để highlight trong design.
-
-Detailed Rules & Thresholds:
-
-- Contrast ratio:
-  - Default threshold: 4.5:1 for normal text, 3:1 for large text.
-  - Option to set custom thresholds per project.
-- Spacing consistency:
-  - Detects deviations from base spacing value (mặc định 8px). Report items with spacing not multiple of base hoặc exceeding tolerance (tolerance default 2px).
-- Typography consistency:
-  - Detects fonts sizes not aligning to scale (e.g., 12, 14, 16, 20...). User có thể import a font-size scale to check.
-- Missing assets:
-  - Flags images with no export settings or missing linking.
-- Accessibility:
-  - Detects low-contrast icons, color-only indicators, và missing focus state (if interactive components annotated).
-
-Results panel:
-
-- Items grouped by rule, mỗi item includes: severity (Error/Warning/Info), node path, suggested fix, `Goto` button để highlight node.
-
-Automation / CI:
-
-- Plugin có thể export QA report as JSON cho CI consumption: list of issues with node IDs and rule keys.
-
-Limitations:
-
-- QA Checker relies on static inspection of design nodes; dynamic interactions may not be fully validated.
-
----
-
-## Tab 5: Export GIF
-
-Purpose:
-
-- Xuất interaction/sequence thành GIF để demo animation hoặc flow.
-
-UI & Controls:
-
-- Timeline selector: chọn frames sequence hoặc record interaction.
-- Settings: FPS, looping, resolution, background color.
-- Buttons: `Record`, `Preview`, `Export GIF`.
-
-Workflow:
-
-1. Chọn các frames/sequence.
-2. Chỉnh FPS và kích thước.
-3. Nhấn `Export GIF` → tải file.
-
-Details & Options:
-
-- Input sources:
-  - Sequence of frames/artboards (ordered by user),
-  - Recorded interactions (recording captures viewport changes and component variant changes).
-- Output settings:
-  - FPS range: 1–60 (default 15).
-  - Resolution: original frame size hoặc scaled down (0.25, 0.5, 1). Scaled up unsupported.
-  - Background: solid color hoặc transparent (transparent GIF support limited; PNG sequence + external encoder recommended).
-  - Looping: on/off and loop count.
-- Encoding:
-  - For efficiency, plugin có thể export as optimized GIF (dither/quantize) hoặc as PNG sequence + user can use external tool to encode higher-quality GIF/MP4.
-- Performance notes:
-  - Long sequences (>100 frames) hoặc high resolution có thể chậm và tốn bộ nhớ; plugin hiển thị estimated size trước export.
-
-Examples & Use-cases:
-
-- Generate a 3-step onboarding animation for marketing.
-- Record a component interaction (hover → active) để giới thiệu cho stakeholders.
-
----
-
-## Detailed Workflows
-
-Mỗi workflow dưới đây có thể đính kèm screenshot — tôi để placeholder để bạn chèn ảnh sau.
-
-1) Tạo breakpoint từ frame
-
-- Step 1: Mở tab `Breakpoint Generator`.
-- Step 2: Chọn frame → [screenshot: breakpoint-select-frame.png]
-- Step 3: Thêm breakpoint, đặt tên → [screenshot: breakpoint-add.png]
-- Step 4: Nhấn `Generate` → download CSS/JSON → [screenshot: breakpoint-result.png]
-
-2) Chuẩn hoá layout cho email
-
-- Step 1: Mở tab `For Email`.
-- Step 2: Chọn frame email → [screenshot: email-select.png]
-- Step 3: Bật `Inline CSS`, chọn width 600px → [screenshot: email-settings.png]
-- Step 4: Nhấn `Export` → copy HTML → [screenshot: email-result.png]
-
-3) Export JSON tokens
-
-- Step 1: Mở `Export JSON`.
-- Step 2: Chọn `colors`, `typography` → [screenshot: json-select.png]
-- Step 3: Chọn `flatten hierarchy` nếu cần → [screenshot: json-options.png]
-- Step 4: Nhấn `Export JSON` → [screenshot: json-result.png]
-
-4) Chạy QA Checker
-
-- Step 1: Mở `QA Checker`.
-- Step 2: Bật các rules cần check → [screenshot: qa-rules.png]
-- Step 3: Run check → xem results và `Goto` items để sửa → [screenshot: qa-results.png]
-
-5) Export GIF
-
-- Step 1: Mở `Export GIF`.
-- Step 2: Chọn frames/record interaction → [screenshot: gif-select.png]
-- Step 3: Chọn FPS, resolution → [screenshot: gif-settings.png]
-- Step 4: Export → [screenshot: gif-result.png]
-
----
-
-## Troubleshooting & FAQ
-
-- Không thấy plugin trong Figma: kiểm tra manifest và import đúng folder.
-- Export JSON bị thiếu giá trị: kiểm tra naming tokens trong design.
-- GIF bị mờ: tăng resolution hoặc FPS.
-
-- Không thấy plugin trong Figma: kiểm tra `manifest.json` có đầy đủ `id`, `name`, `api` fields và folder đã được import vào `Plugins` của Figma.
-- Export JSON bị thiếu giá trị: kiểm tra naming tokens trong design và đảm bảo các layer có `Export` settings nếu là assets.
-- GIF bị mờ: tăng resolution hoặc FPS, hoặc xuất PNG sequence rồi encode bằng công cụ chuyên dụng.
-- Breakpoint overlap warning: chỉnh lại ranges hoặc bật auto-sort trong settings.
-- Email layout khác so với preview: email clients khác nhau render CSS khác nhau; thử bật `Use Tables` và `Inline CSS` để tăng tương thích.
-
-FAQ (ngắn):
-
-- Q: Plugin có hỗ trợ multi-page export không?
-  - A: Có, chọn nhiều frames/artboards; với JSON export, mỗi artboard được group theo key.
-- Q: Có thể tích hợp CI để chạy QA tự động?
-  - A: Có thể export QA report JSON; CI script cần parse file này để fail/pass pipeline.
-
-## Changelog
-
-- v1.0.0 - Initial documentation and core features.
-
----
-
-If you want, I can also:
-
-- Convert this to `README.md` and link from the repo root.
-- Insert screenshot files into a `docs/screenshots/` folder with suggested filenames.
-
----
-
-End of document.

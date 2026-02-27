@@ -4476,8 +4476,12 @@ console.log("ui.js loaded");
     applyIssue(matchedIssues[0]);
   }
 
+  // Flag to prevent per-fix rerender during batch operations
+  window._batchFixInProgress = false;
+
   // Handle "Fix all now" — combines typography 100% matches + color-variable batch fix
   function handleFixAllNow(allIssues) {
+    window._batchFixInProgress = true;
     const typoTypes = ["typography-check", "typography-style"];
     // Expand grouped typography issues into individual sub-issues
     const typoMatchesRaw = (allIssues || []).filter(i =>
@@ -4552,6 +4556,7 @@ console.log("ui.js loaded");
     }
 
     function onAllComplete() {
+      window._batchFixInProgress = false;
       if (btn) {
         btn.disabled = false;
         btn.textContent = "Fix all now";
@@ -4667,6 +4672,7 @@ console.log("ui.js loaded");
       alert("No issues to process");
       return;
     }
+    window._batchFixInProgress = true;
 
     let currentIndex = 0;
     let appliedCount = 0;
@@ -4702,8 +4708,14 @@ console.log("ui.js loaded");
     }
 
     function showCompletionMessage() {
+      window._batchFixInProgress = false;
       if (progressEl && progressEl.parentNode) {
         progressEl.remove();
+      }
+      // Re-render once after all fixes complete
+      updateIssueCounts();
+      if (currentReportData && currentReportData.issues) {
+        renderResults(currentReportData.issues, false);
       }
       const total = currentIndex;
       const message = (isStopped ? "Cancelled!\n\n" : "Done!\n\n") + `Processed ${total} item(s):\n• Applied: ${appliedCount}\n• Ignored: ${ignoredCount}`;
@@ -8447,119 +8459,77 @@ console.log("ui.js loaded");
         }
       }
       
-      // If successful, remove the issue immediately and update counts
+      // If successful, remove the issue from data and update UI
       if (msg.success) {
-        console.log("[fix-issue-result] Starting remove process for issueId:", msg.issueId);
-        console.log("[fix-issue-result] issueId type:", typeof msg.issueId, "value:", msg.issueId);
-        
-        // Remove ALL issues with this ID from currentReportData (there might be multiple issues with same ID but different types)
+        console.log("[fix-issue-result] Removing issueId:", msg.issueId);
+
+        // Always remove from data
         if (currentReportData && currentReportData.issues) {
-          const initialLength = currentReportData.issues.length;
           currentReportData.issues = currentReportData.issues.filter(i => String(i.id) !== String(msg.issueId));
-          const removedCount = initialLength - currentReportData.issues.length;
-          console.log("[fix-issue-result] Removed", removedCount, "issue(s) from data. Remaining issues:", currentReportData.issues.length);
         }
-        
-        // Find ALL issue elements with this ID (there might be multiple issues with same ID but different types)
-        const selector1 = `.issue[data-issue-id="${msg.issueId}"]`;
-        console.log("[fix-issue-result] Trying selector1:", selector1);
-        const allIssueElements = document.querySelectorAll(selector1);
-        console.log("[fix-issue-result] Found", allIssueElements.length, "issue element(s) with this ID");
-        
-        // Also try to find by buttons
-        const selector2 = `button.btn-fix[data-id="${msg.issueId}"]`;
-        const selector3 = `button.btn-suggest-fix[data-id="${msg.issueId}"]`;
-        const btnElements = [
-          ...document.querySelectorAll(selector2),
-          ...document.querySelectorAll(selector3)
-        ];
-        
-        // Get issues from buttons
-        btnElements.forEach(btn => {
-          const issueFromBtn = btn.closest(".issue");
-          if (issueFromBtn && !Array.from(allIssueElements).includes(issueFromBtn)) {
-            allIssueElements.push(issueFromBtn);
-          }
-        });
-        
-        // Remove duplicates
-        const uniqueIssueElements = Array.from(new Set(Array.from(allIssueElements)));
-        console.log("[fix-issue-result] Total unique issue elements to remove:", uniqueIssueElements.length);
-        
-        if (uniqueIssueElements.length > 0) {
-          // Track groups and badges before removing
-          const groupBadgeMap = new Map();
-          
-          uniqueIssueElements.forEach((issueEl, index) => {
-            console.log(`[fix-issue-result] Issue element ${index}:`, issueEl);
-            console.log(`[fix-issue-result] Issue element ${index} data-issue-id:`, issueEl.getAttribute("data-issue-id"));
-            console.log(`[fix-issue-result] Issue element ${index} data-issue-type:`, issueEl.getAttribute("data-issue-type"));
-            
-                const groupEl = issueEl.closest(".issue-group");
-                if (groupEl) {
-              const groupType = groupEl.getAttribute("data-issue-type");
-              if (!groupBadgeMap.has(groupType)) {
+
+        // Skip DOM updates during batch fix — will rerender once at the end
+        if (window._batchFixInProgress) {
+          console.log("[fix-issue-result] Batch fix in progress, skipping DOM update");
+        } else {
+          // Single fix: update DOM immediately
+          const selector1 = `.issue[data-issue-id="${msg.issueId}"]`;
+          const allIssueElements = document.querySelectorAll(selector1);
+
+          // Also try to find by buttons
+          const btnElements = [
+            ...document.querySelectorAll(`button.btn-fix[data-id="${msg.issueId}"]`),
+            ...document.querySelectorAll(`button.btn-suggest-fix[data-id="${msg.issueId}"]`)
+          ];
+          btnElements.forEach(btn => {
+            const issueFromBtn = btn.closest(".issue");
+            if (issueFromBtn && !Array.from(allIssueElements).includes(issueFromBtn)) {
+              allIssueElements.push(issueFromBtn);
+            }
+          });
+
+          const uniqueIssueElements = Array.from(new Set(Array.from(allIssueElements)));
+
+          if (uniqueIssueElements.length > 0) {
+            const groupBadgeMap = new Map();
+            uniqueIssueElements.forEach((issueEl) => {
+              const groupEl = issueEl.closest(".issue-group");
+              if (groupEl) {
+                const groupType = groupEl.getAttribute("data-issue-type");
+                if (!groupBadgeMap.has(groupType)) {
                   const badge = groupEl.querySelector(".badge");
                   if (badge) {
                     const currentCount = parseInt(badge.textContent) || 0;
-                  groupBadgeMap.set(groupType, { groupEl, badge, currentCount, removeCount: 0 });
+                    groupBadgeMap.set(groupType, { groupEl, badge, currentCount, removeCount: 0 });
+                  }
                 }
-              }
-              const groupInfo = groupBadgeMap.get(groupType);
-              if (groupInfo) {
-                groupInfo.removeCount++;
-              }
-            }
-          });
-          
-          // Remove all elements
-          uniqueIssueElements.forEach((issueEl, index) => {
-            issueEl.style.transition = "opacity 0.3s ease-out";
-            issueEl.style.opacity = "0";
-            setTimeout(() => {
-              if (issueEl.parentNode) {
-                console.log(`[fix-issue-result] Removing element ${index} from DOM...`);
-                issueEl.remove();
-              }
-            }, 300);
-          });
-          
-          // Update badges after all removals
-          setTimeout(() => {
-            // Check if any elements still exist
-            const remainingElements = document.querySelectorAll(selector1);
-            console.log("[fix-issue-result] After remove, remaining elements:", remainingElements.length);
-            
-            // Update group badge counts
-            groupBadgeMap.forEach((groupInfo, groupType) => {
-              const newCount = Math.max(0, groupInfo.currentCount - groupInfo.removeCount);
-              groupInfo.badge.textContent = newCount;
-              console.log(`[fix-issue-result] Updated badge for group "${groupType}" from ${groupInfo.currentCount} to ${newCount}`);
-              
-                    // Hide group if no issues left
-                    if (newCount === 0) {
-                groupInfo.groupEl.style.display = "none";
-                console.log(`[fix-issue-result] Hiding group "${groupType}" (no issues left)`);
+                const groupInfo = groupBadgeMap.get(groupType);
+                if (groupInfo) groupInfo.removeCount++;
               }
             });
-            
-            // Update stats header
-            console.log("[fix-issue-result] Calling updateIssueCounts()...");
+
+            uniqueIssueElements.forEach((issueEl) => {
+              issueEl.style.transition = "opacity 0.3s ease-out";
+              issueEl.style.opacity = "0";
+              setTimeout(() => { if (issueEl.parentNode) issueEl.remove(); }, 300);
+            });
+
+            setTimeout(() => {
+              groupBadgeMap.forEach((groupInfo) => {
+                const newCount = Math.max(0, groupInfo.currentCount - groupInfo.removeCount);
+                groupInfo.badge.textContent = newCount;
+                if (newCount === 0) groupInfo.groupEl.style.display = "none";
+              });
+              updateIssueCounts();
+              if (currentReportData && currentReportData.issues) {
+                renderResults(currentReportData.issues, false);
+              }
+            }, 350);
+          } else {
             updateIssueCounts();
-            console.log("[fix-issue-result] updateIssueCounts() completed");
-            
-            // Re-render issues to sync UI with updated data
-            console.log("[fix-issue-result] Re-rendering issues to sync UI...");
             if (currentReportData && currentReportData.issues) {
-              renderResults(currentReportData.issues, false); // Don't reset filters
+              renderResults(currentReportData.issues, false);
             }
-          }, 350);
-        } else {
-          console.log("[fix-issue-result] No issue elements found! Trying to update counts anyway...");
-          // If element not found, still update counts and re-render
-          updateIssueCounts();
-          if (currentReportData && currentReportData.issues) {
-            renderResults(currentReportData.issues, false); // Don't reset filters
           }
         }
       }
@@ -8910,12 +8880,14 @@ console.log("ui.js loaded");
           );
         }
 
-        setTimeout(() => {
-          updateIssueCounts();
-          if (currentReportData && currentReportData.issues) {
-            renderResults(currentReportData.issues, false);
-          }
-        }, 350);
+        if (!window._batchFixInProgress) {
+          setTimeout(() => {
+            updateIssueCounts();
+            if (currentReportData && currentReportData.issues) {
+              renderResults(currentReportData.issues, false);
+            }
+          }, 350);
+        }
       }
       return;
     }
@@ -8929,12 +8901,14 @@ console.log("ui.js loaded");
             !(String(i.id) === String(msg.issueId) && i.type === "color-variable")
           );
         }
-        setTimeout(() => {
-          updateIssueCounts();
-          if (currentReportData && currentReportData.issues) {
-            renderResults(currentReportData.issues, false);
-          }
-        }, 350);
+        if (!window._batchFixInProgress) {
+          setTimeout(() => {
+            updateIssueCounts();
+            if (currentReportData && currentReportData.issues) {
+              renderResults(currentReportData.issues, false);
+            }
+          }, 350);
+        }
       }
       return;
     }
