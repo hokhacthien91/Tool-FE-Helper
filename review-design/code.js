@@ -4,6 +4,9 @@ figma.showUI(__html__, { width: 600, height: 700 });
 // Global cancel flag
 let cancelRequested = false;
 
+// Global skip names list (configurable from UI settings)
+let globalSkipNames = ["sticky note", "not check design"];
+
 // Global component cache
 let componentCache = {
   components: [],
@@ -120,16 +123,16 @@ function invalidateComponentCache() {
   console.log("[component-cache] Cache invalidated");
 }
 
-// Utility: traverse nodes (skip hidden nodes, Sticky Notes, and "Not check design")
+// Utility: traverse nodes (skip hidden nodes and nodes matching skip names)
 function traverse(node, cb, skipHidden = true) {
   // Skip hidden nodes if skipHidden is true
   if (skipHidden && "visible" in node && node.visible === false) {
     return; // Don't process hidden nodes and their children
   }
 
-  // Skip nodes with name containing "Sticky Note" or "Not check design" (and their children)
+  // Skip nodes with name matching any of the global skip names (and their children)
   const nodeName = (node.name || "").toLowerCase();
-  if (nodeName.includes("sticky note") || nodeName.includes("not check design")) {
+  if (globalSkipNames.length > 0 && globalSkipNames.some(skip => nodeName.includes(skip))) {
     return; // Don't process these nodes and their children
   }
 
@@ -1497,6 +1500,8 @@ function checkTypographyStyleMatch(node, styles, rules) {
   if (node.type !== "TEXT") return null;
   if (!styles || styles.length === 0) return null;
   if (!rules || !rules.checkStyle) return null; // Skip if style check is disabled
+  // Skip if node already has a text style applied
+  if (node.textStyleId && node.textStyleId !== figma.mixed) return null;
 
   // Get node properties
   const nodeFontSize = (node.fontSize && typeof node.fontSize === "number") ? Math.round(node.fontSize) : null;
@@ -1813,7 +1818,39 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
   const totalNodes = nodesToScan.length;
   let processedNodes = 0;
   const progressInterval = Math.max(1, Math.floor(totalNodes / 50)); // Report progress every 2%
-  
+
+  // Pre-build color variable map (hex -> variable info) for variable binding checks
+  const colorVariableMap = new Map(); // hex -> { id, name }
+  try {
+    const allVars = figma.variables.getLocalVariables();
+    for (const v of allVars) {
+      if (v.resolvedType === "COLOR") {
+        const modeIds = v.valuesByMode ? Object.keys(v.valuesByMode) : [];
+        if (modeIds.length > 0) {
+          let val = v.valuesByMode[modeIds[0]];
+          // Resolve alias
+          let depth = 0;
+          while (val && typeof val === "object" && "type" in val && val.type === "VARIABLE_ALIAS" && depth < 10) {
+            const ref = figma.variables.getVariableById(val.id);
+            if (!ref || ref.resolvedType !== "COLOR") break;
+            val = ref.valuesByMode[Object.keys(ref.valuesByMode)[0]];
+            depth++;
+          }
+          if (val && typeof val === "object" && "r" in val && "g" in val && "b" in val) {
+            const hex = "#" + Math.round(val.r * 255).toString(16).padStart(2, "0").toUpperCase()
+                            + Math.round(val.g * 255).toString(16).padStart(2, "0").toUpperCase()
+                            + Math.round(val.b * 255).toString(16).padStart(2, "0").toUpperCase();
+            if (!colorVariableMap.has(hex)) {
+              colorVariableMap.set(hex, { id: v.id, name: v.name });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Variables API may not be available
+  }
+
   for (const node of nodesToScan) {
     try {
       // Check for cancel request
@@ -2094,6 +2131,68 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         }
       }
 
+      // 4.6) Color variable binding check - warn if color is not bound to a variable
+      if (colorVariableMap.size > 0) {
+        // Check fills
+        if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+          for (let fi = 0; fi < node.fills.length; fi++) {
+            const fill = node.fills[fi];
+            if (fill.visible !== false && fill.type === "SOLID") {
+              const hasBoundVar = node.boundVariables && node.boundVariables.fills && node.boundVariables.fills[fi];
+              if (!hasBoundVar) {
+                const colorStr = colorToString(fill.color);
+                if (colorStr) {
+                  const fillOpacity = fill.opacity !== undefined ? fill.opacity : 1;
+                  const opacityNote = fillOpacity < 1 ? ` (opacity: ${Math.round(fillOpacity * 100)}%)` : "";
+                  const matchingVar = colorVariableMap.get(colorStr);
+                  addIssue({
+                    severity: "warn",
+                    type: "color-variable",
+                    message: `Fill color ${colorStr}${opacityNote} on "${nodeName}" is not bound to a variable.${matchingVar ? ` Matching variable: "${matchingVar.name}"` : ""}`,
+                    id: node.id,
+                    nodeName: nodeName,
+                    colorHex: colorStr,
+                    colorOpacity: fillOpacity,
+                    colorTarget: "fill",
+                    fillIndex: fi,
+                    matchingVariable: matchingVar || null
+                  });
+                }
+              }
+            }
+          }
+        }
+        // Check strokes
+        if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
+          for (let si = 0; si < node.strokes.length; si++) {
+            const stroke = node.strokes[si];
+            if (stroke.visible !== false && stroke.type === "SOLID") {
+              const hasBoundVar = node.boundVariables && node.boundVariables.strokes && node.boundVariables.strokes[si];
+              if (!hasBoundVar) {
+                const colorStr = colorToString(stroke.color);
+                if (colorStr) {
+                  const strokeOpacity = stroke.opacity !== undefined ? stroke.opacity : 1;
+                  const opacityNote = strokeOpacity < 1 ? ` (opacity: ${Math.round(strokeOpacity * 100)}%)` : "";
+                  const matchingVar = colorVariableMap.get(colorStr);
+                  addIssue({
+                    severity: "warn",
+                    type: "color-variable",
+                    message: `Stroke color ${colorStr}${opacityNote} on "${nodeName}" is not bound to a variable.${matchingVar ? ` Matching variable: "${matchingVar.name}"` : ""}`,
+                    id: node.id,
+                    nodeName: nodeName,
+                    colorHex: colorStr,
+                    colorOpacity: strokeOpacity,
+                    colorTarget: "stroke",
+                    strokeIndex: si,
+                    matchingVariable: matchingVar || null
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
       // 5) Text nodes: typography / style usage
       if (node.type === "TEXT") {
         const fs = node.fontSize;
@@ -2335,6 +2434,12 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           message: message,  // Override with grouped message
           affectedCount: count  // Add count
         });
+        // Store all individual issues for "Fix all now" to process each node
+        if (count > 1) {
+          groupedIssue.subIssues = group.map(function(iss) {
+            return { id: iss.id, nodeName: iss.nodeName, colorTarget: iss.colorTarget, fillIndex: iss.fillIndex, strokeIndex: iss.strokeIndex, matchingVariable: iss.matchingVariable, colorOpacity: iss.colorOpacity, colorHex: iss.colorHex, nodeProps: iss.nodeProps };
+          });
+        }
         
         issues.push(groupedIssue);
       }
@@ -3149,7 +3254,13 @@ figma.ui.onmessage = async msg => {
     const typographyStyles = msg.typographyStyles || [];
     const typographyRules = msg.typographyRules || {};
     const ignoredIssuesFromUI = msg.ignoredIssues || {}; // Get ignored issues from UI
-    
+
+    // Parse skip names from UI settings
+    if (msg.skipNames !== undefined) {
+      const raw = (msg.skipNames || "").trim();
+      globalSkipNames = raw ? raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length > 0) : [];
+    }
+
     // Parse spacing guidelines from input
     let customSpacingScale = null;
     if (spacingScaleInput.trim()) {
@@ -4289,6 +4400,221 @@ figma.ui.onmessage = async msg => {
           success: false,
           message: `❌ Error: ${errorMessage}`
         });
+      }
+      break;
+    }
+    case "bind-color-variable": {
+      try {
+        const issue = msg.issue;
+        const variableId = msg.variableId;
+        const nodeId = issue ? issue.id : null;
+
+        if (!nodeId || !variableId) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: "Missing node or variable ID" });
+          break;
+        }
+
+        const node = figma.getNodeById(nodeId);
+        if (!node) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: "Node not found" });
+          break;
+        }
+
+        const variable = figma.variables.getVariableById(variableId);
+        if (!variable) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: "Variable not found" });
+          break;
+        }
+
+        const target = issue.colorTarget; // "fill" or "stroke"
+
+        if (target === "fill") {
+          const fillIndex = issue.fillIndex || 0;
+          if ("fills" in node && Array.isArray(node.fills) && node.fills[fillIndex]) {
+            const fills = [...node.fills];
+            fills[fillIndex] = figma.variables.setBoundVariableForPaint(fills[fillIndex], "color", variable);
+            node.fills = fills;
+          }
+        } else if (target === "stroke") {
+          const strokeIndex = issue.strokeIndex || 0;
+          if ("strokes" in node && Array.isArray(node.strokes) && node.strokes[strokeIndex]) {
+            const strokes = [...node.strokes];
+            strokes[strokeIndex] = figma.variables.setBoundVariableForPaint(strokes[strokeIndex], "color", variable);
+            node.strokes = strokes;
+          }
+        }
+
+        figma.ui.postMessage({ type: "bind-color-variable-result", success: true, issueId: nodeId, message: `✅ Bound to variable "${variable.name}"` });
+      } catch (error) {
+        figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: msg.issue ? msg.issue.id : null, message: `❌ ${error.message}` });
+      }
+      break;
+    }
+    case "bind-color-variable-by-name": {
+      try {
+        const issue = msg.issue;
+        const varName = msg.variableName;
+        const nodeId = issue ? issue.id : null;
+
+        if (!nodeId || !varName) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: "Missing data" });
+          break;
+        }
+
+        // Find variable by name
+        const allVars = figma.variables.getLocalVariables();
+        const variable = allVars.find(v => v.resolvedType === "COLOR" && v.name === varName);
+        if (!variable) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: `Variable "${varName}" not found` });
+          break;
+        }
+
+        const node = figma.getNodeById(nodeId);
+        if (!node) {
+          figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: nodeId, message: "Node not found" });
+          break;
+        }
+
+        const target = issue.colorTarget;
+
+        if (target === "fill") {
+          const fillIndex = issue.fillIndex || 0;
+          if ("fills" in node && Array.isArray(node.fills) && node.fills[fillIndex]) {
+            const fills = [...node.fills];
+            fills[fillIndex] = figma.variables.setBoundVariableForPaint(fills[fillIndex], "color", variable);
+            node.fills = fills;
+          }
+        } else if (target === "stroke") {
+          const strokeIndex = issue.strokeIndex || 0;
+          if ("strokes" in node && Array.isArray(node.strokes) && node.strokes[strokeIndex]) {
+            const strokes = [...node.strokes];
+            strokes[strokeIndex] = figma.variables.setBoundVariableForPaint(strokes[strokeIndex], "color", variable);
+            node.strokes = strokes;
+          }
+        }
+
+        figma.ui.postMessage({ type: "bind-color-variable-result", success: true, issueId: nodeId, message: `✅ Bound to "${variable.name}"` });
+      } catch (error) {
+        figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: msg.issue ? msg.issue.id : null, message: `❌ ${error.message}` });
+      }
+      break;
+    }
+    case "batch-bind-color-variables": {
+      // Batch handler: scan ALL nodes in current selection/page and bind matching color variables
+      // This bypasses the grouping/subIssues system entirely
+      try {
+        const variableMap = msg.variableMap; // { hex: variableId } map from frontend
+        const skipOpacity = msg.skipOpacity !== false; // default true: skip fills/strokes with opacity < 1
+        let applied = 0;
+        let failed = 0;
+        const details = []; // Log details for each bind
+        const allVars = figma.variables.getLocalVariables();
+        const colorVars = allVars.filter(v => v.resolvedType === "COLOR");
+        console.log("[Batch Bind] Starting. colorVars count:", colorVars.length);
+        // Build hex -> variable map from local variables
+        const hexVarMap = new Map();
+        for (const v of colorVars) {
+          const modeIds = Object.keys(v.valuesByMode);
+          if (modeIds.length > 0) {
+            const val = v.valuesByMode[modeIds[0]];
+            if (val && typeof val === "object" && "r" in val) {
+              const r = Math.round(val.r * 255);
+              const g = Math.round(val.g * 255);
+              const b = Math.round(val.b * 255);
+              const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+              if (!hexVarMap.has(hex)) {
+                hexVarMap.set(hex, v);
+              }
+            }
+          }
+        }
+        // Get all nodes to process
+        const selection = figma.currentPage.selection;
+        let nodesToProcess = [];
+        if (selection && selection.length > 0) {
+          for (const sel of selection) {
+            if ("findAll" in sel) {
+              nodesToProcess = nodesToProcess.concat(sel.findAll());
+            }
+            nodesToProcess.push(sel);
+          }
+        } else {
+          nodesToProcess = figma.currentPage.findAll();
+        }
+        for (const node of nodesToProcess) {
+          try {
+            // Check fills
+            if ("fills" in node && Array.isArray(node.fills)) {
+              for (let fi = 0; fi < node.fills.length; fi++) {
+                const fill = node.fills[fi];
+                if (fill.visible !== false && fill.type === "SOLID") {
+                  const hasBound = node.boundVariables && node.boundVariables.fills && node.boundVariables.fills[fi];
+                  if (!hasBound) {
+                    const opacity = fill.opacity !== undefined ? fill.opacity : 1;
+                    if (skipOpacity && opacity < 1) continue;
+                    const r = Math.round(fill.color.r * 255);
+                    const g = Math.round(fill.color.g * 255);
+                    const b = Math.round(fill.color.b * 255);
+                    const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+                    const matchVar = hexVarMap.get(hex);
+                    if (matchVar) {
+                      try {
+                        const fills = [...node.fills];
+                        fills[fi] = figma.variables.setBoundVariableForPaint(fills[fi], "color", matchVar);
+                        node.fills = fills;
+                        applied++;
+                        const nodeName = "name" in node ? node.name : "?";
+                        details.push("✅ fill[" + fi + "] " + hex + " → " + matchVar.name + " on \"" + nodeName + "\" (" + node.id + ")");
+                      } catch (e) {
+                        failed++;
+                        const nodeName = "name" in node ? node.name : "?";
+                        details.push("❌ fill[" + fi + "] " + hex + " → " + matchVar.name + " FAILED on \"" + nodeName + "\" (" + node.id + "): " + e.message);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            // Check strokes
+            if ("strokes" in node && Array.isArray(node.strokes)) {
+              for (let si = 0; si < node.strokes.length; si++) {
+                const stroke = node.strokes[si];
+                if (stroke.visible !== false && stroke.type === "SOLID") {
+                  const hasBound = node.boundVariables && node.boundVariables.strokes && node.boundVariables.strokes[si];
+                  if (!hasBound) {
+                    const opacity = stroke.opacity !== undefined ? stroke.opacity : 1;
+                    if (skipOpacity && opacity < 1) continue;
+                    const r = Math.round(stroke.color.r * 255);
+                    const g = Math.round(stroke.color.g * 255);
+                    const b = Math.round(stroke.color.b * 255);
+                    const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+                    const matchVar = hexVarMap.get(hex);
+                    if (matchVar) {
+                      try {
+                        const strokes = [...node.strokes];
+                        strokes[si] = figma.variables.setBoundVariableForPaint(strokes[si], "color", matchVar);
+                        node.strokes = strokes;
+                        applied++;
+                        const nodeName = "name" in node ? node.name : "?";
+                        details.push("✅ stroke[" + si + "] " + hex + " → " + matchVar.name + " on \"" + nodeName + "\" (" + node.id + ")");
+                      } catch (e) {
+                        failed++;
+                        const nodeName = "name" in node ? node.name : "?";
+                        details.push("❌ stroke[" + si + "] " + hex + " → " + matchVar.name + " FAILED on \"" + nodeName + "\" (" + node.id + "): " + e.message);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) { /* skip node errors */ }
+        }
+        console.log("[Batch Bind] Done. applied=" + applied + ", failed=" + failed + ", totalNodes=" + nodesToProcess.length);
+        details.forEach(function(d) { console.log("[Batch Bind] " + d); });
+        figma.ui.postMessage({ type: "batch-bind-color-variables-result", applied: applied, failed: failed, details: details });
+      } catch (error) {
+        console.log("[Batch Bind] ERROR:", error.message);
+        figma.ui.postMessage({ type: "batch-bind-color-variables-result", applied: 0, failed: 0, error: error.message, details: [] });
       }
       break;
     }

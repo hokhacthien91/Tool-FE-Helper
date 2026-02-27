@@ -258,8 +258,16 @@
             </div>
           </div>
           </div>
-        
 
+  <div class="controls-group controls-group-padding">
+              <!-- Skip Names Input -->
+          <div>
+            <label for="scan-skip-names" style="display:block; font-size:11px; color:#1d1d1f; font-weight:600; margin-bottom:6px">Skip Names (comma separated)</label>
+            <textarea id="scan-skip-names" placeholder="e.g. not check design, sticky note, vector, Clip path group, Clip path" style="width:100%; min-height:56px; padding:8px 10px; font-size:11px; border:1px solid #e6e6e9; border-radius:6px; resize:vertical; box-sizing:border-box;">not check design, sticky note, vector, Clip path group, Clip path</textarea>
+            <p style="margin:6px 0 0 0; color:#6b6b6f; font-size:12px">Layers containing any of these substrings in their name will be skipped during scan.</p>
+          </div>
+        
+</div>
           <div class="controls-group controls-group-padding">
             <div class="flex-row">
               <div class="tooltip flex-1">
@@ -1193,69 +1201,70 @@
           <div class="scan-settings-groups" style="display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto;">
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-naming" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📁 Naming Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📁 Naming Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-autolayout" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🖼️ Auto Layout</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🖼️ Auto Layout</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-spacing" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✏️ Spacing</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">✏️ Spacing</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-color" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Color</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🎨 Color</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-fontsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">✍️ Font Size</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">✍️ Font Size</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-textstyle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🎨 Text Style (Variable)</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🎨 Text Style (Variable)</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-typography" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Typography Style Match</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📝 Typography Style Match</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-lineheight" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📝 Line Height</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📝 Line Height</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-position" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📍 Position Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📍 Position Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-duplicate" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🔄 Duplicate Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🔄 Duplicate Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-group" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📦 Group Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📦 Group Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-component" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🧩 Component Reusable</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🧩 Component Reusable</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-emptyframe" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🗑️ Empty Frame Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🗑️ Empty Frame Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-nestedgroup" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📚 Nested Group Layer</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📚 Nested Group Layer</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-contrast" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">🌈 Contrast (ADA AA)</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🌈 Contrast (ADA AA)</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-textsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
-              <span style="font-size: 14px; font-weight: 500; color: #1d1d1f;">📱 Text Size (ADA)</span>
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📱 Text Size (ADA)</span>
             </label>
           </div>
+      
           <div style="display: flex; gap: 8px; margin-top: 16px">
             <button
               id="btn-scan-settings-check-all"
@@ -1413,12 +1422,14 @@
 
         // Applied settings (separate from checkbox state) - stored in memory only
         let appliedSettings = {};
+        const skipNamesEl = document.getElementById('scan-skip-names');
 
         // Initialize default settings (all enabled)
         function initDefaultSettings() {
           Object.keys(scanCheckboxes).forEach(key => {
             appliedSettings[key] = true;
           });
+          appliedSettings.skipNames = (skipNamesEl && skipNamesEl.value) ? skipNamesEl.value : "not check design, sticky note, vector, Clip path group, Clip path";
         }
 
         // Load settings - just initialize defaults (no localStorage in Figma plugin)
@@ -1439,6 +1450,7 @@
 
         // Save applied settings - send to Figma plugin for persistence
         function saveAppliedSettings() {
+          if (skipNamesEl) appliedSettings.skipNames = skipNamesEl.value || "";
           try {
             parent.postMessage({
               pluginMessage: {
@@ -1458,6 +1470,13 @@
             if (msg.type === 'scan-settings-loaded' && msg.settings) {
               // Restore checkbox states and applied settings
               Object.keys(msg.settings).forEach(key => {
+                if (key === 'skipNames') {
+                  if (skipNamesEl) {
+                    skipNamesEl.value = Array.isArray(msg.settings.skipNames) ? msg.settings.skipNames.join(', ') : (msg.settings.skipNames || '');
+                  }
+                  appliedSettings.skipNames = msg.settings.skipNames || '';
+                  return;
+                }
                 if (scanCheckboxes[key]) {
                   scanCheckboxes[key].checked = msg.settings[key];
                 }
@@ -1480,6 +1499,12 @@
               }
             }
           });
+          // Check skip names changes
+          if (skipNamesEl) {
+            const currentSkip = (skipNamesEl.value || "").trim();
+            const appliedSkip = (appliedSettings.skipNames || "").trim();
+            if (currentSkip !== appliedSkip) hasChanges = true;
+          }
           if (settingsNote) {
             settingsNote.style.display = hasChanges ? 'block' : 'none';
           }
@@ -1575,6 +1600,8 @@
                 appliedSettings[key] = scanCheckboxes[key].checked;
               }
             });
+            // Copy skip names
+            if (skipNamesEl) appliedSettings.skipNames = (skipNamesEl.value || "").trim();
             saveAppliedSettings();
             applyGroupVisibility();
 
@@ -1618,6 +1645,10 @@
                 scanCheckboxes[key].checked = appliedSettings[key] !== false;
               }
             });
+            // Reset skip names textarea to applied value
+            if (skipNamesEl) {
+              skipNamesEl.value = appliedSettings.skipNames || "not check design, sticky note, vector, Clip path group, Clip path";
+            }
             // Hide the warning note since we reset to applied state
             if (settingsNote) {
               settingsNote.style.display = 'none';
@@ -1993,7 +2024,7 @@
               transition: all 0.2s;
             ">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <span style="font-size: 12px; font-weight: 600; color: #86868b;">${index + 1}.</span>
+                <span style="font-size: 11px; font-weight: 600; color: #86868b;">${index + 1}.</span>
                 <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-ids="${item.nodeIds.join(',')}" style="
                   padding: 4px 12px;
                   background: ${isSelected ? '#22c55e' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'};
@@ -2006,14 +2037,14 @@
                   ${isSelected ? '✓ Selected' : '📍 Select'}
                 </button>
               </div>
-              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 6px;">
+              <div style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
                 <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
               </div>
-              <div style="font-size: 13px; color: #1d1d1f; margin-bottom: 6px;">
+              <div style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
                 <strong>Action:</strong> <span style="color: #3b82f6; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
               </div>
-              <div style="font-size: 12px; color: #86868b; margin-bottom: 4px;">
-                <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 11px;">(${item.nodeType})</span>
+              <div style="font-size: 11px; color: #86868b; margin-bottom: 4px;">
+                <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 10px;">(${item.nodeType})</span>
               </div>
               ${animationInfo || delayInfo ? `
                 <div style="font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">

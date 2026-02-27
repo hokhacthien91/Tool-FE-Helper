@@ -27,7 +27,7 @@ export function showSpacingPickerModal(issue, propertyName, currentValue, availa
         <div class="spacing-picker-item" data-value="${value}" style="
           padding: 12px;
           margin-bottom: 8px;
-          border: 2px solid ${currentValue === value ? "#0071e3" : "#ddd"};
+          border: 1px solid ${currentValue === value ? "#0071e3" : "#ddd"};
           border-radius: 8px;
           cursor: pointer;
           display: flex;
@@ -52,7 +52,7 @@ export function showSpacingPickerModal(issue, propertyName, currentValue, availa
               font-weight: 600;
               color: #666;
             ">${value}px</div>
-            <div style="font-weight: 600; font-size: 14px; color: #333;">
+            <div style="font-weight: 600; font-size: 12px; color: #333;">
               ${value}px
             </div>
           </div>
@@ -176,7 +176,7 @@ export function showSpacingFixConfirmModal(issue, propertyName, currentValue, su
       <div class="spacing-option-item" data-value="${spacingData.value}" style="
         padding: 10px 12px;
         margin-bottom: 6px;
-        border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+        border: 1px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
         border-radius: 8px;
         cursor: pointer;
         background: ${isSelected ? '#e3f2fd' : 'white'};
@@ -191,7 +191,7 @@ export function showSpacingFixConfirmModal(issue, propertyName, currentValue, su
           height: 40px;
           border-radius: 6px;
           background: ${isSelected ? '#e3f2fd' : '#f0f0f0'};
-          border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+          border: 1px solid ${isSelected ? '#0071e3' : '#ddd'};
           display: flex;
           align-items: center;
           justify-content: center;

@@ -1002,10 +1002,10 @@ console.log("ui.js loaded");
           flex-shrink: 0;
         "></div>
         <div style="flex: 1;">
-          <div style="font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px;">
+          <div style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 4px;">
             ${colorName || escapeHtml(color)}
           </div>
-          <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">
+          <div style="font-size: 10px; color: #666; font-family: 'SF Mono', Monaco, monospace;">
             ${escapeHtml(color)}
           </div>
           ${additionalInfo ? `<div style="font-size: 11px; color: #666; margin-top: 4px;">${additionalInfo}</div>` : ''}
@@ -1885,7 +1885,7 @@ console.log("ui.js loaded");
           background: white;
           transition: all 0.2s;
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='#ddd'; this.style.boxShadow='none'">
-          <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(comp.name)}</div>
+          <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(comp.name)}</div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">
             ${comp.description || "Component"}
           </div>
@@ -2285,7 +2285,7 @@ console.log("ui.js loaded");
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='${isBestMatch ? '#0071e3' : '#ddd'}'; this.style.boxShadow='none'">
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(style.name)} ${isBestMatch ? '⭐' : ''}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(style.name)} ${isBestMatch ? '⭐' : ''}</div>
               <div style="font-size: 11px; color: #666; margin-top: 4px;">
                 ${escapeHtml(style.fontFamily)} ${style.fontSize}px ${escapeHtml(style.fontWeight)}
               </div>
@@ -2534,8 +2534,8 @@ console.log("ui.js loaded");
           transition: all 0.2s;
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='#ddd'; this.style.boxShadow='none'">
           <div>
-            <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(style.name)}</div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+            <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(style.name)}</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">
               ${escapeHtml(style.fontFamily)} ${escapeHtml(style.fontSize)}px ${escapeHtml(style.fontWeight)}
             </div>
           </div>
@@ -2697,7 +2697,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Text Color:</div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
-            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
+            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 11px; font-weight: 600;">${escapeHtml(currentColor)}</div>
             <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
           </div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">Background: ${escapeHtml(bgColor)}</div>
@@ -2798,7 +2798,7 @@ console.log("ui.js loaded");
     const styleNoteHtml = selectedStyle ? `
       <div style="margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
         <div style="font-size: 12px; color: #666; margin-bottom: 4px;">📝 Text Style sẽ được áp dụng:</div>
-        <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
+        <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(selectedStyle.name)}</div>
         <div style="font-size: 11px; color: #666; margin-top: 4px;">
           ${escapeHtml(selectedStyle.fontFamily)} ${selectedStyle.fontSize}px ${escapeHtml(selectedStyle.fontWeight)}
         </div>
@@ -2971,7 +2971,7 @@ console.log("ui.js loaded");
           <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd;"></div>
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(currentColor)}</div>
               <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
             </div>
           </div>
@@ -2979,7 +2979,7 @@ console.log("ui.js loaded");
           <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px; margin-bottom: 12px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(colorName)}</div>
               <div style="font-size: 11px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
               <div style="font-size: 11px; color: #22c55e; margin-top: 4px;">Contrast: ${newContrast.toFixed(2)}:1 ✓ (passes >= ${minContrast}:1)</div>
             </div>
@@ -3349,7 +3349,7 @@ console.log("ui.js loaded");
               font-weight: 600;
               color: #666;
             ">${value}px</div>
-            <div style="font-weight: 600; font-size: 14px; color: #333;">
+            <div style="font-weight: 600; font-size: 12px; color: #333;">
               ${value}px
             </div>
           </div>
@@ -3622,7 +3622,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Color:</div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
-            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
+            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 11px; font-weight: 600;">${escapeHtml(currentColor)}</div>
           </div>
         </div>
         <div style="max-height: 300px; overflow-y: auto;">
@@ -3702,15 +3702,15 @@ console.log("ui.js loaded");
           <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(currentColor)}; border: 2px solid #ddd;"></div>
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(currentColor)}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(currentColor)}</div>
             </div>
           </div>
           <div style="font-size: 13px; color: #666; margin-bottom: 12px;">To:</div>
           <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #eff6ff; border-radius: 6px;">
             <div style="width: 48px; height: 48px; border-radius: 6px; background: ${escapeHtml(selectedColor)}; border: 2px solid #0071e3;"></div>
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(colorName)}</div>
-              <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(colorName)}</div>
+              <div style="font-size: 10px; color: #666; font-family: 'SF Mono', Monaco, monospace;">${escapeHtml(selectedColor)}</div>
             </div>
           </div>
         </div>
@@ -4542,7 +4542,7 @@ console.log("ui.js loaded");
                   details.push(`${bgLabel} ${bgValue}${bgNote} (${issue.backgroundColorNode || "Unknown"})`);
                 }
                 if (details.length > 0) {
-                  issueBody += `<div style="margin-top: 8px; font-size: 12px; color: #666;">${details.join(" | ")}</div>`;
+                  issueBody += `<div style="margin-top: 8px; font-size: 10px; color: #666;">${details.join(" | ")}</div>`;
                 }
               }
               
@@ -4555,7 +4555,7 @@ console.log("ui.js loaded");
                     </span>
                     <div class="issue-body">${issueBody}</div>
                     ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
-                    ${(issue.type === "typography" || issue.type === "line-height") ? `<div style="margin-top: 8px; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404; line-height: 1.5;"><strong>Note:</strong> Check 'Typography Style Match' to resolve this issue.</div>` : ""}
+                    ${(issue.type === "typography" || issue.type === "line-height") ? `<div style="margin-top: 8px; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 10px; color: #856404; line-height: 1.5;"><strong>Note:</strong> Check 'Typography Style Match' to resolve this issue.</div>` : ""}
                     ${issue.ignored ? `<div class="issue-ignored-tag" style="margin-top: 4px; padding: 4px 8px; background: #eff6ff; color: #1976d2; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;">✓ Pass with ignore custom</div>` : ""}
                   </div>
                   <div class="issue-actions">

@@ -33,9 +33,9 @@ export function createColorPickerItem(color, colorName, borderColor, additionalI
 
   return `
       <div class="color-picker-item" data-color="${escapeHtml(color)}" style="
-        padding: 12px;
+        padding: 7px;
         margin-bottom: 8px;
-        border: 2px solid ${borderColor};
+        border: 1px solid ${borderColor};
         border-radius: 8px;
         cursor: pointer;
         display: flex;
@@ -45,18 +45,18 @@ export function createColorPickerItem(color, colorName, borderColor, additionalI
         transition: all 0.2s;
       " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='${borderColor}'; this.style.boxShadow='none'">
         <div style="
-          width: 48px;
-          height: 48px;
+          width: 36px;
+          height: 36px;
           border-radius: 6px;
           background: ${escapeHtml(color)};
-          border: 2px solid #ddd;
+          border: 1px solid #ddd;
           flex-shrink: 0;
         "></div>
         <div style="flex: 1;">
-          <div style="font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px;">
+          <div style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 4px;">
             ${colorName || escapeHtml(color)}
           </div>
-          <div style="font-size: 12px; color: #666; font-family: 'SF Mono', Monaco, monospace;">
+          <div style="font-size: 10px; color: #666; font-family: 'SF Mono', Monaco, monospace;">
             ${escapeHtml(color)}
           </div>
           ${additionalInfo ? `<div style="font-size: 11px; color: #666; margin-top: 4px;">${additionalInfo}</div>` : ""}
@@ -113,7 +113,7 @@ export function showColorPickerModal(issue, currentColor, availableColors, color
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(
               currentColor
             )}; border: 1px solid #ddd;"></div>
-            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(
+            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 11px; font-weight: 600;">${escapeHtml(
               currentColor
             )}</div>
           </div>
@@ -210,7 +210,7 @@ export function showColorFixConfirmModal(issue, currentColor, suggestedColor, co
       <div class="color-option-item" data-color="${escapeHtml(colorData.color)}" style="
         padding: 10px 12px;
         margin-bottom: 6px;
-        border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+        border: 1px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
         border-radius: 8px;
         cursor: pointer;
         background: ${isSelected ? '#e3f2fd' : 'white'};
@@ -225,7 +225,7 @@ export function showColorFixConfirmModal(issue, currentColor, suggestedColor, co
           height: 36px;
           border-radius: 6px;
           background: ${escapeHtml(colorData.color)};
-          border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+          border: 1px solid ${isSelected ? '#0071e3' : '#ddd'};
           flex-shrink: 0;
         "></div>
         <div style="flex: 1;">

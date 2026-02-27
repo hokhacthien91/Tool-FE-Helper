@@ -86,7 +86,7 @@
   }
 
   &-subtitle {
-    font-size: 13px;
+    font-size: 11px;
     color: $color-gray-700;
     margin: 4px 0 0 0;
     padding-right: 30px;
@@ -170,6 +170,57 @@
 
 .btn-fix-all:active {
   transform: scale(0.98);
+}
+
+.fix-all-progress {
+  padding: 8px 12px;
+  margin: 0 0 4px 0;
+  background: var(--color-surface-alt, #f8f9fa);
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e0e0e0);
+}
+
+.fix-all-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.fix-all-progress-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+}
+
+.fix-all-progress-cancel {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--color-text-secondary, #888);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.fix-all-progress-cancel:hover {
+  background: var(--color-error-bg, #fee);
+  color: var(--color-error, #e53935);
+}
+
+.fix-all-progress-bar {
+  height: 4px;
+  background: var(--color-border, #e0e0e0);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.fix-all-progress-fill {
+  height: 100%;
+  background: $color-success;
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
 .btn-add-scale {

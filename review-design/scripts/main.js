@@ -111,6 +111,34 @@ console.log("ui.js loaded");
         ];
         let nextTypoStyleId = 8;
 
+        // Calculate similarity between issue nodeProps and a typography style (0-100)
+        function calculateTypographySimilarity(nodeProps, style) {
+          const norm = (val) => {
+            if (val === null || val === undefined || val === "Unknown") return "";
+            return String(val).toLowerCase().trim();
+          };
+          const hasValue = (val) => val !== null && val !== undefined && val !== "Unknown" && String(val).trim() !== "";
+          let score = 0;
+          // Only count match if both sides have real values
+          if (hasValue(nodeProps.fontFamily) && hasValue(style.fontFamily) && norm(nodeProps.fontFamily) === norm(style.fontFamily)) score += 25;
+          if (nodeProps.fontSize !== null && nodeProps.fontSize !== undefined && style.fontSize) {
+            if (Math.abs(nodeProps.fontSize - style.fontSize) === 0) score += 30;
+            else if (Math.abs(nodeProps.fontSize - style.fontSize) <= 2) score += 25;
+            else if (Math.abs(nodeProps.fontSize - style.fontSize) <= 4) score += 20;
+            else if (Math.abs(nodeProps.fontSize - style.fontSize) <= 8) score += 10;
+          }
+          if (hasValue(nodeProps.fontWeight) && hasValue(style.fontWeight) && norm(nodeProps.fontWeight) === norm(style.fontWeight)) score += 20;
+          if (hasValue(nodeProps.lineHeight) && hasValue(style.lineHeight) && norm(nodeProps.lineHeight) === norm(style.lineHeight)) score += 15;
+          // Normalize zero values: "0px", "0%", "0" are all equal
+          const nodeLS = norm(nodeProps.letterSpacing);
+          const styleLS = norm(style.letterSpacing || "0");
+          const isZeroLS = (v) => v === "0" || v === "0px" || v === "0%" || v === "";
+          if (hasValue(nodeProps.letterSpacing) || hasValue(style.letterSpacing)) {
+            if ((isZeroLS(nodeLS) && isZeroLS(styleLS)) || nodeLS === styleLS) score += 10;
+          }
+          return score;
+        }
+
         /**
          * Check if a typography suggestion is valid based on font-size difference
          * @param {Object} issue - The issue with nodeProps
@@ -168,6 +196,7 @@ console.log("ui.js loaded");
             lineHeightThreshold: document.getElementById("line-height-threshold")?.value || "300",
             lineHeightBaselineThreshold: document.getElementById("line-height-baseline-threshold")?.value || "120",
             typographyStyles: typographyStyles,
+            skipNames: document.getElementById("scan-skip-names")?.value || "",
             typographyRules: {
               checkStyle: document.getElementById("rule-typo-style")?.checked || true,
               checkFontFamily: document.getElementById("rule-font-family")?.checked || true,
@@ -224,6 +253,10 @@ console.log("ui.js loaded");
           if (lineHeightThresholdInput && values.lineHeightThreshold !== undefined) lineHeightThresholdInput.value = values.lineHeightThreshold;
           if (lineHeightBaselineThresholdInput && values.lineHeightBaselineThreshold !== undefined) lineHeightBaselineThresholdInput.value = values.lineHeightBaselineThreshold;
           
+          // Restore skip names
+          const skipNamesInput = document.getElementById("scan-skip-names");
+          if (skipNamesInput && values.skipNames !== undefined) skipNamesInput.value = values.skipNames;
+
           // Restore Typography Styles
           if (values.typographyStyles && Array.isArray(values.typographyStyles)) {
             typographyStyles = values.typographyStyles;
@@ -398,6 +431,7 @@ console.log("ui.js loaded");
             autolayout: "📐",
             spacing: "📏",
             color: "🎨",
+            "color-variable": "🔗",
             typography: "✍️",
             "typography-style": "🎨",
             "typography-check": "📝",
@@ -422,6 +456,7 @@ console.log("ui.js loaded");
             autolayout: "Auto Layout",
             spacing: "Spacing",
             color: "Color",
+            "color-variable": "Color Variable",
             typography: "Font Size",
             "typography-style": "Text Style (variable)",
             "typography-check": "Typography Style Match",
@@ -1858,7 +1893,7 @@ console.log("ui.js loaded");
           background: white;
           transition: all 0.2s;
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='#ddd'; this.style.boxShadow='none'">
-          <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(comp.name)}</div>
+          <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(comp.name)}</div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">
             ${comp.description || "Component"}
           </div>
@@ -2225,7 +2260,17 @@ console.log("ui.js loaded");
     // Helper to normalize values for comparison
     const normalizeValue = (val) => {
       if (val === null || val === undefined || val === "Unknown") return "";
-      return String(val).toLowerCase().trim();
+      const s = String(val).toLowerCase().trim();
+      // If it's a numeric value with optional unit (px or %), handle zero equivalence
+      const m = s.match(/^([+-]?\d*\.?\d+)(px|%)?$/);
+      if (m) {
+        const num = parseFloat(m[1]);
+        if (Math.abs(num) < 1e-6) return "0"; // treat 0, 0px, 0% as equal
+        const unit = m[2] || "px";
+        // Normalize non-zero numbers to a consistent string with up to 2 decimals
+        return `${Math.round(num * 100) / 100}${unit}`;
+      }
+      return s;
     };
 
     // Calculate similarity score for sorting (higher = more similar)
@@ -2309,7 +2354,7 @@ console.log("ui.js loaded");
         <div class="style-picker-item" data-style-id="${style.id}" data-style-name="${escapeHtml(style.name)}" data-font-size="${style.fontSize}" data-similarity="${similarity}" style="
           padding: 12px;
           margin-bottom: 8px;
-          border: 2px solid ${isBestMatch ? '#0071e3' : '#ddd'};
+          border: 1px solid ${isBestMatch ? '#0071e3' : '#ddd'};
           border-radius: 8px;
           cursor: pointer;
           background: white;
@@ -2317,7 +2362,7 @@ console.log("ui.js loaded");
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='${isBestMatch ? '#0071e3' : '#ddd'}'; this.style.boxShadow='none'">
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
             <div>
-              <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(style.name)} ${isBestMatch ? '⭐' : ''}</div>
+              <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(style.name)} ${isBestMatch ? '⭐' : ''}</div>
               <div style="font-size: 11px; color: #666; margin-top: 4px;">
                 ${escapeHtml(style.fontFamily)} ${style.fontSize}px ${escapeHtml(style.fontWeight)}
               </div>
@@ -2608,8 +2653,8 @@ console.log("ui.js loaded");
           transition: all 0.2s;
         " onmouseover="this.style.borderColor='#0071e3'; this.style.boxShadow='0 2px 8px rgba(0,113,227,0.2)'" onmouseout="this.style.borderColor='#ddd'; this.style.boxShadow='none'">
           <div>
-            <div style="font-weight: 600; font-size: 14px; color: #333;">${escapeHtml(style.name)}</div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+            <div style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(style.name)}</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">
               ${escapeHtml(style.fontFamily)} ${escapeHtml(style.fontSize)}px ${escapeHtml(style.fontWeight)}
             </div>
           </div>
@@ -2770,7 +2815,7 @@ console.log("ui.js loaded");
           <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Current Text Color:</div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="width: 32px; height: 32px; border-radius: 4px; background: ${escapeHtml(currentColor)}; border: 1px solid #ddd;"></div>
-            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 13px; font-weight: 600;">${escapeHtml(currentColor)}</div>
+            <div style="font-family: 'SF Mono', Monaco, monospace; font-size: 11px; font-weight: 600;">${escapeHtml(currentColor)}</div>
             <div style="font-size: 11px; color: #ef4444;">Contrast: ${issue.contrast ? issue.contrast.toFixed(2) : "N/A"}:1 (fails)</div>
           </div>
           <div style="font-size: 11px; color: #666; margin-top: 4px;">Background: ${escapeHtml(bgColor)}</div>
@@ -2892,9 +2937,9 @@ console.log("ui.js loaded");
       const isCompliant = sizeData.size >= 14;
       return `
         <div class="text-size-option-item" data-size="${sizeData.size}" style="
-          padding: 10px 12px;
+          padding: 6px 8px;
           margin-bottom: 6px;
-          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border: 1px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
           border-radius: 8px;
           cursor: pointer;
           background: ${isSelected ? '#e3f2fd' : 'white'};
@@ -2903,23 +2948,23 @@ console.log("ui.js loaded");
           gap: 12px;
           transition: all 0.15s;
         ">
-          <input type="radio" name="text-size-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer;" />
+          <input type="radio" name="text-size-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer; display: none;" />
           <div style="
             width: 40px;
             height: 40px;
             border-radius: 6px;
             background: ${isSelected ? '#e3f2fd' : '#f0f0f0'};
-            border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+            border: 1px solid ${isSelected ? '#0071e3' : '#ddd'};
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             color: ${isSelected ? '#0071e3' : '#666'};
             flex-shrink: 0;
           ">${sizeData.size}</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 13px; color: #333;">${sizeData.size}px</div>
+            <div style="font-weight: 600; font-size: 11px; color: #333;">${sizeData.size}px</div>
             <div style="font-size: 10px; color: ${isCompliant ? '#155724' : '#721c24'};">
               ${isCompliant ? '✓ ADA compliant' : '⚠ Below minimum'}
             </div>
@@ -3236,7 +3281,7 @@ console.log("ui.js loaded");
         <div class="contrast-color-option-item" data-color="${escapeHtml(colorData.color)}" style="
           padding: 10px 12px;
           margin-bottom: 6px;
-          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border: 1px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
           border-radius: 8px;
           cursor: pointer;
           background: ${isSelected ? '#e3f2fd' : 'white'};
@@ -3251,7 +3296,7 @@ console.log("ui.js loaded");
             height: 36px;
             border-radius: 6px;
             background: ${escapeHtml(colorData.color)};
-            border: 2px solid ${isSelected ? '#0071e3' : '#ddd'};
+            border: 1px solid ${isSelected ? '#0071e3' : '#ddd'};
             flex-shrink: 0;
           "></div>
           <div style="flex: 1;">
@@ -3999,7 +4044,7 @@ console.log("ui.js loaded");
         <div class="style-option-item" data-style-id="${style.id}" style="
           padding: 14px 16px;
           margin-bottom: 10px;
-          border: 2px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
+          border: 1px solid ${isSelected ? '#0071e3' : '#e0e0e0'};
           border-radius: 10px;
           cursor: pointer;
           background: ${isSelected ? '#f8fbff' : 'white'};
@@ -4008,10 +4053,10 @@ console.log("ui.js loaded");
         ">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
             <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
-              <input type="radio" name="style-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer; width: 18px; height: 18px;" />
+              <input type="radio" name="style-option" ${isSelected ? 'checked' : ''} style="margin: 0; cursor: pointer; width: 18px; height: 18px; display: none;" />
               <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-weight: 700; font-size: 14px; color: #333;">${escapeHtml(style.name)}</span>
+                  <span style="font-weight: 600; font-size: 12px; color: #333;">${escapeHtml(style.name)}</span>
                   ${isBestMatch ? '<span style="color: #f5a623;">⭐</span>' : ''}
                 </div>
                 <div style="font-size: 12px; color: #666; margin-top: 2px;">
@@ -4219,76 +4264,476 @@ console.log("ui.js loaded");
     }
   }
   
+  // Show modal to select a color variable for binding
+  function showSelectVariableModal(issue) {
+    // Request color variables from backend
+    parent.postMessage({ pluginMessage: { type: "extract-color-variables" } }, "*");
+
+    // Listen for response
+    function onVarsLoaded(event) {
+      const msg = event.data && event.data.pluginMessage;
+      if (!msg || msg.type !== "color-variables-extracted") return;
+      window.removeEventListener("message", onVarsLoaded);
+
+      const colors = msg.colors || [];
+      if (colors.length === 0) {
+        alert("No color variables found in this file.");
+        return;
+      }
+
+      // Sort: exact match first, then by name
+      const issueHex = (issue.colorHex || "").toUpperCase();
+      const sorted = [...colors].sort((a, b) => {
+        const aMatch = a.hex.toUpperCase() === issueHex ? 0 : 1;
+        const bMatch = b.hex.toUpperCase() === issueHex ? 0 : 1;
+        if (aMatch !== bMatch) return aMatch - bMatch;
+        return a.name.localeCompare(b.name);
+      });
+
+      // Build modal
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+
+      const modal = document.createElement("div");
+      modal.style.cssText = "background:#fff;border-radius:12px;padding:20px;max-width:400px;width:90%;max-height:70vh;display:flex;flex-direction:column;";
+
+      const title = document.createElement("h3");
+      title.style.cssText = "margin:0 0 4px 0;font-size:16px;";
+      title.textContent = "Select Variable";
+
+      const subtitle = document.createElement("div");
+      subtitle.style.cssText = "font-size:12px;color:#666;margin-bottom:12px;";
+      subtitle.textContent = `Color: ${issueHex} on "${issue.nodeName}"`;
+
+      const list = document.createElement("div");
+      list.style.cssText = "overflow-y:auto;flex:1;";
+
+      sorted.forEach(c => {
+        const isMatch = c.hex.toUpperCase() === issueHex;
+        const item = document.createElement("div");
+        item.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:2px solid ${isMatch ? "#22c55e" : "transparent"};margin-bottom:4px;background:${isMatch ? "#f0fdf4" : "#fafafa"};`;
+        item.innerHTML = `
+          <div style="width:28px;height:28px;border-radius:6px;background:${c.hex};border:1px solid #ddd;flex-shrink:0;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div>
+            <div style="font-size:11px;color:#888;">${c.hex}${isMatch ? " — exact match" : ""}</div>
+          </div>
+        `;
+        item.onclick = () => {
+          // Need to find variable ID — request backend to find it
+          overlay.remove();
+          showFixMessage(issue.id, "⏳ Binding variable...", true);
+          parent.postMessage({
+            pluginMessage: {
+              type: "bind-color-variable-by-name",
+              issue: issue,
+              variableName: c.name,
+              variableHex: c.hex
+            }
+          }, "*");
+        };
+        list.appendChild(item);
+      });
+
+      const closeBtn = document.createElement("button");
+      closeBtn.textContent = "Cancel";
+      closeBtn.style.cssText = "margin-top:12px;padding:8px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;";
+      closeBtn.onclick = () => overlay.remove();
+
+      modal.appendChild(title);
+      modal.appendChild(subtitle);
+      modal.appendChild(list);
+      modal.appendChild(closeBtn);
+      overlay.appendChild(modal);
+      overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+      document.body.appendChild(overlay);
+    }
+
+    window.addEventListener("message", onVarsLoaded);
+  }
+
+  // Find the first typography style with 100% frontend similarity for an issue
+  function findBest100PercentMatch(issue) {
+    if (!issue || !issue.nodeProps) return null;
+    for (const style of typographyStyles) {
+      const score = calculateTypographySimilarity(issue.nodeProps, style);
+      if (score === 100) {
+        console.log("[100% Match] node:", issue.id, issue.nodeName,
+          "| nodeProps:", JSON.stringify({f: issue.nodeProps.fontFamily, s: issue.nodeProps.fontSize, w: issue.nodeProps.fontWeight, lh: issue.nodeProps.lineHeight, ls: issue.nodeProps.letterSpacing}),
+          "| style:", style.name, JSON.stringify({f: style.fontFamily, s: style.fontSize, w: style.fontWeight, lh: style.lineHeight, ls: style.letterSpacing}));
+        return style;
+      }
+    }
+    return null;
+  }
+
+  // Handle "Fix all now" for all typography issues with 100% match (legacy, kept for reference)
+  function handleFixAll100PercentMatches(allIssues) {
+    const matchedIssues = (allIssues || []).filter(i => {
+      if (i.type !== "typography-check" || !i.nodeProps) return false;
+      return findBest100PercentMatch(i) !== null;
+    });
+
+    if (matchedIssues.length === 0) {
+      alert("No typography issues with 100% match found.");
+      return;
+    }
+
+    let currentIndex = 0;
+    let appliedCount = 0;
+    let failedCount = 0;
+
+    // Disable button while processing
+    const btn = document.getElementById("btn-fix-all-100");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = `Fixing... (0/${matchedIssues.length})`;
+    }
+
+    function updateButtonProgress() {
+      if (btn) {
+        btn.textContent = `Fixing... (${currentIndex}/${matchedIssues.length})`;
+      }
+    }
+
+    function onComplete() {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = `Fix all now (${matchedIssues.length - appliedCount})`;
+        if (appliedCount >= matchedIssues.length) {
+          btn.style.display = "none";
+        }
+      }
+      alert(`✅ Done!\n\nProcessed ${matchedIssues.length} item(s):\n• Applied: ${appliedCount}\n• Failed: ${failedCount}`);
+    }
+
+    // Listen for apply results to process sequentially
+    function onApplyResult(event) {
+      const msg = event.data && event.data.pluginMessage;
+      if (!msg || msg.type !== "apply-typography-style-result") return;
+
+      currentIndex++;
+      if (msg.success) {
+        appliedCount++;
+      } else {
+        failedCount++;
+      }
+
+      updateButtonProgress();
+
+      if (currentIndex >= matchedIssues.length) {
+        window.removeEventListener("message", onApplyResult);
+        // Wait for DOM updates from the result handler to complete
+        setTimeout(onComplete, 500);
+      } else {
+        // Process next issue after a short delay
+        setTimeout(() => applyIssue(matchedIssues[currentIndex]), 300);
+      }
+    }
+
+    function applyIssue(issue) {
+      // Find the best 100% match style using frontend similarity
+      const style = findBest100PercentMatch(issue);
+      if (!style) {
+        // Style not found, count as failed and move on
+        currentIndex++;
+        failedCount++;
+        updateButtonProgress();
+        if (currentIndex >= matchedIssues.length) {
+          window.removeEventListener("message", onApplyResult);
+          setTimeout(onComplete, 500);
+        } else {
+          setTimeout(() => applyIssue(matchedIssues[currentIndex]), 300);
+        }
+        return;
+      }
+
+      showFixMessage(issue.id, "⏳ Applying style...", true);
+
+      if (style.styleId) {
+        parent.postMessage({
+          pluginMessage: {
+            type: "apply-figma-text-style",
+            issue: issue,
+            styleId: style.styleId,
+            styleName: style.name
+          }
+        }, "*");
+      } else {
+        parent.postMessage({
+          pluginMessage: {
+            type: "apply-typography-style",
+            issue: issue,
+            style: style
+          }
+        }, "*");
+      }
+    }
+
+    window.addEventListener("message", onApplyResult);
+    // Start processing the first issue
+    applyIssue(matchedIssues[0]);
+  }
+
+  // Handle "Fix all now" — combines typography 100% matches + color-variable batch fix
+  function handleFixAllNow(allIssues) {
+    const typoTypes = ["typography-check", "typography-style"];
+    // Expand grouped typography issues into individual sub-issues
+    const typoMatchesRaw = (allIssues || []).filter(i =>
+      typoTypes.includes(i.type) && i.nodeProps && findBest100PercentMatch(i) !== null
+    );
+    const typoMatches = [];
+    typoMatchesRaw.forEach(function(i) {
+      if (i.subIssues && i.subIssues.length > 1) {
+        i.subIssues.forEach(function(sub) {
+          if (sub.nodeProps && findBest100PercentMatch(Object.assign({}, i, sub)) !== null) {
+            typoMatches.push(Object.assign({}, i, sub));
+          }
+        });
+      } else {
+        typoMatches.push(i);
+      }
+    });
+    // Check if there are any color-variable issues with matching variables
+    const hasColorVarIssues = (allIssues || []).some(i =>
+      i.type === "color-variable" && i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)
+    );
+
+    console.log("[Fix All Now] Color variable fixable:", (allIssues || []).filter(i => i.type === "color-variable" && i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)).length, ", Typography 100% match:", typoMatches.length);
+
+    if (typoMatches.length === 0 && !hasColorVarIssues) {
+      alert("No auto-fixable issues found.");
+      return;
+    }
+
+    const btn = document.getElementById("btn-fix-all-100");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Fixing...";
+    }
+
+    let appliedCount = 0;
+    let failedCount = 0;
+    let colorApplied = 0;
+    let colorFailed = 0;
+    let cancelled = false;
+
+    // Create progress bar OUTSIDE results-issues (so it survives rerender)
+    const totalSteps = typoMatches.length + (hasColorVarIssues ? 1 : 0);
+    let currentStep = 0;
+    const existingProg = document.getElementById("fix-all-progress");
+    if (existingProg) existingProg.remove();
+    const progressEl = document.createElement("div");
+    progressEl.id = "fix-all-progress";
+    progressEl.className = "fix-all-progress";
+    progressEl.innerHTML = `
+      <div class="fix-all-progress-info">
+        <span class="fix-all-progress-text">Fixing... 0/${totalSteps}</span>
+        <button class="fix-all-progress-cancel" title="Cancel">✕</button>
+      </div>
+      <div class="fix-all-progress-bar"><div class="fix-all-progress-fill" style="width: 0%"></div></div>
+    `;
+    const resultsContainer = document.getElementById("results-issues");
+    if (resultsContainer) {
+      resultsContainer.parentNode.insertBefore(progressEl, resultsContainer);
+    }
+
+    const progressText = progressEl.querySelector(".fix-all-progress-text");
+    const progressFill = progressEl.querySelector(".fix-all-progress-fill");
+    const cancelBtn = progressEl.querySelector(".fix-all-progress-cancel");
+    cancelBtn.onclick = () => { cancelled = true; onAllComplete(); };
+
+    function updateProgress(label) {
+      currentStep++;
+      const pct = Math.round((currentStep / totalSteps) * 100);
+      if (progressText) progressText.textContent = label + " " + currentStep + "/" + totalSteps;
+      if (progressFill) progressFill.style.width = pct + "%";
+    }
+
+    function onAllComplete() {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Fix all now";
+      }
+      if (progressEl && progressEl.parentNode) {
+        progressEl.remove();
+      }
+      // Remove all color-variable issues from data since backend handled them all
+      if (colorApplied > 0 && currentReportData && currentReportData.issues) {
+        currentReportData.issues = currentReportData.issues.filter(i => i.type !== "color-variable" || !i.matchingVariable);
+      }
+      setTimeout(function() {
+        updateIssueCounts();
+        if (currentReportData && currentReportData.issues) {
+          renderResults(currentReportData.issues, false);
+        }
+      }, 300);
+      const totalApplied = colorApplied + appliedCount;
+      const totalFailed = colorFailed + failedCount;
+      alert((cancelled ? "Cancelled!\n\n" : "Done!\n\n") + "Color variables: " + colorApplied + " applied, " + colorFailed + " failed\nTypography: " + appliedCount + " applied, " + failedCount + " failed\n\nTotal: " + (totalApplied + totalFailed) + " processed");
+    }
+
+    // --- Phase 1: Color variables (batch - backend scans all nodes) ---
+    function startColorPhase() {
+      if (btn) btn.textContent = "Fixing colors...";
+      function onBatchResult(event) {
+        const msg = event.data && event.data.pluginMessage;
+        if (!msg || msg.type !== "batch-bind-color-variables-result") return;
+        window.removeEventListener("message", onBatchResult);
+        colorApplied = msg.applied || 0;
+        colorFailed = msg.failed || 0;
+        updateProgress("Colors done.");
+        // Phase 2: typography
+        if (typoMatches.length > 0 && !cancelled) {
+          setTimeout(function() { startTypoPhase(); }, 300);
+        } else {
+          onAllComplete();
+        }
+      }
+      window.addEventListener("message", onBatchResult);
+      parent.postMessage({
+        pluginMessage: { type: "batch-bind-color-variables", skipOpacity: true }
+      }, "*");
+    }
+
+    // --- Phase 2: Typography (sequential) ---
+    let typoIndex = 0;
+
+    function startTypoPhase() {
+      if (btn) btn.textContent = "Fixing Text Style...";
+      window.addEventListener("message", onTypoResult);
+      applyTypoIssue(typoMatches[0]);
+    }
+
+    function onTypoResult(event) {
+      const msg = event.data && event.data.pluginMessage;
+      if (!msg || msg.type !== "apply-typography-style-result") return;
+
+      typoIndex++;
+      if (msg.success) {
+        appliedCount++;
+      } else {
+        failedCount++;
+      }
+      updateProgress("Fixing Text Style");
+
+      if (cancelled || typoIndex >= typoMatches.length) {
+        window.removeEventListener("message", onTypoResult);
+        onAllComplete();
+      } else {
+        setTimeout(function() { applyTypoIssue(typoMatches[typoIndex]); }, 300);
+      }
+    }
+
+    function applyTypoIssue(issue) {
+      const style = findBest100PercentMatch(issue);
+      if (!style) {
+        typoIndex++;
+        failedCount++;
+        updateProgress("Fixing Text Style");
+        if (cancelled || typoIndex >= typoMatches.length) {
+          window.removeEventListener("message", onTypoResult);
+          onAllComplete();
+        } else {
+          setTimeout(function() { applyTypoIssue(typoMatches[typoIndex]); }, 300);
+        }
+        return;
+      }
+
+      showFixMessage(issue.id, "⏳ Applying style...", true);
+      if (style.styleId) {
+        parent.postMessage({
+          pluginMessage: { type: "apply-figma-text-style", issue, styleId: style.styleId, styleName: style.name }
+        }, "*");
+      } else {
+        parent.postMessage({
+          pluginMessage: { type: "apply-typography-style", issue, style }
+        }, "*");
+      }
+    }
+
+    // --- Start ---
+    if (hasColorVarIssues) {
+      startColorPhase();
+    } else if (typoMatches.length > 0) {
+      startTypoPhase();
+    }
+  }
+
   // Handle fix all with suggest fix (sequential processing)
   function handleFixAllWithSuggestFix(type, issues) {
-    console.log("[handleFixAllWithSuggestFix] Called with type:", type, "issues:", issues);
-    
     if (!issues || issues.length === 0) {
-      console.log("[handleFixAllWithSuggestFix] No issues to process");
       alert("No issues to process");
       return;
     }
-    
-    console.log("[handleFixAllWithSuggestFix] Processing", issues.length, "issues");
-    
+
     let currentIndex = 0;
     let appliedCount = 0;
     let ignoredCount = 0;
     let isStopped = false;
-    
+
+    // Create progress bar OUTSIDE results-issues (so it survives rerender)
+    const existingProg = document.getElementById("fix-all-progress");
+    if (existingProg) existingProg.remove();
+    const progressEl = document.createElement("div");
+    progressEl.id = "fix-all-progress";
+    progressEl.className = "fix-all-progress";
+    progressEl.innerHTML = `
+      <div class="fix-all-progress-info">
+        <span class="fix-all-progress-text">Fixing... 0/${issues.length}</span>
+        <button class="fix-all-progress-cancel" title="Cancel">✕</button>
+      </div>
+      <div class="fix-all-progress-bar"><div class="fix-all-progress-fill" style="width: 0%"></div></div>
+    `;
+    const resultsContainer = document.getElementById("results-issues");
+    if (resultsContainer) {
+      resultsContainer.parentNode.insertBefore(progressEl, resultsContainer);
+    }
+    const sfProgressText = progressEl.querySelector(".fix-all-progress-text");
+    const sfProgressFill = progressEl.querySelector(".fix-all-progress-fill");
+    const sfCancelBtn = progressEl.querySelector(".fix-all-progress-cancel");
+    sfCancelBtn.onclick = () => { isStopped = true; };
+
+    function updateSfProgress() {
+      const pct = Math.round((currentIndex / issues.length) * 100);
+      if (sfProgressText) sfProgressText.textContent = "Fixing... " + currentIndex + "/" + issues.length;
+      if (sfProgressFill) sfProgressFill.style.width = pct + "%";
+    }
+
     function showCompletionMessage() {
-      const total = currentIndex; // Number of items processed
-      const message = `✅ Đã xong!\n\nĐã xử lý ${total} item(s):\n• Applied: ${appliedCount}\n• Ignored: ${ignoredCount}`;
+      if (progressEl && progressEl.parentNode) {
+        progressEl.remove();
+      }
+      const total = currentIndex;
+      const message = (isStopped ? "Cancelled!\n\n" : "Done!\n\n") + `Processed ${total} item(s):\n• Applied: ${appliedCount}\n• Ignored: ${ignoredCount}`;
       alert(message);
     }
-    
+
     function processNextIssue() {
       if (isStopped || currentIndex >= issues.length) {
-        // All done or stopped, show completion popup
         showCompletionMessage();
         return;
       }
       
       const issue = issues[currentIndex];
-      console.log("[Fix All] Processing issue:", currentIndex + 1, "of", issues.length, "Issue:", issue);
-      console.log("[Fix All] Issue type:", issue.type, "bestMatch:", issue.bestMatch);
-      
       currentIndex++;
-      
+      updateSfProgress();
+
       // Select the node first
       parent.postMessage({ pluginMessage: { type: "select-node", id: issue.id } }, "*");
-      
+
       // Show appropriate modal based on issue type
       const progress = { current: currentIndex, total: issues.length };
-      
+
       if (issue.type === "typography-check" || issue.type === "typography-style") {
-        console.log("[Fix All] Typography issue - checking bestMatch:", issue.bestMatch);
-        
         // Check if bestMatch exists and has valid name
-        if (!issue.bestMatch || 
-            !issue.bestMatch.name || 
-            typeof issue.bestMatch.name !== 'string' || 
-            issue.bestMatch.name.trim().length === 0) {
-          console.warn("[Fix All] Issue missing bestMatch or bestMatch.name, skipping:", issue);
-          console.warn("[Fix All] Issue bestMatch value:", issue.bestMatch);
+        const styleName = issue.bestMatch && issue.bestMatch.name && typeof issue.bestMatch.name === 'string' && issue.bestMatch.name.trim().length > 0 ? issue.bestMatch.name : null;
+        if (!styleName) {
           ignoredCount++;
           processNextIssue();
           return;
         }
-        
-        // Double-check bestMatch.name is valid before using
-        const styleName = issue.bestMatch && issue.bestMatch.name ? issue.bestMatch.name : null;
-        console.log("[Fix All] Extracted styleName:", styleName);
-        
-        if (!styleName || typeof styleName !== 'string' || styleName.trim().length === 0) {
-          console.warn("[Fix All] Issue bestMatch.name is invalid, skipping:", issue);
-          console.warn("[Fix All] styleName value:", styleName);
-          ignoredCount++;
-          processNextIssue();
-          return;
-        }
-        
-        console.log("[Fix All] Calling showSuggestApplyModal with issue:", issue.id, "styleName:", styleName);
         
         // Use showSuggestApplyModal for typography issues
         showSuggestApplyModal(issue, styleName, {
@@ -4489,10 +4934,36 @@ console.log("ui.js loaded");
           }
         };
         handleSuggestFixContrast(issue);
+      } else if (issue.type === "color-variable") {
+        // Auto-bind color variable
+        if (issue.matchingVariable && issue.matchingVariable.id) {
+          showFixMessage(issue.id, "⏳ Binding variable...", true);
+          function onBindResult(event) {
+            const msg = event.data && event.data.pluginMessage;
+            if (!msg || msg.type !== "bind-color-variable-result") return;
+            if (msg.issueId !== issue.id) return;
+            window.removeEventListener("message", onBindResult);
+            if (msg.success) {
+              appliedCount++;
+            } else {
+              ignoredCount++;
+            }
+            setTimeout(() => { processNextIssue(); }, 300);
+          }
+          window.addEventListener("message", onBindResult);
+          parent.postMessage({
+            pluginMessage: {
+              type: "bind-color-variable",
+              issue: issue,
+              variableId: issue.matchingVariable.id
+            }
+          }, "*");
+        } else {
+          ignoredCount++;
+          processNextIssue();
+        }
       } else {
-        // For other types, use their respective handlers
-        // For now, just call the handler and continue
-        // This will need to be extended for other types
+        // Unsupported type, skip
         ignoredCount++;
         processNextIssue();
       }
@@ -4814,11 +5285,40 @@ console.log("ui.js loaded");
             originalTotal: issues.length
           };
 
-          // Results header (simplified - counts are now in filter buttons)
+          // Count auto-fixable issues for header button (typography 100% match + color variable)
+          let typo100Count = 0;
+          let colorVarCount = 0;
+          filteredIssues.forEach(function(i) {
+            if (i.ignored) return;
+            if ((i.type === "typography-check" || i.type === "typography-style") && i.nodeProps && findBest100PercentMatch(i) !== null) {
+              typo100Count++;
+            }
+            if (i.type === "color-variable") {
+              console.log("[Header Count] color-variable:", i.id, "matchingVariable:", !!i.matchingVariable, "opacity:", i.colorOpacity);
+              if (i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)) {
+                colorVarCount++;
+              }
+            }
+          });
+          const totalFixableCount = typo100Count + colorVarCount;
+          console.log("[Header Count] typo100:", typo100Count, "colorVar:", colorVarCount, "total:", totalFixableCount);
+
+          // Results header
           const header = document.createElement("div");
           header.className = "results-header";
-          header.innerHTML = `<h3>Check Result</h3>`;
+          const showFixAllBtn = totalFixableCount > 0;
+          header.innerHTML = `<h3>Check Result</h3><button class="btn-fix-all" id="btn-fix-all-100"${showFixAllBtn ? "" : ' style="display:none"'}>Fix all now (${totalFixableCount})</button>`;
           resultsIssues.appendChild(header);
+
+          // Handle "Fix all now" button (typography 100% match + color variable batch)
+          const btnFixAll100 = header.querySelector("#btn-fix-all-100");
+          if (btnFixAll100) {
+            btnFixAll100.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleFixAllNow(issues);
+            };
+          }
 
           // Update filter button counts
           updateFilterButtonCounts(issues);
@@ -4839,7 +5339,7 @@ console.log("ui.js loaded");
 
           // Define all possible issue types (to show even when count = 0)
           const allIssueTypes = [
-            "naming", "autolayout", "spacing", "color", "typography", "typography-style", "typography-check",
+            "naming", "autolayout", "spacing", "color", "color-variable", "typography", "typography-style", "typography-check",
             "line-height", "position", "duplicate", "group", "component",
             "empty-frame", "nested-group", "contrast", "text-size-mobile"
           ];
@@ -4896,17 +5396,7 @@ console.log("ui.js loaded");
                   case "typography-style":
                   case "typography-check":
                     // Check both bestMatch and bestMatch.name, and validate font-size threshold
-                    const hasBestMatch = issue.bestMatch &&
-                                       issue.bestMatch !== null &&
-                                       issue.bestMatch !== undefined &&
-                                       issue.bestMatch.name &&
-                                       typeof issue.bestMatch.name === 'string' &&
-                                       issue.bestMatch.name.trim().length > 0 &&
-                                       isValidTypographySuggestion(issue); // Also check font-size threshold
-                    if (type === "typography-style") {
-                      console.log("[hasSuggestFixButton] Typography-style issue", issue.id, "hasBestMatch:", hasBestMatch, "bestMatch:", issue.bestMatch);
-                    }
-                    return hasBestMatch;
+                    return issue.bestMatch && issue.bestMatch.name && typeof issue.bestMatch.name === 'string' && issue.bestMatch.name.trim().length > 0 && isValidTypographySuggestion(issue);
                   case "position":
                     return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
                   case "duplicate":
@@ -4924,10 +5414,6 @@ console.log("ui.js loaded");
                 return false;
               }
             });
-            
-            if (type === "typography-style") {
-              console.log("[hasSuggestFixButton] Type:", type, "hasSuggestFixButton:", hasSuggestFixButton, "allGrouped[type]:", allGrouped[type]);
-            }
             
             groupHeader.innerHTML = `
               <div class="issue-group-header-left">
@@ -4972,87 +5458,55 @@ console.log("ui.js loaded");
             
             // Add click handler for "Fix all now" button
             const btnFixAll = groupHeader.querySelector(".btn-fix-all");
-            console.log("[Fix All] Setting up button for type:", type, "btnFixAll found:", !!btnFixAll);
             if (btnFixAll) {
               btnFixAll.onclick = (e) => {
                 try {
-                  console.log("[Fix All] ========== BUTTON CLICKED ==========");
-                  console.log("[Fix All] Button clicked for type:", type);
-                  console.log("[Fix All] Event:", e);
                   e.preventDefault();
                   e.stopPropagation();
-                  
-                  console.log("[Fix All] All issues in group:", allGrouped[type]);
-                  console.log("[Fix All] allGrouped[type] length:", (allGrouped[type] || []).length);
-                  
-                  // Get all issues with suggest fix button in this group (use original issues, not filtered)
+
+                  // Get all issues with suggest fix in this group (use original issues, not filtered)
                   const issuesWithSuggestFix = (allGrouped[type] || []).filter(issue => {
-                  if (!issue) {
-                    console.log("[Fix All] Filter: issue is null/undefined");
-                    return false;
-                  }
-                  
-                  console.log("[Fix All] Filter: checking issue", issue.id, "type:", issue.type, "bestMatch:", issue.bestMatch);
-                  
-                  // Check based on issue type
-                  switch (issue.type) {
-                    case "color":
-                      return getSuggestedColor(issue) !== null;
-                    case "spacing":
-                      return getSuggestedSpacing(issue) !== null;
-                    case "autolayout":
-                      return typeof getSuggestedAutolayout === "function" && getSuggestedAutolayout(issue) !== null;
-                    case "text-size-mobile":
-                      return typeof getSuggestedTextSize === "function" && getSuggestedTextSize(issue) !== null;
-                    case "contrast":
-                      return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
-                    case "typography-style":
-                    case "typography-check":
-                      const hasValidBestMatch = issue.bestMatch &&
-                             issue.bestMatch !== null &&
-                             issue.bestMatch !== undefined &&
-                             issue.bestMatch.name &&
-                             typeof issue.bestMatch.name === 'string' &&
-                             issue.bestMatch.name.trim().length > 0 &&
-                             isValidTypographySuggestion(issue); // Also check font-size threshold
-                      console.log("[Fix All] Filter: typography issue", issue.id, "hasValidBestMatch:", hasValidBestMatch, "bestMatch:", issue.bestMatch);
-                      return hasValidBestMatch;
-                    case "position":
-                      return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
-                    case "duplicate":
-                    case "component":
-                      return typeof getSuggestedComponent === "function" && getSuggestedComponent(issue) !== null;
-                    case "group":
-                      return true; // Always has suggest fix button
-                    case "empty-frame":
-                      return typeof getSuggestedEmptyFrameFix === "function" && getSuggestedEmptyFrameFix(issue) !== null;
-                    default:
-                      return false;
-                  }
-                });
-                
-                console.log("[Fix All] Filtered issues with suggest fix:", issuesWithSuggestFix);
-                console.log("[Fix All] Issues count:", issuesWithSuggestFix.length);
-                
-                  console.log("[Fix All] Filtered issues count:", issuesWithSuggestFix.length);
-                  
+                    if (!issue) return false;
+                    switch (issue.type) {
+                      case "color":
+                        return getSuggestedColor(issue) !== null;
+                      case "spacing":
+                        return getSuggestedSpacing(issue) !== null;
+                      case "autolayout":
+                        return typeof getSuggestedAutolayout === "function" && getSuggestedAutolayout(issue) !== null;
+                      case "text-size-mobile":
+                        return typeof getSuggestedTextSize === "function" && getSuggestedTextSize(issue) !== null;
+                      case "contrast":
+                        return typeof getSuggestedContrastColor === "function" && getSuggestedContrastColor(issue) !== null;
+                      case "typography-style":
+                      case "typography-check":
+                        return issue.bestMatch && issue.bestMatch.name && typeof issue.bestMatch.name === 'string' && issue.bestMatch.name.trim().length > 0 && isValidTypographySuggestion(issue);
+                      case "position":
+                        return typeof getSuggestedPositionFix === "function" && getSuggestedPositionFix(issue) !== null;
+                      case "duplicate":
+                      case "component":
+                        return typeof getSuggestedComponent === "function" && getSuggestedComponent(issue) !== null;
+                      case "group":
+                        return true;
+                      case "empty-frame":
+                        return typeof getSuggestedEmptyFrameFix === "function" && getSuggestedEmptyFrameFix(issue) !== null;
+                      default:
+                        return false;
+                    }
+                  });
+
                   if (issuesWithSuggestFix.length === 0) {
-                    console.log("[Fix All] No issues with suggest fix available");
                     alert("No issues with suggest fix available");
                     return;
                   }
-                  
-                  console.log("[Fix All] Starting handleFixAllWithSuggestFix with", issuesWithSuggestFix.length, "issues");
-                  // Start sequential processing
+
+                  console.log("[Fix All]", type, issuesWithSuggestFix.length, "fixable issues");
                   handleFixAllWithSuggestFix(type, issuesWithSuggestFix);
                 } catch (error) {
-                  console.error("[Fix All] ERROR in button onclick:", error);
-                  console.error("[Fix All] Error stack:", error.stack);
+                  console.error("[Fix All] Error:", error.message);
                   alert("Error: " + error.message);
                 }
               };
-            } else {
-              console.log("[Fix All] Button not found for type:", type);
             }
             
             groupEl.appendChild(groupHeader);
@@ -5153,7 +5607,7 @@ console.log("ui.js loaded");
                   details.push(`${bgLabel} ${bgValue}${bgNote} (${issue.backgroundColorNode || "Unknown"})`);
                 }
                 if (details.length > 0) {
-                  issueBody += `<div style="margin-top: 8px; font-size: 12px; color: #666;">${details.join(" | ")}</div>`;
+                  issueBody += `<div style="margin-top: 8px; font-size: 10px; color: #666;">${details.join(" | ")}</div>`;
                 }
               }
               
@@ -5166,7 +5620,7 @@ console.log("ui.js loaded");
                     </span>
                     <div class="issue-body">${issueBody}</div>
                     ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
-                    ${(issue.type === "typography" || issue.type === "line-height") ? `<div style="margin-top: 8px; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404; line-height: 1.5;"><strong>Note:</strong> Check 'Typography Style Match' to resolve this issue.</div>` : ""}
+                    ${(issue.type === "typography" || issue.type === "line-height") ? `<div style="margin-top: 8px; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 10px; color: #856404; line-height: 1.5;"><strong>Note:</strong> Check 'Typography Style Match' to resolve this issue.</div>` : ""}
                     ${issue.ignored ? `<div class="issue-ignored-tag" style="margin-top: 4px; padding: 4px 8px; background: #e3f2fd; color: #1976d2; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-block;">✓ Pass with ignore custom</div>` : ""}
                   </div>
                   <div class="issue-actions">
@@ -5174,6 +5628,10 @@ console.log("ui.js loaded");
                     ${issue.type === "color" ? `
                       ${getSuggestedColor(issue) ? `<button class="btn-suggest-fix" data-id="${issue.id}">Suggest Fix now</button>` : ""}
                       <button class="btn-fix" data-id="${issue.id}">Select Color</button>
+                    ` : ""}
+                    ${issue.type === "color-variable" ? `
+                      ${issue.matchingVariable ? `<button class="btn-suggest-fix btn-bind-variable" data-id="${issue.id}" data-variable-id="${issue.matchingVariable.id}" data-variable-name="${escapeHtml(issue.matchingVariable.name)}">Bind Variable</button>` : ""}
+                      <button class="btn-fix btn-select-variable" data-id="${issue.id}">Select Variable</button>
                     ` : ""}
                     ${issue.type === "spacing" ? `
                       ${getSuggestedSpacing(issue) ? `<button class="btn-suggest-fix" data-id="${issue.id}">Suggest Fix now</button>` : ""}
@@ -5383,6 +5841,28 @@ console.log("ui.js loaded");
                       alert("Error: handleSuggestFixEmptyFrame function not found");
                     }
                   };
+                } else if (issue.type === "color-variable") {
+                  // "Bind Variable" button — auto-bind the matching variable
+                  btnSuggestFix.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (issue.matchingVariable && issue.matchingVariable.id) {
+                      if (issue.colorOpacity && issue.colorOpacity < 1) {
+                        const opPct = Math.round(issue.colorOpacity * 100);
+                        if (!confirm(`This layer has opacity ${opPct}%. Binding a variable will reset opacity to 100%. Continue?`)) {
+                          return;
+                        }
+                      }
+                      showFixMessage(issue.id, "⏳ Binding variable...", true);
+                      parent.postMessage({
+                        pluginMessage: {
+                          type: "bind-color-variable",
+                          issue: issue,
+                          variableId: issue.matchingVariable.id
+                        }
+                      }, "*");
+                    }
+                  };
                 }
               }
               
@@ -5422,6 +5902,18 @@ console.log("ui.js loaded");
                 })(issue);
               }
               
+              // Handle Select Variable button for color-variable issues
+              const btnSelectVariable = issueEl.querySelector("button.btn-select-variable");
+              if (btnSelectVariable && issue.type === "color-variable") {
+                (function(issueData) {
+                  btnSelectVariable.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showSelectVariableModal(issueData);
+                  };
+                })(issue);
+              }
+
               // Handle Rename button for naming issues
               const btnRename = issueEl.querySelector("button.btn-rename");
               if (btnRename && issue.type === "naming") {
@@ -6135,6 +6627,10 @@ console.log("ui.js loaded");
       checkWordSpacing: document.getElementById("rule-word-spacing")?.checked || false
     };
 
+    // Get skip names from settings textarea
+    const skipNamesEl = document.getElementById("scan-skip-names");
+    const skipNamesValue = skipNamesEl ? skipNamesEl.value.trim() : "not check design, sticky note, vector, Clip path group, Clip path";
+
     parent.postMessage({
       pluginMessage: {
         type: "scan",
@@ -6149,7 +6645,8 @@ console.log("ui.js loaded");
         lineHeightBaselineThreshold: lineHeightBaselineThreshold,
         typographyStyles: typographyStyles,
         typographyRules: typographyRules,
-        ignoredIssues: ignoredIssues
+        ignoredIssues: ignoredIssues,
+        skipNames: skipNamesValue
       }
     }, "*");
     console.log("Message sent:", { type: "scan", mode: scope });
@@ -7480,6 +7977,7 @@ console.log("ui.js loaded");
         lineHeightThreshold: document.getElementById("line-height-threshold")?.value || "300",
         lineHeightBaselineThreshold: document.getElementById("line-height-baseline-threshold")?.value || "120",
         typographyStyles: typographyStyles,
+        skipNames: document.getElementById("scan-skip-names")?.value || "",
         typographyRules: {
           checkStyle: document.getElementById("rule-typo-style")?.checked || true,
           checkFontFamily: document.getElementById("rule-font-family")?.checked || true,
@@ -8397,131 +8895,46 @@ console.log("ui.js loaded");
     }
 
     if (msg && msg.type === "apply-typography-style-result") {
-      // Show apply style result message
       showFixMessage(msg.issueId, msg.message, msg.success);
-      
-      // If error, show error popup
+
       if (!msg.success) {
         showErrorModal(msg.message || "An error occurred while applying the style.");
       }
-      
-      // If successful, remove the issue immediately and update counts
+
       if (msg.success) {
-        console.log("[apply-typography-style-result] Starting remove process for issueId:", msg.issueId);
-        console.log("[apply-typography-style-result] issueId type:", typeof msg.issueId, "value:", msg.issueId);
-        
-        // Remove ALL issues with this ID from currentReportData (there might be multiple issues with same ID but different types)
+        // Only remove typography-related issues with this ID (not other types like position, color, etc.)
+        const typoTypes = ["typography-check", "typography-style", "typography"];
         if (currentReportData && currentReportData.issues) {
-          const initialLength = currentReportData.issues.length;
-          currentReportData.issues = currentReportData.issues.filter(i => String(i.id) !== String(msg.issueId));
-          const removedCount = initialLength - currentReportData.issues.length;
-          console.log("[apply-typography-style-result] Removed", removedCount, "issue(s) from data. Remaining issues:", currentReportData.issues.length);
+          currentReportData.issues = currentReportData.issues.filter(i =>
+            !(String(i.id) === String(msg.issueId) && typoTypes.includes(i.type))
+          );
         }
-        
-        // Find ALL issue elements with this ID (there might be multiple issues with same ID but different types)
-        const selector1 = `.issue[data-issue-id="${msg.issueId}"]`;
-        console.log("[apply-typography-style-result] Trying selector1:", selector1);
-        const allIssueElements = document.querySelectorAll(selector1);
-        console.log("[apply-typography-style-result] Found", allIssueElements.length, "issue element(s) with this ID");
-        
-        // Also try to find by buttons
-        const selector2 = `button.btn-suggest-apply[data-id="${msg.issueId}"]`;
-        const selector3 = `button.btn-fix[data-id="${msg.issueId}"]`;
-        const selector4 = `button.btn-suggest-fix[data-id="${msg.issueId}"]`;
-        const btnElements = [
-          ...document.querySelectorAll(selector2),
-          ...document.querySelectorAll(selector3),
-          ...document.querySelectorAll(selector4)
-        ];
-        
-        // Get issues from buttons
-        btnElements.forEach(btn => {
-          const issueFromBtn = btn.closest(".issue");
-          if (issueFromBtn && !Array.from(allIssueElements).includes(issueFromBtn)) {
-            allIssueElements.push(issueFromBtn);
-          }
-        });
-        
-        // Remove duplicates
-        const uniqueIssueElements = Array.from(new Set(Array.from(allIssueElements)));
-        console.log("[apply-typography-style-result] Total unique issue elements to remove:", uniqueIssueElements.length);
-        
-        if (uniqueIssueElements.length > 0) {
-          // Track groups and badges before removing
-          const groupBadgeMap = new Map();
-          
-          uniqueIssueElements.forEach((issueEl, index) => {
-            console.log(`[apply-typography-style-result] Issue element ${index}:`, issueEl);
-            console.log(`[apply-typography-style-result] Issue element ${index} data-issue-id:`, issueEl.getAttribute("data-issue-id"));
-            console.log(`[apply-typography-style-result] Issue element ${index} data-issue-type:`, issueEl.getAttribute("data-issue-type"));
-            
-                const groupEl = issueEl.closest(".issue-group");
-                if (groupEl) {
-              const groupType = groupEl.getAttribute("data-issue-type");
-              if (!groupBadgeMap.has(groupType)) {
-                  const badge = groupEl.querySelector(".badge");
-                  if (badge) {
-                    const currentCount = parseInt(badge.textContent) || 0;
-                  groupBadgeMap.set(groupType, { groupEl, badge, currentCount, removeCount: 0 });
-                }
-              }
-              const groupInfo = groupBadgeMap.get(groupType);
-              if (groupInfo) {
-                groupInfo.removeCount++;
-              }
-            }
-          });
-          
-          // Remove all elements
-          uniqueIssueElements.forEach((issueEl, index) => {
-            issueEl.style.transition = "opacity 0.3s ease-out";
-            issueEl.style.opacity = "0";
-            setTimeout(() => {
-              if (issueEl.parentNode) {
-                console.log(`[apply-typography-style-result] Removing element ${index} from DOM...`);
-                issueEl.remove();
-              }
-            }, 300);
-          });
-          
-          // Update badges after all removals
-          setTimeout(() => {
-            // Check if any elements still exist
-            const remainingElements = document.querySelectorAll(selector1);
-            console.log("[apply-typography-style-result] After remove, remaining elements:", remainingElements.length);
-            
-            // Update group badge counts
-            groupBadgeMap.forEach((groupInfo, groupType) => {
-              const newCount = Math.max(0, groupInfo.currentCount - groupInfo.removeCount);
-              groupInfo.badge.textContent = newCount;
-              console.log(`[apply-typography-style-result] Updated badge for group "${groupType}" from ${groupInfo.currentCount} to ${newCount}`);
-              
-                    // Hide group if no issues left
-                    if (newCount === 0) {
-                groupInfo.groupEl.style.display = "none";
-                console.log(`[apply-typography-style-result] Hiding group "${groupType}" (no issues left)`);
-              }
-            });
-            
-            // Update stats header
-            console.log("[apply-typography-style-result] Calling updateIssueCounts()...");
-            updateIssueCounts();
-            console.log("[apply-typography-style-result] updateIssueCounts() completed");
-            
-            // Re-render issues to sync UI with updated data
-            console.log("[apply-typography-style-result] Re-rendering issues to sync UI...");
-            if (currentReportData && currentReportData.issues) {
-              renderResults(currentReportData.issues, false); // Don't reset filters
-            }
-          }, 350);
-        } else {
-          console.log("[apply-typography-style-result] No issue elements found! Trying to update counts anyway...");
-          // If element not found, still update counts and re-render
+
+        setTimeout(() => {
           updateIssueCounts();
           if (currentReportData && currentReportData.issues) {
-            renderResults(currentReportData.issues, false); // Don't reset filters
+            renderResults(currentReportData.issues, false);
           }
+        }, 350);
+      }
+      return;
+    }
+
+    if (msg && msg.type === "bind-color-variable-result") {
+      showFixMessage(msg.issueId, msg.message, msg.success);
+      if (msg.success) {
+        // Only remove color-variable issues with this ID (not other types like position, typography, etc.)
+        if (currentReportData && currentReportData.issues) {
+          currentReportData.issues = currentReportData.issues.filter(i =>
+            !(String(i.id) === String(msg.issueId) && i.type === "color-variable")
+          );
         }
+        setTimeout(() => {
+          updateIssueCounts();
+          if (currentReportData && currentReportData.issues) {
+            renderResults(currentReportData.issues, false);
+          }
+        }, 350);
       }
       return;
     }
