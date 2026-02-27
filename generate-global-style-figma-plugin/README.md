@@ -1,3 +1,14 @@
+# Generate Global Style — Plugin for Figma
+
+Short summary: Generate Global Style reads design tokens (JSON) or extracts tokens from Figma and creates a visual `Global Style` preview (Colors, Typography, Spacing). It can also create Figma Variables and Text Styles from tokens and export tokens back to JSON.
+
+Docs: see `DOCUMENTATION/FEATURES.md`, `DOCUMENTATION/QUICKSTART.md`, `DOCUMENTATION/API.md`.
+
+Run locally (Figma Desktop - development):
+- Open Figma Desktop → Plugins → Development → Import plugin from manifest... → select this repo's `manifest.json`.
+- Then run plugin from Plugins menu.
+
+For development notes and code, see `code.js` (source) and `plugin-generate-global-style-figma/code.js` (bundled).
 # Generate Global Style Plugin
 
 A Figma plugin that generates comprehensive Global Style guides from JSON files or existing Figma Variables & Styles.

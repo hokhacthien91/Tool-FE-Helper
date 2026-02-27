@@ -1,0 +1,311 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "button",
+  "$project": "gg-flex5",
+  "config": {
+    "examples": {
+      "defaultText": "Button",
+      "textLinkText": "Text link"
+    },
+    "icons": {
+      "default": "none"
+    }
+  },
+  "button": {
+    "variants": {
+      "state": [
+        "default",
+        "hover",
+        "disabled"
+      ],
+      "color": [
+        "dark",
+        "light",
+        "primary",
+        "secondary",
+        "tertiary"
+      ],
+      "size": [
+        "large",
+        "small"
+      ],
+      "type": [
+        "fill",
+        "outline"
+      ]
+    },
+    "base": {
+      "layout": {
+        "direction": "horizontal",
+        "align": "center",
+        "gap": 8
+      },
+      "borderRadius": 32,
+      "borderWidth": 2,
+      "minHeight": {
+        "large": 48,
+        "small": 40
+      },
+      "font": {
+        "family": "Funnel Sans",
+        "weight": 600,
+        "size": {
+          "large": 16,
+          "small": 14
+        },
+        "lineHeight": {
+          "large": 24,
+          "small": 20
+        }
+      }
+    },
+    "sizes": {
+      "large": {
+        "padding": {
+          "x": 28,
+          "y": 10
+        }
+      },
+      "small": {
+        "padding": {
+          "x": 16,
+          "y": 8
+        }
+      }
+    },
+    "styles": {
+      "fill": {
+        "primary": {
+          "default": {
+            "text": "color.white",
+            "background": "color.primary.300",
+            "border": "color.primary.300"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.primary.400",
+            "border": "color.primary.400"
+          },
+          "disabled": {
+            "text": "color.white",
+            "background": "color.primary.300",
+            "border": "color.primary.300",
+            "opacity": 0.5
+          }
+        },
+        "secondary": {
+          "default": {
+            "text": "color.white",
+            "background": "color.secondary.400",
+            "border": "color.secondary.300"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.secondary.300",
+            "border": "color.secondary.400"
+          },
+          "disabled": {
+            "text": "color.white",
+            "background": "color.secondary.300",
+            "border": "color.secondary.300",
+            "opacity": 0.5
+          }
+        },
+        "light": {
+          "default": {
+            "text": "color.white",
+            "background": "gba(255,255,255,.2)"
+          },
+          "hover": {
+            "text": "color.primary.300",
+            "background": "color.white",
+            "border": "color.transparent"
+          },
+          "disabled": {
+            "text": "color.black",
+            "background": "color.white",
+            "border": "color.white",
+            "opacity": 0.5
+          }
+        },
+        "dark": {
+          "default": {
+            "text": "color.white",
+            "background": "color.black",
+            "border": "color.black"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.gray.600",
+            "border": "color.gray.600"
+          },
+          "disabled": {
+            "text": "color.white",
+            "background": "color.black",
+            "border": "color.black",
+            "opacity": 0.5
+          }
+        }
+      },
+      "outline": {
+        "primary": {
+          "default": {
+            "text": "color.primary.300",
+            "background": "color.transparent",
+            "border": "color.primary.300"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.primary.400",
+            "border": "color.primary.400"
+          },
+          "disabled": {
+            "text": "color.primary.300",
+            "background": "color.transparent",
+            "border": "color.primary.300",
+            "opacity": 0.5
+          }
+        },
+        "secondary": {
+          "default": {
+            "text": "color.secondary.300",
+            "background": "color.transparent",
+            "border": "color.secondary.300"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.secondary.400",
+            "border": "color.secondary.400"
+          },
+          "disabled": {
+            "text": "color.secondary.300",
+            "background": "color.transparent",
+            "border": "color.secondary.300",
+            "opacity": 0.5
+          }
+        },
+        "light": {
+          "default": {
+            "text": "color.white",
+            "background": "color.transparent",
+            "border": "color.white"
+          },
+          "hover": {
+            "text": "color.black",
+            "background": "color.white",
+            "border": "color.white"
+          },
+          "disabled": {
+            "text": "color.white",
+            "background": "color.transparent",
+            "border": "color.white",
+            "opacity": 0.5
+          }
+        },
+        "dark": {
+          "default": {
+            "text": "color.black",
+            "background": "color.transparent",
+            "border": "color.black"
+          },
+          "hover": {
+            "text": "color.white",
+            "background": "color.gray.600",
+            "border": "color.gray.600"
+          },
+          "disabled": {
+            "text": "color.black",
+            "background": "color.transparent",
+            "border": "color.black",
+            "opacity": 0.5
+          }
+        }
+      }
+    },
+    "properties": {}
+  },
+  "textLink": {
+    "variants": {
+      "state": [
+        "default",
+        "hover",
+        "disabled"
+      ],
+      "color": [
+        "dark",
+        "light",
+        "primary",
+        "secondary"
+      ]
+    },
+    "base": {
+      "font": {
+        "family": "Funnel Sans",
+        "weight": 600,
+        "size": 16,
+        "lineHeight": 24
+      },
+      "gap": 4
+    },
+    "styles": {
+      "primary": {
+        "default": {
+          "text": "color.primary.300"
+        },
+        "hover": {
+          "text": "color.primary.400"
+        },
+        "disabled": {
+          "text": "color.primary.300",
+          "opacity": 0.7
+        }
+      },
+      "secondary": {
+        "default": {
+          "text": "color.secondary.300"
+        },
+        "hover": {
+          "text": "color.secondary.400"
+        },
+        "disabled": {
+          "text": "color.secondary.300",
+          "opacity": 0.7
+        }
+      },
+      "dark": {
+        "default": {
+          "text": "color.gray.500"
+        },
+        "hover": {
+          "text": "color.gray.600"
+        },
+        "disabled": {
+          "text": "color.gray.500",
+          "opacity": 0.7
+        }
+      },
+      "light": {
+        "default": {
+          "text": "color.white"
+        },
+        "hover": {
+          "text": "color.white"
+        },
+        "disabled": {
+          "text": "color.white",
+          "opacity": 0.7
+        }
+      }
+    },
+    "properties": {
+      "text": {
+        "type": "text",
+        "default": "{config.examples.textLinkText}"
+      },
+      "icon": {
+        "type": "text",
+        "optional": true
+      }
+    }
+  }
+}

@@ -78,29 +78,43 @@ figma.ui.onmessage = async (msg) => {
       const generateLayout = msg.generateLayout || false;
       const prefix = (msg.prefix || '').trim();
       const duplicateAction = msg.duplicateAction || 'skip';
+      const selectedBreakpoints = msg.selectedBreakpoints || ['mobile', 'tablet', 'desktop'];
 
       // Parse tokens
       const parsedTokens = parseAllTokens(tokenFiles);
 
+      // Filter typography by selected breakpoints
+      if (parsedTokens.typography && selectedBreakpoints.length > 0) {
+        const bpFilter = style => {
+          const bp = (style.breakpoint || 'mobile').toLowerCase();
+          return selectedBreakpoints.includes(bp);
+        };
+        parsedTokens.typography = parsedTokens.typography.filter(bpFilter);
+        if (parsedTokens.typographyAll) {
+          parsedTokens.typographyAll = parsedTokens.typographyAll.filter(bpFilter);
+        }
+      }
+
       // Check for duplicates if creating variables
       if (createVariables) {
         const duplicates = await checkForDuplicatesFromParsedTokens(parsedTokens, prefix);
-        const totalDuplicates = (duplicates.colors && duplicates.colors.length ? duplicates.colors.length : 0) + 
-                                (duplicates.spacing && duplicates.spacing.length ? duplicates.spacing.length : 0) + 
+        const totalDuplicates = (duplicates.colors && duplicates.colors.length ? duplicates.colors.length : 0) +
+                                (duplicates.spacing && duplicates.spacing.length ? duplicates.spacing.length : 0) +
                                 (duplicates.textStyles && duplicates.textStyles.length ? duplicates.textStyles.length : 0) +
                                 (duplicates.borders && duplicates.borders.length ? duplicates.borders.length : 0) +
                                 (duplicates.breakpoints && duplicates.breakpoints.length ? duplicates.breakpoints.length : 0);
 
         if (totalDuplicates > 0) {
           // Send duplicates to UI for user to choose
-          figma.ui.postMessage({ 
-            type: 'duplicatesFound', 
+          figma.ui.postMessage({
+            type: 'duplicatesFound',
             duplicates: duplicates,
             action: 'importTokens',
             tokenFiles: tokenFiles,
             createVariables: createVariables,
             generateLayout: generateLayout,
-            prefix: prefix
+            prefix: prefix,
+            selectedBreakpoints: selectedBreakpoints
           });
           return;
         }
@@ -134,9 +148,22 @@ figma.ui.onmessage = async (msg) => {
       const generateLayout = msg.generateLayout || false;
       const prefix = (msg.prefix || '').trim();
       const duplicateAction = msg.duplicateAction || 'skip';
+      const selectedBreakpoints = msg.selectedBreakpoints || ['mobile', 'tablet', 'desktop'];
 
       // Parse tokens
       const parsedTokens = parseAllTokens(tokenFiles);
+
+      // Filter typography by selected breakpoints
+      if (parsedTokens.typography && selectedBreakpoints.length > 0) {
+        const bpFilter = style => {
+          const bp = (style.breakpoint || 'mobile').toLowerCase();
+          return selectedBreakpoints.includes(bp);
+        };
+        parsedTokens.typography = parsedTokens.typography.filter(bpFilter);
+        if (parsedTokens.typographyAll) {
+          parsedTokens.typographyAll = parsedTokens.typographyAll.filter(bpFilter);
+        }
+      }
 
       // Create variables if requested
       if (createVariables) {
@@ -166,9 +193,22 @@ figma.ui.onmessage = async (msg) => {
       const generateLayout = msg.generateLayout || false;
       const prefix = (msg.prefix || '').trim();
       const selections = msg.selections || {};
+      const selectedBreakpoints = msg.selectedBreakpoints || ['mobile', 'tablet', 'desktop'];
 
       // Parse tokens
       const parsedTokens = parseAllTokens(tokenFiles);
+
+      // Filter typography by selected breakpoints
+      if (parsedTokens.typography && selectedBreakpoints.length > 0) {
+        const bpFilter = style => {
+          const bp = (style.breakpoint || 'mobile').toLowerCase();
+          return selectedBreakpoints.includes(bp);
+        };
+        parsedTokens.typography = parsedTokens.typography.filter(bpFilter);
+        if (parsedTokens.typographyAll) {
+          parsedTokens.typographyAll = parsedTokens.typographyAll.filter(bpFilter);
+        }
+      }
 
       // Create variables if requested
       if (createVariables) {
@@ -1066,8 +1106,12 @@ async function exportTypographyTokens(textStyles, projectName) {
     const styleName = parsed.styleName;
     const breakpoint = parsed.breakpoint;
     
+    console.log(`[EXPORT TYPOGRAPHY] Parsing style: ${style.name}`);
+    console.log(`[EXPORT TYPOGRAPHY]   → styleName: ${styleName}, breakpoint: ${breakpoint}, breakpoints: ${parsed.breakpoints.join(', ')}`);
+    
     // Skip styles that are part of linksColors
     if (skipStyles.includes(styleName)) {
+      console.log(`[EXPORT TYPOGRAPHY]   → Skipping (part of linksColors)`);
       return;
     }
     
@@ -1080,6 +1124,7 @@ async function exportTypographyTokens(textStyles, projectName) {
     }
     
     stylesByName[styleName][breakpoint].push(style);
+    console.log(`[EXPORT TYPOGRAPHY]   → Added to stylesByName[${styleName}][${breakpoint}]`);
   });
   
   // Find body fontFamily to use as default (skip if same)
@@ -1095,8 +1140,12 @@ async function exportTypographyTokens(textStyles, projectName) {
   Object.keys(stylesByName).forEach(styleName => {
     const breakpointStyles = stylesByName[styleName];
     
+    console.log(`[EXPORT TYPOGRAPHY] Building structure for style: ${styleName}`);
+    console.log(`[EXPORT TYPOGRAPHY]   → Available breakpoints:`, Object.keys(breakpointStyles));
+    
     // Start with mobile (base)
     if (breakpointStyles.mobile && breakpointStyles.mobile.length > 0) {
+      console.log(`[EXPORT TYPOGRAPHY]   → Found mobile base`);
       const mobileStyle = breakpointStyles.mobile[0];
       const mobileObj = buildStyleObject(mobileStyle, null, bodyFontFamily, styleName);
       
@@ -1107,6 +1156,7 @@ async function exportTypographyTokens(textStyles, projectName) {
       // Handle tablet nested in mobile
       // Only include properties that differ from mobile
       if (breakpointStyles.tablet && breakpointStyles.tablet.length > 0) {
+        console.log(`[EXPORT TYPOGRAPHY]   → Found tablet, comparing with mobile...`);
         const tabletStyle = breakpointStyles.tablet[0];
         const tabletObj = buildStyleObject(tabletStyle, mobileStyle, bodyFontFamily, styleName);
         // Filter out properties that are the same as mobile
@@ -1116,15 +1166,22 @@ async function exportTypographyTokens(textStyles, projectName) {
             filteredTabletObj[key] = tabletObj[key];
           }
         });
+        console.log(`[EXPORT TYPOGRAPHY]   → Tablet differences:`, Object.keys(filteredTabletObj));
         // Only add tablet if it has at least one different property
         if (Object.keys(filteredTabletObj).length > 0) {
           mobileObj.tablet = filteredTabletObj;
+          console.log(`[EXPORT TYPOGRAPHY]   → Added tablet to mobile`);
+        } else {
+          console.log(`[EXPORT TYPOGRAPHY]   → Tablet same as mobile, skipping`);
         }
+      } else {
+        console.log(`[EXPORT TYPOGRAPHY]   → No tablet found`);
       }
       
       // Handle desktop nested in mobile (not in tablet)
       // Only include properties that differ from mobile
       if (breakpointStyles.desktop && breakpointStyles.desktop.length > 0) {
+        console.log(`[EXPORT TYPOGRAPHY]   → Found desktop, comparing with mobile...`);
         const desktopStyle = breakpointStyles.desktop[0];
         // Desktop is nested under mobile, use mobileStyle as base
         const desktopObj = buildStyleObject(desktopStyle, mobileStyle, bodyFontFamily, styleName);
@@ -1135,10 +1192,16 @@ async function exportTypographyTokens(textStyles, projectName) {
             filteredDesktopObj[key] = desktopObj[key];
           }
         });
+        console.log(`[EXPORT TYPOGRAPHY]   → Desktop differences:`, Object.keys(filteredDesktopObj));
         // Only add desktop if it has at least one different property
         if (Object.keys(filteredDesktopObj).length > 0) {
           mobileObj.desktop = filteredDesktopObj;
+          console.log(`[EXPORT TYPOGRAPHY]   → Added desktop to mobile`);
+        } else {
+          console.log(`[EXPORT TYPOGRAPHY]   → Desktop same as mobile, skipping`);
         }
+      } else {
+        console.log(`[EXPORT TYPOGRAPHY]   → No desktop found`);
       }
       
       textStylesData[styleName] = { mobile: mobileObj };
@@ -1173,7 +1236,27 @@ async function exportTypographyTokens(textStyles, projectName) {
 async function exportLinksColors(textStyles) {
   const linksColors = {};
   
-  // Find Link text styles: Link/Default, Link/Hover, Link/Focus
+  // First, try to find "Links Colors" Frame layout (new format)
+  let linksColorsFrame = null;
+  figma.root.children.forEach(page => {
+    const frames = page.findAll(node => 
+      node.type === 'FRAME' && node.name === 'Links Colors'
+    );
+    if (frames.length > 0 && !linksColorsFrame) {
+      linksColorsFrame = frames[0];
+    }
+  });
+  
+  if (linksColorsFrame) {
+    console.log(`[EXPORT LINKS] Found Links Colors Frame, parsing from layout...`);
+    const result = await exportLinksColorsFromLayout(linksColorsFrame);
+    if (result && Object.keys(result).length > 0) {
+      return result;
+    }
+    console.log(`[EXPORT LINKS] Layout export returned empty, trying text styles...`);
+  }
+  
+  // Fallback: Find Link text styles: Link/Default, Link/Hover, Link/Focus
   const linkStyles = textStyles.filter(style => {
     const name = style.name.toLowerCase();
     return name.startsWith('link/') || name.startsWith('links/');
@@ -1380,6 +1463,173 @@ async function exportLinksColors(textStyles) {
   }
   
   return linksColors;
+}
+
+async function exportLinksColorsFromLayout(linksColorsFrame) {
+  const linksColors = {};
+  
+  try {
+    console.log(`[EXPORT LINKS] Parsing from Links Colors Frame layout`);
+    
+    // Find "Preview Links" Frame inside Links Colors Frame
+    const previewLinksFrame = linksColorsFrame.findAll(node => 
+      node.type === 'FRAME' && node.name === 'Preview Links'
+    )[0];
+    
+    if (!previewLinksFrame) {
+      console.warn('[EXPORT LINKS] Preview Links Frame not found');
+      return null;
+    }
+    
+    console.log(`[EXPORT LINKS] Found Preview Links Frame with ${previewLinksFrame.children.length} children`);
+    
+    // Parse each link state from Frame children
+    for (const child of previewLinksFrame.children) {
+      if (child.type !== 'FRAME') continue;
+      
+      const frameName = child.name;
+      console.log(`[EXPORT LINKS] Processing Frame: ${frameName}`);
+      
+      // Determine state from frame name
+      let state = null;
+      if (frameName === 'Default Link') {
+        state = 'default';
+      } else if (frameName === 'Hover Link') {
+        state = 'hover';
+      } else if (frameName === 'Focus Link') {
+        state = 'focus';
+      }
+      
+      if (!state) continue;
+      
+      // Find text node inside this frame (could be direct child or nested in Focus Outline)
+      let textNode = null;
+      if (state === 'focus') {
+        // For Focus Link, text is inside "Focus Outline" Frame
+        const focusOutlineFrame = child.findAll(node => 
+          node.type === 'FRAME' && node.name === 'Focus Outline'
+        )[0];
+        if (focusOutlineFrame) {
+          textNode = focusOutlineFrame.findAll(node => 
+            node.type === 'TEXT' && node.name === 'Link Text'
+          )[0];
+        }
+      } else {
+        // For Default and Hover, text is direct child
+        textNode = child.findAll(node => 
+          node.type === 'TEXT' && node.name === 'Link Text'
+        )[0];
+      }
+      
+      if (!textNode) {
+        console.warn(`[EXPORT LINKS] No Link Text found in ${frameName}`);
+        continue;
+      }
+      
+      // Extract color from text node fills (can be bound to variable or direct color)
+      let color = null;
+      if (textNode.fills && textNode.fills.length > 0) {
+        const fill = textNode.fills[0];
+        if (fill.type === 'SOLID') {
+          // Check if color is bound to a variable
+          if (fill.boundVariables && fill.boundVariables.color) {
+            try {
+              const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
+              if (variable) {
+                const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
+                if (collection && collection.modes.length > 0) {
+                  const modeId = collection.modes[0].modeId;
+                  let value = variable.valuesByMode[modeId];
+                  value = resolveVariableValue(value);
+                  color = colorToHexString(value);
+                  console.log(`[EXPORT LINKS] Found color from variable for ${state}: ${color}`);
+                }
+              }
+            } catch (e) {
+              console.warn(`[EXPORT LINKS] Failed to resolve color variable:`, e);
+              if (fill.color) {
+                color = colorToHexString(fill.color);
+                console.log(`[EXPORT LINKS] Fallback to direct color for ${state}: ${color}`);
+              }
+            }
+          } else if (fill.color) {
+            color = colorToHexString(fill.color);
+            console.log(`[EXPORT LINKS] Found direct color for ${state}: ${color}`);
+          }
+        }
+      }
+      
+      // Extract underline property from text decoration
+      let underline = 'none';
+      if (textNode.textDecoration === 'UNDERLINE') {
+        underline = 'underline';
+        console.log(`[EXPORT LINKS] Found underline for ${state}`);
+      }
+      
+      // Extract underline-offset (for hover state)
+      let underlineOffset = null;
+      if (state === 'hover' && underline === 'underline') {
+        // Default to 0.2em if underline is present
+        underlineOffset = '0.2em';
+      }
+      
+      // Extract outline-offset (for focus state)
+      let outlineOffset = null;
+      if (state === 'focus') {
+        // Find "Focus Outline" Frame inside Focus Link Frame
+        const focusOutlineFrame = child.findAll(node => 
+          node.type === 'FRAME' && node.name === 'Focus Outline'
+        )[0];
+        
+        if (focusOutlineFrame) {
+          // outline-offset is typically the padding value
+          const padding = focusOutlineFrame.paddingLeft || focusOutlineFrame.paddingTop || 0;
+          if (padding > 0) {
+            outlineOffset = `${padding}px`;
+            console.log(`[EXPORT LINKS] Found outline-offset for focus: ${outlineOffset}`);
+          } else {
+            outlineOffset = '3px'; // Default
+          }
+        } else {
+          outlineOffset = '3px'; // Default
+        }
+      }
+      
+      // Build linksColors object
+      if (state === 'default') {
+        if (color) linksColors.color = color;
+        linksColors.underline = underline;
+        linksColors['font-weight'] = 'inherit';
+      } else if (state === 'hover') {
+        if (!linksColors.hover) linksColors.hover = {};
+        if (color) linksColors.hover.color = color;
+        if (underline === 'underline') {
+          linksColors.hover.underline = underline;
+          if (underlineOffset) {
+            linksColors.hover['underline-offset'] = underlineOffset;
+          }
+        }
+      } else if (state === 'focus') {
+        if (!linksColors.focus) linksColors.focus = {};
+        if (color) linksColors.focus.color = color;
+        if (outlineOffset) {
+          linksColors.focus['outline-offset'] = outlineOffset;
+        }
+      }
+    }
+    
+    // Return null if no valid data found
+    if (Object.keys(linksColors).length === 0) {
+      console.warn('[EXPORT LINKS] No valid link colors found in layout');
+      return null;
+    }
+    
+    console.log(`[EXPORT LINKS] Successfully exported linksColors from layout:`, linksColors);
+    return linksColors;
+  } catch (error) {
+    console.error('[EXPORT LINKS] Error exporting from layout:', error);
+    return null;
+  }
 }
 
 function parseLinkDescription(description) {
@@ -1954,6 +2204,9 @@ function exportBreakpointTokens(numberVariables, projectName) {
   const breakpointData = {};
   const containerData = {};
   
+  // Valid breakpoint keys only
+  const validBreakpointKeys = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'];
+  
   // Filter breakpoint variables - look for collection name "Breakpoint" or variable name patterns
   const breakpointVars = numberVariables.filter(v => {
     const collectionName = getCollectionName(v.variableCollectionId).toLowerCase();
@@ -1961,12 +2214,25 @@ function exportBreakpointTokens(numberVariables, projectName) {
     
     // Check if in Breakpoint collection
     if (collectionName.includes('breakpoint')) {
+      // Extract the key from variable name (e.g., "xs", "xs/value", "xs/max")
+      const parts = varName.split('/').filter(p => p);
+      const key = parts[0];
+      
+      // Only include if it's a valid breakpoint key (exclude "radius" and other non-breakpoint keys)
+      if (validBreakpointKeys.includes(key)) {
       return true;
+      }
+      
+      // Also check if variable name matches a valid breakpoint key directly
+      if (validBreakpointKeys.includes(varName)) {
+        return true;
+      }
+      
+      return false;
     }
     
     // Check if variable name suggests breakpoint (xs, sm, md, lg, xl, 2xl)
-    const breakpointKeys = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'];
-    if (breakpointKeys.some(key => varName === key || varName.includes(key))) {
+    if (validBreakpointKeys.some(key => varName === key || varName.startsWith(key + '/'))) {
       return true;
     }
     
@@ -1983,7 +2249,8 @@ function exportBreakpointTokens(numberVariables, projectName) {
     value = resolveVariableValue(value);
     
     // Determine if it's container or breakpoint
-    const isContainer = collectionName.includes('container') || name.toLowerCase().includes('container');
+    // Container collection has "container" in name, breakpoint collection has "breakpoint" in name
+    const isContainer = collectionName.includes('container') && !collectionName.includes('breakpoint');
     const target = isContainer ? containerData : breakpointData;
     
     // Parse variable name - could be:
@@ -2011,7 +2278,11 @@ function exportBreakpointTokens(numberVariables, projectName) {
       
       if (property === 'value' || property === 'max') {
         // Handle "0" value specially
+        if (property === 'max' && (value === null || value === undefined || value === 'none' || (typeof value === 'string' && value.toLowerCase() === 'none'))) {
+          target[breakpointKey][property] = "none";
+        } else {
         target[breakpointKey][property] = value === 0 ? "0" : `${value}px`;
+        }
       } else {
         target[breakpointKey].value = value === 0 ? "0" : `${value}px`;
       }
@@ -2031,8 +2302,15 @@ function exportBreakpointTokens(numberVariables, projectName) {
       if (!isContainer) {
         target[breakpointKey].value = value === 0 ? "0" : `${value}px`;
       } else {
-        // For container, set as value
-        target[breakpointKey].value = value === 0 ? "0" : (typeof value === 'number' ? `${value}px` : value);
+        // For container, handle percentage values
+        if (typeof value === 'number' && value <= 1 && value > 0) {
+          // Likely a percentage stored as decimal (e.g., 1.0 = 100%)
+          target[breakpointKey].value = `${value * 100}%`;
+        } else if (typeof value === 'number') {
+          target[breakpointKey].value = value === 0 ? "0" : `${value}px`;
+        } else {
+          target[breakpointKey].value = value;
+        }
       }
       
       if (variable.description) {
@@ -2041,7 +2319,8 @@ function exportBreakpointTokens(numberVariables, projectName) {
     }
   });
   
-  // Ensure all breakpoints have value and max
+  // Only ensure breakpoints have value if missing (don't auto-calculate max)
+  // Max should only be exported if it exists as a variable
   const breakpointKeys = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'];
   breakpointKeys.forEach(key => {
     if (breakpointData[key]) {
@@ -2056,10 +2335,13 @@ function exportBreakpointTokens(numberVariables, projectName) {
         }
       }
       
-      if (!breakpointData[key].max) {
-        const value = parseInt(breakpointData[key].value) || 0;
-        breakpointData[key].max = key === '2xl' ? 'none' : `${value + 319}px`;
+      // For 2xl, if max is not set and it's the last breakpoint, set to "none"
+      if (key === '2xl' && !breakpointData[key].max) {
+        breakpointData[key].max = "none";
       }
+      
+      // Don't auto-calculate max for other breakpoints - only export if it exists as a variable
+      // This ensures exported file matches imported file structure
     }
   });
   
@@ -2173,14 +2455,42 @@ function exportButtonTokens(projectName) {
 function exportButtonLayout(buttonsFrame) {
   try {
     console.log(`[EXPORT BUTTON] exportButtonLayout called for Frame: ${buttonsFrame.name}`);
+    console.log(`[EXPORT BUTTON] Buttons Frame children count: ${buttonsFrame.children.length}`);
     
-    // Find "Button Grid" Frame inside Buttons Frame
+    // First, try to find COMPONENT_SET (new format) - search recursively in all children
+    const componentSets = buttonsFrame.findAll(node => 
+      node.type === 'COMPONENT_SET' && (
+        node.name === 'Button' || 
+        node.name.toLowerCase().includes('button')
+      )
+    );
+    
+    console.log(`[EXPORT BUTTON] Found ${componentSets.length} Component Set(s) in Buttons Frame`);
+    
+    if (componentSets.length > 0) {
+      const componentSet = componentSets[0];
+      console.log(`[EXPORT BUTTON] Using Component Set: ${componentSet.name}, children: ${componentSet.children.length}`);
+      
+      const result = exportButtonComponentSet(componentSet);
+      console.log(`[EXPORT BUTTON] Component Set export result keys:`, Object.keys(result));
+      
+      // Check if result is empty
+      if (!result || Object.keys(result).length === 0) {
+        console.warn('[EXPORT BUTTON] Component Set export returned empty result, trying Button Grid format...');
+      } else {
+        return result;
+      }
+    }
+    
+    console.log(`[EXPORT BUTTON] No Component Set found or empty result, trying Button Grid format...`);
+    
+    // Fallback: Find "Button Grid" Frame inside Buttons Frame (old format)
     const buttonGrid = buttonsFrame.findAll(node => 
       node.type === 'FRAME' && node.name === 'Button Grid'
     )[0];
     
     if (!buttonGrid) {
-      console.warn('[EXPORT BUTTON] Button Grid not found in Buttons Frame');
+      console.warn('[EXPORT BUTTON] Neither Component Set nor Button Grid found in Buttons Frame');
       return {};
     }
     
@@ -2363,9 +2673,13 @@ function exportButtonComponentSet(componentSet) {
       return {};
     }
     
+    // Log first few component names for debugging
+    console.log(`[EXPORT BUTTON] First 3 component names:`, components.slice(0, 3).map(c => c.name));
+    
     // Extract variant properties from first component
     const firstComponent = components[0];
     const variantProperties = firstComponent.variantProperties || {};
+    console.log(`[EXPORT BUTTON] First component name: ${firstComponent.name}`);
     console.log(`[EXPORT BUTTON] First component variant properties:`, variantProperties);
     
     // Determine variant structure
@@ -2375,7 +2689,24 @@ function exportButtonComponentSet(componentSet) {
     const stateValues = new Set();
     
     components.forEach(comp => {
-      const props = comp.variantProperties || {};
+      let props = comp.variantProperties || {};
+      
+      // If variantProperties is empty, try to parse from component name
+      // Format: "Type=Fill, Color=Primary, Size=Large, State=Default"
+      if (!props || Object.keys(props).length === 0) {
+        const name = comp.name || '';
+        console.log(`[EXPORT BUTTON] Parsing variant from component name: ${name}`);
+        const nameParts = name.split(',');
+        props = {};
+        nameParts.forEach(part => {
+          const [key, value] = part.split('=').map(s => s.trim());
+          if (key && value) {
+            props[key] = value;
+          }
+        });
+        console.log(`[EXPORT BUTTON] Parsed props:`, props);
+      }
+      
       if (props.Type) typeValues.add(props.Type.toLowerCase());
       if (props.Color) colorValues.add(props.Color.toLowerCase());
       if (props.Size) sizeValues.add(props.Size.toLowerCase());
@@ -2385,6 +2716,13 @@ function exportButtonComponentSet(componentSet) {
         stateValues.add(state === 'disable' ? 'disabled' : state);
       }
     });
+    
+    // Check if we found any variants
+    if (typeValues.size === 0 && colorValues.size === 0 && sizeValues.size === 0 && stateValues.size === 0) {
+      console.warn('[EXPORT BUTTON] No variants found in Component Set - components may not have variant properties or correct naming');
+      console.warn('[EXPORT BUTTON] Component names:', components.map(c => c.name).join(', '));
+      return {};
+    }
     
     console.log(`[EXPORT BUTTON] Variants found - Type: ${Array.from(typeValues)}, Color: ${Array.from(colorValues)}, Size: ${Array.from(sizeValues)}, State: ${Array.from(stateValues)}`);
   
@@ -2413,7 +2751,21 @@ function exportButtonComponentSet(componentSet) {
   // Merge font sizes and line heights from all size variants
   sizeValues.forEach(size => {
     const sampleComponent = components.find(c => {
-      const props = c.variantProperties || {};
+      let props = c.variantProperties || {};
+      
+      // If variantProperties is empty, try to parse from component name
+      if (!props || Object.keys(props).length === 0) {
+        const name = c.name || '';
+        const nameParts = name.split(',');
+        props = {};
+        nameParts.forEach(part => {
+          const [key, value] = part.split('=').map(s => s.trim());
+          if (key && value) {
+            props[key] = value;
+          }
+        });
+      }
+      
       return props.Size && props.Size.toLowerCase() === size;
     });
     
@@ -2438,7 +2790,21 @@ function exportButtonComponentSet(componentSet) {
   const sizes = {};
   sizeValues.forEach(size => {
     const sampleComponent = components.find(c => {
-      const props = c.variantProperties || {};
+      let props = c.variantProperties || {};
+      
+      // If variantProperties is empty, try to parse from component name
+      if (!props || Object.keys(props).length === 0) {
+        const name = c.name || '';
+        const nameParts = name.split(',');
+        props = {};
+        nameParts.forEach(part => {
+          const [key, value] = part.split('=').map(s => s.trim());
+          if (key && value) {
+            props[key] = value;
+          }
+        });
+      }
+      
       return props.Size && props.Size.toLowerCase() === size;
     });
     if (sampleComponent) {
@@ -2463,7 +2829,21 @@ function exportButtonComponentSet(componentSet) {
       styles[type][color] = {};
       stateValues.forEach(state => {
         const component = components.find(c => {
-          const props = c.variantProperties || {};
+          let props = c.variantProperties || {};
+          
+          // If variantProperties is empty, try to parse from component name
+          if (!props || Object.keys(props).length === 0) {
+            const name = c.name || '';
+            const nameParts = name.split(',');
+            props = {};
+            nameParts.forEach(part => {
+              const [key, value] = part.split('=').map(s => s.trim());
+              if (key && value) {
+                props[key] = value;
+              }
+            });
+          }
+          
           const compType = props.Type && props.Type.toLowerCase();
           const compColor = props.Color && props.Color.toLowerCase();
           const compState = props.State && props.State.toLowerCase();
@@ -2484,8 +2864,8 @@ function exportButtonComponentSet(componentSet) {
     });
   });
   
-    // Extract properties
-    const properties = extractButtonProperties(firstComponent);
+    // Extract properties - must use componentSet, not component variant
+    const properties = extractButtonProperties(componentSet);
     
     const result = {
       variants,
@@ -2506,9 +2886,9 @@ function exportButtonComponentSet(componentSet) {
 
 function exportTextLinkLayout(textLinksFrame) {
   try {
-    console.log(`[EXPORT BUTTON] exportTextLinkLayout called for Frame: ${textLinksFrame.name}`);
+    console.log(`[EXPORT TEXT LINK] exportTextLinkLayout called for Frame: ${textLinksFrame.name}`);
     
-    // Find "Text Link Grid" Frame inside Text Links Frame (or use the frame itself)
+    // First, try to find COMPONENT_SET in Text Link Grid (new format)
     let textLinkGrid = textLinksFrame.findAll(node => 
       node.type === 'FRAME' && node.name === 'Text Link Grid'
     )[0];
@@ -2517,7 +2897,28 @@ function exportTextLinkLayout(textLinksFrame) {
       textLinkGrid = textLinksFrame;
     }
     
-    console.log(`[EXPORT BUTTON] Found Text Link Grid with ${textLinkGrid.children.length} rows`);
+    // Look for COMPONENT_SET inside Text Link Grid
+    const componentSets = textLinkGrid.findAll(node => 
+      node.type === 'COMPONENT_SET'
+    );
+    console.log(`[EXPORT TEXT LINK] Found ${componentSets.length} COMPONENT_SET(s) in Text Link Grid`);
+    
+    if (componentSets.length > 0) {
+      const componentSet = componentSets[0];
+      console.log(`[EXPORT TEXT LINK] Found COMPONENT_SET: ${componentSet.name}, parsing from component set...`);
+      const result = exportTextLinkComponentSet(componentSet);
+      console.log(`[EXPORT TEXT LINK] Component set export result keys:`, Object.keys(result));
+      console.log(`[EXPORT TEXT LINK] Component set export result:`, JSON.stringify(result, null, 2).substring(0, 1000));
+      if (result && Object.keys(result).length > 0) {
+        console.log(`[EXPORT TEXT LINK] Returning component set result`);
+        return result;
+      }
+      console.log(`[EXPORT TEXT LINK] Component set export returned empty, trying grid format...`);
+    } else {
+      console.log(`[EXPORT TEXT LINK] No COMPONENT_SET found, will try grid format...`);
+    }
+    
+    console.log(`[EXPORT TEXT LINK] Found Text Link Grid with ${textLinkGrid.children.length} rows`);
     
     // Collect all text link instances from rows
     const textLinkInstances = [];
@@ -2635,14 +3036,34 @@ function extractTextLinkBasePropertiesFromInstance(instance) {
     ? instance 
     : instance.findAll(node => node.type === 'TEXT')[0];
   
+  const fontSize = (textNode && textNode.fontSize) || 16;
+  let lineHeight = 24; // default
+  
+  if (textNode && textNode.lineHeight) {
+    if (typeof textNode.lineHeight === 'object') {
+      // Figma lineHeight object: { unit: 'PERCENT', value: 150 }
+      if (textNode.lineHeight.unit === 'PERCENT') {
+        // Convert percentage to pixel: fontSize * (percentage / 100)
+        lineHeight = Math.round(fontSize * (textNode.lineHeight.value / 100));
+        console.log(`[EXPORT TEXT LINK] Converted lineHeight from ${textNode.lineHeight.value}% to ${lineHeight}px (fontSize: ${fontSize}px)`);
+      } else if (textNode.lineHeight.unit === 'PIXELS') {
+        lineHeight = textNode.lineHeight.value;
+      } else {
+        // AUTO or other units
+        lineHeight = textNode.lineHeight.value;
+      }
+    } else {
+      // Direct numeric value (assumed to be pixels)
+      lineHeight = textNode.lineHeight;
+    }
+  }
+  
   const base = {
     font: {
       family: (textNode && textNode.fontName && textNode.fontName.family) || 'Inter',
       weight: mapFigmaWeightToToken((textNode && textNode.fontName && textNode.fontName.style) || 'Regular'),
-      size: (textNode && textNode.fontSize) || 16,
-      lineHeight: (textNode && typeof textNode.lineHeight === 'object') 
-        ? textNode.lineHeight.value 
-        : ((textNode && textNode.lineHeight) || 24)
+      size: fontSize,
+      lineHeight: lineHeight
     },
     gap: (instance.itemSpacing !== undefined) ? instance.itemSpacing : 4
   };
@@ -2711,64 +3132,243 @@ function extractTextLinkPropertiesFromInstance(instance) {
 }
 
 function exportTextLinkComponentSet(componentSet) {
-  const components = componentSet.children;
-  if (components.length === 0) return {};
+  console.log(`[EXPORT TEXT LINK] ===== Starting exportTextLinkComponentSet =====`);
+  console.log(`[EXPORT TEXT LINK] Component Set name: ${componentSet.name}`);
+  console.log(`[EXPORT TEXT LINK] Component Set type: ${componentSet.type}`);
+  
+  const components = componentSet.children || [];
+  console.log(`[EXPORT TEXT LINK] Found ${components.length} components`);
+  
+  if (components.length === 0) {
+    console.warn('[EXPORT TEXT LINK] No components found in component set');
+    return {};
+  }
   
   // Extract variant properties
   const colorValues = new Set();
   const stateValues = new Set();
+  const componentMap = new Map(); // Map: "color-state" -> component
   
-  components.forEach(comp => {
-    const props = comp.variantProperties || {};
-    if (props.Color) colorValues.add(props.Color.toLowerCase());
-    if (props.State) {
-      // Normalize state name: "Disable" -> "disabled"
-      const state = props.State.toLowerCase();
-      stateValues.add(state === 'disable' ? 'disabled' : state);
+  components.forEach((comp, index) => {
+    console.log(`[EXPORT TEXT LINK] --- Processing component ${index + 1}/${components.length} ---`);
+    console.log(`[EXPORT TEXT LINK] Component name: ${comp.name}`);
+    console.log(`[EXPORT TEXT LINK] Component type: ${comp.type}`);
+    
+    let props = comp.variantProperties || {};
+    console.log(`[EXPORT TEXT LINK] variantProperties:`, JSON.stringify(props));
+    
+    let color = 'primary';
+    let state = 'default';
+    
+    // Check if variantProperties has "Property 1" key (common in Figma component sets)
+    if (props['Property 1']) {
+      const propertyValue = props['Property 1'];
+      console.log(`[EXPORT TEXT LINK] Found Property 1 value: ${propertyValue}`);
+      
+      // Parse format: "Primary Default", "Primary Hover", "Secondary Disable", etc.
+      const parts = propertyValue.split(/\s+/);
+      if (parts.length >= 2) {
+        const colorName = parts[0].toLowerCase();
+        const stateName = parts.slice(1).join(' ').toLowerCase();
+        
+        console.log(`[EXPORT TEXT LINK] Parsed from Property 1 - colorName: ${colorName}, stateName: ${stateName}`);
+        
+        // Map color names
+        if (colorName === 'primary') color = 'primary';
+        else if (colorName === 'secondary') color = 'secondary';
+        else if (colorName === 'dark') color = 'dark';
+        else if (colorName === 'light') color = 'light';
+        
+        // Map state names
+        if (stateName === 'hover') state = 'hover';
+        else if (stateName === 'disable' || stateName === 'disabled') state = 'disabled';
+        else state = 'default';
+      }
+    } else if (Object.keys(props).length === 0) {
+      // If variantProperties is empty, parse from name
+      const name = comp.name || '';
+      console.log(`[EXPORT TEXT LINK] variantProperties empty, parsing from name: ${name}`);
+      
+      // Parse format: "Property 1=Primary Default" or "Property 1=Primary Hover"
+      const match = name.match(/Property\s+1\s*=\s*(\w+)\s+(\w+)/i);
+      if (match) {
+        const colorName = match[1].toLowerCase();
+        const stateName = match[2].toLowerCase();
+        console.log(`[EXPORT TEXT LINK] Parsed from name - colorName: ${colorName}, stateName: ${stateName}`);
+        
+        // Map color names
+        if (colorName === 'primary') color = 'primary';
+        else if (colorName === 'secondary') color = 'secondary';
+        else if (colorName === 'dark') color = 'dark';
+        else if (colorName === 'light') color = 'light';
+        
+        // Map state names
+        if (stateName === 'hover') state = 'hover';
+        else if (stateName === 'disable' || stateName === 'disabled') state = 'disabled';
+        else state = 'default';
+      } else {
+        console.warn(`[EXPORT TEXT LINK] Could not parse variant from name: ${name}`);
+      }
+    } else {
+      // Fallback: try to extract from variant properties directly
+      color = props.color || props.Color || 'primary';
+      state = props.state || props.State || 'default';
     }
+    
+    // Normalize color and state
+    color = color.toLowerCase();
+    state = state.toLowerCase();
+    if (state === 'disable') state = 'disabled';
+    
+    console.log(`[EXPORT TEXT LINK] Final variant - color: ${color}, state: ${state}`);
+    
+    colorValues.add(color);
+    stateValues.add(state);
+    
+    const key = `${color}-${state}`;
+    componentMap.set(key, comp);
+    
+    console.log(`[EXPORT TEXT LINK] Added to map: ${key}`);
   });
   
-  const variants = {
-    state: Array.from(stateValues).sort(),
-    color: Array.from(colorValues).sort()
-  };
+  console.log(`[EXPORT TEXT LINK] Total colors found: ${colorValues.size}`, Array.from(colorValues));
+  console.log(`[EXPORT TEXT LINK] Total states found: ${stateValues.size}`, Array.from(stateValues));
+  console.log(`[EXPORT TEXT LINK] Component map size: ${componentMap.size}`);
+  
+  if (componentMap.size === 0) {
+    console.warn('[EXPORT TEXT LINK] No valid variants found');
+    return {};
+  }
   
   // Extract base properties from first component
-  const base = extractTextLinkBaseProperties(components[0]);
+  const firstComponent = Array.from(componentMap.values())[0];
+  const base = extractTextLinkBaseProperties(firstComponent);
   
   // Extract styles
   const styles = {};
   colorValues.forEach(color => {
+    console.log(`[EXPORT TEXT LINK] Processing styles for color: ${color}`);
     styles[color] = {};
     stateValues.forEach(state => {
-      const component = components.find(c => {
-        const props = c.variantProperties || {};
-        const compColor = props.Color && props.Color.toLowerCase();
-        const compState = props.State && props.State.toLowerCase();
-        // Handle both "disabled" and "Disable" state names
-        const normalizedState = compState === 'disable' ? 'disabled' : compState;
-        const normalizedTargetState = state === 'disable' ? 'disabled' : state;
-        return compColor === color &&
-               normalizedState === normalizedTargetState;
-      });
-      
+      const key = `${color}-${state}`;
+      const component = componentMap.get(key);
       if (component) {
-        // Normalize state name for JSON output
-        const normalizedState = state === 'disable' ? 'disabled' : state;
-        styles[color][normalizedState] = extractTextLinkStyleProperties(component);
+        console.log(`[EXPORT TEXT LINK] Extracting style for ${key}`);
+        const style = extractTextLinkStyleProperties(component);
+        console.log(`[EXPORT TEXT LINK] Extracted style for ${key}:`, JSON.stringify(style));
+        styles[color][state] = style;
+      } else {
+        console.warn(`[EXPORT TEXT LINK] No component found for ${key}`);
       }
     });
   });
   
-  // Extract properties
-  const properties = extractTextLinkProperties(components[0]);
+  console.log(`[EXPORT TEXT LINK] Final styles object:`, JSON.stringify(styles, null, 2));
   
-  return {
+  // Extract properties from component set
+  const properties = extractTextLinkPropertiesFromComponentSet(componentSet);
+  
+  // Sort variants with custom order for state
+  const stateOrder = ['default', 'hover', 'disabled'];
+  const sortedStates = Array.from(stateValues).sort((a, b) => {
+    const aIndex = stateOrder.indexOf(a);
+    const bIndex = stateOrder.indexOf(b);
+    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
+  
+  const variants = {
+    state: sortedStates,
+    color: Array.from(colorValues).sort()
+  };
+  
+  const result = {
     variants,
     base,
     styles,
     properties
   };
+  
+  console.log(`[EXPORT TEXT LINK] ===== Final result =====`);
+  console.log(`[EXPORT TEXT LINK] Variants:`, JSON.stringify(variants, null, 2));
+  console.log(`[EXPORT TEXT LINK] Base:`, JSON.stringify(base, null, 2));
+  console.log(`[EXPORT TEXT LINK] Styles:`, JSON.stringify(styles, null, 2));
+  console.log(`[EXPORT TEXT LINK] Properties:`, JSON.stringify(properties, null, 2));
+  console.log(`[EXPORT TEXT LINK] Full result:`, JSON.stringify(result, null, 2));
+  console.log(`[EXPORT TEXT LINK] ===== End exportTextLinkComponentSet =====`);
+  return result;
+}
+
+function extractTextLinkPropertiesFromComponentSet(componentSet) {
+  const properties = {};
+  
+  try {
+    if (!componentSet.componentPropertyDefinitions) {
+      console.log('[EXPORT TEXT LINK] No componentPropertyDefinitions found, using defaults');
+      // Return default properties
+      return {
+        text: {
+          type: 'text',
+          default: '{config.examples.textLinkText}'
+        },
+        icon: {
+          type: 'text',
+          optional: true
+        }
+      };
+    }
+    
+    const propDefs = componentSet.componentPropertyDefinitions;
+    
+    // Check for text property
+    if (propDefs.text) {
+      const textProp = propDefs.text;
+      properties.text = {
+        type: textProp.type === 'TEXT' ? 'text' : 'text',
+        default: textProp.defaultValue || '{config.examples.textLinkText}'
+      };
+    } else {
+      // Default text property
+      properties.text = {
+        type: 'text',
+        default: '{config.examples.textLinkText}'
+      };
+    }
+    
+    // Check for icon property
+    if (propDefs.icon) {
+      const iconProp = propDefs.icon;
+      properties.icon = {
+        type: iconProp.type === 'TEXT' ? 'text' : 'text',
+        optional: true
+      };
+    } else {
+      // Default icon property (optional)
+      properties.icon = {
+        type: 'text',
+        optional: true
+      };
+    }
+    
+    console.log(`[EXPORT TEXT LINK] Extracted properties:`, properties);
+  } catch (error) {
+    console.warn('[EXPORT TEXT LINK] Error extracting properties:', error);
+    // Return defaults on error
+    return {
+      text: {
+        type: 'text',
+        default: '{config.examples.textLinkText}'
+      },
+      icon: {
+        type: 'text',
+        optional: true
+      }
+    };
+  }
+  
+  return properties;
 }
 
 function extractButtonBasePropertiesFromInstance(instance, buttonInstances) {
@@ -2889,17 +3489,39 @@ function extractButtonBaseProperties(component) {
 function extractTextLinkBaseProperties(component) {
   const textNode = component.findAll(node => node.type === 'TEXT')[0];
   
+  const fontSize = (textNode && textNode.fontSize) || 16;
+  let lineHeight = 24; // default
+  
+  if (textNode && textNode.lineHeight) {
+    if (typeof textNode.lineHeight === 'object') {
+      // Figma lineHeight object: { unit: 'PERCENT', value: 150 }
+      if (textNode.lineHeight.unit === 'PERCENT') {
+        // Convert percentage to pixel: fontSize * (percentage / 100)
+        lineHeight = Math.round(fontSize * (textNode.lineHeight.value / 100));
+        console.log(`[EXPORT TEXT LINK] Converted lineHeight from ${textNode.lineHeight.value}% to ${lineHeight}px (fontSize: ${fontSize}px)`);
+      } else if (textNode.lineHeight.unit === 'PIXELS') {
+        lineHeight = textNode.lineHeight.value;
+      } else {
+        // AUTO or other units
+        lineHeight = textNode.lineHeight.value;
+      }
+    } else {
+      // Direct numeric value (assumed to be pixels)
+      lineHeight = textNode.lineHeight;
+    }
+  }
+  
   const base = {
     font: {
       family: (textNode && textNode.fontName && textNode.fontName.family) || 'Inter',
       weight: mapFigmaWeightToToken((textNode && textNode.fontName && textNode.fontName.style) || 'Regular'),
-      size: (textNode && textNode.fontSize) || 16,
-      lineHeight: (textNode && typeof textNode.lineHeight === 'object') 
-        ? textNode.lineHeight.value 
-        : ((textNode && textNode.lineHeight) || 24)
+      size: fontSize,
+      lineHeight: lineHeight
     },
     gap: component.itemSpacing || 4
   };
+  
+  console.log(`[EXPORT TEXT LINK] Base properties - fontSize: ${fontSize}px, lineHeight: ${lineHeight}px`);
   
   return base;
 }
@@ -3005,26 +3627,50 @@ function extractButtonStyleProperties(component) {
 }
 
 function extractTextLinkStyleProperties(component) {
+  console.log(`[EXPORT TEXT LINK STYLE] Extracting style properties from component: ${component.name}`);
   const style = {};
   
   const textNode = component.findAll(node => node.type === 'TEXT')[0];
+  console.log(`[EXPORT TEXT LINK STYLE] Found text node:`, textNode ? textNode.name : 'none');
+  
   if (textNode && textNode.fills && textNode.fills.length > 0) {
     const textFill = textNode.fills[0];
+    console.log(`[EXPORT TEXT LINK STYLE] Text fill type: ${textFill.type}`);
+    console.log(`[EXPORT TEXT LINK STYLE] Text fill boundVariables:`, textFill.boundVariables);
+    
     if (textFill.boundVariables && textFill.boundVariables.color) {
-      const variable = figma.variables.getVariableById(textFill.boundVariables.color.id);
-      if (variable) {
-        style.text = variableNameToTokenPath(variable.name);
+      try {
+        const variable = figma.variables.getVariableById(textFill.boundVariables.color.id);
+        if (variable) {
+          console.log(`[EXPORT TEXT LINK STYLE] Found variable: ${variable.name}`);
+          const tokenPath = variableNameToTokenPath(variable.name);
+          style.text = tokenPath;
+          console.log(`[EXPORT TEXT LINK STYLE] Mapped to token path: ${tokenPath}`);
+        } else {
+          console.warn(`[EXPORT TEXT LINK STYLE] Variable not found for ID: ${textFill.boundVariables.color.id}`);
+        }
+      } catch (e) {
+        console.error(`[EXPORT TEXT LINK STYLE] Error resolving variable:`, e);
       }
     } else if (textFill.type === 'SOLID' && textFill.color) {
-      style.text = findColorTokenByValue(textFill.color);
+      console.log(`[EXPORT TEXT LINK STYLE] Direct color:`, textFill.color);
+      const tokenPath = findColorTokenByValue(textFill.color);
+      style.text = tokenPath;
+      console.log(`[EXPORT TEXT LINK STYLE] Mapped to token path: ${tokenPath}`);
+    } else {
+      console.warn(`[EXPORT TEXT LINK STYLE] No valid color found in text fill`);
     }
+  } else {
+    console.warn(`[EXPORT TEXT LINK STYLE] No text node or fills found`);
   }
   
   // Extract opacity and round to 1 decimal place
   if (component.opacity !== undefined && component.opacity < 1) {
     style.opacity = Math.round(component.opacity * 10) / 10;
+    console.log(`[EXPORT TEXT LINK STYLE] Found opacity: ${style.opacity}`);
   }
   
+  console.log(`[EXPORT TEXT LINK STYLE] Final style:`, JSON.stringify(style));
   return style;
 }
 
@@ -3297,6 +3943,9 @@ function parseTextStyleName(name) {
   // "Desktop/Body" → { breakpoint: "desktop", styleName: "body", breakpoints: ["desktop"] }
   // "Body" → { breakpoint: "mobile", styleName: "body", breakpoints: ["mobile"] }
   // Handle nested: "Body/Mobile/Tablet" → { breakpoint: "tablet", styleName: "body", breakpoints: ["mobile", "tablet"] }
+  // Handle format: "Desktop - Project/body" → { breakpoint: "desktop", styleName: "body", breakpoints: ["desktop"] }
+  // Handle format: "Tablet - Project/body" → { breakpoint: "tablet", styleName: "body", breakpoints: ["tablet"] }
+  // Handle format: "Ag Desktop - Project/body" → { breakpoint: "desktop", styleName: "body", breakpoints: ["desktop"] }
   
   const parts = name.split('/').filter(p => p);
   const breakpointKeywords = ['mobile', 'tablet', 'desktop'];
@@ -3304,23 +3953,65 @@ function parseTextStyleName(name) {
   let styleName = '';
   const breakpoints = [];
   
+  // Check if breakpoint is in the first part (before /)
+  // Format: "Desktop - Project/body" or "Tablet - Project/body" or "Ag Desktop - Project/body"
+  if (parts.length > 0) {
+    const firstPart = parts[0].toLowerCase();
+    for (const keyword of breakpointKeywords) {
+      if (firstPart.includes(keyword)) {
+        breakpoints.push(keyword);
+        break;
+      }
+    }
+  }
+  
+  // Also check all parts for breakpoint keywords
   parts.forEach(part => {
     const lowerPart = part.toLowerCase();
     if (breakpointKeywords.includes(lowerPart)) {
-      breakpoints.push(lowerPart);
-    } else {
+      if (!breakpoints.includes(lowerPart)) {
+        breakpoints.push(lowerPart);
+      }
+    } else if (!lowerPart.includes('project') && !lowerPart.includes('-') && lowerPart !== 'ag') {
+      // Skip "Project", parts with "-" (like "Desktop - Project"), and "Ag" prefix
+      // The actual style name is usually the last part
       styleName = part.toLowerCase();
     }
   });
+  
+  // If we found breakpoint in first part but no styleName yet, use last part
+  if (breakpoints.length > 0 && !styleName && parts.length > 1) {
+    styleName = parts[parts.length - 1].toLowerCase();
+  }
+  
+  // If still no styleName, try to extract from first part (remove breakpoint and project)
+  if (!styleName && parts.length > 0) {
+    const firstPart = parts[0].toLowerCase();
+    // Remove breakpoint keywords and "project" and "ag"
+    let cleaned = firstPart
+      .replace(/\b(mobile|tablet|desktop)\b/g, '')
+      .replace(/\bproject\b/g, '')
+      .replace(/\bag\b/g, '')
+      .replace(/[-\s]+/g, ' ')
+      .trim();
+    if (cleaned) {
+      styleName = cleaned;
+    }
+  }
   
   // Default to mobile if no breakpoint found
   if (breakpoints.length === 0) {
     breakpoints.push('mobile');
   }
   
+  // If still no styleName, use the original name (fallback)
+  if (!styleName) {
+    styleName = name.toLowerCase();
+  }
+  
   return {
     breakpoint: breakpoints[breakpoints.length - 1],
-    styleName: styleName || name.toLowerCase(),
+    styleName: styleName,
     breakpoints: breakpoints
   };
 }
@@ -4044,7 +4735,7 @@ async function checkForDuplicatesFromParsedTokens(parsedTokens, prefix) {
   }
 
   // Check Breakpoint Variables
-  if (parsedTokens.breakpoints && parsedTokens.breakpoints.length > 0) {
+  if (parsedTokens.breakpoints && parsedTokens.breakpoints.breakpoints && parsedTokens.breakpoints.breakpoints.length > 0) {
     const collectionName = prefix ? `Breakpoint - ${prefix}` : 'Breakpoint';
     const existingCollections = figma.variables.getLocalVariableCollections();
     const collection = existingCollections.find(c => c.name === collectionName);
@@ -4054,9 +4745,13 @@ async function checkForDuplicatesFromParsedTokens(parsedTokens, prefix) {
         .filter(v => v.variableCollectionId === collection.id);
       const existingNames = new Set(existingVariables.map(v => v.name));
 
-      for (const bp of parsedTokens.breakpoints) {
+      for (const bp of parsedTokens.breakpoints.breakpoints) {
         if (existingNames.has(bp.name)) {
           duplicates.breakpoints.push(bp.name);
+        }
+        // Also check for max variables
+        if (bp.max && bp.max !== 'none' && existingNames.has(`${bp.name}/max`)) {
+          duplicates.breakpoints.push(`${bp.name}/max`);
         }
       }
     }
@@ -4713,6 +5408,8 @@ function parseAllTokens(tokenFiles) {
   const parsed = {
     colors: [],
     typography: [],
+    typographyAll: [],        // All styles including duplicates (for layout preview)
+    styleRedirectMap: new Map(), // Map removed style name → kept style name
     spacing: [],
     shadows: [],
     borders: { radius: [], width: [] },
@@ -4728,7 +5425,10 @@ function parseAllTokens(tokenFiles) {
 
   // Parse typography
   if (tokenFiles.typography && tokenFiles.typography.textStyles) {
-    parsed.typography = parseTypographyTokens(tokenFiles.typography.textStyles);
+    const typResult = parseTypographyTokens(tokenFiles.typography.textStyles);
+    parsed.typography = typResult.styles;              // Deduplicated (for text style creation)
+    parsed.typographyAll = typResult.allStyles;        // All breakpoints (for layout preview)
+    parsed.styleRedirectMap = typResult.styleRedirectMap; // Redirect map
   }
   
   // Parse linksColors from typography
@@ -4933,7 +5633,11 @@ function parseTypographyTokens(textStylesData) {
   // Fill missing breakpoints with inheritance logic
   const filledStyles = fillMissingBreakpoints(styles);
   console.log(`Parsed ${filledStyles.length} typography styles after inherit:`, filledStyles.map(s => s.name));
-  return filledStyles;
+
+  // Deduplicate: if breakpoints have identical props, keep desktop
+  const { styles: dedupedStyles, styleRedirectMap } = deduplicateTypographyStyles(filledStyles);
+
+  return { styles: dedupedStyles, styleRedirectMap, allStyles: filledStyles };
 }
 
 function fillMissingBreakpoints(styles) {
@@ -5056,6 +5760,83 @@ function fillMissingBreakpoints(styles) {
   return filledStyles;
 }
 
+// ============================================
+// DEDUPLICATE TYPOGRAPHY STYLES
+// If multiple breakpoints have identical properties, keep only desktop (priority)
+// Returns { styles, styleRedirectMap }
+// styleRedirectMap: Map<removedStyleName, keptStyleName> for layout to reference
+// ============================================
+
+function deduplicateTypographyStyles(styles) {
+  const styleRedirectMap = new Map();
+
+  // Group by displayName
+  const groups = {};
+  for (const s of styles) {
+    const dn = s.displayName || s.name.split('/').pop();
+    if (!groups[dn]) groups[dn] = [];
+    groups[dn].push(s);
+  }
+
+  const result = [];
+  const breakpointPriority = ['desktop', 'mobile', 'tablet']; // desktop wins, mobile over tablet
+
+  for (const [displayName, group] of Object.entries(groups)) {
+    if (group.length <= 1) {
+      result.push(...group);
+      continue;
+    }
+
+    // Compare properties between breakpoints
+    const propsKey = (s) => [
+      s.fontSize, s.lineHeight, s.fontWeight, s.fontFamily, s.letterSpacing
+    ].map(v => v === undefined ? '' : String(v)).join('|');
+
+    // Group by identical props
+    const buckets = {};
+    for (const s of group) {
+      const key = propsKey(s);
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(s);
+    }
+
+    for (const [, bucket] of Object.entries(buckets)) {
+      if (bucket.length === 1) {
+        // Unique — keep as-is
+        result.push(bucket[0]);
+        continue;
+      }
+
+      // Multiple breakpoints with same props — keep highest priority
+      let kept = null;
+      for (const bp of breakpointPriority) {
+        const match = bucket.find(s => s.breakpoint === bp);
+        if (match) {
+          kept = match;
+          break;
+        }
+      }
+      if (!kept) kept = bucket[0];
+
+      result.push(kept);
+
+      // Map removed styles to kept style
+      for (const s of bucket) {
+        if (s !== kept) {
+          styleRedirectMap.set(s.name, kept.name);
+        }
+      }
+    }
+  }
+
+  console.log(`Deduplicated typography: ${styles.length} → ${result.length} styles`);
+  if (styleRedirectMap.size > 0) {
+    console.log('Style redirects:', Array.from(styleRedirectMap.entries()));
+  }
+
+  return { styles: result, styleRedirectMap };
+}
+
 function parseSpacingTokens(spacingData) {
   const spacing = [];
 
@@ -5136,6 +5917,7 @@ function parseBorderTokens(borderData) {
 
 function parseBreakpointTokens(breakpointData) {
   const breakpoints = [];
+  const containers = [];
 
   if (breakpointData.breakpoint) {
     for (const [key, value] of Object.entries(breakpointData.breakpoint)) {
@@ -5150,7 +5932,19 @@ function parseBreakpointTokens(breakpointData) {
     }
   }
 
-  return breakpoints;
+  if (breakpointData.container) {
+    for (const [key, value] of Object.entries(breakpointData.container)) {
+      if (value && typeof value === 'object') {
+        containers.push({
+          name: key,
+          value: value.value || '100%',
+          description: value.description || ''
+        });
+      }
+    }
+  }
+
+  return { breakpoints, containers };
 }
 
 // ============================================
@@ -5256,6 +6050,125 @@ function validateButtonJSON(data) {
   }
   
   return true;
+}
+
+// ============================================
+// PARSE RAW COLOR VALUES (hex, rgb, rgba)
+// ============================================
+
+function parseRawColor(value) {
+  if (!value || typeof value !== 'string') return null;
+  const v = value.trim();
+
+  // Hex: #RGB, #RRGGBB, #RRGGBBAA
+  const hexMatch = v.match(/^#([0-9a-fA-F]{3,8})$/);
+  if (hexMatch) {
+    let hex = hexMatch[1];
+    let r, g, b, a = 1;
+    if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16) / 255;
+      g = parseInt(hex[1] + hex[1], 16) / 255;
+      b = parseInt(hex[2] + hex[2], 16) / 255;
+    } else if (hex.length === 4) {
+      r = parseInt(hex[0] + hex[0], 16) / 255;
+      g = parseInt(hex[1] + hex[1], 16) / 255;
+      b = parseInt(hex[2] + hex[2], 16) / 255;
+      a = parseInt(hex[3] + hex[3], 16) / 255;
+    } else if (hex.length === 6) {
+      r = parseInt(hex.substring(0, 2), 16) / 255;
+      g = parseInt(hex.substring(2, 4), 16) / 255;
+      b = parseInt(hex.substring(4, 6), 16) / 255;
+    } else if (hex.length === 8) {
+      r = parseInt(hex.substring(0, 2), 16) / 255;
+      g = parseInt(hex.substring(2, 4), 16) / 255;
+      b = parseInt(hex.substring(4, 6), 16) / 255;
+      a = parseInt(hex.substring(6, 8), 16) / 255;
+    } else {
+      return null;
+    }
+    return { r, g, b, a };
+  }
+
+  // rgba(R, G, B, A)
+  const rgbaMatch = v.match(/^rgba\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d*\.?\d+)\s*\)$/i);
+  if (rgbaMatch) {
+    return {
+      r: parseFloat(rgbaMatch[1]) / 255,
+      g: parseFloat(rgbaMatch[2]) / 255,
+      b: parseFloat(rgbaMatch[3]) / 255,
+      a: parseFloat(rgbaMatch[4])
+    };
+  }
+
+  // rgb(R, G, B)
+  const rgbMatch = v.match(/^rgb\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)$/i);
+  if (rgbMatch) {
+    return {
+      r: parseFloat(rgbMatch[1]) / 255,
+      g: parseFloat(rgbMatch[2]) / 255,
+      b: parseFloat(rgbMatch[3]) / 255,
+      a: 1
+    };
+  }
+
+  return null;
+}
+
+// ============================================
+// RESOLVE COLOR TO FIGMA PAINT
+// Returns a paint object ready to use in .fills / .strokes
+// Supports: token paths (bound to variable), raw hex, rgb(), rgba(), transparent
+// ============================================
+
+function resolveColorToPaint(tokenPath, colorVariables) {
+  if (!tokenPath || typeof tokenPath !== 'string') return null;
+  if (tokenPath === 'color.transparent' || tokenPath === 'transparent') return null;
+
+  // Try raw color first (hex, rgb, rgba)
+  const rawColor = parseRawColor(tokenPath);
+  if (rawColor) {
+    const paint = { type: 'SOLID', color: { r: rawColor.r, g: rawColor.g, b: rawColor.b } };
+    if (rawColor.a !== undefined && rawColor.a < 1) {
+      paint.opacity = rawColor.a;
+    }
+    return paint;
+  }
+
+  // Token path — resolve to Figma variable
+  const variable = resolveColorToken(tokenPath, colorVariables);
+  if (variable) {
+    return figma.variables.setBoundVariableForPaint(
+      { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
+      'color',
+      variable
+    );
+  }
+
+  return null;
+}
+
+// ============================================
+// CHECK IF A COLOR VALUE IS LIGHT/WHITE
+// Supports: token paths (color.white), hex, rgb, rgba, transparent
+// ============================================
+
+function isLightOrTransparentColor(colorValue) {
+  if (!colorValue || typeof colorValue !== 'string') return false;
+  const v = colorValue.trim().toLowerCase();
+
+  // Token path checks
+  if (v === 'color.white' || v === 'color.transparent' || v === 'transparent') return true;
+
+  // Parse raw color
+  const raw = parseRawColor(colorValue);
+  if (!raw) return false;
+
+  // Transparent or near-transparent
+  if (raw.a < 0.15) return true;
+
+  // Luminance check (perceived brightness)
+  const luminance = 0.299 * raw.r + 0.587 * raw.g + 0.114 * raw.b;
+  return luminance > 0.85;
 }
 
 // ============================================
@@ -5760,8 +6673,8 @@ async function createVariablesFromParsedTokens(parsedTokens, prefix, duplicateAc
   }
 
   // Create breakpoint variables
-  if (parsedTokens.breakpoints.length > 0) {
-    await createBreakpointVariablesFromParsedTokens(parsedTokens.breakpoints, prefix, duplicateAction, selections);
+  if (parsedTokens.breakpoints && parsedTokens.breakpoints.breakpoints && parsedTokens.breakpoints.breakpoints.length > 0) {
+    await createBreakpointVariablesFromParsedTokens(parsedTokens.breakpoints.breakpoints, parsedTokens.breakpoints.containers || [], prefix, duplicateAction, selections);
   }
 }
 
@@ -5926,7 +6839,11 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
     console.log(`DEBUG ${styleName}: style.fontFamily=${style.fontFamily || '(none)'}, breakpoint=${breakpoint}`);
     
     if (!fontFamily) {
-      const bodyFontFamily = bodyFontFamilyMap.get(breakpoint);
+      // Try exact breakpoint first, then fallback to any available breakpoint (desktop > tablet > mobile)
+      const bodyFontFamily = bodyFontFamilyMap.get(breakpoint)
+        || bodyFontFamilyMap.get('desktop')
+        || bodyFontFamilyMap.get('tablet')
+        || bodyFontFamilyMap.get('mobile');
       console.log(`DEBUG ${styleName}: bodyFontFamilyMap.get('${breakpoint}')=${bodyFontFamily || '(none)'}`);
       if (bodyFontFamily) {
         fontFamily = bodyFontFamily;
@@ -5945,10 +6862,13 @@ async function createTypographyStylesFromParsedTokens(typography, prefix, duplic
       console.log(`Style ${styleName} has explicit fontFamily: ${fontFamily}`);
     }
 
-    // Get color: use style's color, or body's color for same breakpoint
+    // Get color: use style's color, or body's color (try same breakpoint, then fallback)
     let color = style.color;
     if (!color) {
-      const bodyColor = bodyColorMap.get(breakpoint);
+      const bodyColor = bodyColorMap.get(breakpoint)
+        || bodyColorMap.get('desktop')
+        || bodyColorMap.get('tablet')
+        || bodyColorMap.get('mobile');
       if (bodyColor) {
         color = bodyColor;
         console.log(`Style ${styleName} missing color, using body's color for ${breakpoint}: ${color}`);
@@ -6766,59 +7686,155 @@ function parseShadowString(shadowStr) {
   return effects;
 }
 
-async function createBreakpointVariablesFromParsedTokens(breakpoints, prefix, duplicateAction, selections = null) {
+async function createBreakpointVariablesFromParsedTokens(breakpoints, containers, prefix, duplicateAction, selections = null) {
   const collectionName = prefix ? `Breakpoint - ${prefix}` : 'Breakpoint';
+  const containerCollectionName = prefix ? `Container - ${prefix}` : 'Container';
   
   let collection = figma.variables.getLocalVariableCollections().find(c => c.name === collectionName);
   if (!collection) {
     collection = figma.variables.createVariableCollection(collectionName);
   }
 
+  let containerCollection = figma.variables.getLocalVariableCollections().find(c => c.name === containerCollectionName);
+  if (!containerCollection && containers.length > 0) {
+    containerCollection = figma.variables.createVariableCollection(containerCollectionName);
+  }
+
   const modeId = collection.modes[0].modeId;
+  const containerModeId = containerCollection ? containerCollection.modes[0].modeId : null;
+  
   const existingVariables = figma.variables.getLocalVariables('FLOAT')
     .filter(v => v.variableCollectionId === collection.id);
   const existingVariableMap = new Map(existingVariables.map(v => [v.name, v]));
 
-  // Create breakpoint variables (min value)
+  const existingContainerVariables = containerCollection ? figma.variables.getLocalVariables('FLOAT')
+    .filter(v => v.variableCollectionId === containerCollection.id) : [];
+  const existingContainerVariableMap = new Map(existingContainerVariables.map(v => [v.name, v]));
+
+  // Create breakpoint variables (value and max)
   for (const bp of breakpoints) {
-    const variableName = bp.name;
-    const existingVariable = existingVariableMap.get(variableName);
+    // Create value variable
+    const valueVariableName = bp.name;
+    const existingValueVariable = existingVariableMap.get(valueVariableName);
     
     // Parse value (remove 'px' if present)
     const minValue = parseValue(bp.value);
     
-    if (existingVariable) {
+    if (existingValueVariable) {
       if (duplicateAction === 'overwrite') {
         try {
-          existingVariable.setValueForMode(modeId, minValue);
+          existingValueVariable.setValueForMode(modeId, minValue);
           if (bp.description) {
-            existingVariable.description = bp.description;
+            existingValueVariable.description = bp.description;
           }
         } catch (e) {
-          console.error(`Failed to overwrite breakpoint variable ${variableName}:`, e);
+          console.error(`Failed to overwrite breakpoint variable ${valueVariableName}:`, e);
         }
       } else {
-        // Even when skipping, update description if it's missing or different
         try {
-          if (bp.description && (!existingVariable.description || existingVariable.description !== bp.description)) {
-            existingVariable.description = bp.description;
+          if (bp.description && (!existingValueVariable.description || existingValueVariable.description !== bp.description)) {
+            existingValueVariable.description = bp.description;
           }
         } catch (e) {
-          console.warn(`Failed to update description for breakpoint variable ${variableName}:`, e);
+          console.warn(`Failed to update description for breakpoint variable ${valueVariableName}:`, e);
         }
       }
-      continue;
-    }
-
+    } else {
     try {
-      const variable = figma.variables.createVariable(variableName, collection, 'FLOAT');
+        const variable = figma.variables.createVariable(valueVariableName, collection, 'FLOAT');
       variable.setValueForMode(modeId, minValue);
       if (bp.description) {
         variable.description = bp.description;
       }
-      console.log(`Created breakpoint variable: ${variableName} = ${minValue}`);
+        console.log(`Created breakpoint variable: ${valueVariableName} = ${minValue}`);
     } catch (e) {
-      console.error(`Failed to create breakpoint variable ${variableName}:`, e);
+        console.error(`Failed to create breakpoint variable ${valueVariableName}:`, e);
+      }
+    }
+
+    // Create max variable if max is defined and not 'none'
+    if (bp.max && bp.max !== 'none') {
+      const maxVariableName = `${bp.name}/max`;
+      const existingMaxVariable = existingVariableMap.get(maxVariableName);
+      const maxValue = parseValue(bp.max);
+      
+      if (existingMaxVariable) {
+        if (duplicateAction === 'overwrite') {
+          try {
+            existingMaxVariable.setValueForMode(modeId, maxValue);
+          } catch (e) {
+            console.error(`Failed to overwrite breakpoint max variable ${maxVariableName}:`, e);
+          }
+        }
+      } else {
+        try {
+          const variable = figma.variables.createVariable(maxVariableName, collection, 'FLOAT');
+          variable.setValueForMode(modeId, maxValue);
+          console.log(`Created breakpoint max variable: ${maxVariableName} = ${maxValue}`);
+        } catch (e) {
+          console.error(`Failed to create breakpoint max variable ${maxVariableName}:`, e);
+        }
+      }
+    }
+  }
+
+  // Create container variables
+  if (containerCollection && containers.length > 0) {
+    for (const container of containers) {
+      const containerVariableName = container.name;
+      const existingContainerVariable = existingContainerVariableMap.get(containerVariableName);
+      
+      // Parse value (keep % if present, otherwise convert px to number)
+      let containerValue;
+      if (typeof container.value === 'string' && container.value.includes('%')) {
+        containerValue = container.value; // Keep as string for percentage
+      } else {
+        containerValue = parseValue(container.value);
+      }
+      
+      if (existingContainerVariable) {
+        if (duplicateAction === 'overwrite') {
+          try {
+            if (typeof containerValue === 'string' && containerValue.includes('%')) {
+              // For percentage, we need to store as string - but Figma variables don't support strings
+              // So we'll convert to a number representing the percentage
+              const percentValue = parseFloat(containerValue) / 100;
+              existingContainerVariable.setValueForMode(containerModeId, percentValue);
+            } else {
+              existingContainerVariable.setValueForMode(containerModeId, containerValue);
+            }
+            if (container.description) {
+              existingContainerVariable.description = container.description;
+            }
+          } catch (e) {
+            console.error(`Failed to overwrite container variable ${containerVariableName}:`, e);
+          }
+        } else {
+          try {
+            if (container.description && (!existingContainerVariable.description || existingContainerVariable.description !== container.description)) {
+              existingContainerVariable.description = container.description;
+            }
+          } catch (e) {
+            console.warn(`Failed to update description for container variable ${containerVariableName}:`, e);
+          }
+        }
+      } else {
+        try {
+          const variable = figma.variables.createVariable(containerVariableName, containerCollection, 'FLOAT');
+          if (typeof containerValue === 'string' && containerValue.includes('%')) {
+            const percentValue = parseFloat(containerValue) / 100;
+            variable.setValueForMode(containerModeId, percentValue);
+          } else {
+            variable.setValueForMode(containerModeId, containerValue);
+          }
+          if (container.description) {
+            variable.description = container.description;
+          }
+          console.log(`Created container variable: ${containerVariableName} = ${containerValue}`);
+        } catch (e) {
+          console.error(`Failed to create container variable ${containerVariableName}:`, e);
+        }
+      }
     }
   }
 }
@@ -6828,16 +7844,43 @@ async function createBreakpointVariablesFromParsedTokens(breakpoints, prefix, du
 // ============================================
 
 // Helper function to create icon from SVG
-function createIconFromSVG(fillColor = { r: 1, g: 1, b: 1 }, fontToUse = null) {
-  // Create a clean arrow icon - prefer text character if font is available
-  // Otherwise use simple shapes
-  
-  // If font is provided, use text character (best quality)
+// Recursively apply fill color to all vector children in an SVG node
+function applyFillToAllChildren(node, fillOrPaint) {
+  // fillOrPaint can be {r,g,b} or a paint object {type:'SOLID', color:{r,g,b}}
+  const paint = fillOrPaint.type === 'SOLID' ? fillOrPaint : { type: 'SOLID', color: fillOrPaint };
+
+  if ('fills' in node && node.type !== 'GROUP' && node.type !== 'FRAME') {
+    node.fills = [paint];
+  }
+  if ('children' in node) {
+    for (const child of node.children) {
+      applyFillToAllChildren(child, paint);
+    }
+  }
+}
+
+function createIconFromSVG(fillColor = { r: 1, g: 1, b: 1 }, fontToUse = null, iconValue = null) {
+  // "none" → no icon
+  if (iconValue === 'none') return null;
+
+  // Custom SVG string → parse with Figma API
+  if (iconValue && typeof iconValue === 'string' && iconValue.trim().startsWith('<svg')) {
+    try {
+      const svgNode = figma.createNodeFromSvg(iconValue.trim());
+      svgNode.name = "Icon";
+      applyFillToAllChildren(svgNode, fillColor);
+      return svgNode;
+    } catch (e) {
+      console.warn('Failed to parse custom SVG icon, falling back to arrow:', e);
+    }
+  }
+
+  // Default: arrow icon — prefer text character if font is available
   if (fontToUse) {
     try {
       const icon = figma.createText();
       icon.name = "Icon";
-      icon.characters = "→"; // Right arrow character
+      icon.characters = "→";
       icon.fontSize = 16;
       icon.fontName = fontToUse;
       icon.fills = [{ type: 'SOLID', color: fillColor }];
@@ -6848,40 +7891,38 @@ function createIconFromSVG(fillColor = { r: 1, g: 1, b: 1 }, fontToUse = null) {
       console.warn('Failed to create arrow from text, using shapes:', e);
     }
   }
-  
-  // Fallback: create arrow using simple shapes (no background, clean design)
+
+  // Fallback: create arrow using simple shapes
   const arrowGroup = figma.createFrame();
   arrowGroup.name = "Icon";
   arrowGroup.layoutMode = "HORIZONTAL";
   arrowGroup.primaryAxisAlignItems = "CENTER";
   arrowGroup.counterAxisAlignItems = "CENTER";
-  arrowGroup.fills = []; // No background
-  arrowGroup.strokes = []; // No border
-  arrowGroup.itemSpacing = -2; // Overlap for seamless look
-  
-  // Create arrow body (horizontal line - thinner and cleaner)
+  arrowGroup.fills = [];
+  arrowGroup.strokes = [];
+  arrowGroup.itemSpacing = -2;
+
   const body = figma.createRectangle();
   body.name = "Arrow Body";
   body.resize(8, 1.2);
   body.fills = [{ type: 'SOLID', color: fillColor }];
   body.strokes = [];
   body.cornerRadius = 0.6;
-  
-  // Create arrow head - use a smaller, properly positioned diamond
+
   const head = figma.createRectangle();
   head.name = "Arrow Head";
   head.resize(4, 4);
   head.fills = [{ type: 'SOLID', color: fillColor }];
   head.strokes = [];
-  head.rotation = 45; // Rotate to form diamond/triangle
-  head.x = 5.5; // Position right after body with slight overlap
-  
+  head.rotation = 45;
+  head.x = 5.5;
+
   arrowGroup.appendChild(body);
   arrowGroup.appendChild(head);
   arrowGroup.resize(14, 14);
   arrowGroup.primaryAxisSizingMode = "AUTO";
   arrowGroup.counterAxisSizingMode = "AUTO";
-  
+
   return arrowGroup;
 }
 
@@ -6983,17 +8024,22 @@ async function createButtonComponent(buttonData, colorVariables, prefix) {
   textNode.textAutoResize = "WIDTH_AND_HEIGHT";
 
   // Create right icon - use same font as text
-  const iconNode = createIconFromSVG({ r: 1, g: 1, b: 1 }, textNode.fontName);
-  iconNode.name = "Right Icon";
+  const iconDefault = buttonData.config && buttonData.config.icons ? buttonData.config.icons.default : 'arrow--right';
+  const iconNode = createIconFromSVG({ r: 1, g: 1, b: 1 }, textNode.fontName, iconDefault);
 
   baseComponent.appendChild(textNode);
-  baseComponent.appendChild(iconNode);
+  if (iconNode) {
+    iconNode.name = "Right Icon";
+    baseComponent.appendChild(iconNode);
+  }
 
   // Set component properties
   baseComponent.addComponentProperty("Text Button", "TEXT", buttonData.config.defaultText);
-  baseComponent.addComponentProperty("Left icon", "BOOLEAN", false);
-  baseComponent.addComponentProperty("Right icon", "BOOLEAN", true);
-  baseComponent.addComponentProperty("Icon", "TEXT", "arrow--right");
+  if (iconNode) {
+    baseComponent.addComponentProperty("Left icon", "BOOLEAN", false);
+    baseComponent.addComponentProperty("Right icon", "BOOLEAN", true);
+    baseComponent.addComponentProperty("Icon", "TEXT", iconDefault || 'arrow--right');
+  }
 
   // Create variants for State, Color, Size, Type
   const states = ['Default', 'Hover', 'Disable'];
@@ -7262,9 +8308,11 @@ async function generateLayoutFromParsedTokens(parsedTokens, prefix, useVariables
     await generateColorsLayoutFromTokens(mainFrame, parsedTokens.colors, colorVariableMap);
   }
 
-  // Generate typography section
-  if (parsedTokens.typography.length > 0) {
-    await generateTypographyLayoutFromTokens(mainFrame, parsedTokens.typography, textStyleMap, prefix, colorVariableMap);
+  // Generate typography section (use all styles for layout, redirect map for style lookup)
+  const typographyForLayout = parsedTokens.typographyAll && parsedTokens.typographyAll.length > 0
+    ? parsedTokens.typographyAll : parsedTokens.typography;
+  if (typographyForLayout.length > 0) {
+    await generateTypographyLayoutFromTokens(mainFrame, typographyForLayout, textStyleMap, prefix, colorVariableMap, parsedTokens.styleRedirectMap);
   }
   
   // Generate linksColors section in typography layout
@@ -7292,8 +8340,8 @@ async function generateLayoutFromParsedTokens(parsedTokens, prefix, useVariables
   }
 
   // Generate breakpoint section
-  if (parsedTokens.breakpoints.length > 0) {
-    await generateBreakpointLayoutFromTokens(mainFrame, parsedTokens.breakpoints);
+  if (parsedTokens.breakpoints && parsedTokens.breakpoints.breakpoints && parsedTokens.breakpoints.breakpoints.length > 0) {
+    await generateBreakpointLayoutFromTokens(mainFrame, parsedTokens.breakpoints.breakpoints);
   }
 
   // Generate button section
@@ -7629,7 +8677,7 @@ async function generateColorsLayoutFromTokens(parent, colors, variableMap) {
   parent.appendChild(section);
 }
 
-async function generateTypographyLayoutFromTokens(parent, typography, textStyleMap, prefix, colorVariableMap = null) {
+async function generateTypographyLayoutFromTokens(parent, typography, textStyleMap, prefix, colorVariableMap = null, styleRedirectMap = null) {
   // Find body styles to get color for inheritance
   const bodyStyles = typography.filter(s => {
     const nameParts = s.name.split('/');
@@ -7745,7 +8793,20 @@ async function generateTypographyLayoutFromTokens(parent, typography, textStyleM
         }
       }
 
-      const existingTextStyle = textStyleMap.get(styleName) || textStyleMap.get(s.name);
+      // Try direct lookup first, then try redirect map (for deduplicated styles)
+      let redirectedStyleName = null;
+      if (styleRedirectMap && styleRedirectMap.has(s.name)) {
+        const redirectName = styleRedirectMap.get(s.name);
+        if (prefix && redirectName.includes('/')) {
+          const [bp, name] = redirectName.split('/');
+          redirectedStyleName = `${bp} - ${prefix}/${name}`;
+        } else {
+          redirectedStyleName = prefix ? `${prefix}/${redirectName}` : redirectName;
+        }
+      }
+      const existingTextStyle = textStyleMap.get(styleName) || textStyleMap.get(s.name)
+        || (redirectedStyleName && textStyleMap.get(redirectedStyleName))
+        || (styleRedirectMap && styleRedirectMap.has(s.name) && textStyleMap.get(styleRedirectMap.get(s.name)));
       if (existingTextStyle) {
         try {
           await figma.loadFontAsync(existingTextStyle.fontName);
@@ -8825,31 +9886,19 @@ async function generateButtonComponents(buttonData, colorVariables, config, pars
           try {
             // Background
             if (styleData.background && styleData.background !== 'color.transparent') {
-              const bgVariable = resolveColorToken(styleData.background, colorVariables);
-              if (bgVariable) {
-                component.fills = [
-                  figma.variables.setBoundVariableForPaint(
-                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                    'color',
-                    bgVariable
-                  )
-                ];
+              const bgPaint = resolveColorToPaint(styleData.background, colorVariables);
+              if (bgPaint) {
+                component.fills = [bgPaint];
               }
             } else {
               component.fills = [];
             }
-            
+
             // Border
             if (styleData.border && styleData.border !== 'color.transparent') {
-              const borderVariable = resolveColorToken(styleData.border, colorVariables);
-              if (borderVariable) {
-                component.strokes = [
-                  figma.variables.setBoundVariableForPaint(
-                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                    'color',
-                    borderVariable
-                  )
-                ];
+              const borderPaint = resolveColorToPaint(styleData.border, colorVariables);
+              if (borderPaint) {
+                component.strokes = [borderPaint];
               } else {
                 component.strokes = [];
               }
@@ -8962,96 +10011,100 @@ async function generateButtonComponents(buttonData, colorVariables, config, pars
           // Apply text color
           try {
             if (styleData.text) {
-              const textVariable = resolveColorToken(styleData.text, colorVariables);
-              if (textVariable) {
-                textNode.fills = [
-                  figma.variables.setBoundVariableForPaint(
-                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                    'color',
-                    textVariable
-                  )
-                ];
+              const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+              if (textPaint) {
+                textNode.fills = [textPaint];
               }
             }
           } catch (error) {
             console.error(`Error applying text color for ${type}/${color}/${state}:`, error);
           }
-          
+
           textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
           // Name must match property name for Figma to allow instance overrides
           textNode.name = 'text';
-          
+
+          // Resolve icon config value
+          const iconConfigValue = resolveConfigValue(
+            properties.icon ? properties.icon.default : '{config.icons.default}', config
+          );
+
           // Get text color for icon (should match text color)
           let iconColor = { r: 0, g: 0, b: 0 };
           let iconFill = null;
           if (styleData.text) {
             try {
-              const textVariable = resolveColorToken(styleData.text, colorVariables);
-              if (textVariable) {
-                iconFill = [
-                  figma.variables.setBoundVariableForPaint(
-                    { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                    'color',
-                    textVariable
-                  )
-                ];
+              const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+              if (textPaint) {
+                iconFill = [textPaint];
               }
             } catch (error) {
               console.warn('Could not resolve text color for icon:', error);
             }
           }
-          
-          // Create icon (right arrow) - render actual icon
-          const iconNode = createIconFromSVG(iconColor, fontToUse);
-          iconNode.name = 'icon';
-          if (iconFill) {
-            iconNode.fills = iconFill;
+
+          // Create icon node (may return null for "none")
+          const iconNode = createIconFromSVG(iconColor, fontToUse, iconConfigValue);
+
+          if (iconNode) {
+            iconNode.name = 'icon';
+            if (iconFill) {
+              if (iconNode.type === 'GROUP' || iconNode.type === 'FRAME') {
+                applyFillToAllChildren(iconNode, iconFill[0]);
+              } else {
+                iconNode.fills = iconFill;
+              }
+            }
+
+            // Create icon containers (with actual icons, controlled by properties)
+            const leftIconContainer = figma.createFrame();
+            leftIconContainer.name = 'leftIcon';
+            leftIconContainer.layoutMode = 'HORIZONTAL';
+            leftIconContainer.primaryAxisAlignItems = 'CENTER';
+            leftIconContainer.counterAxisAlignItems = 'CENTER';
+            const leftIcon = iconNode.clone();
+            leftIconContainer.appendChild(leftIcon);
+            leftIconContainer.primaryAxisSizingMode = 'AUTO';
+            leftIconContainer.counterAxisSizingMode = 'AUTO';
+            leftIconContainer.visible = false;
+
+            const rightIconContainer = figma.createFrame();
+            rightIconContainer.name = 'rightIcon';
+            rightIconContainer.layoutMode = 'HORIZONTAL';
+            rightIconContainer.primaryAxisAlignItems = 'CENTER';
+            rightIconContainer.counterAxisAlignItems = 'CENTER';
+            rightIconContainer.appendChild(iconNode);
+            rightIconContainer.primaryAxisSizingMode = 'AUTO';
+            rightIconContainer.counterAxisSizingMode = 'AUTO';
+            rightIconContainer.visible = true;
+
+            // Add Component Properties
+            if (properties.leftIcon) {
+              component.addComponentProperty('leftIcon', 'BOOLEAN', properties.leftIcon.default || false);
+            }
+            if (properties.rightIcon) {
+              component.addComponentProperty('rightIcon', 'BOOLEAN', properties.rightIcon.default !== undefined ? properties.rightIcon.default : true);
+            }
+            if (properties.text) {
+              const textDefault = resolveConfigValue(properties.text.default, config);
+              component.addComponentProperty('text', 'TEXT', textDefault || 'Button');
+            }
+            if (properties.icon) {
+              component.addComponentProperty('icon', 'TEXT', iconConfigValue || '');
+            }
+
+            // Append children (leftIcon, text, rightIcon)
+            component.appendChild(leftIconContainer);
+            component.appendChild(textNode);
+            component.appendChild(rightIconContainer);
+          } else {
+            // No icon — text only
+            if (properties.text) {
+              const textDefault = resolveConfigValue(properties.text.default, config);
+              component.addComponentProperty('text', 'TEXT', textDefault || 'Button');
+            }
+            component.appendChild(textNode);
           }
-          
-          // Create icon containers (with actual icons, controlled by properties)
-          const leftIconContainer = figma.createFrame();
-          leftIconContainer.name = 'leftIcon';
-          leftIconContainer.layoutMode = 'HORIZONTAL';
-          leftIconContainer.primaryAxisAlignItems = 'CENTER';
-          leftIconContainer.counterAxisAlignItems = 'CENTER';
-          // Clone icon for left
-          const leftIcon = iconNode.clone();
-          leftIconContainer.appendChild(leftIcon);
-          leftIconContainer.primaryAxisSizingMode = 'AUTO';
-          leftIconContainer.counterAxisSizingMode = 'AUTO';
-          leftIconContainer.visible = false; // Default hidden
-          
-          const rightIconContainer = figma.createFrame();
-          rightIconContainer.name = 'rightIcon';
-          rightIconContainer.layoutMode = 'HORIZONTAL';
-          rightIconContainer.primaryAxisAlignItems = 'CENTER';
-          rightIconContainer.counterAxisAlignItems = 'CENTER';
-          // Use icon for right (default visible)
-          rightIconContainer.appendChild(iconNode);
-          rightIconContainer.primaryAxisSizingMode = 'AUTO';
-          rightIconContainer.counterAxisSizingMode = 'AUTO';
-          rightIconContainer.visible = true; // Default visible for right icon
-          
-          // Add Component Properties (must be added BEFORE appending children for proper binding)
-          if (properties.leftIcon) {
-            component.addComponentProperty('leftIcon', 'BOOLEAN', properties.leftIcon.default || false);
-          }
-          if (properties.rightIcon) {
-            component.addComponentProperty('rightIcon', 'BOOLEAN', properties.rightIcon.default !== undefined ? properties.rightIcon.default : true);
-          }
-          if (properties.text) {
-            const textDefault = resolveConfigValue(properties.text.default, config);
-            component.addComponentProperty('text', 'TEXT', textDefault || 'Button');
-          }
-          if (properties.icon) {
-            const iconDefault = resolveConfigValue(properties.icon.default, config);
-            component.addComponentProperty('icon', 'TEXT', iconDefault || '');
-          }
-          
-          // Append children (leftIcon, text, rightIcon)
-          component.appendChild(leftIconContainer);
-          component.appendChild(textNode);
-          component.appendChild(rightIconContainer);
           
           // Add to component set frame
           componentSetFrame.appendChild(component);
@@ -9287,6 +10340,10 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
   for (const type of variants.type) {
     for (const color of variants.color) {
       for (const size of variants.size) {
+        // Skip row if no style data exists for this type/color combination
+        const hasAnyStyleData = stateKeys.some(sk => styles[type] && styles[type][color] && styles[type][color][sk]);
+        if (!hasAnyStyleData) continue;
+
         const row = figma.createFrame();
         row.name = `${type} - ${color} - ${size}`;
         row.layoutMode = "HORIZONTAL";
@@ -9304,7 +10361,7 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
         row.strokeBottomWeight = 0;
         row.strokeLeftWeight = 0;
         row.strokeRightWeight = 0;
-        
+
         // Variant label cell - fixed width, auto height
         const variantLabelCell = figma.createFrame();
         variantLabelCell.layoutMode = "HORIZONTAL";
@@ -9444,31 +10501,19 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
             try {
               // Background
               if (styleData.background && styleData.background !== 'color.transparent') {
-                const bgVariable = resolveColorToken(styleData.background, colorVariables);
-                if (bgVariable) {
-                  buttonFrame.fills = [
-                    figma.variables.setBoundVariableForPaint(
-                      { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                      'color',
-                      bgVariable
-                    )
-                  ];
+                const bgPaint = resolveColorToPaint(styleData.background, colorVariables);
+                if (bgPaint) {
+                  buttonFrame.fills = [bgPaint];
                 }
               } else {
                 buttonFrame.fills = [];
               }
-              
+
               // Border
               if (styleData.border && styleData.border !== 'color.transparent') {
-                const borderVariable = resolveColorToken(styleData.border, colorVariables);
-                if (borderVariable) {
-                  buttonFrame.strokes = [
-                    figma.variables.setBoundVariableForPaint(
-                      { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                      'color',
-                      borderVariable
-                    )
-                  ];
+                const borderPaint = resolveColorToPaint(styleData.border, colorVariables);
+                if (borderPaint) {
+                  buttonFrame.strokes = [borderPaint];
                 } else {
                   buttonFrame.strokes = [];
                 }
@@ -9573,57 +10618,53 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
             // Apply text color
             try {
               if (styleData.text) {
-                const textVariable = resolveColorToken(styleData.text, colorVariables);
-                if (textVariable) {
-                  textNode.fills = [
-                    figma.variables.setBoundVariableForPaint(
-                      { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                      'color',
-                      textVariable
-                    )
-                  ];
+                const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+                if (textPaint) {
+                  textNode.fills = [textPaint];
                 }
               }
             } catch (error) {
               console.error(`Error applying text color for ${type}/${color}/${size}/${stateKey}:`, error);
               textNode.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }];
             }
-            
+
             textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
             textNode.name = 'Text';
-            
+
+            // Resolve icon config value
+            const iconConfigValue2 = resolveConfigValue(
+              properties.icon ? properties.icon.default : '{config.icons.default}', config
+            );
+
             // Get text color for icon (should match text color)
             let iconColor = { r: 0, g: 0, b: 0 };
             let iconFill = null;
             if (styleData.text) {
               try {
-                const textVariable = resolveColorToken(styleData.text, colorVariables);
-                if (textVariable) {
-                  // Use the same variable binding as text
-                  iconFill = [
-                    figma.variables.setBoundVariableForPaint(
-                      { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                      'color',
-                      textVariable
-                    )
-                  ];
+                const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+                if (textPaint) {
+                  iconFill = [textPaint];
                 }
               } catch (error) {
                 console.warn('Could not resolve text color for icon:', error);
               }
             }
-            
-            // Create icon (right arrow) - pass font and color
-            const iconNode = createIconFromSVG(iconColor, textFontToUse);
-            iconNode.name = 'Icon';
-            
-            // Apply the same color variable binding as text
-            if (iconFill) {
-              iconNode.fills = iconFill;
-            }
-            
+
+            // Create icon
+            const iconNode = createIconFromSVG(iconColor, textFontToUse, iconConfigValue2);
+
             buttonFrame.appendChild(textNode);
-            buttonFrame.appendChild(iconNode);
+            if (iconNode) {
+              iconNode.name = 'Icon';
+              if (iconFill) {
+                if (iconNode.type === 'GROUP' || iconNode.type === 'FRAME') {
+                  applyFillToAllChildren(iconNode, iconFill[0]);
+                } else {
+                  iconNode.fills = iconFill;
+                }
+              }
+              buttonFrame.appendChild(iconNode);
+            }
             
             buttonFrame.primaryAxisSizingMode = "AUTO";
             buttonFrame.counterAxisSizingMode = "AUTO";
@@ -9631,26 +10672,19 @@ async function generateButtonGridLayout(parent, buttonData, colorVariables, conf
             buttonInstance = buttonFrame;
           }
           
-          // Check if button has white colors and add background to cell if needed
-          // Only add background if button has white text AND (white/transparent background OR white border)
-          // If button has non-white background and border, no need for cell background
+          // Check if button has light/white colors and add background to cell if needed
           if (styleData) {
-            const hasWhiteBackground = styleData.background === 'color.white' || styleData.background === 'color.transparent';
-            const hasWhiteText = styleData.text === 'color.white';
-            const hasWhiteBorder = styleData.border === 'color.white';
-            const hasNonWhiteBackground = styleData.background && 
-              styleData.background !== 'color.white' && 
-              styleData.background !== 'color.transparent';
-            const hasNonWhiteBorder = styleData.border && 
-              styleData.border !== 'color.white' && 
-              styleData.border !== 'color.transparent';
-            
-            // Add background only if:
-            // 1. Button has white background, OR
-            // 2. Button has white text AND (white/transparent background OR white border), AND not both non-white background and border
-            if (hasWhiteBackground || 
-                (hasWhiteText && (hasWhiteBackground || hasWhiteBorder) && !(hasNonWhiteBackground && hasNonWhiteBorder))) {
-              // Add gray background to cell to make white button visible
+            const hasLightBackground = isLightOrTransparentColor(styleData.background);
+            const hasLightText = isLightOrTransparentColor(styleData.text);
+            const hasLightBorder = isLightOrTransparentColor(styleData.border);
+            const hasDarkBackground = styleData.background && !isLightOrTransparentColor(styleData.background);
+            const hasDarkBorder = styleData.border && !isLightOrTransparentColor(styleData.border);
+
+            // Add background if:
+            // 1. Button has light/transparent background, OR
+            // 2. Button has light text AND (light background OR light border), AND not both dark background and border
+            if (hasLightBackground ||
+                (hasLightText && (hasLightBackground || hasLightBorder) && !(hasDarkBackground && hasDarkBorder))) {
               cellContainer.fills = [{ type: 'SOLID', color: { r: 0.725, g: 0.725, b: 0.725 } }];
             }
           }
@@ -9978,15 +11012,9 @@ async function generateTextLinkGridLayout(parent, buttonData, colorVariables, co
         // Apply text color
         try {
           if (styleData.text) {
-            const textVariable = resolveColorToken(styleData.text, colorVariables);
-            if (textVariable) {
-              textNode.fills = [
-                figma.variables.setBoundVariableForPaint(
-                  { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                  'color',
-                  textVariable
-                )
-              ];
+            const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+            if (textPaint) {
+              textNode.fills = [textPaint];
             }
           }
         } catch (error) {
@@ -10004,13 +11032,9 @@ async function generateTextLinkGridLayout(parent, buttonData, colorVariables, co
         linkInstance = linkFrame;
       }
       
-      // Check if text link has white color and add background to cell if needed
-      // Text links don't have background/border, so always add background if text is white
+      // Check if text link has light/white color and add background to cell if needed
       if (styleData) {
-        const hasWhiteText = styleData.text === 'color.white';
-        
-        if (hasWhiteText) {
-          // Add gray background to cell to make white text link visible
+        if (isLightOrTransparentColor(styleData.text)) {
           cellContainer.fills = [{ type: 'SOLID', color: { r: 0.725, g: 0.725, b: 0.725 } }];
         }
       }
@@ -10190,78 +11214,75 @@ async function generateTextLinkComponents(buttonData, colorVariables, config, pa
       // Apply text color
       try {
         if (styleData.text) {
-          const textVariable = resolveColorToken(styleData.text, colorVariables);
-          if (textVariable) {
-            textNode.fills = [
-              figma.variables.setBoundVariableForPaint(
-                { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                'color',
-                textVariable
-              )
-            ];
+          const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+          if (textPaint) {
+            textNode.fills = [textPaint];
           }
         }
       } catch (error) {
         console.error(`Error applying text color for textLink ${color}/${state}:`, error);
       }
-      
+
       textNode.textAutoResize = 'WIDTH_AND_HEIGHT';
       // Name must match property name for Figma to allow instance overrides
       textNode.name = 'text';
-      
+
+      // Resolve icon config value
+      const iconConfigValue = resolveConfigValue(
+        properties.icon ? properties.icon.default : '{config.icons.default}', config
+      );
+
       // Get text color for icon (should match text color)
       let iconColor = { r: 0, g: 0, b: 0 };
       let iconFill = null;
       if (styleData.text) {
         try {
-          const textVariable = resolveColorToken(styleData.text, colorVariables);
-          if (textVariable) {
-            iconFill = [
-              figma.variables.setBoundVariableForPaint(
-                { type: 'SOLID', color: { r: 0, g: 0, b: 0 } },
-                'color',
-                textVariable
-              )
-            ];
+          const textPaint = resolveColorToPaint(styleData.text, colorVariables);
+          if (textPaint) {
+            iconFill = [textPaint];
           }
         } catch (error) {
           console.warn('Could not resolve text color for icon:', error);
         }
       }
-      
-      // Create icon (right arrow) - render actual icon
-      const iconNode = createIconFromSVG(iconColor, fontToUse);
-      iconNode.name = 'icon';
-      if (iconFill) {
-        iconNode.fills = iconFill;
-      }
-      
-      // Create icon container (with actual icon, controlled by property)
-      const iconContainer = figma.createFrame();
-      iconContainer.name = 'icon';
-      iconContainer.layoutMode = 'HORIZONTAL';
-      iconContainer.primaryAxisAlignItems = 'CENTER';
-      iconContainer.counterAxisAlignItems = 'CENTER';
-      iconContainer.appendChild(iconNode);
-      iconContainer.primaryAxisSizingMode = 'AUTO';
-      iconContainer.counterAxisSizingMode = 'AUTO';
-      iconContainer.visible = false; // Default hidden (optional)
-      
-      // Add Component Properties (must be added BEFORE appending children for proper binding)
+
+      // Create icon node (may return null for "none")
+      const iconNode = createIconFromSVG(iconColor, fontToUse, iconConfigValue);
+
+      // Add Component Properties
       if (properties.text) {
         const textDefault = resolveConfigValue(properties.text.default, config);
         component.addComponentProperty('text', 'TEXT', textDefault || 'Text link');
       }
-      if (properties.icon) {
-        const iconDefault = properties.icon.optional 
-          ? (resolveConfigValue(properties.icon.default, config) || '')
-          : (resolveConfigValue(properties.icon.default, config) || '');
-        component.addComponentProperty('icon', 'TEXT', iconDefault);
-      }
-      
-      // Append children (text, icon)
+
       component.appendChild(textNode);
-      component.appendChild(iconContainer);
+
+      if (iconNode) {
+        iconNode.name = 'icon';
+        if (iconFill) {
+          if (iconNode.type === 'GROUP' || iconNode.type === 'FRAME') {
+            applyFillToAllChildren(iconNode, iconFill[0]);
+          } else {
+            iconNode.fills = iconFill;
+          }
+        }
+
+        // Create icon container
+        const iconContainer = figma.createFrame();
+        iconContainer.name = 'icon';
+        iconContainer.layoutMode = 'HORIZONTAL';
+        iconContainer.primaryAxisAlignItems = 'CENTER';
+        iconContainer.counterAxisAlignItems = 'CENTER';
+        iconContainer.appendChild(iconNode);
+        iconContainer.primaryAxisSizingMode = 'AUTO';
+        iconContainer.counterAxisSizingMode = 'AUTO';
+        iconContainer.visible = false;
+
+        if (properties.icon) {
+          component.addComponentProperty('icon', 'TEXT', iconConfigValue || '');
+        }
+        component.appendChild(iconContainer);
+      }
       
       // Add to component set frame
       componentSetFrame.appendChild(component);
@@ -10447,11 +11468,14 @@ async function generateButtonLayoutFromTokens(parent, buttonData, colorVariables
       textNode.textAutoResize = "WIDTH_AND_HEIGHT";
 
       // Create icon - use same font as text
-      const iconNode = createIconFromSVG(textColor, { family: "Inter", style: "Bold" });
-      iconNode.name = "Icon";
+      const oldIconDefault = buttonData.config && buttonData.config.icons ? buttonData.config.icons.default : 'arrow--right';
+      const iconNode = createIconFromSVG(textColor, { family: "Inter", style: "Bold" }, oldIconDefault);
 
       buttonFrame.appendChild(textNode);
-      buttonFrame.appendChild(iconNode);
+      if (iconNode) {
+        iconNode.name = "Icon";
+        buttonFrame.appendChild(iconNode);
+      }
 
       row.appendChild(buttonFrame);
     }
@@ -10462,4 +11486,6 @@ async function generateButtonLayoutFromTokens(parent, buttonData, colorVariables
   section.appendChild(grid);
   parent.appendChild(section);
 }
+
+
 

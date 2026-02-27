@@ -378,6 +378,22 @@
         </label>
       </div>
 
+      <div class="checkbox-group">
+        <label style="font-weight:600; font-size:11px; margin-bottom:4px; cursor:default;">Breakpoints to generate:</label>
+        <label>
+          <input type="checkbox" id="bpMobileCheckbox" checked>
+          Mobile
+        </label>
+        <label>
+          <input type="checkbox" id="bpTabletCheckbox" checked>
+          Tablet
+        </label>
+        <label>
+          <input type="checkbox" id="bpDesktopCheckbox" checked>
+          Desktop
+        </label>
+      </div>
+
       <div class="prefix-input show">
         <label for="tokensPrefixInput">Project Prefix:</label>
         <input type="text" id="tokensPrefixInput" placeholder="e.g., Project A">
@@ -531,6 +547,12 @@
       const generateLayout = generateTokensLayoutCheckbox.checked;
       const prefix = tokensPrefixInput.value.trim();
 
+      // Collect selected breakpoints
+      const selectedBreakpoints = [];
+      if (document.getElementById('bpMobileCheckbox').checked) selectedBreakpoints.push('mobile');
+      if (document.getElementById('bpTabletCheckbox').checked) selectedBreakpoints.push('tablet');
+      if (document.getElementById('bpDesktopCheckbox').checked) selectedBreakpoints.push('desktop');
+
       showLoading('Reading token files...');
       importTokensBtn.disabled = true;
 
@@ -568,7 +590,8 @@
             tokenFiles: tokenFiles,
             createVariables: createVariables,
             generateLayout: generateLayout,
-            prefix: prefix
+            prefix: prefix,
+            selectedBreakpoints: selectedBreakpoints
           }
         }, '*');
       } catch (err) {
@@ -760,7 +783,8 @@
             createVariables: pendingImportData.createVariables,
             generateLayout: pendingImportData.generateLayout,
             prefix: pendingImportData.prefix,
-            duplicateAction: duplicateAction
+            duplicateAction: duplicateAction,
+            selectedBreakpoints: pendingImportData.selectedBreakpoints
           }
         }, '*');
         pendingImportData = null;
@@ -777,7 +801,8 @@
             createVariables: pendingImportData.createVariables,
             generateLayout: pendingImportData.generateLayout,
             prefix: pendingImportData.prefix,
-            selections: selections
+            selections: selections,
+            selectedBreakpoints: pendingImportData.selectedBreakpoints
           }
         }, '*');
         pendingImportData = null;
@@ -946,7 +971,8 @@
             tokenFiles: msg.tokenFiles,
             createVariables: msg.createVariables,
             generateLayout: msg.generateLayout,
-            prefix: msg.prefix
+            prefix: msg.prefix,
+            selectedBreakpoints: msg.selectedBreakpoints
           };
         }
       } else if (msg.type === 'noDuplicates') {

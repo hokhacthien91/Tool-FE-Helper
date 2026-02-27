@@ -1,0 +1,139 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "spacing",
+  "$project": "gg-flex5",
+  "spacing": {
+    "0": {
+      "desktop": {
+        "value": "0"
+      },
+      "tablet": {
+        "value": "0"
+      },
+      "mobile": {
+        "value": "0"
+      }
+    },
+    "1": {
+      "desktop": {
+        "value": "8px"
+      },
+      "tablet": {
+        "value": "8px"
+      },
+      "mobile": {
+        "value": "8px"
+      }
+    },
+    "2": {
+      "desktop": {
+        "value": "16px"
+      },
+      "tablet": {
+        "value": "16px"
+      },
+      "mobile": {
+        "value": "16px"
+      }
+    },
+    "3": {
+      "desktop": {
+        "value": "24px"
+      },
+      "tablet": {
+        "value": "24px"
+      },
+      "mobile": {
+        "value": "24px"
+      }
+    },
+    "4": {
+      "desktop": {
+        "value": "32px"
+      },
+      "tablet": {
+        "value": "24px"
+      },
+      "mobile": {
+        "value": "24px"
+      }
+    },
+    "5": {
+      "desktop": {
+        "value": "40px"
+      },
+      "tablet": {
+        "value": "32px"
+      },
+      "mobile": {
+        "value": "32px"
+      }
+    },
+    "6": {
+      "desktop": {
+        "value": "48px"
+      },
+      "tablet": {
+        "value": "40px"
+      },
+      "mobile": {
+        "value": "40px"
+      }
+    },
+    "7": {
+      "desktop": {
+        "value": "56px"
+      },
+      "tablet": {
+        "value": "56px"
+      },
+      "mobile": {
+        "value": "44px"
+      }
+    },
+    "8": {
+      "desktop": {
+        "value": "64px"
+      },
+      "tablet": {
+        "value": "56px"
+      },
+      "mobile": {
+        "value": "44px"
+      }
+    },
+    "9": {
+      "desktop": {
+        "value": "72px"
+      },
+      "tablet": {
+        "value": "56px"
+      },
+      "mobile": {
+        "value": "44px"
+      }
+    },
+    "10": {
+      "desktop": {
+        "value": "80px"
+      },
+      "tablet": {
+        "value": "56px"
+      },
+      "mobile": {
+        "value": "44px"
+      }
+    },
+    "11": {
+      "desktop": {
+        "value": "96px"
+      },
+      "tablet": {
+        "value": "56px"
+      },
+      "mobile": {
+        "value": "44px"
+      }
+    }
+  }
+}

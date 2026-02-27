@@ -1,0 +1,63 @@
+{
+  "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+  "$type": "breakpoint",
+  "$project": "gg-flex5",
+  "breakpoint": {
+    "xs": {
+      "value": "0",
+      "description": "Extra small devices (portrait phones)",
+      "max": "480px"
+    },
+    "sm": {
+      "value": "481px",
+      "description": "Small devices (landscape phones)",
+      "max": "767px"
+    },
+    "md": {
+      "value": "768px",
+      "description": "Medium devices (tablets)",
+      "max": "991px"
+    },
+    "lg": {
+      "value": "992px",
+      "description": "Large devices (desktops)",
+      "max": "1199px"
+    },
+    "xl": {
+      "value": "1200px",
+      "description": "Extra large devices (large desktops)",
+      "max": "1399px"
+    },
+    "2xl": {
+      "value": "1400px",
+      "description": "Extra extra large devices (larger desktops)",
+      "max": "none"
+    }
+  },
+  "container": {
+    "xs": {
+      "value": "100%",
+      "description": "Full width on extra small"
+    },
+    "sm": {
+      "value": "100%",
+      "description": "Container width on small"
+    },
+    "md": {
+      "value": "720px",
+      "description": "Container width on medium"
+    },
+    "lg": {
+      "value": "960px",
+      "description": "Container width on large"
+    },
+    "xl": {
+      "value": "1080px",
+      "description": "Container width on extra large"
+    },
+    "2xl": {
+      "value": "1200px",
+      "description": "Container width on 2xl"
+    }
+  }
+}
