@@ -425,7 +425,10 @@ console.log("ui.js loaded");
           return "ℹ️";
         }
 
+        document.documentElement.dataset.showIcons = "false";
+
         function getTypeIcon(type) {
+          if (document.documentElement.dataset.showIcons !== "true") return "";
           const icons = {
             naming: "🏷️",
             autolayout: "📐",
@@ -458,7 +461,7 @@ console.log("ui.js loaded");
             color: "Color",
             "color-variable": "Color Variable",
             typography: "Font Size",
-            "typography-style": "Text Style (variable)",
+            "typography-style": "Text Style",
             "typography-check": "Typography Style Match",
             "typography-pass": "Typography ✓ Matched",
             "line-height": "Line Height",
@@ -515,7 +518,7 @@ console.log("ui.js loaded");
     el.innerHTML = `
       <div class="issue-header">
               <div>
-                <span class="issue-type">${getTypeIcon(issue.type)} ${getTypeDisplayName(issue.type)}</span>
+                <span class="issue-type">${getTypeDisplayName(issue.type)}</span>
       <div class="issue-body">${escapeHtml(issue.message)}</div>
                 ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
                 ${detailsHtml}
@@ -603,6 +606,786 @@ console.log("ui.js loaded");
       })(issue);
     }
     
+    return el;
+  }
+
+  // === Group typography issues by identical properties ===
+  const GROUPABLE_TYPO_TYPES = ["typography-check", "typography-style"];
+  function groupTypographyIssues(issues) {
+    const groups = new Map();
+    const otherIssues = [];
+
+    for (const issue of issues) {
+      // Only group non-info typography-check / typography-style issues that have nodeProps
+      if (!GROUPABLE_TYPO_TYPES.includes(issue.type) || issue.severity === "info" || !issue.nodeProps) {
+        otherIssues.push(issue);
+        continue;
+      }
+
+      // Expand subIssues from backend grouping into individual issues
+      // code.js groups issues by type|severity|message|nodeName, so multiple
+      // nodes with the same name get merged into 1 issue with subIssues array.
+      // We need to expand them so each node gets its own entry.
+      const expandedIssues = [];
+      if (issue.subIssues && issue.subIssues.length > 0) {
+        for (const sub of issue.subIssues) {
+          expandedIssues.push({
+            ...issue,
+            id: sub.id,
+            nodeName: sub.nodeName,
+            nodeProps: sub.nodeProps || issue.nodeProps,
+            subIssues: undefined,
+            affectedCount: 1
+          });
+        }
+      } else {
+        expandedIssues.push(issue);
+      }
+
+      for (const expanded of expandedIssues) {
+        const props = expanded.nodeProps || {};
+        const key = [
+          props.fontFamily || "",
+          props.fontSize ?? "",
+          props.fontWeight || "",
+          props.lineHeight || "",
+          props.letterSpacing || ""
+        ].join("|");
+
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            issues: [],
+            nodeProps: props,
+            bestMatch: expanded.bestMatch,
+            severity: expanded.severity,
+            message: expanded.message,
+            type: expanded.type
+          });
+        }
+        groups.get(key).issues.push(expanded);
+      }
+    }
+
+    return { typographyGroups: [...groups.values()], otherIssues };
+  }
+
+  // === Group color-variable issues by colorHex + colorTarget + matchingVariable ===
+  const GROUPABLE_COLOR_TYPES = ["color-variable", "color"];
+  // Extract hex color from issue (from colorHex property or from message text)
+  function extractColorHex(issue) {
+    if (issue.colorHex) return issue.colorHex.toUpperCase();
+    // Extract from message: "Color #FF0000 does not..." or "Stroke color #FF0000..."
+    const match = (issue.message || "").match(/#[0-9A-Fa-f]{6}/);
+    return match ? match[0].toUpperCase() : "";
+  }
+
+  // Extract color target from message for "color" type issues
+  function extractColorTarget(issue) {
+    if (issue.colorTarget) return issue.colorTarget;
+    const msg = (issue.message || "").toLowerCase();
+    if (msg.startsWith("stroke")) return "stroke";
+    if (msg.startsWith("effect")) return "effect";
+    return "fill";
+  }
+
+  function groupColorVariableIssues(issues) {
+    const groups = new Map();
+    const otherIssues = [];
+
+    for (const issue of issues) {
+      if (!GROUPABLE_COLOR_TYPES.includes(issue.type)) {
+        otherIssues.push(issue);
+        continue;
+      }
+
+      // Expand subIssues from backend grouping
+      const expandedIssues = [];
+      if (issue.subIssues && issue.subIssues.length > 0) {
+        for (const sub of issue.subIssues) {
+          expandedIssues.push({
+            ...issue,
+            id: sub.id,
+            nodeName: sub.nodeName,
+            colorHex: sub.colorHex || issue.colorHex,
+            colorOpacity: sub.colorOpacity != null ? sub.colorOpacity : issue.colorOpacity,
+            colorTarget: sub.colorTarget || issue.colorTarget,
+            fillIndex: sub.fillIndex != null ? sub.fillIndex : issue.fillIndex,
+            strokeIndex: sub.strokeIndex != null ? sub.strokeIndex : issue.strokeIndex,
+            matchingVariable: sub.matchingVariable || issue.matchingVariable,
+            subIssues: undefined,
+            affectedCount: 1
+          });
+        }
+      } else {
+        expandedIssues.push(issue);
+      }
+
+      for (const expanded of expandedIssues) {
+        const hex = extractColorHex(expanded);
+        const target = extractColorTarget(expanded);
+        const varName = expanded.matchingVariable ? expanded.matchingVariable.name : "";
+        const key = `${expanded.type}|${hex}|${target}|${varName}`;
+
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            issues: [],
+            colorHex: hex,
+            colorTarget: target,
+            matchingVariable: expanded.matchingVariable,
+            severity: expanded.severity,
+            type: expanded.type
+          });
+        }
+        groups.get(key).issues.push(expanded);
+      }
+    }
+
+    return { colorGroups: [...groups.values()], otherIssues };
+  }
+
+  // === Group simple issues (typography/font-size, line-height) by normalized message ===
+  const GROUPABLE_SIMPLE_TYPES = ["typography", "line-height", "text-size-mobile", "position"];
+
+  function normalizeIssueMessage(msg) {
+    let normalized = msg || "";
+    // Remove on text "..." or on "..."
+    normalized = normalized.replace(/ on text "[^"]*"/g, "");
+    normalized = normalized.replace(/ on "[^"]*"/g, "");
+    // Remove Text: "..." at the end (text-size-mobile)
+    normalized = normalized.replace(/\s*Text:\s*"[^"]*"\s*$/, "");
+    // Remove (N nodes) suffix from addIssue grouping
+    normalized = normalized.replace(/\s*\(\d+ nodes?\)\s*$/, "");
+    return normalized.trim();
+  }
+
+  function groupSimpleIssues(issues) {
+    const groups = new Map();
+    const otherIssues = [];
+
+    for (const issue of issues) {
+      if (!GROUPABLE_SIMPLE_TYPES.includes(issue.type)) {
+        otherIssues.push(issue);
+        continue;
+      }
+
+      // Expand subIssues from backend grouping
+      const expandedIssues = [];
+      if (issue.subIssues && issue.subIssues.length > 0) {
+        for (const sub of issue.subIssues) {
+          expandedIssues.push({
+            ...issue,
+            id: sub.id,
+            nodeName: sub.nodeName,
+            nodeProps: sub.nodeProps || issue.nodeProps,
+            subIssues: undefined,
+            affectedCount: 1
+          });
+        }
+      } else {
+        expandedIssues.push(issue);
+      }
+
+      for (const expanded of expandedIssues) {
+        const key = normalizeIssueMessage(expanded.message, expanded.nodeName);
+
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            issues: [],
+            message: key,
+            severity: expanded.severity,
+            type: expanded.type,
+            nodeProps: expanded.nodeProps || null,
+            bestMatch: expanded.bestMatch || null
+          });
+        }
+        groups.get(key).issues.push(expanded);
+      }
+    }
+
+    return { simpleGroups: [...groups.values()], otherIssues };
+  }
+
+  // === Render a grouped simple issue card (typography/font-size, line-height) ===
+  function addGroupedSimpleEl(group) {
+    const el = document.createElement("div");
+    el.className = `issue-grouped-card ${group.severity}`;
+    el.setAttribute("data-group-key", group.key);
+    el.setAttribute("data-issue-count", group.issues.length);
+    el.setAttribute("data-severity", group.severity);
+
+    const count = group.issues.length;
+    const msg = group.message || "";
+
+    // Extract prominent value based on type
+    let prominentValue = "";
+    let prominentLabel = "";
+    if (group.type === "typography") {
+      // Extract "fontSize 44px" → "44px"
+      const m = msg.match(/fontSize\s+(\d+(?:\.\d+)?px)/i);
+      if (m) prominentValue = m[1];
+      prominentLabel = "Font Size";
+    } else if (group.type === "line-height") {
+      // Extract "Line-height 140%" or "Line-height is set to "AUTO""
+      const m = msg.match(/Line-height\s+([\d.]+%|"AUTO")/i);
+      if (m) prominentValue = m[1].replace(/"/g, "");
+      prominentLabel = "Line Height";
+    } else if (group.type === "text-size-mobile") {
+      // Extract "too small (12px)" → "12px"
+      const m = msg.match(/\((\d+(?:\.\d+)?px)\)/);
+      if (m) prominentValue = m[1];
+      prominentLabel = "Text Size (ADA)";
+    } else if (group.type === "position") {
+      // Extract "(x:0, y:-1)" → "x:0, y:-1"
+      const m = msg.match(/\(x:(-?\d+),\s*y:(-?\d+)\)/);
+      if (m) prominentValue = `x:${m[1]}, y:${m[2]}`;
+      prominentLabel = "Position";
+    }
+
+    // For text-size-mobile: find best matching text style (same logic as typography group)
+    const isTextSizeMobile = group.type === "text-size-mobile";
+    let suggestionHtml = "";
+    let bestSuggestion = null;
+    if (isTextSizeMobile && group.nodeProps) {
+      const props = group.nodeProps;
+      if (typographyStyles && typographyStyles.length > 0) {
+        const normalizeVal = (val) => {
+          if (val === null || val === undefined) return "";
+          return String(val).toLowerCase().trim();
+        };
+        let topScore = 0;
+        for (const style of typographyStyles) {
+          // Only suggest styles with fontSize > 12px (ADA compliant)
+          if (!style.fontSize || style.fontSize <= 12) continue;
+          let score = 0;
+          if (normalizeVal(props.fontFamily) === normalizeVal(style.fontFamily)) score += 25;
+          if (props.fontSize != null && style.fontSize) {
+            const diff = Math.abs(props.fontSize - style.fontSize);
+            if (diff === 0) score += 30;
+            else if (diff <= 2) score += 25;
+            else if (diff <= 4) score += 20;
+            else if (diff <= 8) score += 10;
+          }
+          if (normalizeVal(props.fontWeight) === normalizeVal(style.fontWeight)) score += 20;
+          if (normalizeVal(props.lineHeight) === normalizeVal(style.lineHeight)) score += 15;
+          const nodeLS = normalizeVal(props.letterSpacing);
+          const styleLS = normalizeVal(style.letterSpacing || "0");
+          const isZero = (v) => v === "" || v === "0" || v === "0px" || v === "0%";
+          if ((isZero(nodeLS) && isZero(styleLS)) || nodeLS === styleLS) score += 10;
+          if (score > topScore) {
+            topScore = score;
+            bestSuggestion = { name: style.name, percentage: score, styleId: style.styleId };
+          }
+        }
+      }
+      if (!bestSuggestion && group.bestMatch && group.bestMatch.name) {
+        bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+      }
+      if (bestSuggestion && bestSuggestion.name) {
+        const pct = bestSuggestion.percentage || 0;
+        suggestionHtml = `
+          <div class="issue-grouped-suggestion">
+            <span class="issue-grouped-suggestion-label">Suggestion</span>
+            <div class="issue-grouped-suggestion-item">
+              <span class="issue-grouped-suggestion-preview">Ag</span>
+              <span class="issue-grouped-suggestion-name">${escapeHtml(bestSuggestion.name)}</span>
+              <span class="issue-grouped-suggestion-pct">(${pct}%)</span>
+              <button class="btn-suggest-fix-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Apply All" : "Apply"}</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Build node list
+    const nodeListItems = group.issues.map((issue, idx) => {
+      const name = issue.nodeName || `Node ${idx + 1}`;
+      return `<div class="issue-grouped-node-item" data-node-id="${issue.id}" title="${escapeHtml(name)}">
+        <span class="issue-grouped-node-name">${escapeHtml(name)}</span>
+      </div>`;
+    }).join("");
+
+    el.innerHTML = `
+      <div class="issue-grouped-header">
+        ${prominentValue ? `
+          <div class="issue-grouped-props">
+            <span class="issue-grouped-font">${prominentLabel}</span>
+            <span class="issue-grouped-size">${escapeHtml(prominentValue)}</span>
+          </div>
+        ` : ""}
+        <div class="issue-body" style="margin-top:4px;">${escapeHtml(msg)}</div>
+      </div>
+      <div class="issue-grouped-nodes">
+        <button class="issue-grouped-nodes-toggle" type="button">
+          <span class="issue-grouped-count">${count} layer${count !== 1 ? "s" : ""}</span>
+          <span class="issue-grouped-nodes-arrow">▶</span>
+        </button>
+        <div class="issue-grouped-nodes-list" style="display: none;">
+          ${nodeListItems}
+        </div>
+      </div>
+      ${suggestionHtml}
+      <div class="issue-grouped-actions">
+        <button class="btn-select-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Select All" : "Select"}</button>
+        ${isTextSizeMobile ? `<button class="btn-style-dropdown-all" data-group-key="${escapeHtml(group.key)}">Select Style</button>` : ""}
+        <button class="btn-remove-layer-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Remove All" : "Remove"}</button>
+      </div>
+    `;
+
+    // Toggle node list
+    const toggleBtn = el.querySelector(".issue-grouped-nodes-toggle");
+    const nodeList = el.querySelector(".issue-grouped-nodes-list");
+    const arrow = el.querySelector(".issue-grouped-nodes-arrow");
+    if (toggleBtn && nodeList) {
+      toggleBtn.onclick = () => {
+        const isHidden = nodeList.style.display === "none";
+        nodeList.style.display = isHidden ? "block" : "none";
+        if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
+      };
+    }
+
+    // Click individual node to select in Figma
+    el.querySelectorAll(".issue-grouped-node-item").forEach(item => {
+      item.onclick = () => {
+        const nodeId = item.getAttribute("data-node-id");
+        if (nodeId) {
+          parent.postMessage({ pluginMessage: { type: "focus-node", id: nodeId } }, "*");
+          el.querySelectorAll(".issue-grouped-node-item").forEach(n => n.classList.remove("active"));
+          item.classList.add("active");
+        }
+      };
+    });
+
+    // Select All button
+    const btnSelectAll = el.querySelector(".btn-select-all");
+    if (btnSelectAll) {
+      btnSelectAll.onclick = () => {
+        const ids = group.issues.map(i => i.id);
+        parent.postMessage({ pluginMessage: { type: "select-nodes", ids } }, "*");
+      };
+    }
+
+    // text-size-mobile: Apply All (suggest fix) button
+    if (isTextSizeMobile) {
+      const btnSuggestFixAll = el.querySelector(".btn-suggest-fix-all");
+      if (btnSuggestFixAll) {
+        btnSuggestFixAll.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleBatchApplyTypographyStyle(group);
+        };
+      }
+
+      // Select Style button (batch)
+      const btnStyleDropdownAll = el.querySelector(".btn-style-dropdown-all");
+      if (btnStyleDropdownAll) {
+        btnStyleDropdownAll.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          parent.postMessage({
+            pluginMessage: {
+              type: "get-figma-text-styles",
+              issueId: group.issues[0].id
+            }
+          }, "*");
+          window.pendingTypographyCheckIssue = group.issues[0];
+          window.pendingTypographyCheckGroup = group;
+        };
+      }
+    }
+
+    // Remove All button
+    const btnRemoveAll = el.querySelector(".btn-remove-layer-all");
+    if (btnRemoveAll) {
+      btnRemoveAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`Remove ${count} layer(s)?`)) {
+          group.issues.forEach(issue => {
+            parent.postMessage({
+              pluginMessage: { type: "remove-layer", id: issue.id }
+            }, "*");
+          });
+        }
+      };
+    }
+
+    return el;
+  }
+
+  // === Render a grouped typography card ===
+  function addGroupedTypographyEl(group) {
+    const el = document.createElement("div");
+    el.className = `issue-grouped-card ${group.severity}`;
+    el.setAttribute("data-group-key", group.key);
+    el.setAttribute("data-issue-count", group.issues.length);
+    el.setAttribute("data-severity", group.severity);
+
+    const props = group.nodeProps || {};
+    const count = group.issues.length;
+    const fontDesc = [
+      props.fontFamily || "",
+      props.fontWeight || ""
+    ].filter(Boolean).join(" ");
+    const sizeDesc = [
+      props.fontSize != null ? `${props.fontSize}` : "",
+      props.lineHeight || ""
+    ].filter(Boolean).join("/");
+
+    // Find best match from typographyStyles (Figma styles) — more accurate than code.js bestMatch
+    let bestSuggestion = null;
+    if (typographyStyles && typographyStyles.length > 0) {
+      const normalizeVal = (val) => {
+        if (val === null || val === undefined) return "";
+        return String(val).toLowerCase().trim();
+      };
+      let topScore = 0;
+      for (const style of typographyStyles) {
+        let score = 0;
+        if (normalizeVal(props.fontFamily) === normalizeVal(style.fontFamily)) score += 25;
+        if (props.fontSize != null && style.fontSize) {
+          const diff = Math.abs(props.fontSize - style.fontSize);
+          if (diff === 0) score += 30;
+          else if (diff <= 2) score += 25;
+          else if (diff <= 4) score += 20;
+          else if (diff <= 8) score += 10;
+        }
+        if (normalizeVal(props.fontWeight) === normalizeVal(style.fontWeight)) score += 20;
+        if (normalizeVal(props.lineHeight) === normalizeVal(style.lineHeight)) score += 15;
+        const nodeLS = normalizeVal(props.letterSpacing);
+        const styleLS = normalizeVal(style.letterSpacing || "0");
+        const isZero = (v) => v === "" || v === "0" || v === "0px" || v === "0%";
+        if ((isZero(nodeLS) && isZero(styleLS)) || nodeLS === styleLS) score += 10;
+        if (score > topScore) {
+          topScore = score;
+          bestSuggestion = { name: style.name, percentage: score, styleId: style.styleId };
+        }
+      }
+    }
+    // Fallback to code.js bestMatch if no typographyStyles match
+    if (!bestSuggestion && group.bestMatch && group.bestMatch.name) {
+      bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+    }
+
+    // Build suggestion HTML
+    let suggestionHtml = "";
+    if (bestSuggestion && bestSuggestion.name) {
+      const pct = bestSuggestion.percentage || 0;
+      suggestionHtml = `
+        <div class="issue-grouped-suggestion">
+          <span class="issue-grouped-suggestion-label">Suggestion</span>
+          <div class="issue-grouped-suggestion-item">
+            <span class="issue-grouped-suggestion-preview">Ag</span>
+            <span class="issue-grouped-suggestion-name">${escapeHtml(bestSuggestion.name)}</span>
+            <span class="issue-grouped-suggestion-pct">(${pct}%)</span>
+            <button class="btn-suggest-fix-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Apply All" : "Apply"}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Build node list
+    const nodeListItems = group.issues.map((issue, idx) => {
+      const name = issue.nodeName || issue.textPreview || `Node ${idx + 1}`;
+      return `<div class="issue-grouped-node-item" data-node-id="${issue.id}" title="${escapeHtml(name)}">
+        <span class="issue-grouped-node-name">${escapeHtml(name)}</span>
+      </div>`;
+    }).join("");
+
+    el.innerHTML = `
+      <div class="issue-grouped-header">
+        <div class="issue-grouped-props">
+          <span class="issue-grouped-font">${escapeHtml(fontDesc)}</span>
+          ${sizeDesc ? `<span class="issue-grouped-size">${escapeHtml(sizeDesc)}</span>` : ""}
+        </div>
+      </div>
+      <div class="issue-grouped-nodes">
+        <button class="issue-grouped-nodes-toggle" type="button">
+          <span class="issue-grouped-count">${count} layer${count !== 1 ? "s" : ""}</span>
+          <span class="issue-grouped-nodes-arrow">▶</span>
+        </button>
+        <div class="issue-grouped-nodes-list" style="display: none;">
+          ${nodeListItems}
+        </div>
+      </div>
+      ${suggestionHtml}
+      <div class="issue-grouped-actions">
+        <button class="btn-select-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Select All" : "Select"}</button>
+        <button class="btn-style-dropdown-all" data-group-key="${escapeHtml(group.key)}">Select Style</button>
+        <button class="btn-create-style-all btn-suggest-fix" data-group-key="${escapeHtml(group.key)}">Create Style</button>
+        <button class="btn-remove-layer-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Remove All" : "Remove"}</button>
+      </div>
+    `;
+
+    // Toggle node list
+    const toggleBtn = el.querySelector(".issue-grouped-nodes-toggle");
+    const nodeList = el.querySelector(".issue-grouped-nodes-list");
+    const arrow = el.querySelector(".issue-grouped-nodes-arrow");
+    if (toggleBtn && nodeList) {
+      toggleBtn.onclick = () => {
+        const isHidden = nodeList.style.display === "none";
+        nodeList.style.display = isHidden ? "block" : "none";
+        if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
+      };
+    }
+
+    // Click on individual node to select it
+    el.querySelectorAll(".issue-grouped-node-item").forEach(item => {
+      item.onclick = () => {
+        const nodeId = item.getAttribute("data-node-id");
+        if (nodeId) {
+          parent.postMessage({ pluginMessage: { type: "select-node", id: nodeId } }, "*");
+          // Highlight clicked node
+          el.querySelectorAll(".issue-grouped-node-item").forEach(n => n.classList.remove("active"));
+          item.classList.add("active");
+        }
+      };
+    });
+
+    // Select All button
+    const btnSelectAll = el.querySelector(".btn-select-all");
+    if (btnSelectAll) {
+      btnSelectAll.onclick = () => {
+        const ids = group.issues.map(i => i.id);
+        parent.postMessage({ pluginMessage: { type: "select-nodes", ids } }, "*");
+      };
+    }
+
+    // Apply All (suggest fix) button
+    const btnSuggestFixAll = el.querySelector(".btn-suggest-fix-all");
+    if (btnSuggestFixAll) {
+      btnSuggestFixAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleBatchApplyTypographyStyle(group);
+      };
+    }
+
+    // Select Style button (batch)
+    const btnStyleDropdownAll = el.querySelector(".btn-style-dropdown-all");
+    if (btnStyleDropdownAll) {
+      btnStyleDropdownAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Request text styles from Figma and show popup for batch
+        parent.postMessage({
+          pluginMessage: {
+            type: "get-figma-text-styles",
+            issueId: group.issues[0].id
+          }
+        }, "*");
+        // Store group for batch use
+        window.pendingTypographyCheckIssue = group.issues[0];
+        window.pendingTypographyCheckGroup = group;
+      };
+    }
+
+    // Create Style button (batch)
+    const btnCreateStyleAll = el.querySelector(".btn-create-style-all");
+    if (btnCreateStyleAll) {
+      btnCreateStyleAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof handleFixAllIssues === "function") {
+          handleFixAllIssues("typography-style", group.issues);
+        }
+      };
+    }
+
+    // Remove All button
+    const btnRemoveAll = el.querySelector(".btn-remove-layer-all");
+    if (btnRemoveAll) {
+      btnRemoveAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`Remove ${count} layer(s)?`)) {
+          group.issues.forEach(issue => {
+            parent.postMessage({
+              pluginMessage: { type: "remove-layer", id: issue.id }
+            }, "*");
+          });
+        }
+      };
+    }
+
+    return el;
+  }
+
+  // === Batch apply typography style for a group ===
+  function handleBatchApplyTypographyStyle(group) {
+    if (!group || !group.issues || group.issues.length === 0) return;
+    // Use first issue as reference for the suggest modal
+    const refIssue = group.issues[0];
+    // styleName hint: modal will sort by similarity anyway, just pass null to let it auto-pick
+    showSuggestApplyModal(refIssue, null, {
+      batchGroup: group,
+      onApply: null
+    });
+  }
+
+  // === Render a grouped color-variable card ===
+  function addGroupedColorVariableEl(group) {
+    const el = document.createElement("div");
+    el.className = `issue-grouped-card ${group.severity}`;
+    el.setAttribute("data-group-key", group.key);
+    el.setAttribute("data-issue-count", group.issues.length);
+    el.setAttribute("data-severity", group.severity);
+
+    const count = group.issues.length;
+    const hex = group.colorHex || "#000000";
+    const target = group.colorTarget || "fill";
+    const targetLabel = target === "stroke" ? "Stroke" : target === "effect" ? "Effect" : "Fill";
+    const matchVar = group.matchingVariable;
+    const isColorVar = group.type === "color-variable";
+
+    // Clean message: remove node-specific parts like 'on "NodeName"'
+    const rawMsg = group.issues[0] ? (group.issues[0].message || "") : "";
+    const cleanMsg = rawMsg.replace(/ on "[^"]*"/g, "").replace(/ on '[^']*'/g, "").trim();
+
+    // Build node list
+    const nodeListItems = group.issues.map((issue, idx) => {
+      const name = issue.nodeName || `Node ${idx + 1}`;
+      return `<div class="issue-grouped-node-item" data-node-id="${issue.id}" title="${escapeHtml(name)}">
+        <span class="issue-grouped-node-name">${escapeHtml(name)}</span>
+      </div>`;
+    }).join("");
+
+    // Build matching variable suggestion (only for color-variable type)
+    let suggestionHtml = "";
+    if (isColorVar && matchVar && matchVar.name) {
+      suggestionHtml = `
+        <div class="issue-grouped-suggestion">
+          <span class="issue-grouped-suggestion-label">Matching Variable</span>
+          <div class="issue-grouped-suggestion-item">
+            <span class="issue-grouped-color-swatch" style="background:${hex};"></span>
+            <span class="issue-grouped-suggestion-name">${escapeHtml(matchVar.name)}</span>
+            <button class="btn-suggest-fix-all btn-bind-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Bind All" : "Bind"}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    let actionsHtml = `<button class="btn-select-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Select All" : "Select"}</button>`;
+    actionsHtml += `<button class="btn-style-dropdown-all btn-select-variable-all" data-group-key="${escapeHtml(group.key)}">Select Variable</button>`;
+    actionsHtml += `<button class="btn-remove-layer-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Remove All" : "Remove"}</button>`;
+
+    el.innerHTML = `
+      <div class="issue-grouped-header">
+        <div class="issue-grouped-props">
+          <span class="issue-grouped-color-swatch" style="background:${hex};"></span>
+          <span class="issue-grouped-font">${escapeHtml(hex)}</span>
+          <span class="issue-grouped-size">${escapeHtml(targetLabel)}</span>
+        </div>
+        ${cleanMsg ? `<div class="issue-body" style="margin-top:4px;">${escapeHtml(cleanMsg)}</div>` : ""}
+      </div>
+      <div class="issue-grouped-nodes">
+        <button class="issue-grouped-nodes-toggle" type="button">
+          <span class="issue-grouped-count">${count} layer${count !== 1 ? "s" : ""}</span>
+          <span class="issue-grouped-nodes-arrow">▶</span>
+        </button>
+        <div class="issue-grouped-nodes-list" style="display: none;">
+          ${nodeListItems}
+        </div>
+      </div>
+      ${suggestionHtml}
+      <div class="issue-grouped-actions">
+        ${actionsHtml}
+      </div>
+    `;
+
+    // Toggle node list
+    const toggleBtn = el.querySelector(".issue-grouped-nodes-toggle");
+    const nodeList = el.querySelector(".issue-grouped-nodes-list");
+    const arrow = el.querySelector(".issue-grouped-nodes-arrow");
+    if (toggleBtn && nodeList) {
+      toggleBtn.onclick = () => {
+        const isHidden = nodeList.style.display === "none";
+        nodeList.style.display = isHidden ? "block" : "none";
+        if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
+      };
+    }
+
+    // Click individual node to select in Figma
+    el.querySelectorAll(".issue-grouped-node-item").forEach(item => {
+      item.onclick = () => {
+        const nodeId = item.getAttribute("data-node-id");
+        if (nodeId) {
+          parent.postMessage({ pluginMessage: { type: "focus-node", id: nodeId } }, "*");
+          // Highlight active
+          el.querySelectorAll(".issue-grouped-node-item").forEach(n => n.classList.remove("active"));
+          item.classList.add("active");
+        }
+      };
+    });
+
+    // Select All button
+    const btnSelectAll = el.querySelector(".btn-select-all");
+    if (btnSelectAll) {
+      btnSelectAll.onclick = () => {
+        const ids = group.issues.map(i => i.id);
+        parent.postMessage({ pluginMessage: { type: "select-nodes", ids } }, "*");
+      };
+    }
+
+    // Bind All button (auto-bind matching variable to all)
+    const btnBindAll = el.querySelector(".btn-bind-all");
+    if (btnBindAll && matchVar && matchVar.id) {
+      btnBindAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Check if any have opacity < 1
+        const hasOpacity = group.issues.some(i => i.colorOpacity && i.colorOpacity < 1);
+        if (hasOpacity) {
+          if (!confirm(`Some layers have opacity < 100%. Binding a variable will reset opacity. Continue?`)) {
+            return;
+          }
+        }
+        const issueData = group.issues.map(i => ({
+          id: i.id,
+          colorTarget: i.colorTarget,
+          fillIndex: i.fillIndex,
+          strokeIndex: i.strokeIndex
+        }));
+        showFixMessage(group.issues[0].id, `⏳ Binding "${matchVar.name}" to ${count} layer(s)...`, true);
+        parent.postMessage({
+          pluginMessage: {
+            type: "bind-color-variable-batch",
+            issues: issueData,
+            variableId: matchVar.id,
+            variableName: matchVar.name
+          }
+        }, "*");
+      };
+    }
+
+    // Select Variable button (open modal for batch)
+    const btnSelectVarAll = el.querySelector(".btn-select-variable-all");
+    if (btnSelectVarAll) {
+      btnSelectVarAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showSelectVariableModal(group.issues[0], { batchGroup: group });
+      };
+    }
+
+    // Remove All button
+    const btnRemoveAll = el.querySelector(".btn-remove-layer-all");
+    if (btnRemoveAll) {
+      btnRemoveAll.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`Remove ${count} layer(s)?`)) {
+          group.issues.forEach(issue => {
+            parent.postMessage({
+              pluginMessage: { type: "remove-layer", id: issue.id }
+            }, "*");
+          });
+        }
+      };
+    }
+
     return el;
   }
 
@@ -2319,15 +3102,15 @@ console.log("ui.js loaded");
       });
     };
 
-    // Sort styles by similarity (highest first), bestMatch always first if exists
+    // Sort styles by similarity score (highest first)
     const sortedStyles = [...styles].sort((a, b) => {
-      // Best match always first
-      if (bestMatchName === a.name) return -1;
-      if (bestMatchName === b.name) return 1;
-
-      // Then sort by similarity score
       return calculateSimilarity(b) - calculateSimilarity(a);
     });
+
+    // Best match = highest similarity score (first item after sort)
+    if (sortedStyles.length > 0) {
+      bestMatchName = sortedStyles[0].name;
+    }
 
     // Helper to check if value is different
     const isDifferent = (current, styleVal) => {
@@ -2602,12 +3385,21 @@ console.log("ui.js loaded");
     
     applyBtn.onclick = () => {
       closeAllModals();
-      
-      // Show loading message
-      showFixMessage(issue.id, "⏳ Applying style...", true);
-      
-      // Apply Figma text style
-      handleApplyFigmaTextStyle(issue, selectedStyle);
+
+      // Check if batch group is pending
+      const batchGroup = window.pendingTypographyCheckGroup;
+      if (batchGroup && batchGroup.issues && batchGroup.issues.length > 1) {
+        // Apply to all issues in group
+        batchGroup.issues.forEach(groupIssue => {
+          showFixMessage(groupIssue.id, "⏳ Applying style...", true);
+          handleApplyFigmaTextStyle(groupIssue, selectedStyle);
+        });
+        window.pendingTypographyCheckGroup = null;
+      } else {
+        // Single issue
+        showFixMessage(issue.id, "⏳ Applying style...", true);
+        handleApplyFigmaTextStyle(issue, selectedStyle);
+      }
     };
   }
 
@@ -3957,6 +4749,16 @@ console.log("ui.js loaded");
       return String(val).toLowerCase().trim();
     };
 
+    // Helper to check zero spacing variants
+    const isZeroSpacing = (val) => {
+      const v = normalizeValue(val);
+      return v === "" || v === "0" || v === "0px" || v === "0%" || v === "0em";
+    };
+    // Helper to check if value is different
+    const isDifferent = (current, styleVal) => {
+      return normalizeValue(current) !== normalizeValue(styleVal);
+    };
+
     // Calculate similarity score for sorting (higher = more similar)
     const calculateSimilarity = (style) => {
       // Create cache key from current node props and style id
@@ -3994,8 +4796,9 @@ console.log("ui.js loaded");
           score += 15;
         }
 
-        // Letter spacing match (10 points)
-        if (normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
+        // Letter spacing match (10 points) — normalize zero variants
+        if ((isZeroSpacing(currentLetterSpacing) && isZeroSpacing(style.letterSpacing || "0")) ||
+            normalizeValue(currentLetterSpacing) === normalizeValue(style.letterSpacing || "0")) {
           score += 10;
         }
 
@@ -4003,8 +4806,13 @@ console.log("ui.js loaded");
       });
     };
 
+    // Filter styles for text-size-mobile (only > 12px)
+    const stylesToUse = (issue.type === "text-size-mobile")
+      ? typographyStyles.filter(s => s.fontSize > 12)
+      : typographyStyles;
+
     // Sort styles by similarity and get top 5
-    const sortedStyles = [...typographyStyles]
+    const sortedStyles = [...stylesToUse]
       .map(style => ({ ...style, similarity: calculateSimilarity(style) }))
       .sort((a, b) => {
         // If styleName provided, put it first
@@ -4023,18 +4831,15 @@ console.log("ui.js loaded");
     // Track selected style (default to first one)
     let selectedStyleId = sortedStyles[0].id;
 
-    // Helper to check if value is different
-    const isDifferent = (current, styleVal) => {
-      return normalizeValue(current) !== normalizeValue(styleVal);
-    };
-
     // Build style option HTML - detailed view like screenshot 2
     const buildStyleOptionHtml = (style, isSelected, index) => {
       const familyDiff = isDifferent(currentFamily, style.fontFamily);
       const sizeDiff = isDifferent(currentSize, `${style.fontSize}px`);
       const weightDiff = isDifferent(currentWeight, style.fontWeight);
       const lineHeightDiff = isDifferent(currentLineHeight, style.lineHeight);
-      const letterSpacingDiff = isDifferent(currentLetterSpacing, style.letterSpacing || "0%");
+      const letterSpacingDiff = (isZeroSpacing(currentLetterSpacing) && isZeroSpacing(style.letterSpacing || "0"))
+        ? false
+        : isDifferent(currentLetterSpacing, style.letterSpacing || "0%");
 
       const matchStyle = "color: #155724;";
       const diffStyle = "color: #721c24; background: #f8d7da; padding: 2px 6px; border-radius: 4px; font-weight: 600;";
@@ -4222,29 +5027,42 @@ console.log("ui.js loaded");
       }
 
       closeModal();
-      // Show loading message
-      showFixMessage(issue.id, "⏳ Applying style...", true);
 
-      // Check if style has a Figma styleId (extracted from Figma)
-      if (selectedStyle.styleId) {
-        // Apply actual Figma text style (node will be linked to the style)
+      // Check if this is a batch apply (from grouped card)
+      const batchGroup = options.batchGroup;
+      if (batchGroup && batchGroup.issues && batchGroup.issues.length > 1 && selectedStyle.styleId) {
+        const issueIds = batchGroup.issues.map(i => i.id);
+        showFixMessage(issueIds[0], `⏳ Applying "${selectedStyle.name}" to ${issueIds.length} layers...`, true);
         parent.postMessage({
           pluginMessage: {
-            type: "apply-figma-text-style",
-            issue: issue,
+            type: "apply-figma-text-style-batch",
+            issueIds: issueIds,
             styleId: selectedStyle.styleId,
             styleName: selectedStyle.name
           }
         }, "*");
       } else {
-        // Fallback: Apply typography properties manually (for manually added styles)
-        parent.postMessage({
-          pluginMessage: {
-            type: "apply-typography-style",
-            issue: issue,
-            style: selectedStyle
-          }
-        }, "*");
+        // Single apply
+        showFixMessage(issue.id, "⏳ Applying style...", true);
+
+        if (selectedStyle.styleId) {
+          parent.postMessage({
+            pluginMessage: {
+              type: "apply-figma-text-style",
+              issue: issue,
+              styleId: selectedStyle.styleId,
+              styleName: selectedStyle.name
+            }
+          }, "*");
+        } else {
+          parent.postMessage({
+            pluginMessage: {
+              type: "apply-typography-style",
+              issue: issue,
+              style: selectedStyle
+            }
+          }, "*");
+        }
       }
 
       // Call onApply callback if provided
@@ -4265,7 +5083,10 @@ console.log("ui.js loaded");
   }
   
   // Show modal to select a color variable for binding
-  function showSelectVariableModal(issue) {
+  function showSelectVariableModal(issue, options) {
+    const batchGroup = options && options.batchGroup;
+    const batchCount = batchGroup ? batchGroup.issues.length : 1;
+
     // Request color variables from backend
     parent.postMessage({ pluginMessage: { type: "extract-color-variables" } }, "*");
 
@@ -4304,7 +5125,9 @@ console.log("ui.js loaded");
 
       const subtitle = document.createElement("div");
       subtitle.style.cssText = "font-size:12px;color:#666;margin-bottom:12px;";
-      subtitle.textContent = `Color: ${issueHex} on "${issue.nodeName}"`;
+      subtitle.textContent = batchGroup
+        ? `Color: ${issueHex} — ${batchCount} layer(s)`
+        : `Color: ${issueHex} on "${issue.nodeName}"`;
 
       const list = document.createElement("div");
       list.style.cssText = "overflow-y:auto;flex:1;";
@@ -4321,17 +5144,36 @@ console.log("ui.js loaded");
           </div>
         `;
         item.onclick = () => {
-          // Need to find variable ID — request backend to find it
           overlay.remove();
-          showFixMessage(issue.id, "⏳ Binding variable...", true);
-          parent.postMessage({
-            pluginMessage: {
-              type: "bind-color-variable-by-name",
-              issue: issue,
-              variableName: c.name,
-              variableHex: c.hex
-            }
-          }, "*");
+          if (batchGroup && batchGroup.issues.length > 0) {
+            // Batch bind by variable name — need variable ID from backend
+            const issueData = batchGroup.issues.map(i => ({
+              id: i.id,
+              colorTarget: i.colorTarget,
+              fillIndex: i.fillIndex,
+              strokeIndex: i.strokeIndex
+            }));
+            showFixMessage(batchGroup.issues[0].id, `⏳ Binding "${c.name}" to ${batchCount} layer(s)...`, true);
+            parent.postMessage({
+              pluginMessage: {
+                type: "bind-color-variable-by-name-batch",
+                issues: issueData,
+                variableName: c.name,
+                variableHex: c.hex
+              }
+            }, "*");
+          } else {
+            // Single bind
+            showFixMessage(issue.id, "⏳ Binding variable...", true);
+            parent.postMessage({
+              pluginMessage: {
+                type: "bind-color-variable-by-name",
+                issue: issue,
+                variableName: c.name,
+                variableHex: c.hex
+              }
+            }, "*");
+          }
         };
         list.appendChild(item);
       });
@@ -5357,7 +6199,11 @@ console.log("ui.js loaded");
           ];
 
           // Render all issue types (including those with 0 issues)
+          const disabledChecks = currentReportData.disabledChecks || [];
           for (const type of allIssueTypes) {
+            // Skip disabled check types entirely
+            if (disabledChecks.includes(type)) continue;
+
             // Count issues excluding ignored ones from error/warn counts
             const groupIssues = grouped[type] || [];
             const issueCount = groupIssues.length;
@@ -5367,7 +6213,7 @@ console.log("ui.js loaded");
               if (i.ignored) return false; // Don't count ignored
               return i.severity === "error" || i.severity === "warn";
             }).length;
-            
+
             // Skip if no issues and no original issues (first scan)
             // But always show groups if there are any issues in the scan (even if filtered out)
             if (issueCount === 0 && issues.length === 0) {
@@ -5432,7 +6278,7 @@ console.log("ui.js loaded");
                 <button class="issue-group-toggle" type="button">
                   <span class="issue-group-toggle-icon">${wasExpanded ? "▶" : "▶"}</span>
                 </button>
-                <h4>${getTypeIcon(type)} ${getTypeDisplayName(type)}</h4>
+                <h4>${getTypeDisplayName(type)}</h4>
                 <span class="badge">${nonIgnoredErrorWarnCount}</span>
               </div>
               ${issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
@@ -5564,24 +6410,16 @@ console.log("ui.js loaded");
                 issue.ignored = true;
               }
               
-              // Use addIssueEl for typography issues to get detailed rendering
-              if (issue.type === "typography-check") {
-                const tempDiv = document.createElement("div");
-                groupContent.appendChild(tempDiv);
-                
-                // Call addIssueEl and move the created element into groupContent
-                const issueEl = addIssueEl(issue);
-                if (issueEl) {
-                  // Add issue number
-                  const numberSpan = document.createElement("span");
-                  numberSpan.className = "issue-number";
-                  numberSpan.textContent = `#${issueNumber}`;
-                  numberSpan.style.cssText = "position: absolute; left: 8px; top: 8px; font-weight: bold; opacity: 0.5; font-size: 11px;";
-                  issueEl.style.position = "relative";
-                  issueEl.style.paddingLeft = "40px";
-                  issueEl.insertBefore(numberSpan, issueEl.firstChild);
-                  groupContent.replaceChild(issueEl, tempDiv);
-                }
+              // Typography issues with nodeProps are rendered as grouped cards (handled below)
+              if (GROUPABLE_TYPO_TYPES.includes(issue.type) && issue.nodeProps) {
+                return; // Skip individual rendering; grouped cards rendered after forEach
+              }
+              // Color-variable issues are rendered as grouped cards (handled below)
+              if (GROUPABLE_COLOR_TYPES.includes(issue.type)) {
+                return;
+              }
+              // Typography/line-height issues are rendered as grouped cards (handled below)
+              if (GROUPABLE_SIMPLE_TYPES.includes(issue.type)) {
                 return;
               }
               
@@ -6117,6 +6955,55 @@ console.log("ui.js loaded");
                 }
               }
               });
+
+              // Render grouped typography cards (after individual issues)
+              if (GROUPABLE_TYPO_TYPES.includes(type)) {
+                const typoIssues = grouped[type] || [];
+                const nonIgnoredTypoIssues = typoIssues.filter(i => !i.ignored && i.severity !== "info" && i.nodeProps);
+                if (nonIgnoredTypoIssues.length > 0) {
+                  const { typographyGroups, otherIssues: ungroupable } = groupTypographyIssues(nonIgnoredTypoIssues);
+                  ungroupable.forEach(issue => {
+                    const issueEl = addIssueEl(issue);
+                    if (issueEl) groupContent.appendChild(issueEl);
+                  });
+                  typographyGroups.forEach(group => {
+                    const groupedEl = addGroupedTypographyEl(group);
+                    if (groupedEl) groupContent.appendChild(groupedEl);
+                  });
+                }
+              }
+
+              // Render grouped color-variable cards (after individual issues)
+              if (GROUPABLE_COLOR_TYPES.includes(type)) {
+                const colorIssues = (grouped[type] || []).filter(i => !i.ignored);
+                if (colorIssues.length > 0) {
+                  const { colorGroups, otherIssues: ungroupable } = groupColorVariableIssues(colorIssues);
+                  ungroupable.forEach(issue => {
+                    const issueEl = addIssueEl(issue);
+                    if (issueEl) groupContent.appendChild(issueEl);
+                  });
+                  colorGroups.forEach(group => {
+                    const groupedEl = addGroupedColorVariableEl(group);
+                    if (groupedEl) groupContent.appendChild(groupedEl);
+                  });
+                }
+              }
+
+              // Render grouped simple cards (typography/font-size, line-height)
+              if (GROUPABLE_SIMPLE_TYPES.includes(type)) {
+                const simpleIssues = (grouped[type] || []).filter(i => !i.ignored);
+                if (simpleIssues.length > 0) {
+                  const { simpleGroups, otherIssues: ungroupable } = groupSimpleIssues(simpleIssues);
+                  ungroupable.forEach(issue => {
+                    const issueEl = addIssueEl(issue);
+                    if (issueEl) groupContent.appendChild(issueEl);
+                  });
+                  simpleGroups.forEach(group => {
+                    const groupedEl = addGroupedSimpleEl(group);
+                    if (groupedEl) groupContent.appendChild(groupedEl);
+                  });
+                }
+              }
             }
 
             groupEl.appendChild(groupContent);
@@ -6334,17 +7221,27 @@ console.log("ui.js loaded");
             return;
           }
 
-            const tokenGroups = {
-              colors: { icon: "🎨", label: "Colors", values: filteredTokens.colors || [] },
-              gradients: { icon: "🌈", label: "Gradients", values: filteredTokens.gradients || [] },
-              spacing: { icon: "↔️", label: "Spacing (px)", values: filteredTokens.spacing || [] },
-              borderRadius: { icon: "⭕", label: "Border Radius", values: filteredTokens.borderRadius || [] },
-              fontWeight: { icon: "💪", label: "Font Weight", values: filteredTokens.fontWeight || [] },
-              lineHeight: { icon: "📏", label: "Line Height (%)", values: filteredTokens.lineHeight || [] },
-              fontSize: { icon: "📝", label: "Font Size", values: filteredTokens.fontSize || [] },
-              fontFamily: { icon: "🔤", label: "Font Family", values: filteredTokens.fontFamily || [] }
-            };
+            // const tokenGroups = {
+            //   colors: { icon: "🎨", label: "Colors", values: filteredTokens.colors || [] },
+            //   gradients: { icon: "🌈", label: "Gradients", values: filteredTokens.gradients || [] },
+            //   spacing: { icon: "↔️", label: "Spacing (px)", values: filteredTokens.spacing || [] },
+            //   borderRadius: { icon: "⭕", label: "Border Radius", values: filteredTokens.borderRadius || [] },
+            //   fontWeight: { icon: "💪", label: "Font Weight", values: filteredTokens.fontWeight || [] },
+            //   lineHeight: { icon: "📏", label: "Line Height (%)", values: filteredTokens.lineHeight || [] },
+            //   fontSize: { icon: "📝", label: "Font Size", values: filteredTokens.fontSize || [] },
+            //   fontFamily: { icon: "🔤", label: "Font Family", values: filteredTokens.fontFamily || [] }
+            // };
 
+             const tokenGroups = {
+              colors: { icon: "", label: "Colors", values: filteredTokens.colors || [] },
+              gradients: { icon: "", label: "Gradients", values: filteredTokens.gradients || [] },
+              spacing: { icon: "", label: "Spacing (px)", values: filteredTokens.spacing || [] },
+              borderRadius: { icon: "", label: "Border Radius", values: filteredTokens.borderRadius || [] },
+              fontWeight: { icon: "", label: "Font Weight", values: filteredTokens.fontWeight || [] },
+              lineHeight: { icon: "", label: "Line Height (%)", values: filteredTokens.lineHeight || [] },
+              fontSize: { icon: "", label: "Font Size", values: filteredTokens.fontSize || [] },
+              fontFamily: { icon: "", label: "Font Family", values: filteredTokens.fontFamily || [] }
+            };
           // Results header
           const header = document.createElement("div");
           header.className = "results-header";
@@ -6369,7 +7266,7 @@ console.log("ui.js loaded");
                 <button class="issue-group-toggle" type="button">
                   <span class="issue-group-toggle-icon">▶</span>
                 </button>
-                <h4>${group.icon} ${group.label}</h4>
+                <h4>${document.documentElement.dataset.showIcons === "true" ? group.icon + " " : ""}${group.label}</h4>
                 <span class="badge">${group.values.length}</span>
               </div>
             `;
@@ -6643,6 +7540,9 @@ console.log("ui.js loaded");
     const skipNamesEl = document.getElementById("scan-skip-names");
     const skipNamesValue = skipNamesEl ? skipNamesEl.value.trim() : "not check design, sticky note, vector, Clip path group, Clip path";
 
+    // Get applied scan settings (which checks are enabled/disabled)
+    const appliedScanSettings = typeof window.getAppliedScanSettings === "function" ? window.getAppliedScanSettings() : {};
+
     parent.postMessage({
       pluginMessage: {
         type: "scan",
@@ -6658,7 +7558,8 @@ console.log("ui.js loaded");
         typographyStyles: typographyStyles,
         typographyRules: typographyRules,
         ignoredIssues: ignoredIssues,
-        skipNames: skipNamesValue
+        skipNames: skipNamesValue,
+        scanSettings: appliedScanSettings
       }
     }, "*");
     console.log("Message sent:", { type: "scan", mode: scope });
@@ -7853,7 +8754,37 @@ console.log("ui.js loaded");
         };
         clearResults("issues");
         clearResults("tokens");
+        clearResults("animations");
         switchToTab("issues");
+
+        // Reset tab badges
+        const issuesCountEl = document.getElementById("issues-count");
+        const tokensCountEl = document.getElementById("tokens-count");
+        const animationsCountEl = document.getElementById("animations-count");
+        if (issuesCountEl) issuesCountEl.textContent = "0";
+        if (tokensCountEl) tokensCountEl.textContent = "0";
+        if (animationsCountEl) animationsCountEl.textContent = "0";
+
+        // Reset filter badges
+        const countAll = document.getElementById("filter-count-all");
+        const countError = document.getElementById("filter-count-error");
+        const countWarn = document.getElementById("filter-count-warn");
+        if (countAll) countAll.textContent = "0";
+        if (countError) countError.textContent = "0";
+        if (countWarn) countWarn.textContent = "0";
+
+        // Reset search input
+        if (searchInput) {
+          searchInput.value = "";
+          currentSearch = "";
+        }
+        if (btnClearSearch) btnClearSearch.style.display = "none";
+
+        // Hide filter controls and export group
+        const filterControls = document.getElementById("filter-controls");
+        const exportGroup = document.getElementById("export-group");
+        if (filterControls) filterControls.style.display = "none";
+        if (exportGroup) exportGroup.style.display = "none";
         
         // Clear history
         clearScanHistoryLocal();
@@ -7865,9 +8796,14 @@ console.log("ui.js loaded");
           renderScanHistory();
         }
         
+        // Reset Scan Settings to defaults
+        if (typeof window.resetScanSettings === "function") {
+          window.resetScanSettings();
+        }
+
         // Save reset input values only (don't save report - it's already cleared in backend)
         saveInputValues();
-        
+
         // Note: Don't call saveLastReport() here - backend already cleared it
         // and we want to keep it empty
         
@@ -8537,39 +9473,35 @@ console.log("ui.js loaded");
     }
 
     if (msg && msg.type === "create-text-style-result") {
-      // Show create style result message
-      showFixMessage(msg.issueId, msg.message, msg.success);
-      
-      // If successful, hide the issue after 5 seconds
-      if (msg.success) {
-        setTimeout(() => {
-          const issueEl = document.querySelector(`.issue[data-issue-id="${msg.issueId}"]`) ||
-                         document.querySelector(`button.btn-create-style[data-id="${msg.issueId}"]`)?.closest(".issue");
-          if (issueEl) {
-            issueEl.style.transition = "opacity 0.5s ease-out";
-            issueEl.style.opacity = "0";
-            setTimeout(() => {
-              if (issueEl.parentNode) {
-                issueEl.remove();
-                // Update badge count
-                const groupEl = issueEl.closest(".issue-group");
-                if (groupEl) {
-                  const badge = groupEl.querySelector(".badge");
-                  if (badge) {
-                    const currentCount = parseInt(badge.textContent) || 0;
-                    const newCount = Math.max(0, currentCount - 1);
-                    badge.textContent = newCount;
-                    // Hide group if no issues left
-                    if (newCount === 0) {
-                      groupEl.style.display = "none";
-                    }
-                  }
-                }
-              }
-            }, 500);
-          }
-        }, 5000);
+      // Track successful creates for batch re-render
+      if (!window._createStyleSuccessIds) window._createStyleSuccessIds = [];
+      if (!window._createStylePendingTimer) window._createStylePendingTimer = null;
+
+      if (msg.success && msg.issueId) {
+        window._createStyleSuccessIds.push(msg.issueId);
       }
+
+      // Debounce: wait for all batch results then re-render once
+      if (window._createStylePendingTimer) clearTimeout(window._createStylePendingTimer);
+      window._createStylePendingTimer = setTimeout(() => {
+        const successIds = window._createStyleSuccessIds || [];
+        window._createStyleSuccessIds = [];
+        window._createStylePendingTimer = null;
+
+        if (successIds.length > 0 && currentReportData && currentReportData.issues) {
+          // Remove fixed issues from data
+          currentReportData.issues = currentReportData.issues.filter(issue => {
+            if (successIds.includes(issue.id)) return false;
+            // Also filter subIssues
+            if (issue.subIssues && issue.subIssues.length > 0) {
+              issue.subIssues = issue.subIssues.filter(sub => !successIds.includes(sub.id));
+              if (issue.subIssues.length === 0) return false;
+            }
+            return true;
+          });
+          renderResults(currentReportData.issues, false);
+        }
+      }, 500);
       return;
     }
 
@@ -8760,8 +9692,13 @@ console.log("ui.js loaded");
           window.pendingTypographyCheckIssue = null;
           return;
         }
+        // Filter styles > 12px for text-size-mobile issues (ADA compliance)
+        let stylesToShow = msg.styles || [];
+        if (pendingTypographyCheckIssue.type === "text-size-mobile") {
+          stylesToShow = stylesToShow.filter(s => s.fontSize > 12);
+        }
         // Show text style picker popup for typography-check
-        showTextStylePickerForTypography(pendingTypographyCheckIssue, msg.styles || []);
+        showTextStylePickerForTypography(pendingTypographyCheckIssue, stylesToShow);
         window.pendingTypographyCheckIssue = null;
         return;
       }
@@ -8892,6 +9829,29 @@ console.log("ui.js loaded");
       return;
     }
 
+    if (msg && msg.type === "apply-typography-style-batch-result") {
+      if (msg.success && msg.successIds && msg.successIds.length > 0) {
+        // Remove fixed issues from report data
+        const typoTypes = ["typography-check", "typography-style", "typography"];
+        const successSet = new Set(msg.successIds.map(String));
+        if (currentReportData && currentReportData.issues) {
+          currentReportData.issues = currentReportData.issues.filter(i =>
+            !(successSet.has(String(i.id)) && typoTypes.includes(i.type))
+          );
+        }
+        showFixMessage(msg.successIds[0], msg.message, true);
+        setTimeout(() => {
+          updateIssueCounts();
+          if (currentReportData && currentReportData.issues) {
+            renderResults(currentReportData.issues, false);
+          }
+        }, 350);
+      } else {
+        showErrorModal(msg.message || "An error occurred while applying styles.");
+      }
+      return;
+    }
+
     if (msg && msg.type === "bind-color-variable-result") {
       showFixMessage(msg.issueId, msg.message, msg.success);
       if (msg.success) {
@@ -8909,6 +9869,32 @@ console.log("ui.js loaded");
             }
           }, 350);
         }
+      }
+      return;
+    }
+
+    if (msg && msg.type === "bind-color-variable-batch-result") {
+      if (msg.success && msg.successIds && msg.successIds.length > 0) {
+        const successSet = new Set(msg.successIds.map(String));
+        if (currentReportData && currentReportData.issues) {
+          currentReportData.issues = currentReportData.issues.filter(i => {
+            if (i.type !== "color-variable") return true;
+            // Remove direct matches
+            if (successSet.has(String(i.id))) return false;
+            // Remove from subIssues if present
+            if (i.subIssues) {
+              i.subIssues = i.subIssues.filter(s => !successSet.has(String(s.id)));
+              if (i.subIssues.length === 0) return false;
+            }
+            return true;
+          });
+        }
+        setTimeout(() => {
+          updateIssueCounts();
+          if (currentReportData && currentReportData.issues) {
+            renderResults(currentReportData.issues, false);
+          }
+        }, 350);
       }
       return;
     }
@@ -9147,8 +10133,9 @@ console.log("ui.js loaded");
             scanProgress.style.display = "none";
             btnExtractTokens.disabled = false;
       const issues = msg.issues || [];
-            
+
             currentReportData.context = msg.context || null;
+            currentReportData.disabledChecks = msg.disabledChecks || [];
             renderResults(issues);
             
             // Save to history after successful scan (with full data)

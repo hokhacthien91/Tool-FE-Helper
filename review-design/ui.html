@@ -765,15 +765,15 @@
       <div class="report-tabs">
       
         <button class="report-tab active" data-tab="issues">
-          📋 Design Review
+          Design Review
           <span class="tab-badge" id="issues-count">0</span>
         </button>
          <button class="report-tab" data-tab="tokens">
-          🎨 Tokens
+          Tokens
           <span class="tab-badge" id="tokens-count">0</span>
         </button>
         <button class="report-tab" data-tab="animations">
-          🎬 Animations
+          Animations
           <span class="tab-badge" id="animations-count">0</span>
         </button>
        
@@ -869,22 +869,22 @@
           <div class="animation-filter-buttons">
             <button class="filter-btn active" data-type="all">All</button>
             <button class="filter-btn" data-type="click">
-              <span class="filter-icon">👆</span> Click <strong id="stat-click">0</strong>
+              Click <strong id="stat-click">0</strong>
             </button>
             <button class="filter-btn" data-type="hover">
-              <span class="filter-icon">🖱️</span> Hover <strong id="stat-hover">0</strong>
+              Hover <strong id="stat-hover">0</strong>
             </button>
             <button class="filter-btn" data-type="drag">
-              <span class="filter-icon">✋</span> Drag <strong id="stat-drag">0</strong>
+              Drag <strong id="stat-drag">0</strong>
             </button>
             <button class="filter-btn" data-type="scroll">
-              <span class="filter-icon">📜</span> Scroll <strong id="stat-scroll">0</strong>
+              Scroll <strong id="stat-scroll">0</strong>
             </button>
             <button class="filter-btn" data-type="auto">
-              <span class="filter-icon">⏱️</span> Auto <strong id="stat-auto">0</strong>
+               Auto <strong id="stat-auto">0</strong>
             </button>
             <button class="filter-btn" data-type="key">
-              <span class="filter-icon">⌨️</span> Key <strong id="stat-key">0</strong>
+              Key <strong id="stat-key">0</strong>
             </button>
           </div>
         </div>
@@ -1216,6 +1216,10 @@
               <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🎨 Color</span>
             </label>
             <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-colorvariable" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">🔗 Color Variable</span>
+            </label>
+            <label class="scan-setting-item" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fafafa; border: 1px solid #e5e5e7; border-radius: 8px; cursor: pointer;">
               <input type="checkbox" id="scan-check-fontsize" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
               <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">✍️ Font Size</span>
             </label>
@@ -1264,7 +1268,14 @@
               <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">📱 Text Size (ADA)</span>
             </label>
           </div>
-      
+
+          <!-- <div style="margin-top: 12px; padding: 10px 12px; background: #f0f0f2; border: 1px solid #e5e5e7; border-radius: 8px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+              <input type="checkbox" id="scan-check-showicons" style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
+              <span style="font-size: 12px; font-weight: 500; color: #1d1d1f;">Show icons in group headers</span>
+            </label>
+          </div> -->
+
           <div style="display: flex; gap: 8px; margin-top: 16px">
             <button
               id="btn-scan-settings-check-all"
@@ -1376,6 +1387,7 @@
           'scan-check-autolayout',
           'scan-check-spacing',
           'scan-check-color',
+          'scan-check-colorvariable',
           'scan-check-fontsize',
           'scan-check-textstyle',
           'scan-check-typography',
@@ -1397,6 +1409,7 @@
           'autolayout': 'autolayout',
           'spacing': 'spacing',
           'color': 'color',
+          'colorvariable': 'color-variable', // Color variable binding
           'fontsize': 'typography',           // Font size issues are in 'typography' type
           'textstyle': 'typography-style',    // Text style variable issues
           'typography': 'typography-check',   // Typography style match
@@ -1430,6 +1443,7 @@
             appliedSettings[key] = true;
           });
           appliedSettings.skipNames = (skipNamesEl && skipNamesEl.value) ? skipNamesEl.value : "not check design, sticky note, vector, Clip path group, Clip path";
+          appliedSettings.showicons = false;
         }
 
         // Load settings - just initialize defaults (no localStorage in Figma plugin)
@@ -1463,10 +1477,43 @@
           }
         }
 
+        // Expose reset function for Reset All button (called from main.js)
+        window.resetScanSettings = function() {
+          initDefaultSettings();
+          // Reset all checkboxes to checked
+          Object.keys(scanCheckboxes).forEach(key => {
+            const el = document.getElementById(scanCheckboxes[key]);
+            if (el) el.checked = true;
+          });
+          // Reset show icons
+          const showIconsEl = document.getElementById('scan-check-showicons');
+          if (showIconsEl) showIconsEl.checked = false;
+          document.documentElement.dataset.showIcons = "false";
+          // Reset skip names
+          if (skipNamesEl) skipNamesEl.value = "not check design, sticky note, vector, Clip path group, Clip path";
+          saveAppliedSettings();
+        };
+
         // Listen for settings loaded from Figma plugin
         window.addEventListener('message', function(event) {
           if (event.data && event.data.pluginMessage) {
             const msg = event.data.pluginMessage;
+
+            // Handle master RULES config - hide disabled checks from Scan Settings
+            if (msg.type === 'rules-config' && msg.rules) {
+              Object.keys(msg.rules).forEach(key => {
+                if (msg.rules[key] === false && scanCheckboxes[key]) {
+                  // Hide the entire label (parent of checkbox)
+                  const label = scanCheckboxes[key].closest('.scan-setting-item');
+                  if (label) label.style.display = 'none';
+                  // Uncheck and disable
+                  scanCheckboxes[key].checked = false;
+                  scanCheckboxes[key].disabled = true;
+                  appliedSettings[key] = false;
+                }
+              });
+            }
+
             if (msg.type === 'scan-settings-loaded' && msg.settings) {
               // Restore checkbox states and applied settings
               Object.keys(msg.settings).forEach(key => {
@@ -1482,6 +1529,13 @@
                 }
                 appliedSettings[key] = msg.settings[key];
               });
+              // Restore show icons setting
+              if (msg.settings.showicons !== undefined) {
+                const showIconsEl = document.getElementById('scan-check-showicons');
+                if (showIconsEl) showIconsEl.checked = msg.settings.showicons;
+                appliedSettings.showicons = msg.settings.showicons;
+                document.documentElement.dataset.showIcons = msg.settings.showicons ? "true" : "false";
+              }
               applyGroupVisibility();
             }
           }
@@ -1568,11 +1622,20 @@
               group.style.display = 'none';
             } else {
               group.style.display = '';
-              // Count errors and warnings from visible groups
+              // Count individual issue cards
               const errorIssues = group.querySelectorAll('.issue.error:not([style*="display: none"])');
               const warnIssues = group.querySelectorAll('.issue.warn:not([style*="display: none"])');
               totalErrors += errorIssues.length;
               totalWarnings += warnIssues.length;
+
+              // Count grouped cards (each represents multiple issues)
+              const groupedCards = group.querySelectorAll('.issue-grouped-card:not([style*="display: none"])');
+              groupedCards.forEach(card => {
+                const count = parseInt(card.getAttribute('data-issue-count') || '1', 10);
+                const sev = card.getAttribute('data-severity');
+                if (sev === 'error') totalErrors += count;
+                else if (sev === 'warn') totalWarnings += count;
+              });
             }
           });
 
@@ -1602,6 +1665,12 @@
             });
             // Copy skip names
             if (skipNamesEl) appliedSettings.skipNames = (skipNamesEl.value || "").trim();
+            // Copy show icons setting
+            const showIconsEl = document.getElementById('scan-check-showicons');
+            if (showIconsEl) {
+              appliedSettings.showicons = showIconsEl.checked;
+              document.documentElement.dataset.showIcons = showIconsEl.checked ? "true" : "false";
+            }
             saveAppliedSettings();
             applyGroupVisibility();
 
@@ -2024,7 +2093,11 @@
               transition: all 0.2s;
             ">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <span style="font-size: 11px; font-weight: 600; color: #86868b;">${index + 1}.</span>
+                <span style="font-size: 11px; font-weight: 600; color: #86868b;">${index + 1}.
+                   <span style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
+                <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
+              </span>
+                  </span>
                 <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-ids="${item.nodeIds.join(',')}" style="
                   padding: 4px 12px;
                   background: ${isSelected ? '#22c55e' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'};
@@ -2034,12 +2107,10 @@
                   font-size: 12px;
                   cursor: pointer;
                 ">
-                  ${isSelected ? '✓ Selected' : '📍 Select'}
+                  ${isSelected ? 'Selected' : 'Select'}
                 </button>
               </div>
-              <div style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
-                <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
-              </div>
+             
               <div style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
                 <strong>Action:</strong> <span style="color: #3b82f6; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
               </div>

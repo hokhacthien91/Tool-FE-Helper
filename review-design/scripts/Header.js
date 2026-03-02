@@ -382,7 +382,7 @@ console.log("ui.js loaded");
     el.innerHTML = `
       <div class="issue-header">
               <div>
-                <span class="issue-type">${getTypeIcon(issue.type)} ${getTypeDisplayName(issue.type)}</span>
+                <span class="issue-type">${getTypeDisplayName(issue.type)}</span>
       <div class="issue-body">${escapeHtml(issue.message)}</div>
                 ${issue.nodeName ? `<div class="issue-node">Node: ${escapeHtml(issue.nodeName)}</div>` : ""}
                 ${detailsHtml}
@@ -4408,7 +4408,7 @@ console.log("ui.js loaded");
                 <button class="issue-group-toggle" type="button">
                   <span class="issue-group-toggle-icon">${wasExpanded ? "▼" : "▶"}</span>
                 </button>
-                <h4>${getTypeIcon(type)} ${getTypeDisplayName(type)}</h4>
+                <h4>${getTypeDisplayName(type)}</h4>
                 <span class="badge">${nonIgnoredErrorWarnCount}</span>
               </div>
               ${issueCount > 0 && type !== "typography" && type !== "line-height" ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
@@ -5227,7 +5227,7 @@ console.log("ui.js loaded");
                 <button class="issue-group-toggle" type="button">
                   <span class="issue-group-toggle-icon">▼</span>
                 </button>
-                <h4>${group.icon} ${group.label}</h4>
+                <h4>${(typeof window.getShowTypeIcons === 'function' ? window.getShowTypeIcons() : false) ? group.icon + " " : ""}${group.label}</h4>
                 <span class="badge">${group.values.length}</span>
               </div>
             `;

@@ -1,6 +1,32 @@
 // code.js - runs in Figma plugin environment
 figma.showUI(__html__, { width: 600, height: 700 });
 
+// Send master RULES config to UI so disabled checks are hidden from Scan Settings
+setTimeout(() => {
+  figma.ui.postMessage({
+    type: "rules-config",
+    rules: {
+      naming: RULES.checkNaming,
+      autolayout: RULES.checkAutoLayout,
+      spacing: RULES.checkSpacing,
+      color: RULES.checkColor,
+      colorvariable: RULES.checkColorVariable,
+      fontsize: RULES.checkFontSize,
+      textstyle: RULES.requireTextStyleKey,
+      typography: RULES.checkTypographyStyleMatch,
+      lineheight: RULES.checkLineHeight,
+      position: RULES.checkNegativePosition,
+      duplicate: RULES.checkDuplicateFrames,
+      group: RULES.disallowGroups,
+      component: RULES.requireComponentization,
+      emptyframe: RULES.checkEmptyFrames,
+      nestedgroup: RULES.disallowNestedGroups,
+      contrast: RULES.checkTextContrast,
+      textsize: RULES.checkTextSizeMobile
+    }
+  });
+}, 100);
+
 // Global cancel flag
 let cancelRequested = false;
 
@@ -198,6 +224,7 @@ function buildScanContext(mode) {
 // Allowed rules / settings
 const RULES = {
   // 1) Frame Naming semantic
+  checkNaming: true,
   namingPatterns: {
     frame: /^(Section|Block|Item|Media|Title|Desc|Button|Card|Header|Footer|Nav|Sidebar|Container|Wrapper|Grid|List|Form|Input|Label|Icon|Image|Avatar|Badge|Tag|Tooltip|Modal|Dialog|Dropdown|Menu|Tab|Accordion|Breadcrumb|Pagination|Slider|Carousel|Table|Row|Col|Cell)/i,
     component: /^(Card|Button|Header-item|CTA|Input|Select|Checkbox|Radio|Switch|Textarea|Label|Icon|Image|Avatar|Badge|Tag|Tooltip|Modal|Dialog|Dropdown|Menu|Tab|Accordion|Breadcrumb|Pagination|Slider|Carousel|Table|Row|Col|Cell)/i,
@@ -205,6 +232,7 @@ const RULES = {
   },
   
   // 2) Auto-layout settings
+  checkSpacing: true,
   checkAutoLayout: true,
   preferredLayoutMode: "VERTICAL", // VERTICAL stack preferred
   spacingScale: [8, 12, 16, 24, 32, 40, 48, 64], // Extended scale
@@ -224,6 +252,11 @@ const RULES = {
   },
   
   // 5) Typography scale
+  checkFontSize: false, // Check font-size against scale
+  checkLineHeight: false, // Check line-height issues
+  checkTypographyStyleMatch: false, // Check typography style match
+  checkColor: true, // Check color against scale
+  checkColorVariable: true, // Check color variable binding
   typographySizes: {
     h1: 32,
     h2: 24,
@@ -755,6 +788,21 @@ function checkTextSizeMobile(node) {
   if (fontSize <= 12) {
     const textPreview = node.characters ? node.characters.slice(0, 30) : "";
     
+    // Collect node typography props for style matching
+    const fontFamily = (typeof node.fontName === "object" && node.fontName !== figma.mixed) ? node.fontName.family : null;
+    const fontWeight = (typeof node.fontName === "object" && node.fontName !== figma.mixed) ? node.fontName.style : null;
+    let lineHeight = null;
+    if (node.lineHeight && node.lineHeight !== figma.mixed) {
+      if (node.lineHeight.unit === "PERCENT") lineHeight = `${Math.round(node.lineHeight.value)}%`;
+      else if (node.lineHeight.unit === "PIXELS") lineHeight = `${Math.round(node.lineHeight.value)}px`;
+      else lineHeight = "AUTO";
+    }
+    let letterSpacing = "0";
+    if (node.letterSpacing && node.letterSpacing !== figma.mixed) {
+      if (node.letterSpacing.unit === "PERCENT") letterSpacing = `${Math.round(node.letterSpacing.value * 100) / 100}%`;
+      else letterSpacing = `${Math.round(node.letterSpacing.value * 100) / 100}px`;
+    }
+
     return {
       severity: "error",
       type: "text-size-mobile",
@@ -763,7 +811,14 @@ function checkTextSizeMobile(node) {
       nodeName: node.name || "Unnamed",
       fontSize: fontSize,
       minSize: 12,
-      textPreview: textPreview
+      textPreview: textPreview,
+      nodeProps: {
+        fontFamily: fontFamily,
+        fontWeight: fontWeight,
+        fontSize: fontSize,
+        lineHeight: lineHeight,
+        letterSpacing: letterSpacing
+      }
     };
   }
   
@@ -825,18 +880,10 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
     // Not in scale - show warning
     const scaleDisplay = allowAuto ? `auto, ${customLineHeightScale.values.join(", ")}` : customLineHeightScale.values.join(", ");
     
-    // Build message with font-size and line-height details
-    let detailInfo = "";
-    if (fontSize && lineHeightPixels !== null) {
-      detailInfo = ` (font-size: ${fontSize}px / line-height: ${lineHeightPixels}px)`;
-    } else if (fontSize) {
-      detailInfo = ` (font-size: ${fontSize}px)`;
-    }
-    
     return {
       severity: "warn",
       type: "line-height",
-      message: `Line-height ${lineHeightPercent}%${detailInfo} không theo scale. Scale: ${scaleDisplay}%`,
+      message: `Line-height ${lineHeightPercent}% Does not follow the token scale. List the tokens: ${scaleDisplay}%`,
       id: node.id,
       nodeName: node.name || "Unnamed"
     };
@@ -855,7 +902,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
         return {
           severity: "warn",
           type: "line-height",
-          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightValue}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
+          message: `Line-height ${lineHeightPercent}% too close to font-size. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
           nodeName: node.name || "Unnamed"
         };
@@ -867,7 +914,7 @@ function checkLineHeight(node, customLineHeightScale = null, lineHeightThreshold
         return {
           severity: "warn",
           type: "line-height",
-          message: `Line-height ${lineHeightPercent}% (font-size: ${fontSize}px / line-height: ${lineHeightPx}px) too close to font-size — could cause spacing calculation errors between elements. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
+          message: `Line-height ${lineHeightPercent}% too close to font-size. Should use line-height >= ${lineHeightBaselineThreshold}% (>= ${(lineHeightBaselineThreshold / 100).toFixed(1)}x font-size).`,
           id: node.id,
           nodeName: node.name || "Unnamed"
         };
@@ -1882,7 +1929,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       const nodeName = node.name || "Unnamed";
       
       // 1) Frame Naming semantic
-      if (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE") {
+      if (RULES.checkNaming && (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE")) {
         // Only warn if name contains "Frame" or "Group" (default Figma naming)
         const hasDefaultNaming = /frame|group/i.test(nodeName);
         
@@ -1899,7 +1946,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       }
       
       // Text naming
-      if (node.type === "TEXT") {
+      if (RULES.checkNaming && node.type === "TEXT") {
         // Allow "content" or "Content" as valid naming
         const isContent = nodeName.toLowerCase() === "content";
         
@@ -1980,7 +2027,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
           // User can use HORIZONTAL or VERTICAL as needed
           
           // Check itemSpacing (gap) - only if spacing guidelines is provided
-          if (customSpacingScale !== null) {
+          if (RULES.checkSpacing && customSpacingScale !== null) {
           if (typeof node.itemSpacing === "number") {
               // Convert negative values to positive for comparison
               const absItemSpacing = Math.abs(node.itemSpacing);
@@ -2019,7 +2066,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
             { name: "paddingBottom", value: node.paddingBottom }
           ];
           
-          if (customSpacingScale !== null) {
+          if (RULES.checkSpacing && customSpacingScale !== null) {
             for (const pad of paddings) {
               if (typeof pad.value === "number" && pad.value !== 0) {
                 // If value exceeds threshold, pass (special case)
@@ -2072,7 +2119,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       }
 
       // 4.5) Color check - Check fills/strokes/effects against color
-      if (customColorScale !== null && Array.isArray(customColorScale) && customColorScale.length > 0) {
+      if (RULES.checkColor && customColorScale !== null && Array.isArray(customColorScale) && customColorScale.length > 0) {
         // Check fills
         if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
           for (const fill of node.fills) {
@@ -2132,7 +2179,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       }
 
       // 4.6) Color variable binding check - warn if color is not bound to a variable
-      if (colorVariableMap.size > 0) {
+      if (RULES.checkColorVariable && colorVariableMap.size > 0) {
         // Check fills
         if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
           for (let fi = 0; fi < node.fills.length; fi++) {
@@ -2197,7 +2244,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
       if (node.type === "TEXT") {
         const fs = node.fontSize;
         // Check if fontSize is a valid number (not figma.mixed or symbol)
-        if (fs && typeof fs === "number" && !isNaN(fs)) {
+        if (RULES.checkFontSize && fs && typeof fs === "number" && !isNaN(fs)) {
           // Check if font-size exceeds threshold (special case)
           if (fs > fontSizeThreshold) {
             // Pass - value is above threshold (special case)
@@ -2293,7 +2340,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         }
         
         // Line height check
-        if (RULES.disallowLineHeightAuto || RULES.disallowLineHeightBaseline || customLineHeightScale !== null) {
+        if (RULES.checkLineHeight && (RULES.disallowLineHeightAuto || RULES.disallowLineHeightBaseline || customLineHeightScale !== null)) {
           const lineHeightIssue = checkLineHeight(node, customLineHeightScale, lineHeightThreshold, lineHeightBaselineThreshold);
           if (lineHeightIssue) {
             addIssue(lineHeightIssue);
@@ -2329,7 +2376,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
         }
         
         // Typography Style Match check
-        if (typographyStyles && typographyStyles.length > 0 && typographyRules && typographyRules.checkStyle) {
+        if (RULES.checkTypographyStyleMatch && typographyStyles && typographyStyles.length > 0 && typographyRules && typographyRules.checkStyle) {
           const typoMatch = checkTypographyStyleMatch(node, typographyStyles, typographyRules);
           if (typoMatch && !typoMatch.matched) {
             addIssue({
@@ -3261,6 +3308,28 @@ figma.ui.onmessage = async msg => {
       globalSkipNames = raw ? raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length > 0) : [];
     }
 
+    // Apply scan settings to RULES (override enabled/disabled checks from UI)
+    if (msg.scanSettings) {
+      const ss = msg.scanSettings;
+      if (ss.fontsize !== undefined) RULES.checkFontSize = ss.fontsize;
+      if (ss.lineheight !== undefined) RULES.checkLineHeight = ss.lineheight;
+      if (ss.typography !== undefined) RULES.checkTypographyStyleMatch = ss.typography;
+      if (ss.color !== undefined) RULES.checkColor = ss.color;
+      if (ss.colorvariable !== undefined) RULES.checkColorVariable = ss.colorvariable;
+      if (ss.textstyle !== undefined) RULES.requireTextStyleKey = ss.textstyle;
+      if (ss.autolayout !== undefined) RULES.checkAutoLayout = ss.autolayout;
+      if (ss.contrast !== undefined) RULES.checkTextContrast = ss.contrast;
+      if (ss.textsize !== undefined) RULES.checkTextSizeMobile = ss.textsize;
+      if (ss.position !== undefined) RULES.checkNegativePosition = ss.position;
+      if (ss.emptyframe !== undefined) RULES.checkEmptyFrames = ss.emptyframe;
+      if (ss.duplicate !== undefined) RULES.checkDuplicateFrames = ss.duplicate;
+      if (ss.naming !== undefined) RULES.checkNaming = ss.naming;
+      if (ss.group !== undefined) RULES.disallowGroups = ss.group;
+      if (ss.nestedgroup !== undefined) RULES.disallowNestedGroups = ss.nestedgroup;
+      if (ss.component !== undefined) RULES.requireComponentization = ss.component;
+      if (ss.spacing !== undefined) RULES.checkSpacing = ss.spacing;
+    }
+
     // Parse spacing guidelines from input
     let customSpacingScale = null;
     if (spacingScaleInput.trim()) {
@@ -3368,7 +3437,27 @@ figma.ui.onmessage = async msg => {
         figma.notify(`⚠️ Found ${issues.length} issues, but only showing first ${MAX_ISSUES_PER_MESSAGE} to prevent memory errors.`);
       }
       
-      figma.ui.postMessage({ type: "report", issues: issuesToSend, context, totalIssues: issues.length });
+      // Send disabled check types so UI can hide those sections
+      const disabledChecks = [];
+      if (!RULES.checkFontSize) disabledChecks.push("typography");
+      if (!RULES.checkLineHeight) disabledChecks.push("line-height");
+      if (!RULES.checkTypographyStyleMatch) disabledChecks.push("typography-check");
+      if (!RULES.checkColor) disabledChecks.push("color");
+      if (!RULES.checkColorVariable) disabledChecks.push("color-variable");
+      if (!RULES.checkTextContrast) disabledChecks.push("contrast");
+      if (!RULES.checkTextSizeMobile) disabledChecks.push("text-size-mobile");
+      if (!RULES.checkAutoLayout) disabledChecks.push("autolayout");
+      if (!RULES.checkNegativePosition) disabledChecks.push("position");
+      if (!RULES.checkEmptyFrames) disabledChecks.push("empty-frame");
+      if (!RULES.checkDuplicateFrames) disabledChecks.push("duplicate");
+      if (!RULES.requireTextStyleKey) disabledChecks.push("typography-style");
+      if (!RULES.checkNaming) disabledChecks.push("naming");
+      if (!RULES.checkSpacing) disabledChecks.push("spacing");
+      if (!RULES.disallowGroups) disabledChecks.push("group");
+      if (!RULES.disallowNestedGroups) disabledChecks.push("nested-group");
+      if (!RULES.requireComponentization) disabledChecks.push("component");
+
+      figma.ui.postMessage({ type: "report", issues: issuesToSend, context, totalIssues: issues.length, disabledChecks });
     } catch (error) {
       figma.notify(`Scan failed: ${error.message}`);
       figma.ui.postMessage({ type: "report", issues: [], error: error.message, context });
@@ -3953,13 +4042,13 @@ figma.ui.onmessage = async msg => {
         let loadedFontName = fontName;
         
         // Map common style names that might not match exactly
-        const styleMap = {
+        const fontStyleMap = {
           "Semi Bold": "SemiBold",
           "SemiBold": "SemiBold",
           "Semi-Bold": "SemiBold",
           "Semi": "SemiBold"
         };
-        const mappedStyle = styleMap[fontStyle] || fontStyle;
+        const mappedStyle = fontStyleMap[fontStyle] || fontStyle;
         
         try {
           // Try to load with the exact style from the node
@@ -4090,13 +4179,13 @@ figma.ui.onmessage = async msg => {
               let loadedFontName = fontName;
               
               // Map common style names that might not match exactly
-              const styleMap = {
+              const fontStyleMap = {
                 "Semi Bold": "SemiBold",
                 "SemiBold": "SemiBold",
                 "Semi-Bold": "SemiBold",
                 "Semi": "SemiBold"
               };
-              const mappedStyle = styleMap[fontStyle] || fontStyle;
+              const mappedStyle = fontStyleMap[fontStyle] || fontStyle;
               
               try {
                 // Try to load with the exact style from the node
@@ -4403,6 +4492,76 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "select-nodes": {
+      const ids = msg.ids || [];
+      const nodes = ids.map(id => figma.getNodeById(id)).filter(Boolean);
+      if (nodes.length > 0) {
+        figma.currentPage.selection = nodes;
+        figma.viewport.scrollAndZoomIntoView(nodes);
+        figma.notify(`Selected ${nodes.length} node(s)`);
+      } else {
+        figma.notify("No valid nodes found");
+      }
+      break;
+    }
+    case "apply-figma-text-style-batch": {
+      try {
+        const issueIds = msg.issueIds || [];
+        const styleId = msg.styleId;
+        const styleName = msg.styleName;
+
+        if (!styleId) {
+          throw new Error("Style ID is required");
+        }
+
+        const textStyle = figma.getStyleById(styleId);
+        if (!textStyle) {
+          throw new Error(`Text style "${styleName}" not found`);
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+        const successIds = [];
+
+        for (const nodeId of issueIds) {
+          try {
+            const node = figma.getNodeById(nodeId);
+            if (node && node.type === "TEXT") {
+              node.textStyleId = styleId;
+              successCount++;
+              successIds.push(nodeId);
+            } else {
+              failCount++;
+            }
+          } catch (e) {
+            failCount++;
+          }
+        }
+
+        figma.notify(`✅ Applied "${styleName}" to ${successCount}/${issueIds.length} node(s)`);
+        figma.ui.postMessage({
+          type: "apply-typography-style-batch-result",
+          success: true,
+          successCount,
+          failCount,
+          successIds,
+          styleName,
+          message: `Applied "${styleName}" to ${successCount} node(s)`
+        });
+      } catch (error) {
+        const errorMessage = error && error.message ? error.message : "Unknown error occurred";
+        figma.notify(`❌ Error: ${errorMessage}`);
+        figma.ui.postMessage({
+          type: "apply-typography-style-batch-result",
+          success: false,
+          successCount: 0,
+          failCount: (msg.issueIds || []).length,
+          successIds: [],
+          message: `❌ Error: ${errorMessage}`
+        });
+      }
+      break;
+    }
     case "bind-color-variable": {
       try {
         const issue = msg.issue;
@@ -4496,6 +4655,120 @@ figma.ui.onmessage = async msg => {
         figma.ui.postMessage({ type: "bind-color-variable-result", success: true, issueId: nodeId, message: `✅ Bound to "${variable.name}"` });
       } catch (error) {
         figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: msg.issue ? msg.issue.id : null, message: `❌ ${error.message}` });
+      }
+      break;
+    }
+    case "bind-color-variable-batch": {
+      // Targeted batch: bind a specific variable to a list of specific issues
+      try {
+        var batchIssues = msg.issues || [];
+        var batchVarId = msg.variableId;
+        var batchVarName = msg.variableName || "";
+
+        if (!batchVarId || batchIssues.length === 0) {
+          figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: "Missing data" });
+          break;
+        }
+
+        var batchVariable = figma.variables.getVariableById(batchVarId);
+        if (!batchVariable) {
+          figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: "Variable not found" });
+          break;
+        }
+
+        var bSuccessCount = 0;
+        var bFailCount = 0;
+        var bSuccessIds = [];
+
+        for (var bi = 0; bi < batchIssues.length; bi++) {
+          var iss = batchIssues[bi];
+          try {
+            var bNode = figma.getNodeById(iss.id);
+            if (!bNode) { bFailCount++; continue; }
+
+            if (iss.colorTarget === "fill") {
+              var fIdx = iss.fillIndex || 0;
+              if ("fills" in bNode && Array.isArray(bNode.fills) && bNode.fills[fIdx]) {
+                var fills = bNode.fills.slice();
+                fills[fIdx] = figma.variables.setBoundVariableForPaint(fills[fIdx], "color", batchVariable);
+                bNode.fills = fills;
+                bSuccessCount++;
+                bSuccessIds.push(iss.id);
+              } else { bFailCount++; }
+            } else if (iss.colorTarget === "stroke") {
+              var sIdx = iss.strokeIndex || 0;
+              if ("strokes" in bNode && Array.isArray(bNode.strokes) && bNode.strokes[sIdx]) {
+                var strokes = bNode.strokes.slice();
+                strokes[sIdx] = figma.variables.setBoundVariableForPaint(strokes[sIdx], "color", batchVariable);
+                bNode.strokes = strokes;
+                bSuccessCount++;
+                bSuccessIds.push(iss.id);
+              } else { bFailCount++; }
+            } else { bFailCount++; }
+          } catch (bindErr) { bFailCount++; }
+        }
+
+        figma.notify("Bound " + bSuccessCount + "/" + batchIssues.length + " nodes to \"" + batchVariable.name + "\"");
+        figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: true, successIds: bSuccessIds, successCount: bSuccessCount, failCount: bFailCount, variableName: batchVariable.name });
+      } catch (error) {
+        figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: error.message });
+      }
+      break;
+    }
+    case "bind-color-variable-by-name-batch": {
+      // Batch bind by variable name (from Select Variable modal in batch mode)
+      try {
+        var bnbIssues = msg.issues || [];
+        var bnbVarName = msg.variableName;
+
+        if (!bnbVarName || bnbIssues.length === 0) {
+          figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: "Missing data" });
+          break;
+        }
+
+        var allLocalVars = figma.variables.getLocalVariables();
+        var bnbVariable = allLocalVars.find(function(v) { return v.resolvedType === "COLOR" && v.name === bnbVarName; });
+        if (!bnbVariable) {
+          figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: "Variable \"" + bnbVarName + "\" not found" });
+          break;
+        }
+
+        var bnbSuccessCount = 0;
+        var bnbFailCount = 0;
+        var bnbSuccessIds = [];
+
+        for (var ni = 0; ni < bnbIssues.length; ni++) {
+          var niss = bnbIssues[ni];
+          try {
+            var nNode = figma.getNodeById(niss.id);
+            if (!nNode) { bnbFailCount++; continue; }
+
+            if (niss.colorTarget === "fill") {
+              var nfIdx = niss.fillIndex || 0;
+              if ("fills" in nNode && Array.isArray(nNode.fills) && nNode.fills[nfIdx]) {
+                var nfills = nNode.fills.slice();
+                nfills[nfIdx] = figma.variables.setBoundVariableForPaint(nfills[nfIdx], "color", bnbVariable);
+                nNode.fills = nfills;
+                bnbSuccessCount++;
+                bnbSuccessIds.push(niss.id);
+              } else { bnbFailCount++; }
+            } else if (niss.colorTarget === "stroke") {
+              var nsIdx = niss.strokeIndex || 0;
+              if ("strokes" in nNode && Array.isArray(nNode.strokes) && nNode.strokes[nsIdx]) {
+                var nstrokes = nNode.strokes.slice();
+                nstrokes[nsIdx] = figma.variables.setBoundVariableForPaint(nstrokes[nsIdx], "color", bnbVariable);
+                nNode.strokes = nstrokes;
+                bnbSuccessCount++;
+                bnbSuccessIds.push(niss.id);
+              } else { bnbFailCount++; }
+            } else { bnbFailCount++; }
+          } catch (bnbErr) { bnbFailCount++; }
+        }
+
+        figma.notify("Bound " + bnbSuccessCount + "/" + bnbIssues.length + " nodes to \"" + bnbVariable.name + "\"");
+        figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: true, successIds: bnbSuccessIds, successCount: bnbSuccessCount, failCount: bnbFailCount, variableName: bnbVariable.name });
+      } catch (error) {
+        figma.ui.postMessage({ type: "bind-color-variable-batch-result", success: false, successIds: [], successCount: 0, failCount: 0, message: error.message });
       }
       break;
     }
