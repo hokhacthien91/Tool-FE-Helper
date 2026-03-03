@@ -559,7 +559,7 @@
 
             <!-- Color Preview Panel -->
             <div
-              class="typography-panel collapsed"
+              class="typography-panel"
               id="color-preview-panel"
               style="margin: 10px 0 0 0"
             >
@@ -593,7 +593,7 @@
             </div>
           </div>
           <!-- Typography Settings Panel -->
-          <div class="typography-panel collapsed" id="typography-panel">
+          <div class="typography-panel" id="typography-panel">
             <div class="typography-panel-header" id="typography-panel-header">
               <button
                 class="issue-group-toggle"
@@ -603,7 +603,7 @@
                 <span class="issue-group-toggle-icon">▶</span>
               </button>
               <h4 style="font-size: 14px; font-weight: 600; margin: 0">
-                ✍️ Typography Settings
+                Typography Settings
               </h4>
             </div>
             <div class="typography-panel-content">
@@ -643,63 +643,7 @@
                 </div>
               </div>
 
-              <!-- Typography Styles Table -->
-              <div class="typography-table-wrapper">
-                <table class="typography-table" id="typography-table">
-                  <thead>
-                    <tr>
-                      <th class="typography-table-actions">Actions</th>
-                      <th
-                        class="typography-table-style-name"
-                        style="width: 120px"
-                      >
-                        Style Name
-                      </th>
-                      <th
-                        class="typography-table-font-family"
-                        style="width: 140px"
-                      >
-                        Font Family
-                      </th>
-                      <th
-                        class="typography-table-font-size"
-                        style="width: 80px"
-                      >
-                        Size (px)
-                      </th>
-                      <th
-                        class="typography-table-font-weight"
-                        style="width: 100px"
-                      >
-                        Weight
-                      </th>
-                      <th
-                        class="typography-table-line-height"
-                        style="width: 100px"
-                      >
-                        Line Height
-                      </th>
-                      <th
-                        class="typography-table-letter-spacing"
-                        style="width: 100px"
-                      >
-                        Letter Spacing
-                      </th>
-                      <th
-                        class="typography-table-word-spacing"
-                        style="width: 100px"
-                      >
-                        Word Spacing
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody id="typography-table-body">
-                    <!-- Rows will be rendered here -->
-                  </tbody>
-                </table>
-              </div>
-
-              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                 <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px">
                 <button class="btn-add-typo-style" id="btn-add-typo-style">
                   ➕ Add Style
                 </button>
@@ -756,6 +700,63 @@
                   >
                 </button>
               </div>
+              <!-- Typography Styles Table -->
+              <div class="typography-table-wrapper">
+                <table class="typography-table" id="typography-table">
+                  <thead>
+                    <tr>
+                      <th class="typography-table-actions">Actions</th>
+                      <th
+                        class="typography-table-style-name"
+                        style="width: 120px"
+                      >
+                        Style Name
+                      </th>
+                      <th
+                        class="typography-table-font-family"
+                        style="width: 140px"
+                      >
+                        Font Family
+                      </th>
+                      <th
+                        class="typography-table-font-size"
+                        style="width: 80px"
+                      >
+                        Size (px)
+                      </th>
+                      <th
+                        class="typography-table-font-weight"
+                        style="width: 100px"
+                      >
+                        Weight
+                      </th>
+                      <th
+                        class="typography-table-line-height"
+                        style="width: 100px"
+                      >
+                        Line Height
+                      </th>
+                      <th
+                        class="typography-table-letter-spacing"
+                        style="width: 100px"
+                      >
+                        Letter Spacing
+                      </th>
+                      <th
+                        class="typography-table-word-spacing"
+                        style="width: 100px"
+                      >
+                        Word Spacing
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="typography-table-body">
+                    <!-- Rows will be rendered here -->
+                  </tbody>
+                </table>
+              </div>
+
+           
             </div>
           </div>
         </div>

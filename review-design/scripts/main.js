@@ -15,11 +15,8 @@ import { escapeHtml } from "./utils/html.js";
 // If font-size difference exceeds this value, the suggestion is considered invalid
 const FONT_SIZE_THRESHOLD_PX = 4;
 
-console.log('Header.js22121211thien2');
-console.log("ui.js loaded");
 
 (function() {
-  console.log("Initializing ui.js...");
   const btnScan = document.getElementById("btn-scan");
         const btnCancelScan = document.getElementById("btn-cancel-scan");
         const scanProgress = document.getElementById("scan-progress");
@@ -166,8 +163,6 @@ console.log("ui.js loaded");
 
           // Check if difference exceeds threshold
           if (fontSizeDiff > FONT_SIZE_THRESHOLD_PX) {
-            console.log(`[isValidTypographySuggestion] Font-size difference (${fontSizeDiff}px) exceeds threshold (${FONT_SIZE_THRESHOLD_PX}px) for issue:`, issue.id,
-              `Current: ${currentFontSize}px, Suggested: ${suggestedStyle.fontSize}px`);
             return false;
           }
 
@@ -282,7 +277,6 @@ console.log("ui.js loaded");
 
         function applySavedReport(saved) {
           if (!saved) {
-            console.log("No last report to apply");
             return;
           }
 
@@ -298,13 +292,11 @@ console.log("ui.js loaded");
 
           // Restore issues if available
           if (saved.issues && Array.isArray(saved.issues)) {
-            console.log("Applying saved issues report");
             renderResults(saved.issues, true, { skipSave: true, restoreTimestamp: saved.issuesTimestamp });
           }
           
           // Restore tokens if available
           if (saved.tokens) {
-            console.log("Applying saved tokens report");
             renderTokens(saved.tokens, true, { skipSave: true, restoreTimestamp: saved.tokensTimestamp });
           }
           
@@ -324,7 +316,6 @@ console.log("ui.js loaded");
         let currentColorTypeFilter = "all";
         let isViewingTokens = false;
 
-  console.log("All elements found, setting up event listeners");
 
   // Tab switching
   reportTabs.forEach(tab => {
@@ -595,7 +586,6 @@ console.log("ui.js loaded");
         btnRemoveLayer.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          console.log("Remove Layer button clicked for typography-check", issueData);
           if (typeof handleRemoveLayer === "function") {
             handleRemoveLayer(issueData);
           } else {
@@ -2351,7 +2341,6 @@ console.log("ui.js loaded");
 
   // Handle suggest fix for component (duplicate/component issues)
   function handleSuggestFixComponent(issue) {
-    console.log("handleSuggestFixComponent called", issue);
     if (!issue || !issue.id) {
       console.error("Invalid issue in handleSuggestFixComponent", issue);
       alert("Error: Invalid issue data");
@@ -2359,7 +2348,6 @@ console.log("ui.js loaded");
     }
     // Store issue FIRST before sending message
     window.pendingComponentIssue = issue;
-    console.log("Stored pendingComponentIssue:", window.pendingComponentIssue);
     
     // Show loading indicator
     const issueEl = document.querySelector(`.issue[data-issue-id="${issue.id}"]`);
@@ -2378,7 +2366,6 @@ console.log("ui.js loaded");
     }
     
     // Request existing components and find similar ones
-    console.log("Sending get-components-for-issue message", { issueId: issue.id, issue: issue });
     parent.postMessage({
       pluginMessage: {
         type: "get-components-for-issue",
@@ -2389,7 +2376,6 @@ console.log("ui.js loaded");
 
   // Handle select component for duplicate/component issues
   function handleSelectComponent(issue) {
-    console.log("handleSelectComponent called", issue);
     if (!issue || !issue.id) {
       console.error("Invalid issue in handleSelectComponent", issue);
       alert("Error: Invalid issue data");
@@ -2397,7 +2383,6 @@ console.log("ui.js loaded");
     }
     // Store issue FIRST before sending message
     window.pendingSelectComponentIssue = issue;
-    console.log("Stored pendingSelectComponentIssue:", window.pendingSelectComponentIssue);
     
     // Show loading indicator
     const issueEl = document.querySelector(`.issue[data-issue-id="${issue.id}"]`);
@@ -2415,7 +2400,6 @@ console.log("ui.js loaded");
     }
     
     // Request existing components
-    console.log("Sending get-all-components message", { issueId: issue.id, issue: issue });
     parent.postMessage({
       pluginMessage: {
         type: "get-all-components",
@@ -2632,7 +2616,6 @@ console.log("ui.js loaded");
 
   // Show component suggest modal (for Suggest Fix now)
   function showComponentSuggestModal(issue, similarComponents) {
-    console.log("[showComponentSuggestModal] Called with", { issue, similarComponents });
     if (!similarComponents || similarComponents.length === 0) {
       console.warn("[showComponentSuggestModal] No similar components provided");
       alert("No similar components found.");
@@ -2641,13 +2624,11 @@ console.log("ui.js loaded");
     
     // Use the first (most similar) component
     const bestMatch = similarComponents[0];
-    console.log("[showComponentSuggestModal] Using best match:", bestMatch);
     showComponentApplyConfirmModal(issue, bestMatch, "This is the most similar component found.");
   }
 
   // Show component select modal (for Select Component)
   function showComponentSelectModal(issue, components) {
-    console.log("[showComponentSelectModal] Called with", { issue, components });
     if (!components || components.length === 0) {
       console.warn("[showComponentSelectModal] No components provided");
       alert("No components available.");
@@ -2719,9 +2700,6 @@ console.log("ui.js loaded");
     
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    console.log("[showComponentSelectModal] Modal added to DOM");
-    console.log("[showComponentSelectModal] Overlay element:", overlay);
-    console.log("[showComponentSelectModal] Dialog element:", dialog);
     
     // Ensure overlay is visible
     overlay.style.display = "flex";
@@ -2735,8 +2713,6 @@ console.log("ui.js loaded");
     const componentListContainer = dialog.querySelector("#component-list-container");
     const searchResultsCount = dialog.querySelector("#component-search-results-count");
     
-    console.log("[showComponentSelectModal] Found", componentItems.length, "component items");
-    console.log("[showComponentSelectModal] Cancel button:", cancelBtn, "Close button:", closeBtn);
     
     // Setup search functionality
     if (searchInput && showSearch) {
@@ -2770,13 +2746,11 @@ console.log("ui.js loaded");
     }
     
     const closeModal = () => {
-      console.log("[showComponentSelectModal] Closing modal");
       overlay.style.animation = "fadeIn 0.2s ease-out reverse";
       overlay.style.opacity = "0";
       setTimeout(() => {
         if (overlay.parentNode) {
           overlay.remove();
-          console.log("[showComponentSelectModal] Modal removed from DOM");
         }
       }, 200);
     };
@@ -2812,11 +2786,8 @@ console.log("ui.js loaded");
       item.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log("[showComponentSelectModal] Component item clicked", index);
         const componentId = item.getAttribute("data-component-id");
-        console.log("[showComponentSelectModal] Component ID:", componentId);
         const component = components.find(c => c.id === componentId);
-        console.log("[showComponentSelectModal] Found component:", component);
         if (component) {
           closeModal();
           showComponentApplyConfirmModal(issue, component, null);
@@ -2830,10 +2801,8 @@ console.log("ui.js loaded");
     setTimeout(() => {
       overlay.style.animation = "fadeIn 0.2s ease-out";
       overlay.style.opacity = "1";
-      console.log("[showComponentSelectModal] Animation triggered, overlay visible:", overlay.offsetParent !== null);
     }, 10);
     
-    console.log("[showComponentSelectModal] Modal setup complete");
   }
 
   // Show component apply confirm modal
@@ -4725,7 +4694,6 @@ console.log("ui.js loaded");
 
   // Show suggest apply modal with top 5 similar styles
   function showSuggestApplyModal(issue, styleName, options = {}) {
-    console.log("[showSuggestApplyModal] Called with issue:", issue, "styleName:", styleName, "options:", options);
 
     if (!issue) {
       console.error("[showSuggestApplyModal] Missing issue:", { issue, styleName });
@@ -5201,9 +5169,6 @@ console.log("ui.js loaded");
     for (const style of typographyStyles) {
       const score = calculateTypographySimilarity(issue.nodeProps, style);
       if (score === 100) {
-        console.log("[100% Match] node:", issue.id, issue.nodeName,
-          "| nodeProps:", JSON.stringify({f: issue.nodeProps.fontFamily, s: issue.nodeProps.fontSize, w: issue.nodeProps.fontWeight, lh: issue.nodeProps.lineHeight, ls: issue.nodeProps.letterSpacing}),
-          "| style:", style.name, JSON.stringify({f: style.fontFamily, s: style.fontSize, w: style.fontWeight, lh: style.lineHeight, ls: style.letterSpacing}));
         return style;
       }
     }
@@ -5346,7 +5311,6 @@ console.log("ui.js loaded");
       i.type === "color-variable" && i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)
     );
 
-    console.log("[Fix All Now] Color variable fixable:", (allIssues || []).filter(i => i.type === "color-variable" && i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)).length, ", Typography 100% match:", typoMatches.length);
 
     if (typoMatches.length === 0 && !hasColorVarIssues) {
       alert("No auto-fixable issues found.");
@@ -5906,7 +5870,6 @@ console.log("ui.js loaded");
 
   // Handle create text style for typography-style issue
   function handleCreateTextStyle(issue) {
-    console.log("handleCreateTextStyle called", issue);
     
     if (!issue) {
       console.error("handleCreateTextStyle: issue is null/undefined");
@@ -5915,7 +5878,6 @@ console.log("ui.js loaded");
     
     // Show custom modal
     showCreateStyleModal(issue, (styleName) => {
-      console.log("handleCreateTextStyle: sending message", { type: "create-text-style", issueId: issue.id, styleName: styleName });
       
       // Show loading message
       showFixMessage(issue.id, "⏳ Creating style...", true);
@@ -5990,17 +5952,11 @@ console.log("ui.js loaded");
   // getContrastTextColor is imported from ./utils/color.js
 
         function filterAndSearchIssues(issues) {
-          console.log("filterAndSearchIssues called", { 
-            totalIssues: issues.length, 
-            currentFilter, 
-            currentSearch 
-          });
           let filtered = issues;
 
           // Filter by severity
           if (currentFilter !== "all") {
             filtered = filtered.filter(issue => issue.severity === currentFilter);
-            console.log("After severity filter:", filtered.length);
           }
 
           // Search
@@ -6014,10 +5970,8 @@ console.log("ui.js loaded");
                      nodeName.includes(searchLower) || 
                      type.includes(searchLower);
             });
-            console.log("After search filter:", filtered.length);
           }
 
-          console.log("Final filtered issues:", filtered.length);
           return filtered;
         }
 
@@ -6055,7 +6009,6 @@ console.log("ui.js loaded");
           
           // Only reset filters if this is new data or explicitly requested
           if (resetFilters || isNewData) {
-            console.log("Resetting filters for new data");
             currentFilter = "all";
             currentColorTypeFilter = "all";
             if (searchInput) {
@@ -6087,7 +6040,6 @@ console.log("ui.js loaded");
           exportGroup.style.display = issues.length > 0 ? "flex" : "none";
 
           // Filter issues - use current filter/search values
-          console.log("About to filter with:", { currentFilter, currentSearch });
           const filteredIssues = filterAndSearchIssues(issues);
           
           // Save expanded/collapsed state of groups before clearing
@@ -6101,7 +6053,6 @@ console.log("ui.js loaded");
                 expandedGroups.add(groupType);
               }
             });
-            console.log("Saved expanded groups:", Array.from(expandedGroups));
           }
           
           clearResults("issues");
@@ -6148,14 +6099,12 @@ console.log("ui.js loaded");
               typo100Count++;
             }
             if (i.type === "color-variable") {
-              console.log("[Header Count] color-variable:", i.id, "matchingVariable:", !!i.matchingVariable, "opacity:", i.colorOpacity);
               if (i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)) {
                 colorVarCount++;
               }
             }
           });
           const totalFixableCount = typo100Count + colorVarCount;
-          console.log("[Header Count] typo100:", typo100Count, "colorVar:", colorVarCount, "total:", totalFixableCount);
 
           // Results header
           const header = document.createElement("div");
@@ -6358,7 +6307,6 @@ console.log("ui.js loaded");
                     return;
                   }
 
-                  console.log("[Fix All]", type, issuesWithSuggestFix.length, "fixable issues");
                   handleFixAllWithSuggestFix(type, issuesWithSuggestFix);
                 } catch (error) {
                   console.error("[Fix All] Error:", error.message);
@@ -6569,7 +6517,6 @@ console.log("ui.js loaded");
                   btnFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Text Size Fix button clicked", issue);
                     if (typeof handleFixTextSizeIssue === "function") {
                       handleFixTextSizeIssue(issue);
                     } else {
@@ -6581,7 +6528,6 @@ console.log("ui.js loaded");
                   btnFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Contrast Fix button clicked", issue);
                     if (typeof handleFixContrastIssue === "function") {
                       handleFixContrastIssue(issue);
                     } else {
@@ -6611,7 +6557,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Autolayout Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixAutolayout === "function") {
                       handleSuggestFixAutolayout(issue);
                     } else {
@@ -6623,7 +6568,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Text Size Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixTextSize === "function") {
                       handleSuggestFixTextSize(issue);
                     } else {
@@ -6635,7 +6579,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Position Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixPosition === "function") {
                       handleSuggestFixPosition(issue);
                     } else {
@@ -6647,7 +6590,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Component Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixComponent === "function") {
                       handleSuggestFixComponent(issue);
                     } else {
@@ -6659,7 +6601,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Contrast Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixContrast === "function") {
                       handleSuggestFixContrast(issue);
                     } else {
@@ -6671,7 +6612,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Group Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixGroup === "function") {
                       handleSuggestFixGroup(issue);
                     } else {
@@ -6683,7 +6623,6 @@ console.log("ui.js loaded");
                   btnSuggestFix.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Empty Frame Suggest Fix button clicked", issue);
                     if (typeof handleSuggestFixEmptyFrame === "function") {
                       handleSuggestFixEmptyFrame(issue);
                     } else {
@@ -6723,7 +6662,6 @@ console.log("ui.js loaded");
                   btnSelectComponent.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Select Component button clicked", issueData);
                     if (typeof handleSelectComponent === "function") {
                       handleSelectComponent(issueData);
                     } else {
@@ -6741,7 +6679,6 @@ console.log("ui.js loaded");
                   btnCreateComponent.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Create Component button clicked", issueData);
                     if (typeof handleCreateComponent === "function") {
                       handleCreateComponent(issueData);
                     } else {
@@ -6771,7 +6708,6 @@ console.log("ui.js loaded");
                   btnRename.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Rename button clicked", issueData);
                     if (typeof handleRenameNode === "function") {
                       handleRenameNode(issueData);
                     } else {
@@ -6789,7 +6725,6 @@ console.log("ui.js loaded");
                   btnRemoveLayer.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Remove Layer button clicked", issueData);
                     if (typeof handleRemoveLayer === "function") {
                       handleRemoveLayer(issueData);
                     } else {
@@ -6808,7 +6743,6 @@ console.log("ui.js loaded");
                 btnIgnore.onclick = (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log("Ignore button clicked", issue);
                   try {
                     if (typeof handleIgnoreIssue === "function") {
                       handleIgnoreIssue(issue);
@@ -6827,13 +6761,11 @@ console.log("ui.js loaded");
               if (issue.type === "typography-style") {
                 const btnCreateStyle = issueEl.querySelector("button.btn-create-style");
                 if (btnCreateStyle) {
-                  console.log("Attaching create style handler to button", { issueId: issue.id, issueType: issue.type, nodeName: issue.nodeName });
                   // Create a closure to capture the issue
                   (function(issueData) {
                     btnCreateStyle.onclick = (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log("Create Style button clicked", issueData);
                       if (typeof handleCreateTextStyle === "function") {
                         handleCreateTextStyle(issueData);
                       } else {
@@ -7025,11 +6957,6 @@ console.log("ui.js loaded");
         }
 
         function filterAndSearchTokens(tokens) {
-          console.log("filterAndSearchTokens called", { 
-            hasTokens: !!tokens, 
-            currentColorTypeFilter, 
-            currentSearch 
-          });
           if (!tokens) return null;
 
           const filtered = {};
@@ -7037,7 +6964,6 @@ console.log("ui.js loaded");
           
           for (const [key, values] of Object.entries(tokens)) {
             let filteredValues = values || [];
-            console.log(`Processing ${key}, initial count:`, filteredValues.length);
 
             // Filter by color type (for colors and gradients)
             if ((key === "colors" || key === "gradients") && currentColorTypeFilter !== "all") {
@@ -7045,7 +6971,6 @@ console.log("ui.js loaded");
                 const colorType = token.colorType || "";
                 return colorType.toLowerCase().includes(currentColorTypeFilter.toLowerCase());
               });
-              console.log(`After color type filter (${currentColorTypeFilter}):`, filteredValues.length);
             }
 
             // Search - search in all relevant fields and mark match source
@@ -7078,7 +7003,6 @@ console.log("ui.js loaded");
                 }
                 return null;
               }).filter(token => token !== null);
-              console.log(`After search filter (${key}):`, filteredValues.length);
             }
 
             if (filteredValues.length > 0) {
@@ -7088,7 +7012,6 @@ console.log("ui.js loaded");
             filtered[key] = filteredValues;
           }
 
-          console.log("Final filtered tokens keys:", Object.keys(filtered));
           return { tokens: filtered, hasMatches };
         }
 
@@ -7145,7 +7068,6 @@ console.log("ui.js loaded");
           
           // Only reset filters if this is new data or explicitly requested
           if (resetFilters || isNewData) {
-            console.log("Resetting filters for new token data");
             currentFilter = "all";
             currentColorTypeFilter = "all";
             if (searchInput) {
@@ -7180,7 +7102,6 @@ console.log("ui.js loaded");
           exportGroup.style.display = tokens && Object.keys(tokens).length > 0 ? "flex" : "none";
 
           // Filter tokens - use current filter/search values
-          console.log("About to filter tokens with:", { currentColorTypeFilter, currentSearch });
           const filterResult = filterAndSearchTokens(tokens);
           
           clearResults("tokens");
@@ -7405,7 +7326,7 @@ console.log("ui.js loaded");
                   </div>
                   ${firstNode ? `
                     <div class="token-actions">
-                      <button class="btn-select" data-id="${firstNode.id}">Select</button>
+                      <button class="btn-select" data-id="${firstNode.id}">${nodeCount > 1 ? "Select All" : "Select"}</button>
                       ${nodeCount > 1 ? `<span class="token-node-count">(${nodeCount})</span>` : ""}
                     </div>
                   ` : ""}
@@ -7424,7 +7345,13 @@ console.log("ui.js loaded");
                   // Add active state to clicked button and token item
                   btn.classList.add("active");
                   tokenEl.classList.add("selected");
-                  parent.postMessage({ pluginMessage: { type: "select-node", id: firstNode.id } }, "*");
+                  // Select all nodes in this token group
+                  const allIds = nodes.map(n => n.id).filter(Boolean);
+                  if (allIds.length > 1) {
+                    parent.postMessage({ pluginMessage: { type: "select-nodes", ids: allIds } }, "*");
+                  } else {
+                    parent.postMessage({ pluginMessage: { type: "select-node", id: firstNode.id } }, "*");
+                  }
                 };
               }
 
@@ -7562,11 +7489,9 @@ console.log("ui.js loaded");
         scanSettings: appliedScanSettings
       }
     }, "*");
-    console.log("Message sent:", { type: "scan", mode: scope });
   }
 
   btnScan.onclick = () => {
-    console.log("btnScan clicked");
     try {
       // Hide validation error if visible
       const validationError = document.getElementById("validation-error");
@@ -7688,7 +7613,6 @@ console.log("ui.js loaded");
   };
 
   btnExtractTokens.onclick = () => {
-    console.log("btnExtractTokens clicked");
     try {
       // Show cancel button and progress, hide extract button
       btnExtractTokens.style.display = "none";
@@ -7720,7 +7644,6 @@ console.log("ui.js loaded");
       btnExtractTokens.disabled = true;
       currentReportData.scanMode = scope;
       parent.postMessage({ pluginMessage: { type: "extract-tokens", mode: scope } }, "*");
-      console.log("Message sent:", { type: "extract-tokens", mode: scope });
     } catch (error) {
       console.error("Error in btnExtractTokens.onclick:", error);
       resultsTokens.innerHTML = `<div class="error-message">Error: ${escapeHtml(error.message)}</div>`;
@@ -7909,7 +7832,6 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       
-      console.log("Filled font size from typography:", uniqueSorted);
     } catch (e) {
       console.error("Failed to fill font size from typography", e);
     }
@@ -7960,7 +7882,6 @@ console.log("ui.js loaded");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       
-      console.log("Filled line height from typography:", finalValues);
     } catch (e) {
       console.error("Failed to fill line height from typography", e);
     }
@@ -8024,12 +7945,10 @@ console.log("ui.js loaded");
     const colorPreviewPanelToggle = document.getElementById("color-preview-panel-toggle");
     
     if (!colorPreviewPanel || !colorPreviewPanelHeader || !colorPreviewPanelToggle) {
-      console.log("Color preview panel elements not found, retrying...");
       setTimeout(setupColorPreviewPanelToggle, 100);
       return;
     }
     
-    console.log("Setting up color preview panel toggle");
     
     const toggleColorPreviewPanel = () => {
       const isCollapsed = colorPreviewPanel.classList.contains("collapsed");
@@ -8040,14 +7959,12 @@ console.log("ui.js loaded");
       if (icon) {
         icon.textContent = isCollapsed ? "▶" : "▶";
       }
-      console.log("Color preview panel toggled, isCollapsed:", !isCollapsed);
     };
     
     // Handle click on header
     colorPreviewPanelHeader.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      console.log("Color preview panel header clicked");
       toggleColorPreviewPanel();
     };
     
@@ -8055,7 +7972,6 @@ console.log("ui.js loaded");
     colorPreviewPanelToggle.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      console.log("Color preview panel toggle button clicked");
       toggleColorPreviewPanel();
     };
   }
@@ -8535,15 +8451,6 @@ console.log("ui.js loaded");
   }
 
   function applyFilters() {
-    console.log("applyFilters called", {
-      isViewingTokens,
-      hasTokens: !!currentReportData.tokens,
-      hasIssues: !!currentReportData.issues,
-      currentFilter,
-      currentSearch,
-      currentColorTypeFilter
-    });
-
     // Determine which tab is currently active
     const activeTab = document.querySelector('.report-tab.active');
     const activeTabName = activeTab ? activeTab.getAttribute('data-tab') : null;
@@ -8551,39 +8458,26 @@ console.log("ui.js loaded");
     // Apply filters to the currently active tab's data
     if (activeTabName === 'animations') {
       // Search in animations tab (handled by ui.html script)
-      console.log("Applying search to animations");
       if (typeof window.searchAnimations === 'function') {
         window.searchAnimations(currentSearch);
       }
     } else if (activeTabName === 'tokens' && currentReportData.tokens) {
-      console.log("Applying filters to tokens");
       renderTokens(currentReportData.tokens, false, { skipTabSwitch: true }); // Don't reset filters, don't switch tab
     } else if (activeTabName === 'issues' && currentReportData.issues) {
-      console.log("Applying filters to issues");
       renderResults(currentReportData.issues, false, { skipTabSwitch: true }); // Don't reset filters, don't switch tab
     } else if (isViewingTokens && currentReportData.tokens) {
       // Fallback to old behavior if active tab detection fails
-      console.log("Applying filters to tokens (fallback)");
       renderTokens(currentReportData.tokens, false, { skipTabSwitch: true });
     } else if (currentReportData.issues) {
-      console.log("Applying filters to issues (fallback)");
       renderResults(currentReportData.issues, false, { skipTabSwitch: true });
     }
   }
 
   function setupFilterHandlers() {
-    console.log("setupFilterHandlers called");
     searchInput = document.getElementById("search-input");
     btnClearSearch = document.getElementById("btn-clear-search");
     filterButtons = document.querySelectorAll(".filter-btn");
     colorTypeSelect = document.getElementById("color-type-select");
-
-    console.log("Elements found:", {
-      searchInput: !!searchInput,
-      btnClearSearch: !!btnClearSearch,
-      filterButtons: filterButtons ? filterButtons.length : 0,
-      colorTypeSelect: !!colorTypeSelect
-    });
 
     if (!searchInput || !btnClearSearch || !filterButtons || filterButtons.length === 0) {
       console.warn("Filter elements not found, retrying...", {
@@ -8596,12 +8490,9 @@ console.log("ui.js loaded");
     }
 
     // Search input handler
-    console.log("Setting up search input handler");
     searchInput.addEventListener("input", (e) => {
       const newValue = e.target.value;
-      console.log("Search input changed:", newValue);
       currentSearch = newValue;
-      console.log("currentSearch set to:", currentSearch);
       if (btnClearSearch) {
         btnClearSearch.style.display = currentSearch.trim() ? "block" : "none";
       }
@@ -8610,9 +8501,7 @@ console.log("ui.js loaded");
 
     // Clear search button
     if (btnClearSearch) {
-      console.log("Setting up clear search button handler");
       btnClearSearch.onclick = (e) => {
-        console.log("Clear search clicked");
         e.preventDefault();
         e.stopPropagation();
         if (searchInput) {
@@ -8625,15 +8514,12 @@ console.log("ui.js loaded");
     }
 
     // Filter buttons handler - toggle behavior
-    console.log("Setting up filter buttons handlers, count:", filterButtons.length);
     filterButtons.forEach((btn, index) => {
-      console.log(`Setting up filter button ${index}:`, btn.getAttribute("data-filter"));
       btn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
         const filterValue = btn.getAttribute("data-filter");
         const isCurrentlyActive = btn.classList.contains("active");
-        console.log("Filter button clicked:", filterValue, "isActive:", isCurrentlyActive);
         
         if (isCurrentlyActive && filterValue !== "all") {
           // If clicking an active button (except "all"), toggle it off and set to "all"
@@ -8652,37 +8538,29 @@ console.log("ui.js loaded");
           currentFilter = filterValue;
         }
         
-        console.log("currentFilter set to:", currentFilter);
         applyFilters();
       };
     });
 
     // Color type filter handler
     if (colorTypeSelect) {
-      console.log("Setting up color type select handler");
       colorTypeSelect.addEventListener("change", (e) => {
-        console.log("Color type changed:", e.target.value);
         currentColorTypeFilter = e.target.value;
         applyFilters();
       });
     }
 
-    console.log("Filter handlers setup complete");
   }
 
   // Setup handlers when DOM is ready
-  console.log("Setting up filter handlers, DOM readyState:", document.readyState);
   if (document.readyState === "loading") {
-    console.log("DOM still loading, waiting for DOMContentLoaded");
     document.addEventListener("DOMContentLoaded", () => {
-      console.log("DOMContentLoaded fired, setting up handlers");
       setupFilterHandlers();
       restoreLastReport(); // Restore last report if available
       restoreInputValues(); // Restore input values
       requestScanHistory(); // Fetch persisted history
     });
   } else {
-    console.log("DOM already ready, setting up handlers immediately");
     setupFilterHandlers();
     restoreLastReport(); // Restore last report if available
     restoreInputValues(); // Restore input values
@@ -8693,7 +8571,6 @@ console.log("ui.js loaded");
   if (btnHistory) {
     // Cancel Scan button
     btnCancelScan.onclick = () => {
-      console.log("Cancel operation clicked");
       parent.postMessage({ pluginMessage: { type: "cancel-scan" } }, "*");
       // Reset UI state immediately (show both buttons, hide cancel/progress)
       btnScan.style.display = "block";
@@ -9228,7 +9105,6 @@ console.log("ui.js loaded");
       reader.onload = (event) => {
         try {
           importFileData = JSON.parse(event.target.result);
-          console.log("Imported settings data:", importFileData);
         } catch (error) {
           alert("❌ Error parsing JSON file: " + error.message);
           selectedImportFile = null;
@@ -9257,7 +9133,6 @@ console.log("ui.js loaded");
         return;
       }
 
-      console.log("Import file data:", importFileData);
 
       // Parse imported data - can be array or single object
       let values = null;
@@ -9291,7 +9166,6 @@ console.log("ui.js loaded");
         return;
       }
 
-      console.log("Applying values:", values);
 
       // Apply values to input fields (same as load settings)
       // This only fills the input fields, does NOT affect saved settings
@@ -9371,23 +9245,18 @@ console.log("ui.js loaded");
 
   // Receive report from plugin code
   window.onmessage = (event) => {
-    console.log("Received message:", event.data);
     const msg = event.data.pluginMessage;
 
     if (msg && msg.type === "fix-issue-result") {
-      console.log("[fix-issue-result] Received:", { issueId: msg.issueId, success: msg.success, message: msg.message });
       
       // Show fix result message
       showFixMessage(msg.issueId, msg.message, msg.success);
       
       // If error, show error popup
       if (!msg.success) {
-        console.log("[fix-issue-result] Error detected, showing error modal...");
         const errorMsg = msg.message || "An error occurred while fixing the issue.";
-        console.log("[fix-issue-result] Error message:", errorMsg);
         try {
           showErrorModal(errorMsg);
-          console.log("[fix-issue-result] Error modal should be displayed");
         } catch (error) {
           console.error("[fix-issue-result] Error showing error modal:", error);
           // Fallback to alert
@@ -9397,7 +9266,6 @@ console.log("ui.js loaded");
       
       // If successful, remove the issue from data and update UI
       if (msg.success) {
-        console.log("[fix-issue-result] Removing issueId:", msg.issueId);
 
         // Always remove from data
         if (currentReportData && currentReportData.issues) {
@@ -9406,7 +9274,6 @@ console.log("ui.js loaded");
 
         // Skip DOM updates during batch fix — will rerender once at the end
         if (window._batchFixInProgress) {
-          console.log("[fix-issue-result] Batch fix in progress, skipping DOM update");
         } else {
           // Single fix: update DOM immediately
           const selector1 = `.issue[data-issue-id="${msg.issueId}"]`;
@@ -9507,11 +9374,7 @@ console.log("ui.js loaded");
 
     // Handle get-components-for-issue (Suggest Fix now) - CHECK FIRST before other handlers
     if (msg && msg.type === "components-for-issue-loaded") {
-      console.log("=== [components-for-issue-loaded] HANDLER CALLED ===");
-      console.log("[components-for-issue-loaded] Received message", msg);
       const pendingIssue = window.pendingComponentIssue;
-      console.log("[components-for-issue-loaded] Pending issue:", pendingIssue, "Message issueId:", msg.issueId);
-      console.log("[components-for-issue-loaded] Similar components:", msg.similarComponents);
       
       // Restore button state
       if (pendingIssue) {
@@ -9532,12 +9395,10 @@ console.log("ui.js loaded");
       
       // Always show modal if we have similar components (simplified logic)
       if (msg.similarComponents && msg.similarComponents.length > 0) {
-        console.log("[components-for-issue-loaded] Showing suggest modal with", msg.similarComponents.length, "similar components");
         // Use pending issue if available, otherwise create a minimal issue object
         const issueToUse = pendingIssue || { id: msg.issueId, nodeName: "Unnamed" };
         try {
           showComponentSuggestModal(issueToUse, msg.similarComponents);
-          console.log("[components-for-issue-loaded] Modal function called successfully");
         } catch (error) {
           console.error("[components-for-issue-loaded] Error showing modal:", error);
           alert("Error showing component suggestion modal: " + error.message);
@@ -9554,14 +9415,7 @@ console.log("ui.js loaded");
     
     // Handle get-all-components (Select Component) - CHECK FIRST before other handlers
     if (msg && msg.type === "all-components-loaded") {
-      console.log("=== [all-components-loaded] HANDLER CALLED ===");
-      console.log("[all-components-loaded] Received message", msg);
       const pendingIssue = window.pendingSelectComponentIssue;
-      console.log("[all-components-loaded] Pending issue:", pendingIssue);
-      console.log("[all-components-loaded] Message issueId:", msg.issueId, typeof msg.issueId);
-      console.log("[all-components-loaded] Pending issueId:", pendingIssue?.id, typeof pendingIssue?.id);
-      console.log("[all-components-loaded] Components:", msg.components);
-      console.log("[all-components-loaded] Components length:", msg.components ? msg.components.length : 0);
       
       // Restore button state
       if (pendingIssue) {
@@ -9582,14 +9436,10 @@ console.log("ui.js loaded");
       
       // Always show modal if we have components (simplified logic)
       if (msg.components && msg.components.length > 0) {
-        console.log("[all-components-loaded] ✓ Showing select modal with", msg.components.length, "components");
         // Use pending issue if available, otherwise create a minimal issue object
         const issueToUse = pendingIssue || { id: msg.issueId, nodeName: "Unnamed" };
-        console.log("[all-components-loaded] Issue to use:", issueToUse);
-        console.log("[all-components-loaded] Calling showComponentSelectModal...");
         try {
           showComponentSelectModal(issueToUse, msg.components);
-          console.log("[all-components-loaded] ✓ Modal function called successfully");
         } catch (error) {
           console.error("[all-components-loaded] ✗ Error showing modal:", error);
           console.error("[all-components-loaded] Error stack:", error.stack);
@@ -9949,7 +9799,6 @@ console.log("ui.js loaded");
       if (msg.report) {
         applySavedReport(msg.report);
       } else {
-        console.log("No last report stored");
       }
       return;
     }
@@ -9967,9 +9816,7 @@ console.log("ui.js loaded");
     if (msg && msg.type === "input-values-data") {
       if (msg.values) {
         applyInputValues(msg.values);
-        console.log("Restored input values:", msg.values);
       } else {
-        console.log("No saved input values to restore");
       }
       return;
     }
@@ -10005,7 +9852,6 @@ console.log("ui.js loaded");
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        console.log("✅ Settings exported successfully");
         return;
       }
       
@@ -10098,7 +9944,6 @@ console.log("ui.js loaded");
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        console.log("✅ Settings exported successfully");
       }
       return;
     }

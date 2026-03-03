@@ -51,11 +51,9 @@ function collectAllComponents(forceRefresh = false) {
                      cacheAge < 300000; // Cache valid for 5 minutes
   
   if (cacheValid) {
-    console.log("[component-cache] Using cached components:", componentCache.components.length, "components");
     return componentCache.components;
   }
   
-  console.log("[component-cache] Collecting components (cache miss or expired)");
   
   const allComponents = [];
   
@@ -93,7 +91,6 @@ function collectAllComponents(forceRefresh = false) {
   }
   
   // Only scan current page instead of entire document to avoid freezing
-  console.log("[component-cache] Scanning current page:", currentPageName);
   collectComponents(figma.currentPage);
   
   // Also check if there are components in other pages (but limit to first 10 pages to avoid freezing)
@@ -101,7 +98,6 @@ function collectAllComponents(forceRefresh = false) {
   const pagesToScan = allPages.slice(0, 10); // Limit to first 10 pages
   
   if (pagesToScan.length > 1) {
-    console.log(`[component-cache] Also scanning ${pagesToScan.length - 1} additional page(s)`);
     for (let i = 1; i < pagesToScan.length; i++) {
       try {
         collectComponents(pagesToScan[i]);
@@ -121,7 +117,6 @@ function collectAllComponents(forceRefresh = false) {
     pageName: currentPageName
   };
   
-  console.log("[component-cache] Cached", allComponents.length, "components");
   return allComponents;
 }
 
@@ -135,7 +130,6 @@ function addComponentToCache(component) {
     componentCache.components.push(component);
     // Re-sort
     componentCache.components.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    console.log("[component-cache] Added new component to cache:", component.name);
   }
 }
 
@@ -146,7 +140,6 @@ function invalidateComponentCache() {
     timestamp: 0,
     pageName: null
   };
-  console.log("[component-cache] Cache invalidated");
 }
 
 // Utility: traverse nodes (skip hidden nodes and nodes matching skip names)
@@ -2129,7 +2122,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                 addIssue({
                   severity: "error",
                   type: "color",
-                  message: `Color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                  message: `Color ${colorStr} does not follow Token.`,
                   id: node.id,
                   nodeName: nodeName
                 });
@@ -2148,7 +2141,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                 addIssue({
                   severity: "error",
                   type: "color",
-                  message: `Stroke color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                   message: `Color ${colorStr} does not follow Token.`,
                   id: node.id,
                   nodeName: nodeName
                 });
@@ -2167,7 +2160,7 @@ async function scan(target, customSpacingScale = null, spacingThreshold = 100, c
                 addIssue({
                   severity: "error",
                   type: "color",
-                  message: `Effect color ${colorStr} does not follow scale on "${nodeName}". Scale: ${customColorScale.join(", ")}`,
+                   message: `Color ${colorStr} does not follow Token.`,
                   id: node.id,
                   nodeName: nodeName
                 });
@@ -3983,7 +3976,6 @@ figma.ui.onmessage = async msg => {
       break;
     }
     case "create-text-style": {
-      console.log("create-text-style handler called", msg);
       
       // Store issueId at the beginning to ensure it's available in catch block
       const issue = msg.issue;
@@ -4002,7 +3994,6 @@ figma.ui.onmessage = async msg => {
         const nodeId = issue.id;
         const node = figma.getNodeById(nodeId);
         
-        console.log("create-text-style: node found", { nodeId, nodeType: node ? node.type : "null" });
         
         if (!node) {
           figma.notify("⚠️ Node not found");
@@ -4783,7 +4774,6 @@ figma.ui.onmessage = async msg => {
         const details = []; // Log details for each bind
         const allVars = figma.variables.getLocalVariables();
         const colorVars = allVars.filter(v => v.resolvedType === "COLOR");
-        console.log("[Batch Bind] Starting. colorVars count:", colorVars.length);
         // Build hex -> variable map from local variables
         const hexVarMap = new Map();
         for (const v of colorVars) {
@@ -4882,11 +4872,8 @@ figma.ui.onmessage = async msg => {
             }
           } catch (e) { /* skip node errors */ }
         }
-        console.log("[Batch Bind] Done. applied=" + applied + ", failed=" + failed + ", totalNodes=" + nodesToProcess.length);
-        details.forEach(function(d) { console.log("[Batch Bind] " + d); });
         figma.ui.postMessage({ type: "batch-bind-color-variables-result", applied: applied, failed: failed, details: details });
       } catch (error) {
-        console.log("[Batch Bind] ERROR:", error.message);
         figma.ui.postMessage({ type: "batch-bind-color-variables-result", applied: 0, failed: 0, error: error.message, details: [] });
       }
       break;
@@ -5517,7 +5504,6 @@ figma.ui.onmessage = async msg => {
         let targetNode = node;
         if (node.type === "INSTANCE" && node.mainComponent) {
           targetNode = node.mainComponent;
-          console.log(`[fix-autolayout] Node is instance, using main component: ${targetNode.id}`);
         } else if (node.parent && node.parent.type === "INSTANCE" && node.parent.mainComponent) {
           // Node is inside an instance, need to find corresponding node in main component
           const instanceParent = node.parent;
@@ -5528,14 +5514,12 @@ figma.ui.onmessage = async msg => {
             const nodeIndex = instanceParent.children.indexOf(node);
             if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
               targetNode = mainComponent.children[nodeIndex];
-              console.log(`[fix-autolayout] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
             } else {
               // Try to find by name
               const nodeName = node.name;
               const matchingNode = mainComponent.children.find(child => child.name === nodeName);
               if (matchingNode) {
                 targetNode = matchingNode;
-                console.log(`[fix-autolayout] Node is inside instance, found by name in main component: ${targetNode.id}`);
               } else {
                 throw new Error("Cannot enable auto-layout: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
               }
@@ -5581,8 +5565,6 @@ figma.ui.onmessage = async msg => {
         
         // Try to enable auto-layout directly - let Figma API handle permissions
         try {
-          console.log(`[fix-autolayout] Before enable - layoutMode: ${targetNode.layoutMode}, node type: ${targetNode.type}, node id: ${targetNode.id}`);
-          console.log(`[fix-autolayout] Node locked: ${targetNode.locked}, parent: ${targetNode.parent ? targetNode.parent.type : 'none'}`);
           
           // Check if node is locked
           if (targetNode.locked) {
@@ -5599,7 +5581,6 @@ figma.ui.onmessage = async msg => {
           
           // Verify that auto-layout was actually enabled
           const verifyLayoutMode = targetNode.layoutMode;
-          console.log(`[fix-autolayout] After enable - layoutMode: ${verifyLayoutMode}, expected: ${layoutMode}`);
           
           if (verifyLayoutMode === "NONE" || !verifyLayoutMode) {
             console.error(`[fix-autolayout] Failed to enable - layoutMode is still: ${verifyLayoutMode}`);
@@ -5629,7 +5610,6 @@ figma.ui.onmessage = async msg => {
           
           // Final verify
           const finalLayoutMode = targetNode.layoutMode;
-          console.log(`[fix-autolayout] Final verify - layoutMode: ${finalLayoutMode}, itemSpacing: ${targetNode.itemSpacing}`);
           
           figma.notify(`✅ Enabled auto-layout (${finalLayoutMode.toLowerCase()})`);
           figma.ui.postMessage({
@@ -5772,14 +5752,11 @@ figma.ui.onmessage = async msg => {
             if ("children" in nodeStillExists && nodeStillExists.children.length === 0) {
               try {
                 nodeStillExists.remove();
-                console.log("[fix-group] Successfully removed empty Group");
               } catch (removeError) {
                 // Group might have been auto-removed, that's fine
-                console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
               }
             } else if ("children" in nodeStillExists && nodeStillExists.children.length > 0) {
               // Some children couldn't be moved, try to move remaining ones
-              console.log(`[fix-group] Group still has ${nodeStillExists.children.length} children, trying to move them`);
               const remainingChildren = nodeStillExists.children.slice();
               for (const remainingChild of remainingChildren) {
                 try {
@@ -5794,22 +5771,18 @@ figma.ui.onmessage = async msg => {
                 if (nodeCheck && nodeCheck.type === "GROUP") {
                   if ("children" in nodeCheck && nodeCheck.children.length === 0) {
                     nodeCheck.remove();
-                    console.log("[fix-group] Successfully removed Group after moving remaining children");
                   } else {
                     console.warn(`[fix-group] Group still has ${nodeCheck.children.length} children, cannot remove`);
                   }
                 }
               } catch (removeError) {
                 // Group might have been auto-removed, that's fine
-                console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
               }
             }
           } else {
-            console.log("[fix-group] Group was already removed or converted (node no longer exists or is not a GROUP)");
           }
         } catch (removeError) {
           // Group might have been auto-removed when children were moved, that's fine
-          console.log("[fix-group] Group was already removed or doesn't exist:", removeError.message);
         }
         
         // Always send success message even if Group removal had issues
@@ -5994,14 +5967,12 @@ figma.ui.onmessage = async msg => {
             const nodeIndex = instanceParent.children.indexOf(node);
             if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
               targetNode = mainComponent.children[nodeIndex];
-              console.log(`[fix-position] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
             } else {
               // Try to find by name
               const nodeName = node.name;
               const matchingNode = mainComponent.children.find(child => child.name === nodeName);
               if (matchingNode) {
                 targetNode = matchingNode;
-                console.log(`[fix-position] Node is inside instance, found by name in main component: ${targetNode.id}`);
               } else {
                 throw new Error("Cannot fix position: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
               }
@@ -6087,14 +6058,12 @@ figma.ui.onmessage = async msg => {
             const nodeIndex = instanceParent.children.indexOf(node);
             if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
               targetNode = mainComponent.children[nodeIndex];
-              console.log(`[remove-position] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
             } else {
               // Try to find by name
               const nodeName = node.name;
               const matchingNode = mainComponent.children.find(child => child.name === nodeName);
               if (matchingNode) {
                 targetNode = matchingNode;
-                console.log(`[remove-position] Node is inside instance, found by name in main component: ${targetNode.id}`);
               } else {
                 throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
               }
@@ -6182,14 +6151,12 @@ figma.ui.onmessage = async msg => {
             const nodeIndex = instanceParent.children.indexOf(node);
             if (nodeIndex >= 0 && nodeIndex < mainComponent.children.length) {
               targetNode = mainComponent.children[nodeIndex];
-              console.log(`[remove-layer] Node is inside instance, using corresponding node in main component: ${targetNode.id}`);
             } else {
               // Try to find by name
               const nodeName = node.name;
               const matchingNode = mainComponent.children.find(child => child.name === nodeName);
               if (matchingNode) {
                 targetNode = matchingNode;
-                console.log(`[remove-layer] Node is inside instance, found by name in main component: ${targetNode.id}`);
               } else {
                 throw new Error("Cannot remove layer: node is inside an instance. Please switch to Design Mode and edit the main component directly.");
               }
@@ -6244,14 +6211,12 @@ figma.ui.onmessage = async msg => {
     }
     case "get-components-for-issue": {
       try {
-        console.log("[get-components-for-issue] Received request", msg);
         const issue = msg.issue;
         if (!issue || !issue.id) {
           console.error("[get-components-for-issue] Invalid issue data", issue);
           throw new Error("Invalid issue data");
         }
         
-        console.log("[get-components-for-issue] Issue ID:", issue.id);
         const nodeId = issue.id;
         const node = figma.getNodeById(nodeId);
         
@@ -6265,7 +6230,6 @@ figma.ui.onmessage = async msg => {
           break;
         }
         
-        console.log("[get-components-for-issue] Node found:", node.name, node.type);
         
         // Get all components from cache (or collect if cache miss)
         const allComponents = collectAllComponents();
@@ -6275,7 +6239,6 @@ figma.ui.onmessage = async msg => {
           figma.notify("⏳ Finding similar components...", { timeout: 1000 });
         }
         
-        console.log("[get-components-for-issue] Found", allComponents.length, "components in document");
         
         // Find similar components based on name and structure
         // Simple matching: check if component name is similar to node name
@@ -6290,8 +6253,6 @@ figma.ui.onmessage = async msg => {
           })
           .slice(0, 5); // Limit to 5 most similar
         
-        console.log("[get-components-for-issue] Found", similarComponents.length, "similar components");
-        console.log("[get-components-for-issue] Sending response with issueId:", issue.id);
         
         figma.ui.postMessage({
           type: "components-for-issue-loaded",
@@ -6310,9 +6271,7 @@ figma.ui.onmessage = async msg => {
     }
     case "get-all-components": {
       try {
-        console.log("[get-all-components] Received request", msg);
         const issue = msg.issue;
-        console.log("[get-all-components] Issue:", issue);
         
         // Get all components from cache (or collect if cache miss)
         const allComponents = collectAllComponents();
@@ -6323,7 +6282,6 @@ figma.ui.onmessage = async msg => {
         }
         
         const issueId = issue ? issue.id : null;
-        console.log("[get-all-components] Sending response with issueId:", issueId);
         
         figma.ui.postMessage({
           type: "all-components-loaded",
@@ -7012,4 +6970,3 @@ function scanAnimations(scope) {
   };
 }
 
-console.log("code.js loaded");

@@ -114,7 +114,7 @@
         "light": {
           "default": {
             "text": "color.white",
-            "background": "gba(255,255,255,.2)"
+            "background": "rgba(255,255,255,.2)"
           },
           "hover": {
             "text": "color.primary.300",

@@ -54,11 +54,10 @@
 .typography-table input,
 .typography-table select {
     width: 100%;
-    padding: 5px 8px;
+    padding: 5px;
     border: 1px solid $color-border-strong;
     border-radius: 4px;
-    font-size: 10px;
-    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 9px;
     /* min-width: 100px; */
 }
 
@@ -66,6 +65,10 @@
 .typography-table select:focus {
     outline: none;
     border-color: $color-primary;
+}
+
+.typography-table input[data-field="fontSize"] {
+   min-width: 46px;
 }
 
 .typography-table-actions {
@@ -154,7 +157,7 @@
 }
 
 .typography-table-style-name {
-    min-width: 220px;
+    min-width: 170px;
 }
 
 .typography-table-font-weight {

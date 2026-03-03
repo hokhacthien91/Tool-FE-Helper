@@ -2979,6 +2979,16 @@ atom/Buttons</textarea>
             </div>
           </div>
 
+          <!-- Row 3: Smooth Transitions -->
+          <div style="display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <div style="flex: 1;">
+              <label style="display: flex; align-items: center; gap: 4px; height: 30px; font-size: 11px; cursor: pointer;">
+                <input type="checkbox" id="gifEnableTransitions" />
+                <span>Smooth Transitions <span style="color: var(--text-secondary); font-size: 10px;">(from Figma prototype)</span></span>
+              </label>
+            </div>
+          </div>
+
           <!-- Overlay Layers (multi-select) -->
           <div id="gifOverlaySection" style="display: none; margin-top: 12px;">
             <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Overlay Layers (static on top of GIF)</label>
@@ -7874,6 +7884,7 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       const gifPaddingXInput = document.getElementById("gifPaddingX");
       const gifPaddingYInput = document.getElementById("gifPaddingY");
       const gifBgColorInput = document.getElementById("gifBgColor");
+      const gifEnableTransitionsCheckbox = document.getElementById("gifEnableTransitions");
       const gifBgColorPicker = document.getElementById("gifBgColorPicker");
       const gifOverlaySection = document.getElementById("gifOverlaySection");
       const gifOverlayList = document.getElementById("gifOverlayList");
@@ -7900,6 +7911,8 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
       // GIF State
       let gifSelectionInfo = null;
       let gifGeneratedBlob = null;
+      let gifDefaultDelay = 500; // Default delay from Figma interactions
+      let gifIndividualDelays = []; // Individual delays for each frame
 
       // Update GIF selection info when tab is active
       function updateGifSelectionInfo() {
@@ -7955,9 +7968,19 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         gifWidthInput.value = info.width;
         gifHeightInput.value = info.height;
 
-        // Update frame delay from Figma interactions (if available)
+        // Store default delay and individual delays from Figma interactions
+        gifDefaultDelay = info.defaultDelay || 500;
+        gifIndividualDelays = info.delays || [];
+        
+        // Update frame delay input from Figma interactions (if available)
         if (info.defaultDelay && info.defaultDelay > 0) {
           gifFrameDelayInput.value = info.defaultDelay;
+        }
+        
+        // Enable/disable transitions checkbox based on whether Figma has transitions
+        gifEnableTransitionsCheckbox.disabled = !info.hasTransitions;
+        if (!info.hasTransitions) {
+          gifEnableTransitionsCheckbox.checked = false;
         }
 
         // Show frame list if available
@@ -7969,7 +7992,15 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
             .map((name, i) => {
               const delay = info.delays && info.delays[i] ? info.delays[i] : 0;
               const delayText = delay > 0 ? `<span style="color: var(--accent-color); margin-left: 8px;">${delay}ms</span>` : '';
-              return `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color); font-size: 11px; display: flex; justify-content: space-between;">${i + 1}. ${name}${delayText}</div>`;
+              
+              // Show transition info if available
+              const transitionDuration = info.transitionDurations?.[i] || 0;
+              const transitionType = info.transitionTypes?.[i] || 'NONE';
+              const transitionText = transitionDuration > 0 && transitionType !== 'NONE' 
+                ? `<span style="color: var(--success-color); margin-left: 8px; font-size: 9px;">→ ${transitionDuration}ms</span>` 
+                : '';
+              
+              return `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color); font-size: 11px; display: flex; justify-content: space-between;">${i + 1}. ${name}${delayText}${transitionText}</div>`;
             })
             .join("");
           gifExportBtn.disabled = false;
@@ -8002,17 +8033,26 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         const selectedOverlayIds = Array.from(document.querySelectorAll('.gif-overlay-checkbox:checked'))
           .map(cb => cb.value);
 
+        // Check if user changed the delay input
+        const currentDelayInput = parseInt(gifFrameDelayInput.value, 10);
+        const useIndividualDelays = (currentDelayInput === gifDefaultDelay) && gifIndividualDelays.length > 0;
+
         const config = {
           width: parseInt(gifWidthInput.value, 10),
           height: parseInt(gifHeightInput.value, 10),
           fps: parseInt(gifFpsInput.value, 10),
-          frameDelay: parseInt(gifFrameDelayInput.value, 10),
+          frameDelay: currentDelayInput,
+          delays: useIndividualDelays ? gifIndividualDelays : undefined,
+          useIndividualDelays: useIndividualDelays,
           scale: parseFloat(gifScaleSelect.value),
           loop: gifLoopCheckbox.checked,
           overlayFrameIds: selectedOverlayIds.length > 0 ? selectedOverlayIds : undefined,
           paddingX: parseInt(gifPaddingXInput.value, 10) || 0,
           paddingY: parseInt(gifPaddingYInput.value, 10) || 0,
           bgColor: gifBgColorInput.value.trim() || null, // null = transparent
+          enableTransitions: gifEnableTransitionsCheckbox.checked && gifSelectionInfo.hasTransitions,
+          transitionDurations: gifSelectionInfo.transitionDurations,
+          transitionEasings: gifSelectionInfo.transitionEasings,
         };
 
         // Show progress
@@ -8137,25 +8177,164 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         }
       }
 
+      // Easing functions for smooth transitions
+      function easeLinear(t) {
+        return t;
+      }
+      
+      function easeInOut(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      }
+      
+      function easeIn(t) {
+        return t * t;
+      }
+      
+      function easeOut(t) {
+        return t * (2 - t);
+      }
+      
+      function getEasingFunction(easingType) {
+        switch (easingType) {
+          case 'linear': return easeLinear;
+          case 'ease-in-out': return easeInOut;
+          case 'ease-in': return easeIn;
+          case 'ease-out': return easeOut;
+          default: return easeLinear;
+        }
+      }
+
+      // Generate tween frames between two canvases
+      function generateTweenFrames(canvas1, canvas2, numFrames, easingFunc, bgColor) {
+        const tweenCanvases = [];
+        const width = canvas1.width;
+        const height = canvas1.height;
+
+        for (let i = 1; i <= numFrames; i++) {
+          const t = i / (numFrames + 1);
+          const easedT = easingFunc(t);
+
+          const tweenCanvas = document.createElement('canvas');
+          tweenCanvas.width = width;
+          tweenCanvas.height = height;
+          const ctx = tweenCanvas.getContext('2d');
+
+          // Fill background if specified
+          if (bgColor) {
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, width, height);
+          }
+
+          // Calculate scales for zoom/scale effect
+          // Frame 1 fades out with scale, Frame 2 fades in with scale
+          const scale1 = 1 + easedT * 0.1; // Slight zoom out
+          const scale2 = 1 - (1 - easedT) * 0.1; // Slight zoom in
+          const alpha1 = 1 - easedT;
+          const alpha2 = easedT;
+
+          // Draw frame 1 (fading out, zooming out)
+          ctx.save();
+          ctx.globalAlpha = alpha1;
+          ctx.translate(width / 2, height / 2);
+          ctx.scale(scale1, scale1);
+          ctx.translate(-width / 2, -height / 2);
+          ctx.drawImage(canvas1, 0, 0);
+          ctx.restore();
+
+          // Draw frame 2 (fading in, zooming in)
+          ctx.save();
+          ctx.globalAlpha = alpha2;
+          ctx.translate(width / 2, height / 2);
+          ctx.scale(scale2, scale2);
+          ctx.translate(-width / 2, -height / 2);
+          ctx.drawImage(canvas2, 0, 0);
+          ctx.restore();
+
+          tweenCanvases.push(tweenCanvas);
+        }
+
+        return tweenCanvases;
+      }
+
       // Generate GIF format
       async function generateGIF(processedCanvases, config, bgColor) {
         gifProgressText.textContent = "Encoding GIF...";
 
         const encoder = new GIFEncoder();
         encoder.setRepeat(0);
-        encoder.setDelay(config.frameDelay);
         encoder.setQuality(10);
         encoder.setTransparent(!bgColor);
         encoder.start();
+
+        // Calculate total frames for progress tracking
+        let totalFrames = processedCanvases.length;
+        if (config.enableTransitions && processedCanvases.length > 1) {
+          // Calculate total tween frames from Figma transition data
+          for (let i = 0; i < processedCanvases.length - 1; i++) {
+            const transitionDuration = config.transitionDurations?.[i] || 300;
+            const numTweenFrames = Math.max(1, Math.round((transitionDuration / 1000) * config.fps));
+            totalFrames += numTweenFrames;
+          }
+        }
+        
+        let frameIndex = 0;
 
         for (let i = 0; i < processedCanvases.length; i++) {
           const { canvas } = processedCanvases[i];
           const ctx = canvas.getContext("2d");
           encoder.setSize(canvas.width, canvas.height);
+          
+          // Determine delay for this base frame
+          let baseFrameDelay = config.frameDelay;
+          if (config.useIndividualDelays && config.delays && config.delays[i]) {
+            baseFrameDelay = config.delays[i];
+          }
+          
+          // Get transition data for this frame (if transitioning to next frame)
+          const transitionDuration = config.transitionDurations?.[i] || 300;
+          const transitionEasing = config.transitionEasings?.[i] || 'EASE_IN_OUT';
+          
+          // If transitions enabled, reduce base frame delay (it will hold before transition)
+          if (config.enableTransitions && processedCanvases.length > 1 && i < processedCanvases.length - 1) {
+            // Base frame shows for: original delay - transition duration
+            baseFrameDelay = Math.max(50, baseFrameDelay - transitionDuration);
+          }
+          
+          encoder.setDelay(baseFrameDelay);
           encoder.addFrame(ctx);
+          frameIndex++;
 
-          const percent = 70 + Math.round((i / processedCanvases.length) * 20);
+          const percent = 70 + Math.round((frameIndex / totalFrames) * 20);
           gifProgressFill.style.width = `${percent}%`;
+
+          // Add tween frames between this frame and next frame
+          if (config.enableTransitions && i < processedCanvases.length - 1) {
+            const nextCanvas = processedCanvases[i + 1].canvas;
+            
+            // Calculate tween settings for this specific transition
+            const numTweenFrames = Math.max(1, Math.round((transitionDuration / 1000) * config.fps));
+            const tweenFrameDelay = Math.round(transitionDuration / numTweenFrames);
+            
+            // Convert Figma easing to our easing function
+            let easingType = 'ease-in-out'; // default
+            if (transitionEasing.includes('LINEAR')) easingType = 'linear';
+            else if (transitionEasing.includes('EASE_IN') && transitionEasing.includes('EASE_OUT')) easingType = 'ease-in-out';
+            else if (transitionEasing.includes('EASE_IN')) easingType = 'ease-in';
+            else if (transitionEasing.includes('EASE_OUT')) easingType = 'ease-out';
+            
+            const easingFunc = getEasingFunction(easingType);
+            const tweenCanvases = generateTweenFrames(canvas, nextCanvas, numTweenFrames, easingFunc, bgColor);
+            
+            encoder.setDelay(tweenFrameDelay);
+            for (const tweenCanvas of tweenCanvases) {
+              const tweenCtx = tweenCanvas.getContext("2d");
+              encoder.addFrame(tweenCtx);
+              frameIndex++;
+
+              const percent = 70 + Math.round((frameIndex / totalFrames) * 20);
+              gifProgressFill.style.width = `${percent}%`;
+            }
+          }
         }
 
         encoder.finish();
@@ -8183,9 +8362,12 @@ class="full" style="width: 600px; margin: 0 auto; max-width: 100%; ">
         const w = gifWidthInput.value;
         const h = gifHeightInput.value;
         const scale = gifScaleSelect.value.replace(".", "");
-        const delay = gifFrameDelayInput.value;
+        const currentDelayInput = parseInt(gifFrameDelayInput.value, 10);
+        const isUsingIndividual = (currentDelayInput === gifDefaultDelay) && gifIndividualDelays.length > 0;
+        const delayStr = isUsingIndividual ? "individual" : `${currentDelayInput}ms`;
+        const transitionStr = gifEnableTransitionsCheckbox.checked && gifSelectionInfo.hasTransitions ? "_transitions" : "";
 
-        const fileName = `${name}_${w}x${h}_${scale}x_${delay}ms.gif`;
+        const fileName = `${name}_${w}x${h}_${scale}x_${delayStr}${transitionStr}.gif`;
 
         const url = URL.createObjectURL(gifGeneratedBlob);
         const a = document.createElement("a");

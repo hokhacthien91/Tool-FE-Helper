@@ -219,12 +219,18 @@ export interface GifExportConfig {
   width: number;           // Output width
   height: number;          // Output height
   fps: number;             // Frames per second (for smooth animation)
-  frameDelay: number;      // Delay between frames in ms
+  frameDelay: number;      // Delay between frames in ms (used as default/override)
+  delays?: number[];       // Individual delays for each frame (optional)
+  useIndividualDelays?: boolean; // Whether to use individual delays or frameDelay for all
   scale: number;           // Export scale (1x, 2x, etc.)
   loop: boolean;           // Loop forever or play once
   overlayFrameIds?: string[]; // Optional: IDs of static layers to overlay on top of each frame
   paddingX: number;        // Left/Right padding (transparent) - default 0
   paddingY: number;        // Top/Bottom padding (transparent) - default 0
+  // Smooth transitions from Figma
+  enableTransitions?: boolean;  // Enable smooth transitions between frames
+  transitionDurations?: number[];  // Transition duration in ms for each frame pair (from Figma)
+  transitionEasings?: string[];    // Easing type for each frame pair (from Figma)
 }
 
 /**
@@ -243,6 +249,11 @@ export interface GifSelectionInfo {
   delays: number[];         // Delay for each frame from Figma interactions (ms)
   defaultDelay: number;     // Default delay if no interaction found (ms)
   overlayLayers: { id: string; name: string }[];  // Available layers that can be used as overlay
+  // Transition data from Figma prototype
+  transitionTypes: string[];      // Transition type for each frame (e.g., "SMART_ANIMATE", "DISSOLVE")
+  transitionDurations: number[];  // Transition duration in ms for each frame
+  transitionEasings: string[];    // Easing type for each frame (e.g., "EASE_IN_OUT")
+  hasTransitions: boolean;        // Whether any transitions are defined
 }
 
 /**

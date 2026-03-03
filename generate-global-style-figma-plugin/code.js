@@ -4181,6 +4181,11 @@ async function generateFromFigmaVariablesAndStyles() {
     await createColorsFromVariables(mainFrame, localColorVariables);
   }
 
+  // 1b. Create Colors Section from Paint Styles
+  if (localPaintStyles.length > 0) {
+    await createColorsFromPaintStyles(mainFrame, localPaintStyles);
+  }
+
   // 2. Create Typography Section from Text Styles
   if (localTextStyles.length > 0) {
     await createTypographyFromStyles(mainFrame, localTextStyles);
@@ -4387,6 +4392,164 @@ async function createColorsFromVariables(parent, colorVariables) {
 
     parent.appendChild(section);
   }
+}
+
+async function createColorsFromPaintStyles(parent, paintStyles) {
+  // Group paint styles by their prefix before '/'
+  const groupedColors = {};
+
+  for (const style of paintStyles) {
+    // Only handle solid color paints
+    if (!style.paints || style.paints.length === 0) continue;
+    const paint = style.paints[0];
+    if (paint.type !== 'SOLID') continue;
+
+    let groupName, colorName;
+    const fullName = style.name;
+
+    if (fullName.includes('/')) {
+      const parts = fullName.split('/');
+      groupName = parts[0] || 'Color Styles';
+      colorName = parts.slice(1).join('/') || fullName;
+    } else {
+      groupName = 'Color Styles';
+      colorName = fullName;
+    }
+
+    const hex = rgbToHex(paint.color.r, paint.color.g, paint.color.b);
+
+    if (!groupedColors[groupName]) {
+      groupedColors[groupName] = [];
+    }
+
+    groupedColors[groupName].push({
+      hex: hex,
+      name: colorName,
+      fullName: fullName,
+      style: style,
+      opacity: paint.opacity !== undefined ? paint.opacity : 1
+    });
+  }
+
+  if (Object.keys(groupedColors).length === 0) return;
+
+  // Create main section
+  const section = figma.createFrame();
+  section.name = "Color Styles";
+  section.layoutMode = "VERTICAL";
+  section.itemSpacing = 40;
+  section.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+  section.paddingLeft = 40;
+  section.paddingRight = 40;
+  section.paddingTop = 40;
+  section.paddingBottom = 40;
+  section.cornerRadius = 8;
+  section.counterAxisSizingMode = "FIXED";
+  section.resize(1200, 100);
+
+  // Add section title
+  const sectionTitle = figma.createText();
+  sectionTitle.fontName = { family: "Inter", style: "Regular" };
+  sectionTitle.characters = "Color Styles";
+  sectionTitle.fontSize = 24;
+  section.appendChild(sectionTitle);
+
+  // Sort groups alphabetically, "Color Styles" first
+  const sortedGroups = Object.entries(groupedColors).sort((a, b) => {
+    if (a[0] === 'Color Styles') return -1;
+    if (b[0] === 'Color Styles') return 1;
+    return a[0].localeCompare(b[0]);
+  });
+
+  // Create a frame for each group
+  sortedGroups.forEach(([groupName, colors]) => {
+    const sortedColors = colors.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const groupFrame = figma.createFrame();
+    groupFrame.name = groupName;
+    groupFrame.layoutMode = "VERTICAL";
+    groupFrame.itemSpacing = 20;
+    groupFrame.fills = [];
+    groupFrame.primaryAxisSizingMode = "AUTO";
+    groupFrame.counterAxisSizingMode = "FIXED";
+    groupFrame.resize(1200, 100);
+
+    // Group title
+    const title = figma.createText();
+    title.fontName = { family: "Inter", style: "Bold" };
+    title.characters = groupName;
+    title.fontSize = 28;
+    groupFrame.appendChild(title);
+
+    // Create rows of swatches (4 per row)
+    const swatchesPerRow = 4;
+    for (let i = 0; i < sortedColors.length; i += swatchesPerRow) {
+      const swatchesRow = figma.createFrame();
+      swatchesRow.name = "Swatches Row";
+      swatchesRow.layoutMode = "HORIZONTAL";
+      swatchesRow.itemSpacing = 20;
+      swatchesRow.fills = [];
+      swatchesRow.primaryAxisSizingMode = "AUTO";
+      swatchesRow.counterAxisSizingMode = "AUTO";
+
+      const rowColors = sortedColors.slice(i, i + swatchesPerRow);
+      rowColors.forEach(c => {
+        const swatchContainer = figma.createFrame();
+        swatchContainer.name = c.name;
+        swatchContainer.layoutMode = "VERTICAL";
+        swatchContainer.itemSpacing = 16;
+        swatchContainer.fills = [];
+        swatchContainer.primaryAxisSizingMode = "AUTO";
+        swatchContainer.counterAxisSizingMode = "AUTO";
+
+        const rect = figma.createRectangle();
+        rect.name = "Swatch";
+        rect.resize(240, 240);
+        rect.cornerRadius = 8;
+
+        // Apply paint style
+        const rgb = hexToRgb(c.hex);
+        const paintObj = { type: 'SOLID', color: { r: rgb.r, g: rgb.g, b: rgb.b } };
+        if (c.opacity !== 1) {
+          paintObj.opacity = c.opacity;
+        }
+        rect.fills = [paintObj];
+        rect.fillStyleId = c.style.id;
+
+        rect.strokeWeight = 1;
+        rect.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0.1 }];
+
+        const nameText = figma.createText();
+        nameText.name = "Color Name";
+        nameText.fontName = { family: "Inter", style: "Bold" };
+        nameText.characters = c.name;
+        nameText.fontSize = 24;
+        nameText.textAlignHorizontal = "CENTER";
+        nameText.resize(240, nameText.height);
+
+        const hexText = figma.createText();
+        hexText.name = "Hex Value";
+        hexText.fontName = { family: "Inter", style: "Regular" };
+        hexText.characters = c.hex;
+        hexText.fontSize = 24;
+        hexText.textAlignHorizontal = "CENTER";
+        hexText.resize(240, hexText.height);
+
+        swatchContainer.appendChild(rect);
+        swatchContainer.appendChild(nameText);
+        swatchContainer.appendChild(hexText);
+
+        swatchesRow.appendChild(swatchContainer);
+      });
+      groupFrame.appendChild(swatchesRow);
+    }
+
+    section.appendChild(groupFrame);
+  });
+
+  parent.appendChild(section);
+
+  // Resize section to fit content
+  section.primaryAxisSizingMode = "AUTO";
 }
 
 async function createTypographyFromStyles(parent, textStyles) {

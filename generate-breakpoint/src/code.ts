@@ -787,6 +787,10 @@ function handleGifGetSelectionInfo(): void {
     delays: [],
     defaultDelay: 500,
     overlayLayers: [],
+    transitionTypes: [],
+    transitionDurations: [],
+    transitionEasings: [],
+    hasTransitions: false,
   };
 
   // Check for prototype reactions and extract delays
@@ -808,6 +812,24 @@ function handleGifGetSelectionInfo(): void {
     return 0; // No delay found
   };
 
+  // Helper function to extract transition data from reactions
+  const getTransitionFromReactions = (frameNode: SceneNode): { type: string; duration: number; easing: string } => {
+    if ('reactions' in frameNode && frameNode.reactions) {
+      for (const reaction of frameNode.reactions) {
+        // Look for navigation actions with transitions
+        if (reaction.action && 'transition' in reaction.action && reaction.action.transition) {
+          const transition = reaction.action.transition;
+          return {
+            type: transition.type || 'DISSOLVE',
+            duration: transition.duration ? Math.round(transition.duration * 1000) : 300, // Convert to ms
+            easing: transition.easing?.type || 'EASE_IN_OUT',
+          };
+        }
+      }
+    }
+    return { type: 'NONE', duration: 0, easing: 'LINEAR' };
+  };
+
   // If it's an instance, check for variants
   if (node.type === 'INSTANCE') {
     try {
@@ -818,6 +840,12 @@ function handleGifGetSelectionInfo(): void {
         info.frameNames = componentSet.children.map(child => child.name);
         // Get delays from each variant's reactions
         info.delays = componentSet.children.map(child => getDelayFromReactions(child));
+        // Get transitions from each variant's reactions
+        const transitions = componentSet.children.map(child => getTransitionFromReactions(child));
+        info.transitionTypes = transitions.map(t => t.type);
+        info.transitionDurations = transitions.map(t => t.duration);
+        info.transitionEasings = transitions.map(t => t.easing);
+        info.hasTransitions = transitions.some(t => t.type !== 'NONE' && t.duration > 0);
       }
     } catch (e) {
       console.error('Error accessing component set:', e);
@@ -836,6 +864,14 @@ function handleGifGetSelectionInfo(): void {
     // Get delays from each child frame's reactions
     if (info.delays.length === 0) {
       info.delays = childFrames.map(child => getDelayFromReactions(child));
+    }
+    // Get transitions from each child frame's reactions (if not already collected from variants)
+    if (info.transitionTypes.length === 0) {
+      const transitions = childFrames.map(child => getTransitionFromReactions(child));
+      info.transitionTypes = transitions.map(t => t.type);
+      info.transitionDurations = transitions.map(t => t.duration);
+      info.transitionEasings = transitions.map(t => t.easing);
+      info.hasTransitions = transitions.some(t => t.type !== 'NONE' && t.duration > 0);
     }
   }
 
