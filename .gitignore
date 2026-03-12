@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+code.js
+code.js.map
+desktop-to-mobile-breakpoint-converter/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Optional npm cache directory
+.npm
+
+# TypeScript cache
+*.tsbuildinfo
+
+generate-breakpoint-bk

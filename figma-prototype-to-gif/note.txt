@@ -1,0 +1,36 @@
+Script sẵn sàng. Dùng như sau:
+
+
+cd /Users/thien.ho/Projects/Tool-FE-Helper/figma-prototype-to-gif
+
+# Basic (600px width, 15fps, high quality 2-pass)
+node convert.js video.mov
+
+# Custom width + fps
+node convert.js video.mov --width 600 --fps 15
+
+# 2x scale (1200px)
+node convert.js video.mov --scale 2 -o output/hero-2x.gif
+
+# Nhỏ hơn: ít màu + ít fps
+node convert.js video.mov --fps 10 --colors 64
+
+# Xem help
+node convert.js --help
+So với command ffmpeg raw, script này:
+
+2-pass palette optimization tự động (GIF nhỏ hơn, đẹp hơn)
+CLI đơn giản hơn
+Output tự vào output/ folder
+Bạn có video sẵn rồi thì chạy thử nhé!
+
+muốn 2x chất lượng màu cao thì sao
+2-pass palette, 2x scale, nhiều màu:
+
+
+node convert.js video.mov --scale 2 --colors 256 --fps 15 -o output/hero-2x.gif
+Hoặc nếu muốn chỉ định width cụ thể 1200px:
+
+
+node convert.js video.mov --width 1200 --colors 256 --fps 15 -o output/hero-2x.gif
+--colors 256 là max cho GIF (256 colors = full palette). Script đã dùng 2-pass palette optimization mặc định nên chất lượng tốt nhất có thể cho format GIF.
