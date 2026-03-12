@@ -229,8 +229,26 @@ export interface GifExportConfig {
   paddingY: number;        // Top/Bottom padding (transparent) - default 0
   // Smooth transitions from Figma
   enableTransitions?: boolean;  // Enable smooth transitions between frames
-  transitionDurations?: number[];  // Transition duration in ms for each frame pair (from Figma)
-  transitionEasings?: string[];    // Easing type for each frame pair (from Figma)
+  transitionTypes?: string[];       // Transition type per frame: DISSOLVE, SMART_ANIMATE, MOVE_IN, MOVE_OUT, PUSH, SLIDE_IN, SLIDE_OUT, INSTANT
+  transitionDurations?: number[];   // Transition duration in ms for each frame pair (from Figma)
+  transitionEasings?: string[];     // Easing type for each frame pair (from Figma)
+  transitionDirections?: string[];  // Direction per frame: LEFT, RIGHT, TOP, BOTTOM
+  smartAnimateData?: SmartAnimateLayerData[][]; // Per-frame array of layer diffs for Smart Animate
+}
+
+/** Layer data for Smart Animate interpolation */
+export interface SmartAnimateLayerData {
+  layerName: string;
+  fromImageData?: string;  // Base64 PNG of the layer in source frame
+  toImageData?: string;    // Base64 PNG of the layer in target frame
+  from: {
+    x: number; y: number; width: number; height: number;
+    opacity: number; rotation: number;
+  };
+  to: {
+    x: number; y: number; width: number; height: number;
+    opacity: number; rotation: number;
+  };
 }
 
 /**
@@ -250,10 +268,11 @@ export interface GifSelectionInfo {
   defaultDelay: number;     // Default delay if no interaction found (ms)
   overlayLayers: { id: string; name: string }[];  // Available layers that can be used as overlay
   // Transition data from Figma prototype
-  transitionTypes: string[];      // Transition type for each frame (e.g., "SMART_ANIMATE", "DISSOLVE")
-  transitionDurations: number[];  // Transition duration in ms for each frame
-  transitionEasings: string[];    // Easing type for each frame (e.g., "EASE_IN_OUT")
-  hasTransitions: boolean;        // Whether any transitions are defined
+  transitionTypes: string[];        // Transition type for each frame (e.g., "SMART_ANIMATE", "DISSOLVE")
+  transitionDurations: number[];   // Transition duration in ms for each frame
+  transitionEasings: string[];     // Easing type for each frame (e.g., "EASE_IN_OUT")
+  transitionDirections: string[];  // Direction for each frame (e.g., "LEFT", "RIGHT", "TOP", "BOTTOM")
+  hasTransitions: boolean;         // Whether any transitions are defined
 }
 
 /**

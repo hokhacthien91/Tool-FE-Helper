@@ -3472,6 +3472,7 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "focus-node":
     case "select-node": {
     const id = msg.id;
     const node = figma.getNodeById(id);
@@ -3630,6 +3631,85 @@ figma.ui.onmessage = async msg => {
         figma.notify("✅ History and settings cleared");
       } catch (error) {
         console.error("Error clearing history:", error);
+      }
+      break;
+    }
+    case "update-fonts": {
+      try {
+        const scope = msg.scope || "page";
+        const textNodes = [];
+
+        // Collect text nodes based on scope
+        if (scope === "selection") {
+          const selection = figma.currentPage.selection;
+          if (selection.length === 0) {
+            figma.notify("No selection — updating fonts for the whole page.");
+            traverse(figma.currentPage, n => { if (n.type === "TEXT") textNodes.push(n); });
+          } else {
+            for (const sel of selection) {
+              traverse(sel, n => { if (n.type === "TEXT") textNodes.push(n); });
+            }
+          }
+        } else {
+          traverse(figma.currentPage, n => { if (n.type === "TEXT") textNodes.push(n); });
+        }
+
+        let updated = 0;
+        let errors = 0;
+
+        for (const node of textNodes) {
+          try {
+            const fontName = node.fontName;
+            // Collect all unique fonts used in this node
+            const fontsToLoad = [];
+            if (fontName === figma.mixed) {
+              const len = node.characters.length;
+              if (len === 0) continue;
+              const seen = new Set();
+              let i = 0;
+              while (i < len) {
+                const segFont = node.getRangeFontName(i, i + 1);
+                const key = `${segFont.family}::${segFont.style}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  fontsToLoad.push({ family: segFont.family, style: segFont.style });
+                }
+                i++;
+              }
+            } else {
+              fontsToLoad.push({ family: fontName.family, style: fontName.style });
+            }
+
+            // Load all fonts
+            for (const f of fontsToLoad) {
+              await figma.loadFontAsync(f);
+            }
+
+            // Force re-render by temporarily changing characters
+            const original = node.characters;
+            node.characters = original + " ";
+            node.characters = original;
+            updated++;
+          } catch (e) {
+            console.error(`Failed to update font for node "${node.name}":`, e);
+            errors++;
+          }
+        }
+
+        figma.notify(`✅ Updated fonts: ${updated} node(s)${errors > 0 ? `, ${errors} failed` : ""}`);
+        figma.ui.postMessage({
+          type: "update-fonts-result",
+          success: true,
+          count: updated,
+          errors: errors
+        });
+      } catch (e) {
+        console.error("update-fonts error:", e);
+        figma.ui.postMessage({
+          type: "update-fonts-result",
+          success: false,
+          message: e.message || "Unknown error"
+        });
       }
       break;
     }
@@ -4646,6 +4726,137 @@ figma.ui.onmessage = async msg => {
         figma.ui.postMessage({ type: "bind-color-variable-result", success: true, issueId: nodeId, message: `✅ Bound to "${variable.name}"` });
       } catch (error) {
         figma.ui.postMessage({ type: "bind-color-variable-result", success: false, issueId: msg.issue ? msg.issue.id : null, message: `❌ ${error.message}` });
+      }
+      break;
+    }
+    case "create-color-style": {
+      try {
+        const colorHex = msg.colorHex;
+        const styleName = msg.styleName;
+        const issues = msg.issues || [];
+
+        if (!colorHex || !styleName) {
+          throw new Error("Color hex and style name are required");
+        }
+
+        // Parse hex to RGB (0-1 range for Figma)
+        const hex = colorHex.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+        // Create paint style
+        const paintStyle = figma.createPaintStyle();
+        paintStyle.name = styleName.trim();
+        paintStyle.paints = [{ type: "SOLID", color: { r, g, b } }];
+
+        // Apply style to all issue nodes
+        const appliedIds = [];
+        for (const issueData of issues) {
+          try {
+            const node = figma.getNodeById(issueData.id);
+            if (!node) continue;
+            const target = issueData.colorTarget || "fill";
+            if (target === "stroke" && "strokeStyleId" in node) {
+              node.strokeStyleId = paintStyle.id;
+            } else if ("fillStyleId" in node) {
+              node.fillStyleId = paintStyle.id;
+            }
+            appliedIds.push(String(issueData.id));
+          } catch (e) {
+            console.error(`Failed to apply color style to node ${issueData.id}:`, e);
+          }
+        }
+
+        figma.notify(`✅ Created color style "${styleName}" and applied to ${appliedIds.length} node(s)`);
+        figma.ui.postMessage({
+          type: "create-color-style-result",
+          success: true,
+          issueIds: appliedIds,
+          message: `✅ Created color style "${styleName}" and applied to ${appliedIds.length} node(s)`
+        });
+      } catch (e) {
+        console.error("create-color-style error:", e);
+        figma.ui.postMessage({
+          type: "create-color-style-result",
+          success: false,
+          message: e.message || "Unknown error"
+        });
+      }
+      break;
+    }
+    case "create-color-variable": {
+      try {
+        const colorHex = msg.colorHex;
+        const variableName = msg.variableName;
+        const issues = msg.issues || [];
+
+        if (!colorHex || !variableName) {
+          throw new Error("Color hex and variable name are required");
+        }
+
+        // Parse hex to RGB (0-1 range for Figma)
+        const hex = colorHex.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+        // Find or create a variable collection
+        const collections = figma.variables.getLocalVariableCollections();
+        let collection;
+        if (collections.length > 0) {
+          collection = collections[0];
+        } else {
+          collection = figma.variables.createVariableCollection("Colors");
+        }
+
+        // Create the color variable
+        const variable = figma.variables.createVariable(variableName.trim(), collection.id, "COLOR");
+        const modeId = collection.modes[0].modeId;
+        variable.setValueForMode(modeId, { r, g, b, a: 1 });
+
+        // Bind variable to all issue nodes
+        const appliedIds = [];
+        for (const issueData of issues) {
+          try {
+            const node = figma.getNodeById(issueData.id);
+            if (!node) continue;
+            const target = issueData.colorTarget || "fill";
+            if (target === "stroke" && "strokes" in node) {
+              const idx = issueData.strokeIndex || 0;
+              const strokes = JSON.parse(JSON.stringify(node.strokes));
+              if (strokes[idx]) {
+                strokes[idx] = figma.variables.setBoundVariableForPaint(strokes[idx], "color", variable);
+                node.strokes = strokes;
+              }
+            } else if ("fills" in node) {
+              const idx = issueData.fillIndex || 0;
+              const fills = JSON.parse(JSON.stringify(node.fills));
+              if (fills[idx]) {
+                fills[idx] = figma.variables.setBoundVariableForPaint(fills[idx], "color", variable);
+                node.fills = fills;
+              }
+            }
+            appliedIds.push(String(issueData.id));
+          } catch (e) {
+            console.error(`Failed to bind variable to node ${issueData.id}:`, e);
+          }
+        }
+
+        figma.notify(`✅ Created variable "${variableName}" and bound to ${appliedIds.length} node(s)`);
+        figma.ui.postMessage({
+          type: "create-color-variable-result",
+          success: true,
+          issueIds: appliedIds,
+          message: `✅ Created variable "${variableName}" and bound to ${appliedIds.length} node(s)`
+        });
+      } catch (e) {
+        console.error("create-color-variable error:", e);
+        figma.ui.postMessage({
+          type: "create-color-variable-result",
+          success: false,
+          message: e.message || "Unknown error"
+        });
       }
       break;
     }
@@ -6866,6 +7077,7 @@ function scanAnimations(scope) {
     scroll: 0,
     auto: 0,
     key: 0,
+    scroll_behavior: 0,
     other: 0
   };
 
@@ -6938,6 +7150,66 @@ function scanAnimations(scope) {
         } else {
           stats.other++;
         }
+      }
+    }
+
+    // Check scroll behavior (FRAME, COMPONENT, INSTANCE only)
+    if (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE") {
+      // Check overflow direction
+      if ("overflowDirection" in node && node.overflowDirection && node.overflowDirection !== "NONE") {
+        const overflowMap = {
+          "HORIZONTAL_SCROLLING": { icon: "📜", label: "Horizontal Scroll" },
+          "VERTICAL_SCROLLING": { icon: "📜", label: "Vertical Scroll" },
+          "HORIZONTAL_AND_VERTICAL_SCROLLING": { icon: "📜", label: "Horizontal & Vertical Scroll" }
+        };
+        const display = overflowMap[node.overflowDirection] || { icon: "📜", label: node.overflowDirection };
+        results.push({
+          nodeId: node.id,
+          nodeName: node.name,
+          nodePath: getNodePath(node),
+          nodeType: node.type,
+          triggerType: "OVERFLOW_SCROLL",
+          triggerCategory: "scroll_behavior",
+          triggerIcon: display.icon,
+          triggerLabel: display.label,
+          actionType: "SCROLL",
+          actionLabel: `Overflow: ${display.label}`,
+          targetName: "",
+          targetId: "",
+          animationType: "",
+          duration: 0,
+          easing: "",
+          delay: 0
+        });
+        stats.scroll_behavior++;
+      }
+
+      // Check fixed position (not default "SCROLLS")
+      if ("scrollBehavior" in node && node.scrollBehavior && node.scrollBehavior !== "SCROLLS") {
+        const posMap = {
+          "FIXED": { icon: "📌", label: "Fixed Position" },
+          "STICKY_SCROLLS": { icon: "📎", label: "Sticky Position" }
+        };
+        const display = posMap[node.scrollBehavior] || { icon: "📌", label: node.scrollBehavior };
+        results.push({
+          nodeId: node.id,
+          nodeName: node.name,
+          nodePath: getNodePath(node),
+          nodeType: node.type,
+          triggerType: "FIXED_POSITION",
+          triggerCategory: "scroll_behavior",
+          triggerIcon: display.icon,
+          triggerLabel: display.label,
+          actionType: "POSITION",
+          actionLabel: `Position: ${display.label}`,
+          targetName: "",
+          targetId: "",
+          animationType: "",
+          duration: 0,
+          easing: "",
+          delay: 0
+        });
+        stats.scroll_behavior++;
       }
     }
 

@@ -699,6 +699,16 @@
                     >Reset table to default typography styles</span
                   >
                 </button>
+                <button
+                  class="btn-add-typo-style tooltip"
+                  id="btn-update-fonts"
+                  style="background: #f59e0b"
+                >
+                  🔤 Update Fonts
+                  <span class="tooltiptext" style="width: 280px"
+                    >Re-apply font-family on all text nodes to force Figma load fonts correctly</span
+                  >
+                </button>
               </div>
               <!-- Typography Styles Table -->
               <div class="typography-table-wrapper">
@@ -886,6 +896,9 @@
             </button>
             <button class="filter-btn" data-type="key">
               Key <strong id="stat-key">0</strong>
+            </button>
+            <button class="filter-btn" data-type="scroll_behavior">
+              Scroll Behavior <strong id="stat-scroll-behavior">0</strong>
             </button>
           </div>
         </div>
@@ -2055,11 +2068,13 @@
             grouped[key] = {
               ...item,
               count: 1,
-              nodeIds: [item.nodeId]
+              nodeIds: [item.nodeId],
+              nodeNames: [item.nodeName]
             };
           } else {
             grouped[key].count++;
             grouped[key].nodeIds.push(item.nodeId);
+            grouped[key].nodeNames.push(item.nodeName);
           }
         });
 
@@ -2081,7 +2096,35 @@
             (item.duration ? ` <span style="color: #86868b;">(${Math.round(item.duration * 1000)}ms` + (item.easing ? `, ${item.easing}` : '') + ')</span>' : '')
             : '';
           const delayInfo = item.delay ? `<span style="color: #f59e0b;">⏳ Delay: ${Math.round(item.delay * 1000)}ms</span>` : '';
-          const countBadge = item.count > 1 ? `<span style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">×${item.count}</span>` : '';
+          // Build layer list for grouped items
+          let layerListHtml = '';
+          if (item.count > 1) {
+            const layerItems = item.nodeIds.map((nid, ni) => {
+              const name = escapeHtml(item.nodeNames[ni] || 'Node ' + (ni + 1));
+              return `<div class="animation-layer-item" data-node-id="${nid}" style="
+                padding: 6px 12px; font-size: 11px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+                transition: background 0.15s;
+              " onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background=''">${name}</div>`;
+            }).join('');
+            layerListHtml = `
+              <div style="margin-top: 6px;">
+                <button class="animation-layers-toggle" style="
+                  background: #f0f4ff; border: 1px solid #e0e7ff; border-radius: 6px; padding: 4px 10px;
+                  font-size: 11px; font-weight: 600; color: #3b82f6; cursor: pointer;
+                ">${item.count} layers <span class="animation-layers-arrow">▶</span></button>
+                <div class="animation-layers-list" style="display: none; border: 1px solid #e5e5e7; border-radius: 6px; margin-top: 4px; max-height: 200px; overflow-y: auto;">
+                  ${layerItems}
+                </div>
+              </div>
+            `;
+          }
+
+          // Node info for single items
+          const nodeInfoHtml = item.count === 1
+            ? `<div style="font-size: 11px; color: #86868b; margin-bottom: 4px;">
+                <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 10px;">(${item.nodeType})</span>
+              </div>`
+            : '';
 
           html += `
             <div class="animation-item ${isSelected ? 'selected' : ''}" data-node-ids="${item.nodeIds.join(',')}" data-index="${index}" style="
@@ -2096,7 +2139,7 @@
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                 <span style="font-size: 11px; font-weight: 600; color: #86868b;">${index + 1}.
                    <span style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
-                <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel} ${countBadge}
+                <strong>Trigger:</strong> ${item.triggerIcon} ${item.triggerLabel}
               </span>
                   </span>
                 <button class="btn-select-animation ${isSelected ? 'active' : ''}" data-node-ids="${item.nodeIds.join(',')}" style="
@@ -2108,22 +2151,21 @@
                   font-size: 12px;
                   cursor: pointer;
                 ">
-                  ${isSelected ? 'Selected' : 'Select'}
+                  ${isSelected ? 'Selected' : item.count > 1 ? 'Select All' : 'Select'}
                 </button>
               </div>
-             
+
               <div style="font-size: 11px; color: #1d1d1f; margin-bottom: 6px;">
                 <strong>Action:</strong> <span style="color: #3b82f6; font-weight: 500;">${item.actionLabel}</span>${item.targetName ? ` → <strong>Target:</strong> ${escapeHtml(item.targetName)}` : ''}
               </div>
-              <div style="font-size: 11px; color: #86868b; margin-bottom: 4px;">
-                <strong>Node:</strong> ${escapeHtml(item.nodeName)} <span style="font-size: 10px;">(${item.nodeType})</span>
-              </div>
+              ${nodeInfoHtml}
               ${animationInfo || delayInfo ? `
                 <div style="font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
                   ${animationInfo}
                   ${delayInfo}
                 </div>
               ` : ''}
+              ${layerListHtml}
             </div>
           `;
         });
@@ -2135,15 +2177,53 @@
           btn.addEventListener('click', function(e) {
             e.stopPropagation();
             const nodeIds = this.getAttribute('data-node-ids').split(',');
-            selectAnimationNode(nodeIds[0]); // Select first node in group
+            if (nodeIds.length > 1) {
+              // Select all nodes in group
+              parent.postMessage({ pluginMessage: { type: 'select-nodes', ids: nodeIds } }, '*');
+            } else {
+              selectAnimationNode(nodeIds[0]);
+            }
           });
         });
 
-        // Add click handlers for items
+        // Add click handlers for items (only single items, not grouped)
         document.querySelectorAll('.animation-item').forEach(item => {
-          item.addEventListener('click', function() {
+          item.addEventListener('click', function(e) {
+            // Don't trigger if clicking inside layer list or toggle
+            if (e.target.closest('.animation-layers-toggle') || e.target.closest('.animation-layers-list')) return;
             const nodeIds = this.getAttribute('data-node-ids').split(',');
-            selectAnimationNode(nodeIds[0]); // Select first node in group
+            selectAnimationNode(nodeIds[0]);
+          });
+        });
+
+        // Add toggle handlers for layer dropdowns
+        document.querySelectorAll('.animation-layers-toggle').forEach(btn => {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const list = this.nextElementSibling;
+            const arrow = this.querySelector('.animation-layers-arrow');
+            if (list) {
+              const isHidden = list.style.display === 'none';
+              list.style.display = isHidden ? 'block' : 'none';
+              if (arrow) arrow.textContent = isHidden ? '▼' : '▶';
+            }
+          });
+        });
+
+        // Add click handlers for individual layer items (select without re-render)
+        document.querySelectorAll('.animation-layer-item').forEach(item => {
+          item.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const nodeId = this.getAttribute('data-node-id');
+            if (nodeId) {
+              selectedNodeId = nodeId;
+              parent.postMessage({
+                pluginMessage: { type: 'select-animation-node', nodeId: nodeId }
+              }, '*');
+              // Highlight active without re-render
+              document.querySelectorAll('.animation-layer-item').forEach(el => el.style.background = '');
+              this.style.background = '#dbeafe';
+            }
           });
         });
       }
@@ -2188,6 +2268,7 @@
         document.getElementById('stat-scroll').textContent = stats.scroll || 0;
         document.getElementById('stat-auto').textContent = stats.auto || 0;
         document.getElementById('stat-key').textContent = stats.key || 0;
+        document.getElementById('stat-scroll-behavior').textContent = stats.scroll_behavior || 0;
       }
 
       // Listen for messages from plugin

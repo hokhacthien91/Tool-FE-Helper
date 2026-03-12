@@ -25,6 +25,7 @@ import {
   GifExportConfig,
   GifSelectionInfo,
   GifFrameData,
+  SmartAnimateLayerData,
 } from './types';
 
 // ============================================================================
@@ -790,6 +791,7 @@ function handleGifGetSelectionInfo(): void {
     transitionTypes: [],
     transitionDurations: [],
     transitionEasings: [],
+    transitionDirections: [],
     hasTransitions: false,
   };
 
@@ -798,36 +800,63 @@ function handleGifGetSelectionInfo(): void {
     info.hasPrototype = true;
   }
 
-  // Helper function to extract delay from reactions
-  const getDelayFromReactions = (frameNode: SceneNode): number => {
+  // Helper: extract all reaction data (delay, transition, destination) from a node
+  const getReactionData = (frameNode: SceneNode): {
+    delay: number; type: string; duration: number; easing: string; direction: string; destinationId: string | null;
+  } => {
     if ('reactions' in frameNode && frameNode.reactions) {
       for (const reaction of frameNode.reactions) {
-        // Check for "After delay" trigger
-        if (reaction.trigger && reaction.trigger.type === 'AFTER_TIMEOUT') {
-          // Figma timeout is in SECONDS, convert to milliseconds
-          return Math.round(reaction.trigger.timeout * 1000);
+        if (reaction.trigger && reaction.trigger.type === 'AFTER_TIMEOUT' && reaction.action) {
+          const delay = Math.round((reaction.trigger.timeout || 0) * 1000);
+          const action = reaction.action as any;
+          const destinationId: string | null = action.destinationId || null;
+          const transition = action.transition;
+
+          if (transition) {
+            return {
+              delay,
+              type: transition.type || 'DISSOLVE',
+              duration: transition.duration ? Math.round(transition.duration * 1000) : 300,
+              easing: transition.easing?.type || 'EASE_IN_AND_OUT',
+              direction: ('direction' in transition && transition.direction) ? transition.direction : 'LEFT',
+              destinationId,
+            };
+          } else {
+            // "Instant" animation has no transition object
+            return { delay, type: 'INSTANT', duration: 0, easing: 'LINEAR', direction: 'LEFT', destinationId };
+          }
         }
       }
     }
-    return 0; // No delay found
+    return { delay: 0, type: 'NONE', duration: 0, easing: 'LINEAR', direction: 'LEFT', destinationId: null };
   };
 
-  // Helper function to extract transition data from reactions
-  const getTransitionFromReactions = (frameNode: SceneNode): { type: string; duration: number; easing: string } => {
-    if ('reactions' in frameNode && frameNode.reactions) {
-      for (const reaction of frameNode.reactions) {
-        // Look for navigation actions with transitions
-        if (reaction.action && 'transition' in reaction.action && reaction.action.transition) {
-          const transition = reaction.action.transition;
-          return {
-            type: transition.type || 'DISSOLVE',
-            duration: transition.duration ? Math.round(transition.duration * 1000) : 300, // Convert to ms
-            easing: transition.easing?.type || 'EASE_IN_OUT',
-          };
-        }
+  // Helper: follow prototype flow chain to get correct frame order
+  const followPrototypeFlow = (children: readonly SceneNode[]): SceneNode[] => {
+    if (children.length <= 1) return [...children];
+
+    const childMap = new Map<string, SceneNode>();
+    for (const child of children) {
+      childMap.set(child.id, child);
+    }
+
+    const flowOrder: SceneNode[] = [];
+    const visited = new Set<string>();
+    let current: SceneNode | undefined = children[0];
+
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      flowOrder.push(current);
+      const data = getReactionData(current);
+      if (data.destinationId && childMap.has(data.destinationId)) {
+        current = childMap.get(data.destinationId);
+      } else {
+        break;
       }
     }
-    return { type: 'NONE', duration: 0, easing: 'LINEAR' };
+
+    // Fallback to original order if flow didn't work
+    return flowOrder.length > 1 ? flowOrder : [...children];
   };
 
   // If it's an instance, check for variants
@@ -836,16 +865,18 @@ function handleGifGetSelectionInfo(): void {
       const mainComponent = node.mainComponent;
       if (mainComponent && mainComponent.parent && mainComponent.parent.type === 'COMPONENT_SET') {
         const componentSet = mainComponent.parent;
-        info.variantCount = componentSet.children.length;
-        info.frameNames = componentSet.children.map(child => child.name);
-        // Get delays from each variant's reactions
-        info.delays = componentSet.children.map(child => getDelayFromReactions(child));
-        // Get transitions from each variant's reactions
-        const transitions = componentSet.children.map(child => getTransitionFromReactions(child));
-        info.transitionTypes = transitions.map(t => t.type);
-        info.transitionDurations = transitions.map(t => t.duration);
-        info.transitionEasings = transitions.map(t => t.easing);
-        info.hasTransitions = transitions.some(t => t.type !== 'NONE' && t.duration > 0);
+        // Follow prototype flow instead of layer order
+        const orderedChildren = followPrototypeFlow(componentSet.children);
+        info.variantCount = orderedChildren.length;
+        info.frameNames = orderedChildren.map(child => child.name);
+        // Get reaction data in flow order
+        const reactions = orderedChildren.map(child => getReactionData(child));
+        info.delays = reactions.map(r => r.delay);
+        info.transitionTypes = reactions.map(r => r.type);
+        info.transitionDurations = reactions.map(r => r.duration);
+        info.transitionEasings = reactions.map(r => r.easing);
+        info.transitionDirections = reactions.map(r => r.direction);
+        info.hasTransitions = reactions.some(r => r.type !== 'NONE' && r.type !== 'INSTANT' && r.duration > 0);
       }
     } catch (e) {
       console.error('Error accessing component set:', e);
@@ -861,17 +892,15 @@ function handleGifGetSelectionInfo(): void {
     if (info.frameNames.length === 0) {
       info.frameNames = childFrames.map(child => child.name);
     }
-    // Get delays from each child frame's reactions
+    // Get reaction data from child frames (if not already collected from variants)
     if (info.delays.length === 0) {
-      info.delays = childFrames.map(child => getDelayFromReactions(child));
-    }
-    // Get transitions from each child frame's reactions (if not already collected from variants)
-    if (info.transitionTypes.length === 0) {
-      const transitions = childFrames.map(child => getTransitionFromReactions(child));
-      info.transitionTypes = transitions.map(t => t.type);
-      info.transitionDurations = transitions.map(t => t.duration);
-      info.transitionEasings = transitions.map(t => t.easing);
-      info.hasTransitions = transitions.some(t => t.type !== 'NONE' && t.duration > 0);
+      const reactions = childFrames.map(child => getReactionData(child));
+      info.delays = reactions.map(r => r.delay);
+      info.transitionTypes = reactions.map(r => r.type);
+      info.transitionDurations = reactions.map(r => r.duration);
+      info.transitionEasings = reactions.map(r => r.easing);
+      info.transitionDirections = reactions.map(r => r.direction);
+      info.hasTransitions = reactions.some(r => r.type !== 'NONE' && r.type !== 'INSTANT' && r.duration > 0);
     }
   }
 
@@ -891,6 +920,77 @@ function handleGifGetSelectionInfo(): void {
 
   console.log('GIF Selection Info:', info);
   sendToUI({ type: 'GIF_SELECTION_INFO', info });
+}
+
+/**
+ * Extract per-layer data from two frames for Smart Animate interpolation.
+ * Matches layers by name between source and target frame, exports each as PNG,
+ * and returns position/size/opacity/rotation data for interpolation.
+ */
+async function extractSmartAnimateData(
+  sourceFrame: SceneNode,
+  targetFrame: SceneNode,
+  scale: number
+): Promise<SmartAnimateLayerData[]> {
+  const layerData: SmartAnimateLayerData[] = [];
+
+  if (!('children' in sourceFrame) || !('children' in targetFrame)) {
+    return layerData;
+  }
+
+  // Build a map of target children by name for quick lookup
+  const targetChildMap = new Map<string, SceneNode>();
+  for (const child of (targetFrame as FrameNode).children) {
+    if (child.visible) {
+      targetChildMap.set(child.name, child);
+    }
+  }
+
+  // Match source children to target children by name
+  for (const sourceChild of (sourceFrame as FrameNode).children) {
+    if (!sourceChild.visible) continue;
+    const targetChild = targetChildMap.get(sourceChild.name);
+    if (!targetChild) continue; // No match = layer fades out (handled by cross-fade fallback)
+
+    try {
+      // Export both layers as PNG
+      const [sourceBytes, targetBytes] = await Promise.all([
+        (sourceChild as FrameNode).exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } }),
+        (targetChild as FrameNode).exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } }),
+      ]);
+
+      const sourceOpacity = 'opacity' in sourceChild ? (sourceChild as FrameNode).opacity : 1;
+      const targetOpacity = 'opacity' in targetChild ? (targetChild as FrameNode).opacity : 1;
+      const sourceRotation = 'rotation' in sourceChild ? (sourceChild as FrameNode).rotation : 0;
+      const targetRotation = 'rotation' in targetChild ? (targetChild as FrameNode).rotation : 0;
+
+      layerData.push({
+        layerName: sourceChild.name,
+        fromImageData: figma.base64Encode(sourceBytes),
+        toImageData: figma.base64Encode(targetBytes),
+        from: {
+          x: Math.round(sourceChild.x * scale),
+          y: Math.round(sourceChild.y * scale),
+          width: Math.round(sourceChild.width * scale),
+          height: Math.round(sourceChild.height * scale),
+          opacity: sourceOpacity,
+          rotation: sourceRotation,
+        },
+        to: {
+          x: Math.round(targetChild.x * scale),
+          y: Math.round(targetChild.y * scale),
+          width: Math.round(targetChild.width * scale),
+          height: Math.round(targetChild.height * scale),
+          opacity: targetOpacity,
+          rotation: targetRotation,
+        },
+      });
+    } catch (e) {
+      console.warn(`Smart Animate: could not export layer "${sourceChild.name}":`, e);
+    }
+  }
+
+  return layerData;
 }
 
 /**
@@ -915,13 +1015,40 @@ async function handleGifExportFrames(config: GifExportConfig): Promise<void> {
     const frames: GifFrameData[] = [];
     let nodesToExport: SceneNode[] = [];
 
+    // Helper: follow prototype flow chain for correct frame order
+    const followPrototypeFlow = (children: readonly SceneNode[]): SceneNode[] => {
+      if (children.length <= 1) return [...children];
+      const childMap = new Map<string, SceneNode>();
+      for (const child of children) childMap.set(child.id, child);
+      const flowOrder: SceneNode[] = [];
+      const visited = new Set<string>();
+      let current: SceneNode | undefined = children[0];
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        flowOrder.push(current);
+        if ('reactions' in current && current.reactions) {
+          let destId: string | null = null;
+          for (const reaction of current.reactions) {
+            if (reaction.trigger?.type === 'AFTER_TIMEOUT' && reaction.action) {
+              destId = (reaction.action as any).destinationId || null;
+              break;
+            }
+          }
+          current = destId && childMap.has(destId) ? childMap.get(destId) : undefined;
+        } else {
+          break;
+        }
+      }
+      return flowOrder.length > 1 ? flowOrder : [...children];
+    };
+
     // Determine which nodes to export
     if (node.type === 'INSTANCE') {
       // Try to get all variants from component set
       const mainComponent = node.mainComponent;
       if (mainComponent && mainComponent.parent && mainComponent.parent.type === 'COMPONENT_SET') {
         const componentSet = mainComponent.parent;
-        nodesToExport = [...componentSet.children];
+        nodesToExport = followPrototypeFlow(componentSet.children);
       } else {
         // Just export the instance itself
         nodesToExport = [node];
@@ -1008,6 +1135,25 @@ async function handleGifExportFrames(config: GifExportConfig): Promise<void> {
             y: relativeY,
           });
         }
+      }
+    }
+
+    // Extract Smart Animate layer data if any transitions use SMART_ANIMATE
+    let smartAnimateData: SmartAnimateLayerData[][] | undefined;
+    if (config.enableTransitions && config.transitionTypes) {
+      const hasSmartAnimate = config.transitionTypes.some(t => t === 'SMART_ANIMATE');
+      if (hasSmartAnimate && nodesToExport.length > 1) {
+        smartAnimateData = [];
+        for (let i = 0; i < nodesToExport.length - 1; i++) {
+          if (config.transitionTypes[i] === 'SMART_ANIMATE') {
+            sendToUI({ type: 'GIF_EXPORT_PROGRESS', current: nodesToExport.length + overlayCount + i + 1, total: total + nodesToExport.length });
+            const data = await extractSmartAnimateData(nodesToExport[i], nodesToExport[i + 1], config.scale);
+            smartAnimateData.push(data);
+          } else {
+            smartAnimateData.push([]); // No layer data for non-smart-animate transitions
+          }
+        }
+        config.smartAnimateData = smartAnimateData;
       }
     }
 

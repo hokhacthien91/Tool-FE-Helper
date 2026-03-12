@@ -1259,6 +1259,8 @@ const FONT_SIZE_THRESHOLD_PX = 4;
 
     let actionsHtml = `<button class="btn-select-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Select All" : "Select"}</button>`;
     actionsHtml += `<button class="btn-style-dropdown-all btn-select-variable-all" data-group-key="${escapeHtml(group.key)}">Select Variable</button>`;
+    actionsHtml += `<button class="btn-create-color-style btn-suggest-fix" data-group-key="${escapeHtml(group.key)}" data-color-hex="${escapeHtml(hex)}">Create Style</button>`;
+    actionsHtml += `<button class="btn-create-color-variable btn-suggest-fix" data-group-key="${escapeHtml(group.key)}" data-color-hex="${escapeHtml(hex)}">Create Variable</button>`;
     actionsHtml += `<button class="btn-remove-layer-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Remove All" : "Remove"}</button>`;
 
     el.innerHTML = `
@@ -1357,6 +1359,70 @@ const FONT_SIZE_THRESHOLD_PX = 4;
         e.preventDefault();
         e.stopPropagation();
         showSelectVariableModal(group.issues[0], { batchGroup: group });
+      };
+    }
+
+    // Create Color Style button
+    const btnCreateColorStyle = el.querySelector(".btn-create-color-style");
+    if (btnCreateColorStyle) {
+      btnCreateColorStyle.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const fakeIssue = {
+          nodeName: `${count} layer(s) with color ${hex}`,
+          message: `Create a Paint Style for color ${hex}`
+        };
+        showCreateStyleModal(fakeIssue, (styleName) => {
+          group.issues.forEach(issue => {
+            showFixMessage(issue.id, "⏳ Creating color style...", true);
+          });
+          parent.postMessage({
+            pluginMessage: {
+              type: "create-color-style",
+              colorHex: hex,
+              colorTarget: target,
+              styleName: styleName,
+              issues: group.issues.map(i => ({
+                id: i.id,
+                colorTarget: i.colorTarget || target,
+                fillIndex: i.fillIndex,
+                strokeIndex: i.strokeIndex
+              }))
+            }
+          }, "*");
+        });
+      };
+    }
+
+    // Create Color Variable button
+    const btnCreateColorVariable = el.querySelector(".btn-create-color-variable");
+    if (btnCreateColorVariable) {
+      btnCreateColorVariable.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const fakeIssue = {
+          nodeName: `${count} layer(s) with color ${hex}`,
+          message: `Create a Color Variable for ${hex}`
+        };
+        showCreateStyleModal(fakeIssue, (variableName) => {
+          group.issues.forEach(issue => {
+            showFixMessage(issue.id, "⏳ Creating color variable...", true);
+          });
+          parent.postMessage({
+            pluginMessage: {
+              type: "create-color-variable",
+              colorHex: hex,
+              colorTarget: target,
+              variableName: variableName,
+              issues: group.issues.map(i => ({
+                id: i.id,
+                colorTarget: i.colorTarget || target,
+                fillIndex: i.fillIndex,
+                strokeIndex: i.strokeIndex
+              }))
+            }
+          }, "*");
+        }, { title: "Create Variable", placeholder: "Variable Name", btnText: "Create Variable" });
       };
     }
 
@@ -4584,7 +4650,10 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   }
 
   // Show create style modal
-  function showCreateStyleModal(issue, onConfirm) {
+  function showCreateStyleModal(issue, onConfirm, options) {
+    const modalTitle = (options && options.title) || "Create Style";
+    const modalPlaceholder = (options && options.placeholder) || "Style Name";
+    const modalBtnText = (options && options.btnText) || "Create";
     // Create modal overlay
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
@@ -4607,22 +4676,22 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     dialog.innerHTML = `
       <div class="modal-header">
         <button class="modal-close" aria-label="Close">×</button>
-        <h2 class="modal-title">Create Style</h2>
+        <h2 class="modal-title">${escapeHtml(modalTitle)}</h2>
         <p class="modal-subtitle">${escapeHtml(subtitleText)}</p>
       </div>
       <div class="modal-body">
-        <input 
-          type="text" 
-          class="modal-input" 
-          id="style-name-input" 
-          placeholder="Style Name" 
+        <input
+          type="text"
+          class="modal-input"
+          id="style-name-input"
+          placeholder="${escapeHtml(modalPlaceholder)}"
           value="${escapeHtml(issue.nodeName || "New Style")}"
           autofocus
         />
       </div>
       <div class="modal-footer">
         <button class="modal-btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
-        <button class="modal-btn modal-btn-create" id="modal-create-btn">Create</button>
+        <button class="modal-btn modal-btn-create" id="modal-create-btn">${escapeHtml(modalBtnText)}</button>
       </div>
     `;
     
@@ -8346,6 +8415,17 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     };
   }
 
+  const btnUpdateFonts = document.getElementById("btn-update-fonts");
+  if (btnUpdateFonts) {
+    btnUpdateFonts.onclick = () => {
+      const scopeRadio = document.querySelector('input[name="scope"]:checked');
+      const scope = scopeRadio && scopeRadio.value === 'page' ? 'page' : 'selection';
+      btnUpdateFonts.disabled = true;
+      btnUpdateFonts.textContent = "⏳ Updating...";
+      parent.postMessage({ pluginMessage: { type: "update-fonts", scope: scope } }, "*");
+    };
+  }
+
   // Initial render
   renderTypographyTable();
 
@@ -9246,6 +9326,56 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   // Receive report from plugin code
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
+
+    if (msg && msg.type === "create-color-style-result") {
+      if (msg.success) {
+        if (msg.issueIds && msg.issueIds.length > 0) {
+          msg.issueIds.forEach(id => showFixMessage(id, msg.message || "✅ Color style created", true));
+          // Remove issues from data
+          if (currentReportData && currentReportData.issues) {
+            currentReportData.issues = currentReportData.issues.filter(i => !msg.issueIds.includes(String(i.id)));
+          }
+          msg.issueIds.forEach(id => {
+            const card = document.querySelector(`.issue-grouped-card [data-node-id="${id}"]`);
+            if (card) card.style.opacity = "0.5";
+          });
+        }
+        alert(msg.message || "✅ Color style created and applied");
+      } else {
+        alert(`❌ ${msg.message || "Failed to create color style"}`);
+      }
+    }
+
+    if (msg && msg.type === "create-color-variable-result") {
+      if (msg.success) {
+        if (msg.issueIds && msg.issueIds.length > 0) {
+          msg.issueIds.forEach(id => showFixMessage(id, msg.message || "✅ Color variable created", true));
+          if (currentReportData && currentReportData.issues) {
+            currentReportData.issues = currentReportData.issues.filter(i => !msg.issueIds.includes(String(i.id)));
+          }
+          msg.issueIds.forEach(id => {
+            const card = document.querySelector(`.issue-grouped-card [data-node-id="${id}"]`);
+            if (card) card.style.opacity = "0.5";
+          });
+        }
+        alert(msg.message || "✅ Color variable created and bound");
+      } else {
+        alert(`❌ ${msg.message || "Failed to create color variable"}`);
+      }
+    }
+
+    if (msg && msg.type === "update-fonts-result") {
+      const btnUpdateFonts = document.getElementById("btn-update-fonts");
+      if (btnUpdateFonts) {
+        btnUpdateFonts.disabled = false;
+        btnUpdateFonts.textContent = "🔤 Update Fonts";
+      }
+      if (msg.success) {
+        alert(`✅ Updated fonts for ${msg.count} text node(s)${msg.errors > 0 ? ` (${msg.errors} failed)` : ""}`);
+      } else {
+        alert(`❌ ${msg.message || "Failed to update fonts"}`);
+      }
+    }
 
     if (msg && msg.type === "fix-issue-result") {
       
