@@ -5246,10 +5246,19 @@ const FONT_SIZE_THRESHOLD_PX = 4;
 
   // Handle "Fix all now" for all typography issues with 100% match (legacy, kept for reference)
   function handleFixAll100PercentMatches(allIssues) {
-    const matchedIssues = (allIssues || []).filter(i => {
-      if (i.type !== "typography-check" || !i.nodeProps) return false;
-      return findBest100PercentMatch(i) !== null;
+    const _expanded = [];
+    (allIssues || []).forEach(i => {
+      if (i.type !== "typography-check" && i.type !== "typography-style") return;
+      if (i.subIssues && i.subIssues.length > 0) {
+        i.subIssues.forEach(si => {
+          const ex = Object.assign({}, i, { id: si.id, nodeName: si.nodeName, nodeProps: si.nodeProps || i.nodeProps, subIssues: undefined });
+          if (ex.nodeProps && findBest100PercentMatch(ex) !== null) _expanded.push(ex);
+        });
+      } else if (i.nodeProps && findBest100PercentMatch(i) !== null) {
+        _expanded.push(i);
+      }
     });
+    const matchedIssues = _expanded;
 
     if (matchedIssues.length === 0) {
       alert("No typography issues with 100% match found.");
@@ -5259,29 +5268,70 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     let currentIndex = 0;
     let appliedCount = 0;
     let failedCount = 0;
+    let cancelled = false;
 
     // Disable button while processing
     const btn = document.getElementById("btn-fix-all-100");
     if (btn) {
       btn.disabled = true;
-      btn.textContent = `Fixing... (0/${matchedIssues.length})`;
+      btn.textContent = `Fixing...`;
     }
 
-    function updateButtonProgress() {
-      if (btn) {
-        btn.textContent = `Fixing... (${currentIndex}/${matchedIssues.length})`;
-      }
+    // Also disable section-level button
+    const sectionBtn = document.querySelector('.btn-fix-all[data-type="typography-style"]');
+    if (sectionBtn) {
+      sectionBtn.disabled = true;
+      sectionBtn.textContent = `Fixing...`;
+    }
+
+    // Create progress bar
+    const totalSteps = matchedIssues.length;
+    const existingProg = document.getElementById("fix-all-progress");
+    if (existingProg) existingProg.remove();
+    const progressEl = document.createElement("div");
+    progressEl.id = "fix-all-progress";
+    progressEl.className = "fix-all-progress";
+    progressEl.innerHTML = `
+      <div class="fix-all-progress-info">
+        <span class="fix-all-progress-text">Fixing Text Style... 0/${totalSteps}</span>
+        <button class="fix-all-progress-cancel" title="Cancel">✕</button>
+      </div>
+      <div class="fix-all-progress-bar"><div class="fix-all-progress-fill" style="width: 0%"></div></div>
+    `;
+    const resultsContainer = document.getElementById("results-issues");
+    if (resultsContainer) {
+      resultsContainer.parentNode.insertBefore(progressEl, resultsContainer);
+    }
+
+    const progressText = progressEl.querySelector(".fix-all-progress-text");
+    const progressFill = progressEl.querySelector(".fix-all-progress-fill");
+    const cancelBtn = progressEl.querySelector(".fix-all-progress-cancel");
+    cancelBtn.onclick = () => { cancelled = true; onComplete(); };
+
+    function updateProgress() {
+      const pct = Math.round((currentIndex / totalSteps) * 100);
+      if (progressText) progressText.textContent = `Fixing Text Style... ${currentIndex}/${totalSteps}`;
+      if (progressFill) progressFill.style.width = pct + "%";
     }
 
     function onComplete() {
+      // Remove progress bar
+      if (progressEl && progressEl.parentNode) progressEl.remove();
+
       if (btn) {
         btn.disabled = false;
-        btn.textContent = `Fix all now (${matchedIssues.length - appliedCount})`;
-        if (appliedCount >= matchedIssues.length) {
-          btn.style.display = "none";
+        btn.textContent = `Fix all now`;
+      }
+      if (sectionBtn) {
+        sectionBtn.disabled = false;
+        const remaining = matchedIssues.length - appliedCount;
+        if (remaining > 0) {
+          sectionBtn.textContent = `Fix all now (${remaining})`;
+        } else {
+          sectionBtn.style.display = "none";
         }
       }
-      alert(`✅ Done!\n\nProcessed ${matchedIssues.length} item(s):\n• Applied: ${appliedCount}\n• Failed: ${failedCount}`);
+      alert(`${cancelled ? "Cancelled!" : "✅ Done!"}\n\nProcessed ${currentIndex} / ${matchedIssues.length} item(s):\n• Applied: ${appliedCount}\n• Failed: ${failedCount}`);
     }
 
     // Listen for apply results to process sequentially
@@ -5296,11 +5346,10 @@ const FONT_SIZE_THRESHOLD_PX = 4;
         failedCount++;
       }
 
-      updateButtonProgress();
+      updateProgress();
 
-      if (currentIndex >= matchedIssues.length) {
+      if (cancelled || currentIndex >= matchedIssues.length) {
         window.removeEventListener("message", onApplyResult);
-        // Wait for DOM updates from the result handler to complete
         setTimeout(onComplete, 500);
       } else {
         // Process next issue after a short delay
@@ -5309,14 +5358,19 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     }
 
     function applyIssue(issue) {
+      if (cancelled) {
+        window.removeEventListener("message", onApplyResult);
+        setTimeout(onComplete, 500);
+        return;
+      }
       // Find the best 100% match style using frontend similarity
       const style = findBest100PercentMatch(issue);
       if (!style) {
         // Style not found, count as failed and move on
         currentIndex++;
         failedCount++;
-        updateButtonProgress();
-        if (currentIndex >= matchedIssues.length) {
+        updateProgress();
+        if (cancelled || currentIndex >= matchedIssues.length) {
           window.removeEventListener("message", onApplyResult);
           setTimeout(onComplete, 500);
         } else {
@@ -6291,6 +6345,21 @@ const FONT_SIZE_THRESHOLD_PX = 4;
               }
             });
             
+            // Count 100% matches for typography-style
+            let _typo100 = 0;
+            if (type === "typography-style") {
+              (allGrouped[type] || []).forEach(c => {
+                if (c.subIssues && c.subIssues.length > 0) {
+                  c.subIssues.forEach(si => {
+                    const ex = Object.assign({}, c, { nodeProps: si.nodeProps || c.nodeProps, subIssues: undefined });
+                    if (ex.nodeProps && findBest100PercentMatch(ex) !== null) _typo100++;
+                  });
+                } else if (c.nodeProps && findBest100PercentMatch(c) !== null) {
+                  _typo100++;
+                }
+              });
+            }
+
             groupHeader.innerHTML = `
               <div class="issue-group-header-left">
                 <button class="issue-group-toggle" type="button">
@@ -6299,7 +6368,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
                 <h4>${getTypeDisplayName(type)}</h4>
                 <span class="badge">${nonIgnoredErrorWarnCount}</span>
               </div>
-              ${issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : ""}
+              ${type === "typography-style" && _typo100 > 0 ? `<button class="btn-fix-all" data-type="${type}">Fix all now (${_typo100})</button>` : (issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : "")}
             `;
             
             // Add click handler for collapse/expand
@@ -6339,6 +6408,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
                 try {
                   e.preventDefault();
                   e.stopPropagation();
+
+                  // For typography-style, use 100% match fix
+                  if (type === "typography-style") {
+                    handleFixAll100PercentMatches(allGrouped[type] || []);
+                    return;
+                  }
 
                   // Get all issues with suggest fix in this group (use original issues, not filtered)
                   const issuesWithSuggestFix = (allGrouped[type] || []).filter(issue => {
