@@ -10,5 +10,8 @@
   ],
   "capabilities": [
     "inspect"
+  ],
+  "permissions": [
+    "payments"
   ]
 }

@@ -71,6 +71,26 @@ function injectScriptTag(html, src = "ui.js") {
   return `${html}\n${tag}`;
 }
 
+// Inline JS content directly into HTML (required for Figma plugins)
+function injectInlineScript(html, jsContent) {
+  const tag = `<script>\n${jsContent}\n</script>`;
+  // Insert before the LAST </body> (avoid replacing </body> inside JS template strings)
+  const lastBodyIdx = html.lastIndexOf("</body>");
+  if (lastBodyIdx !== -1) {
+    return html.slice(0, lastBodyIdx) + tag + "\n" + html.slice(lastBodyIdx);
+  }
+  return `${html}\n${tag}`;
+}
+
+// Inline CSS content directly into HTML (required for Figma plugins)
+function injectInlineStyle(html, cssContent) {
+  const tag = `<style>\n${cssContent}\n</style>`;
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `${tag}\n</head>`);
+  }
+  return `${tag}\n${html}`;
+}
+
 async function buildOnce() {
   await ensureDir(DIST_DIR);
 
@@ -133,13 +153,28 @@ async function buildOnce() {
     await writeFile(DIST.css, "");
   }
 
-  // Minify HTML (keep sane settings; preserve quotes; inline JS/CSS will also be minified)
+  // Build HTML with inlined CSS and JS (Figma plugins require inline assets —
+  // external <link>/<script src> don't resolve in Figma's data-URI iframe).
   const htmlIn = await fs.readFile(SRC.ui, "utf8");
-  let htmlOut = injectCssLink(htmlIn, "styles.css");
-  if (shouldInjectUiJs) {
-    htmlOut = injectScriptTag(htmlOut, "ui.js");
+  let htmlOut = htmlIn;
+
+  // Inline CSS into <head> as <style>
+  const cssContent = await fileExists(DIST.css)
+    ? await fs.readFile(DIST.css, "utf8")
+    : "";
+  if (cssContent.trim()) {
+    htmlOut = injectInlineStyle(htmlOut, cssContent);
   }
-  // Copy ui.html with small injections (no minification to avoid parse errors)
+
+  // Inline JS into <body> as <script>
+  if (shouldInjectUiJs) {
+    const jsContent = await fs.readFile(DIST.uiJs, "utf8");
+    if (jsContent.trim()) {
+      htmlOut = injectInlineScript(htmlOut, jsContent);
+    }
+  }
+
+  // Also keep external file references for backwards compatibility (dev server, etc.)
   await writeFile(DIST.ui, htmlOut);
 
   // Copy manifest.json (keeps main/ui filenames; output dir is the plugin package folder)

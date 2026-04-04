@@ -5,11 +5,14 @@
     "main": "code.js",
     "ui": "ui.html",
     "editorType": [
-    "figma",
+      "figma",
       "dev"
     ],
     "capabilities": [
       "inspect"
+    ],
+    "permissions": [
+      "payments"
     ]
   }
   

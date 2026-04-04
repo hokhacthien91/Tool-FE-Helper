@@ -13,10 +13,16 @@
   <body class="mode-development2">
     <div id="app">
       <div class="header">
-        <h2>
-          <span>🎨</span>
-          Design Review — Professional QA Checker
-        </h2>
+        <div class="header-top">
+          <h2>
+            <span>🎨</span>
+            Design Review — Professional QA Checker
+          </h2>
+          <button id="btn-license-status" class="license-status-btn" title="Click to upgrade">
+            <span class="license-status-label">FREE</span>
+            <span class="license-status-upgrade">Upgrade</span>
+          </button>
+        </div>
         <div class="subtitle">
           Check design quality and extract design tokens with professional
           standards of Gravity Global.
@@ -200,20 +206,20 @@
               </button>
               <button
                 id="btn-export-settings"
-                class="btn-history tooltip"
+                class="btn-history tooltip feature-locked"
                 style="background: #2563eb; color: #fff"
               >
-                📤 Export Settings
+                📤 Export Settings <span class="pro-badge">PRO</span>
                 <span class="tooltiptext tooltip-right"
                   >Export settings to JSON file</span
                 >
               </button>
               <button
                 id="btn-import-settings"
-                class="btn-history tooltip"
+                class="btn-history tooltip feature-locked"
                 style="background: #1d4ed8; color: #fff"
               >
-                📥 Import Settings
+                📥 Import Settings <span class="pro-badge">PRO</span>
                 <span class="tooltiptext tooltip-right"
                   >Import settings from JSON file</span
                 >
@@ -242,8 +248,8 @@
                 >
               </button>
               <div class="export-group" style="display: none" id="export-group">
-                <button id="btn-export" class="btn-export">
-                  📄 Export Report
+                <button id="btn-export" class="btn-export feature-locked">
+                  📄 Export Report <span class="pro-badge">PRO</span>
                 </button>
                 <div class="export-dropdown" id="export-dropdown">
                   <button class="export-option" data-format="html">
@@ -315,14 +321,13 @@
               <div class="tooltip flex-80">
                 <button
                   id="btn-fill-spacing-scale"
-                  class="btn-add-scale tooltip btn-full-height"
+                  class="btn-add-scale tooltip btn-full-height feature-locked"
                   disabled
                 >
-                  Use tokens
+                  Use tokens <span class="pro-badge">PRO</span>
                 </button>
-                <span class="tooltiptext left-style"
-                  >Replace Spacing Guidelines input with all extracted spacing
-                  tokens (unique + sorted). Run “Extract Design Tokens”
+                <span class="tooltiptext left-style">Replace Spacing Guidelines input with all extracted spacing
+                  tokens (unique + sorted). Run "Extract Design Tokens"
                   first.</span
                 >
               </div>
@@ -376,10 +381,10 @@
               <div class="tooltip flex-80">
                 <button
                   id="btn-fill-font-size-scale"
-                  class="btn-add-scale tooltip btn-full-height"
+                  class="btn-add-scale tooltip btn-full-height feature-locked"
                   disabled
                 >
-                  Use tokens
+                  Use tokens <span class="pro-badge">PRO</span>
                 </button>
                 <span class="tooltiptext left-style"
                   >Replace Font Size input with all extracted font size tokens
@@ -472,10 +477,10 @@
               <div class="tooltip flex-80">
                 <button
                   id="btn-fill-line-height-scale"
-                  class="btn-add-scale tooltip btn-full-height"
+                  class="btn-add-scale tooltip btn-full-height feature-locked"
                   disabled
                 >
-                  Use tokens
+                  Use tokens <span class="pro-badge">PRO</span>
                 </button>
                 <span class="tooltiptext left-style"
                   >Replace Line Height input with all extracted line height
@@ -521,10 +526,10 @@
               <div class="tooltip flex-80">
                 <button
                   id="btn-fill-color-scale"
-                  class="btn-add-scale tooltip btn-full-height"
+                  class="btn-add-scale tooltip btn-full-height feature-locked"
                   disabled
                 >
-                  Use tokens
+                  Use tokens <span class="pro-badge">PRO</span>
                 </button>
                 <span class="tooltiptext left-style"
                   >Replace Color input with all extracted color tokens (unique +
@@ -2363,5 +2368,6 @@
       }
     })();
     </script>
+
   </body>
 </html>

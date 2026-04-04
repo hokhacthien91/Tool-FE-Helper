@@ -1,40 +1,117 @@
-# Review Design - Design QA Checker
+# Design QA Checker — Figma Plugin
 
-Figma plugin kiểm tra chất lượng design tự động: phát hiện lỗi naming, layout, spacing, typography, accessibility.
+Automatically review your designs for quality issues, extract design tokens, and batch-fix problems — all inside Figma.
 
-## Tính năng
+## Features
 
-- Scan toàn bộ page hoặc selection
-- Phát hiện 9 loại issue:
-  - **typography-match**: Text không khớp typography style
-  - **text-style**: Thiếu Figma Text Style variable
-  - **font-family**: Font không nằm trong danh sách cho phép
-  - **font-size**: Font size không đúng scale (12, 14, 16, 18, 20, 24, 32, 40, 48, 64)
-  - **line-height**: Line height không đúng scale
-  - **contrast**: Không đạt WCAG AA color contrast
-  - **text-size**: Text quá nhỏ (ADA compliance)
-  - **color**: Màu không nằm trong palette
-  - **border-radius**: Có border-radius (không hỗ trợ trong email)
-- Tùy chỉnh rules và scales
-- Trích xuất design tokens (colors, typography, spacing, border-radius)
-- Nhóm issues theo error/warning
+### Design Scanning
 
-## Cài đặt
+Scan your entire page or a selection to detect **17 types of issues** across these categories:
+
+**Layout & Structure**
+- **autolayout** — Missing or improper Auto Layout
+- **spacing** — Inconsistent spacing/padding (configurable scale & threshold)
+- **position** — Negative positioning issues
+- **empty-frame** — Empty frames that should be cleaned up
+- **duplicate** — Duplicate frame detection
+
+**Naming & Organization**
+- **naming** — Layer naming violations
+- **group** — Groups that should be frames
+- **nested-group** — Nested groups detection
+- **component** — Missing components where expected
+
+**Typography**
+- **typography-style** — Text style not applied
+- **typography-check** — Typography doesn't match defined styles (font family, size, weight, line-height, letter spacing, word spacing)
+- **line-height** — Inconsistent line heights
+
+**Color**
+- **color** — Off-palette color usage
+- **color-variable** — Unbound color variables
+
+**Accessibility (ADA / WCAG)**
+- **contrast** — Text contrast fails WCAG AA
+- **text-size-mobile** — Text too small for mobile (ADA compliance)
+
+### Auto-Fix & Batch Operations
+
+Don't just find issues — fix them:
+
+- **"Fix all now"** per issue type with progress bar and cancel support
+- **"Suggest Fix"** with visual comparison and similarity score
+- **"Apply All"** to batch-apply suggested fixes
+- Create missing text styles, color styles, and variables directly from issues
+- Convert groups to frames, rename layers, bind color variables — all in one click
+- Remove empty frames and clean up unused layers in bulk
+
+### Design Token Extraction
+
+Extract a complete token set from your file:
+
+- **Colors** — Extract from Color Styles and Color Variables, with custom naming
+- **Typography** — Extract text styles for Desktop, Tablet, Mobile, or All breakpoints
+- **Spacing** — Auto-detect spacing scale from your layouts
+- Fill your scan scales directly from extracted tokens
+
+### Typography Style Management
+
+Define and manage your typography rules with a full editable table:
+
+- Style Name, Font Family, Font Size, Font Weight, Line Height, Letter Spacing, Word Spacing
+- Toggle which properties to check per style
+- Load fonts directly into your document
+
+### Interaction / Animation Scanning
+
+Scan and report all interactions and animations in your file — useful for design handoff and documentation.
+
+### Settings & Configuration
+
+- Customize scales and thresholds for spacing, font size, line height, and colors
+- Define skip names to exclude specific layers from scanning
+- **Save / Load / Import / Export** settings — share configurations across your team
+- Settings history with restore support
+
+### Reporting & Export
+
+- Filter issues by severity (error / warning / all)
+- Search issues by keyword
+- **Export report to HTML** for sharing with stakeholders
+- Scan history — save, load, and compare previous scan results
+- Ignore individual issues with toggle state
+
+## Installation
+
+### From Figma Community (recommended)
+
+1. Search for **"Design QA Checker"** in Figma → Plugins
+2. Click **Install**
+
+### For Development
 
 ```bash
 npm install
 ```
 
-## Cách chạy
-
-Build plugin:
+Build the plugin:
 
 ```bash
-npm run build       # Build 1 lần
-npm run watch       # Auto-rebuild khi thay đổi code
-npm run prod        # Build + inject assets
+npm run build       # Build once
+npm run watch       # Auto-rebuild on code changes
+npm run prod        # Production build + inject assets
 ```
 
-Load vào Figma:
-1. Figma > Plugins > Development > Import plugin from manifest...
-2. Chọn file `manifest.json` trong folder này
+Load into Figma:
+1. Figma → Plugins → Development → **Import plugin from manifest...**
+2. Select the `manifest.json` file from this folder
+
+## How to Use
+
+1. Open Figma → Plugins → **Design QA Checker**
+2. Choose scan scope: **Entire Page** or **Selection**
+3. Click **Scan Design** to run the audit
+4. Review issues grouped by type and severity
+5. Use **Suggest Fix** or **Fix all now** to resolve issues
+6. Switch to **Tokens** tab to extract design tokens
+7. Go to **Settings** to customize rules and scales for your project

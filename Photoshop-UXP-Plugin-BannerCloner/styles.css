@@ -1,0 +1,120 @@
+:root {
+  --bg: #1f1f1f;
+  --panel: #2b2b2b;
+  --text: #f3f3f3;
+  --muted: #b7b7b7;
+  --accent: #4c93ea;
+  --accent2: #6aa8f2;
+  --border: #474747;
+  --green: #43a047;
+  --green2: #66bb6a;
+  --orange: #ef6c00;
+  --orange2: #ff9800;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; }
+.app { padding: 16px; }
+h1 { margin: 0 0 6px; font-size: 28px; }
+.muted { color: var(--muted); margin: 0 0 18px; line-height: 1.4; }
+.tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.section { margin-bottom: 16px; }
+.label { display: block; margin-bottom: 8px; font-weight: 700; }
+.hint { color: var(--muted); margin-top: 8px; font-size: 13px; }
+input[type="text"] {
+  width: 100%;
+  background: #ececec;
+  color: #111;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+.preset-wrap { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.preset-chip {
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  background: #ececec;
+  color: #111;
+  padding: 5px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 9px;
+}
+.preset-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #ddd; }
+
+button {
+  border: 0;
+  border-radius: 4px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+button.primary {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  color: white;
+}
+button.split-btn {
+  background: linear-gradient(90deg, #7b1fa2, #ab47bc);
+}
+button.export-all-btn {
+  background: linear-gradient(90deg, var(--green), var(--green2));
+}
+button.full { width: 100%; }
+
+.export-section { margin-top: 8px; }
+.export-buttons { display: flex; gap: 10px; }
+.export-btn {
+  flex: 1;
+  cursor: pointer;
+  color: white;
+}
+.export-btn:first-child {
+  background: linear-gradient(90deg, var(--green), var(--green2));
+}
+.export-btn:last-child {
+  background: linear-gradient(90deg, var(--orange), var(--orange2));
+}
+
+.info-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+}
+.link-btn {
+  background: transparent;
+  color: var(--accent);
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.log-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  min-height: 100px;
+  white-space: pre-wrap;
+  overflow: auto;
+  font-size: 13px;
+}

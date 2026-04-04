@@ -10,6 +10,7 @@ import { createScanHistoryManager } from "./features/history/scanHistory.js";
 import { getContrastTextColor } from "./utils/color.js";
 import { calculateContrastRatio, getColorBrightness, getColorDistance } from "./utils/colorMath.js";
 import { escapeHtml } from "./utils/html.js";
+import { initLicensing, setPaymentStatus, isPro, gateFeature, limitIssuesForFree, requestCheckout, PREMIUM_FEATURES, LIMITED_ISSUE_TYPES, FREE_ISSUE_LIMIT } from "./features/licensing.js";
 
 // Font-size threshold for typography suggestions (in pixels)
 // If font-size difference exceeds this value, the suggestion is considered invalid
@@ -43,14 +44,17 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   const reportContents = document.querySelectorAll(".report-content");
   let activeTab = "issues";
 
-        if (!btnScan || !btnExtractTokens || !resultsIssues || !resultsTokens || !btnClose || !btnExport || !btnHistory || !btnFillSpacingScale || !btnFillColorScale || !btnFillFontSizeScale || !btnFillLineHeightScale) {
-          console.error("Required elements not found", { btnScan, btnExtractTokens, btnFillSpacingScale, btnFillColorScale, btnFillFontSizeScale, btnFillLineHeightScale, resultsIssues, resultsTokens, btnClose, btnExport, btnHistory });
+        if (!btnScan || !btnExtractTokens || !resultsIssues || !resultsTokens || !btnClose) {
+          console.error("Critical elements not found", { btnScan, btnExtractTokens, resultsIssues, resultsTokens, btnClose });
     return;
   }
 
         // Auto jump to the node when user clicks an action button inside an issue item.
         // (implemented in ./features/autoSelectNode.js)
         setupAutoSelectNodeFromIssueClick();
+
+        // Initialize licensing / freemium gating
+        initLicensing();
 
         // Store current report data
         // Color name mapping (hex -> name) for tooltips
@@ -110,12 +114,21 @@ const FONT_SIZE_THRESHOLD_PX = 4;
 
         // Calculate similarity between issue nodeProps and a typography style (0-100)
         function calculateTypographySimilarity(nodeProps, style) {
-          const norm = (val) => {
+          var norm = function(val) {
             if (val === null || val === undefined || val === "Unknown") return "";
-            return String(val).toLowerCase().trim();
+            var s = String(val).toLowerCase().trim();
+            // Normalize numeric values with optional unit (e.g. "1px", "1", "144%")
+            var m = s.match(/^([+-]?\d*\.?\d+)(px|%)?$/);
+            if (m) {
+              var num = parseFloat(m[1]);
+              if (Math.abs(num) < 1e-6) return "0";
+              var unit = m[2] || "px";
+              return (Math.round(num * 100) / 100) + unit;
+            }
+            return s;
           };
-          const hasValue = (val) => val !== null && val !== undefined && val !== "Unknown" && String(val).trim() !== "";
-          let score = 0;
+          var hasValue = function(val) { return val !== null && val !== undefined && val !== "Unknown" && String(val).trim() !== ""; };
+          var score = 0;
           // Only count match if both sides have real values
           if (hasValue(nodeProps.fontFamily) && hasValue(style.fontFamily) && norm(nodeProps.fontFamily) === norm(style.fontFamily)) score += 25;
           if (nodeProps.fontSize !== null && nodeProps.fontSize !== undefined && style.fontSize) {
@@ -126,14 +139,62 @@ const FONT_SIZE_THRESHOLD_PX = 4;
           }
           if (hasValue(nodeProps.fontWeight) && hasValue(style.fontWeight) && norm(nodeProps.fontWeight) === norm(style.fontWeight)) score += 20;
           if (hasValue(nodeProps.lineHeight) && hasValue(style.lineHeight) && norm(nodeProps.lineHeight) === norm(style.lineHeight)) score += 15;
-          // Normalize zero values: "0px", "0%", "0" are all equal
-          const nodeLS = norm(nodeProps.letterSpacing);
-          const styleLS = norm(style.letterSpacing || "0");
-          const isZeroLS = (v) => v === "0" || v === "0px" || v === "0%" || v === "";
+          // Letter spacing comparison with normalized values
+          var nodeLS = norm(nodeProps.letterSpacing);
+          var styleLS = norm(style.letterSpacing || "0");
           if (hasValue(nodeProps.letterSpacing) || hasValue(style.letterSpacing)) {
-            if ((isZeroLS(nodeLS) && isZeroLS(styleLS)) || nodeLS === styleLS) score += 10;
+            if (nodeLS === styleLS) score += 10;
           }
           return score;
+        }
+
+        // Get detailed similarity breakdown for debugging/display
+        function getTypographySimilarityDetails(nodeProps, style) {
+          var norm = function(val) {
+            if (val === null || val === undefined || val === "Unknown") return "";
+            var s = String(val).toLowerCase().trim();
+            var m = s.match(/^([+-]?\d*\.?\d+)(px|%)?$/);
+            if (m) {
+              var num = parseFloat(m[1]);
+              if (Math.abs(num) < 1e-6) return "0";
+              var unit = m[2] || "px";
+              return (Math.round(num * 100) / 100) + unit;
+            }
+            return s;
+          };
+          var hasValue = function(val) { return val !== null && val !== undefined && val !== "Unknown" && String(val).trim() !== ""; };
+          var details = [];
+          // Font Family (25)
+          var famMatch = hasValue(nodeProps.fontFamily) && hasValue(style.fontFamily) && norm(nodeProps.fontFamily) === norm(style.fontFamily);
+          details.push({ prop: "Font Family", node: nodeProps.fontFamily || "", style: style.fontFamily || "", match: famMatch, points: famMatch ? 25 : 0 });
+          // Font Size (30)
+          var sizePoints = 0;
+          if (nodeProps.fontSize !== null && nodeProps.fontSize !== undefined && style.fontSize) {
+            var diff = Math.abs(nodeProps.fontSize - style.fontSize);
+            if (diff === 0) sizePoints = 30;
+            else if (diff <= 2) sizePoints = 25;
+            else if (diff <= 4) sizePoints = 20;
+            else if (diff <= 8) sizePoints = 10;
+          }
+          details.push({ prop: "Font Size", node: nodeProps.fontSize != null ? nodeProps.fontSize + "px" : "", style: style.fontSize ? style.fontSize + "px" : "", match: sizePoints === 30, points: sizePoints });
+          // Font Weight (20)
+          var weightMatch = hasValue(nodeProps.fontWeight) && hasValue(style.fontWeight) && norm(nodeProps.fontWeight) === norm(style.fontWeight);
+          details.push({ prop: "Font Weight", node: nodeProps.fontWeight || "", style: style.fontWeight || "", match: weightMatch, points: weightMatch ? 20 : 0 });
+          // Line Height (15)
+          var lhMatch = hasValue(nodeProps.lineHeight) && hasValue(style.lineHeight) && norm(nodeProps.lineHeight) === norm(style.lineHeight);
+          details.push({ prop: "Line Height", node: nodeProps.lineHeight || "", style: style.lineHeight || "", match: lhMatch, points: lhMatch ? 15 : 0 });
+          // Letter Spacing (10)
+          var nodeLS = norm(nodeProps.letterSpacing);
+          var styleLS = norm(style.letterSpacing || "0");
+          var lsMatch = false;
+          if (hasValue(nodeProps.letterSpacing) || hasValue(style.letterSpacing)) {
+            lsMatch = nodeLS === styleLS;
+          } else {
+            lsMatch = true;
+          }
+          details.push({ prop: "Letter Spacing", node: nodeProps.letterSpacing || "0", style: style.letterSpacing || "0", match: lsMatch, points: lsMatch ? 10 : 0 });
+          var total = details.reduce(function(s, d) { return s + d.points; }, 0);
+          return { details: details, total: total };
         }
 
         /**
@@ -489,7 +550,13 @@ const FONT_SIZE_THRESHOLD_PX = 4;
       
       // Best match suggestion (for errors) or show matched style (for pass with severity info)
       if (issue.bestMatch && issue.bestMatch.name && issue.severity === "error") {
-        detailsHtml += `<div class="closest-match"><div style="margin-bottom: 6px;"><strong>Closest Match: "${escapeHtml(issue.bestMatch.name)}" (${issue.bestMatch.percentage || 0}%)</strong></div>`;
+        // Recalculate percentage using frontend weighted scoring for consistency
+        var _matchPct = issue.bestMatch.percentage || 0;
+        if (issue.nodeProps && typographyStyles && typographyStyles.length > 0) {
+          var _matchStyle = typographyStyles.find(function(s) { return s.name === issue.bestMatch.name; });
+          if (_matchStyle) _matchPct = calculateTypographySimilarity(issue.nodeProps, _matchStyle);
+        }
+        detailsHtml += `<div class="closest-match"><div style="margin-bottom: 6px;"><strong>Closest Match: "${escapeHtml(issue.bestMatch.name)}" (${_matchPct}%)</strong></div>`;
         detailsHtml += '<div style="padding-left: 0; line-height: 1.6;">';
         (issue.bestMatch.differences || []).forEach(diff => {
           const icon = diff.matches ? '✓' : '✗';
@@ -841,29 +908,11 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     if (isTextSizeMobile && group.nodeProps) {
       const props = group.nodeProps;
       if (typographyStyles && typographyStyles.length > 0) {
-        const normalizeVal = (val) => {
-          if (val === null || val === undefined) return "";
-          return String(val).toLowerCase().trim();
-        };
         let topScore = 0;
         for (const style of typographyStyles) {
           // Only suggest styles with fontSize > 12px (ADA compliant)
           if (!style.fontSize || style.fontSize <= 12) continue;
-          let score = 0;
-          if (normalizeVal(props.fontFamily) === normalizeVal(style.fontFamily)) score += 25;
-          if (props.fontSize != null && style.fontSize) {
-            const diff = Math.abs(props.fontSize - style.fontSize);
-            if (diff === 0) score += 30;
-            else if (diff <= 2) score += 25;
-            else if (diff <= 4) score += 20;
-            else if (diff <= 8) score += 10;
-          }
-          if (normalizeVal(props.fontWeight) === normalizeVal(style.fontWeight)) score += 20;
-          if (normalizeVal(props.lineHeight) === normalizeVal(style.lineHeight)) score += 15;
-          const nodeLS = normalizeVal(props.letterSpacing);
-          const styleLS = normalizeVal(style.letterSpacing || "0");
-          const isZero = (v) => v === "" || v === "0" || v === "0px" || v === "0%";
-          if ((isZero(nodeLS) && isZero(styleLS)) || nodeLS === styleLS) score += 10;
+          var score = calculateTypographySimilarity(props, style);
           if (score > topScore) {
             topScore = score;
             bestSuggestion = { name: style.name, percentage: score, styleId: style.styleId };
@@ -871,7 +920,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
         }
       }
       if (!bestSuggestion && group.bestMatch && group.bestMatch.name) {
-        bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+        var fallbackStyle = typographyStyles && typographyStyles.find(function(s) { return s.name === group.bestMatch.name; });
+        if (fallbackStyle) {
+          bestSuggestion = { name: group.bestMatch.name, percentage: calculateTypographySimilarity(props, fallbackStyle) };
+        } else {
+          bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+        }
       }
       if (bestSuggestion && bestSuggestion.name) {
         const pct = bestSuggestion.percentage || 0;
@@ -1024,30 +1078,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
       props.lineHeight || ""
     ].filter(Boolean).join("/");
 
-    // Find best match from typographyStyles (Figma styles) — more accurate than code.js bestMatch
+    // Find best match from typographyStyles using shared calculateTypographySimilarity
     let bestSuggestion = null;
     if (typographyStyles && typographyStyles.length > 0) {
-      const normalizeVal = (val) => {
-        if (val === null || val === undefined) return "";
-        return String(val).toLowerCase().trim();
-      };
       let topScore = 0;
       for (const style of typographyStyles) {
-        let score = 0;
-        if (normalizeVal(props.fontFamily) === normalizeVal(style.fontFamily)) score += 25;
-        if (props.fontSize != null && style.fontSize) {
-          const diff = Math.abs(props.fontSize - style.fontSize);
-          if (diff === 0) score += 30;
-          else if (diff <= 2) score += 25;
-          else if (diff <= 4) score += 20;
-          else if (diff <= 8) score += 10;
-        }
-        if (normalizeVal(props.fontWeight) === normalizeVal(style.fontWeight)) score += 20;
-        if (normalizeVal(props.lineHeight) === normalizeVal(style.lineHeight)) score += 15;
-        const nodeLS = normalizeVal(props.letterSpacing);
-        const styleLS = normalizeVal(style.letterSpacing || "0");
-        const isZero = (v) => v === "" || v === "0" || v === "0px" || v === "0%";
-        if ((isZero(nodeLS) && isZero(styleLS)) || nodeLS === styleLS) score += 10;
+        var score = calculateTypographySimilarity(props, style);
         if (score > topScore) {
           topScore = score;
           bestSuggestion = { name: style.name, percentage: score, styleId: style.styleId };
@@ -1056,13 +1092,31 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     }
     // Fallback to code.js bestMatch if no typographyStyles match
     if (!bestSuggestion && group.bestMatch && group.bestMatch.name) {
-      bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+      // Recalculate percentage using frontend scoring if possible
+      var fallbackStyle = typographyStyles && typographyStyles.find(function(s) { return s.name === group.bestMatch.name; });
+      if (fallbackStyle) {
+        bestSuggestion = { name: group.bestMatch.name, percentage: calculateTypographySimilarity(props, fallbackStyle) };
+      } else {
+        bestSuggestion = { name: group.bestMatch.name, percentage: group.bestMatch.percentage || 0 };
+      }
     }
 
     // Build suggestion HTML
     let suggestionHtml = "";
     if (bestSuggestion && bestSuggestion.name) {
       const pct = bestSuggestion.percentage || 0;
+      // Get detailed breakdown for display
+      var _matchStyle = typographyStyles && typographyStyles.find(function(s) { return s.name === bestSuggestion.name; });
+      var _detailsHtml = "";
+      if (_matchStyle && props) {
+        var _info = getTypographySimilarityDetails(props, _matchStyle);
+        _detailsHtml = '<div style="font-size:11px;color:#666;padding:6px 0 2px 0;line-height:1.7">' +
+          _info.details.map(function(d) {
+            var icon = d.match ? '<span style="color:green">✓</span>' : '<span style="color:red">✗</span>';
+            return icon + ' ' + d.prop + ': <code>' + escapeHtml(String(d.node)) + '</code> → <code>' + escapeHtml(String(d.style)) + '</code>' + (d.match ? '' : ' <span style="color:red">(−' + ({"Font Family":25,"Font Size":30,"Font Weight":20,"Line Height":15,"Letter Spacing":10}[d.prop] - d.points) + 'pts)</span>');
+          }).join('<br>') +
+          '</div>';
+      }
       suggestionHtml = `
         <div class="issue-grouped-suggestion">
           <span class="issue-grouped-suggestion-label">Suggestion</span>
@@ -1072,6 +1126,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
             <span class="issue-grouped-suggestion-pct">(${pct}%)</span>
             <button class="btn-suggest-fix-all" data-group-key="${escapeHtml(group.key)}">${count > 1 ? "Apply All" : "Apply"}</button>
           </div>
+          ${_detailsHtml}
         </div>
       `;
     }
@@ -4490,11 +4545,11 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     
     const issues = currentReportData.issues;
     
-    // Count excluding ignored (ignored issues have severity "info" and ignored: true)
+    // Count excluding ignored (expand subIssues to count actual nodes)
     const counts = {
-      error: issues.filter(i => i.severity === "error" && !i.ignored).length,
-      warn: issues.filter(i => i.severity === "warn" && !i.ignored).length,
-      total: issues.length
+      error: issues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "error" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0),
+      warn: issues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "warn" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0),
+      total: countExpandedIssues(issues)
     };
     
     // Update filter button counts
@@ -4508,10 +4563,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
         if (type) {
           const groupIssues = issues.filter(i => i.type === type);
           // Count only non-ignored error/warn issues
-          const groupCount = groupIssues.filter(i => {
-            if (i.ignored) return false; // Don't count ignored
-            return i.severity === "error" || i.severity === "warn"; // Only count error/warn
-          }).length;
+          const groupCount = groupIssues.reduce(function(sum, i) {
+            if (i.ignored) return sum;
+            if (i.severity !== "error" && i.severity !== "warn") return sum;
+            if (i.subIssues && i.subIssues.length > 0) return sum + i.subIssues.length;
+            return sum + 1;
+          }, 0);
           badge.textContent = groupCount;
         }
       }
@@ -5232,6 +5289,19 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     window.addEventListener("message", onVarsLoaded);
   }
 
+  // Count total nodes (expanding subIssues) from grouped issues
+  function countExpandedIssues(issues) {
+    let count = 0;
+    issues.forEach(function(i) {
+      if (i.subIssues && i.subIssues.length > 0) {
+        count += i.subIssues.length;
+      } else {
+        count += 1;
+      }
+    });
+    return count;
+  }
+
   // Find the first typography style with 100% frontend similarity for an issue
   function findBest100PercentMatch(issue) {
     if (!issue || !issue.nodeProps) return null;
@@ -5242,6 +5312,64 @@ const FONT_SIZE_THRESHOLD_PX = 4;
       }
     }
     return null;
+  }
+
+  // Handle "Fix all now" for color-variable category (batch bind via backend)
+  function handleFixAllColorVariables(btn) {
+    window._batchFixInProgress = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Fixing...";
+    }
+
+    // Create progress bar
+    var existingProg = document.getElementById("fix-all-progress");
+    if (existingProg) existingProg.remove();
+    var progressEl = document.createElement("div");
+    progressEl.id = "fix-all-progress";
+    progressEl.className = "fix-all-progress";
+    progressEl.innerHTML = '<div class="fix-all-progress-info"><span class="fix-all-progress-text">Binding color variables...</span></div><div class="fix-all-progress-bar"><div class="fix-all-progress-fill" style="width: 50%"></div></div>';
+    var resultsContainer = document.getElementById("results-issues");
+    if (resultsContainer) {
+      resultsContainer.parentNode.insertBefore(progressEl, resultsContainer);
+    }
+
+    function onBatchResult(event) {
+      var msg = event.data && event.data.pluginMessage;
+      if (!msg || msg.type !== "batch-bind-color-variables-result") return;
+      window.removeEventListener("message", onBatchResult);
+      window._batchFixInProgress = false;
+
+      if (progressEl && progressEl.parentNode) progressEl.remove();
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Fix all now";
+      }
+
+      var applied = msg.applied || 0;
+      var failed = msg.failed || 0;
+
+      // Remove fixed color-variable issues from in-memory data
+      if (applied > 0 && currentReportData && currentReportData.issues) {
+        currentReportData.issues = currentReportData.issues.filter(function(i) {
+          return i.type !== "color-variable" || !i.matchingVariable;
+        });
+      }
+
+      setTimeout(function() {
+        updateIssueCounts();
+        if (currentReportData && currentReportData.issues) {
+          renderResults(currentReportData.issues, false);
+        }
+      }, 300);
+
+      alert("Done!\n\nColor variables: " + applied + " applied, " + failed + " failed");
+    }
+
+    window.addEventListener("message", onBatchResult);
+    parent.postMessage({
+      pluginMessage: { type: "batch-bind-color-variables", skipOpacity: true }
+    }, "*");
   }
 
   // Handle "Fix all now" for all typography issues with 100% match (legacy, kept for reference)
@@ -5601,6 +5729,18 @@ const FONT_SIZE_THRESHOLD_PX = 4;
       alert("No issues to process");
       return;
     }
+    // Expand grouped issues into individual nodes for accurate progress tracking
+    var expandedIssues = [];
+    issues.forEach(function(i) {
+      if (i.subIssues && i.subIssues.length > 0) {
+        i.subIssues.forEach(function(si) {
+          expandedIssues.push(Object.assign({}, i, si, { subIssues: undefined }));
+        });
+      } else {
+        expandedIssues.push(i);
+      }
+    });
+    issues = expandedIssues;
     window._batchFixInProgress = true;
 
     let currentIndex = 0;
@@ -6105,7 +6245,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
           if (!skipTabSwitch) {
             switchToTab("issues");
           }
-          document.getElementById("issues-count").textContent = issues.length;
+          document.getElementById("issues-count").textContent = countExpandedIssues(issues);
           
           // Check ignored issues and mark them
           if (issues && Array.isArray(issues)) {
@@ -6206,23 +6346,36 @@ const FONT_SIZE_THRESHOLD_PX = 4;
           }
 
           // Calculate stats from filtered issues (exclude ignored issues from error/warn counts)
+          // Expand subIssues to count actual nodes, not groups
           const stats = {
-            error: filteredIssues.filter(i => i.severity === "error" && !i.ignored).length,
-            warn: filteredIssues.filter(i => i.severity === "warn" && !i.ignored).length,
-            total: filteredIssues.length,
-            originalTotal: issues.length
+            error: filteredIssues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "error" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0),
+            warn: filteredIssues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "warn" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0),
+            total: countExpandedIssues(filteredIssues),
+            originalTotal: countExpandedIssues(issues)
           };
 
           // Count auto-fixable issues for header button (typography 100% match + color variable)
+          // Always expand subIssues to count actual nodes, not groups
           let typo100Count = 0;
           let colorVarCount = 0;
           filteredIssues.forEach(function(i) {
             if (i.ignored) return;
-            if ((i.type === "typography-check" || i.type === "typography-style") && i.nodeProps && findBest100PercentMatch(i) !== null) {
-              typo100Count++;
+            if ((i.type === "typography-check" || i.type === "typography-style")) {
+              if (i.subIssues && i.subIssues.length > 0) {
+                i.subIssues.forEach(function(si) {
+                  var ex = Object.assign({}, i, { nodeProps: si.nodeProps || i.nodeProps, subIssues: undefined });
+                  if (ex.nodeProps && findBest100PercentMatch(ex) !== null) typo100Count++;
+                });
+              } else if (i.nodeProps && findBest100PercentMatch(i) !== null) {
+                typo100Count++;
+              }
             }
             if (i.type === "color-variable") {
-              if (i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)) {
+              if (i.subIssues && i.subIssues.length > 0) {
+                i.subIssues.forEach(function(si) {
+                  if ((si.matchingVariable || i.matchingVariable) && (!(si.colorOpacity || i.colorOpacity) || (si.colorOpacity || i.colorOpacity) >= 1)) colorVarCount++;
+                });
+              } else if (i.matchingVariable && (!i.colorOpacity || i.colorOpacity >= 1)) {
                 colorVarCount++;
               }
             }
@@ -6233,7 +6386,15 @@ const FONT_SIZE_THRESHOLD_PX = 4;
           const header = document.createElement("div");
           header.className = "results-header";
           const showFixAllBtn = totalFixableCount > 0;
-          header.innerHTML = `<h3>Check Result</h3><button class="btn-fix-all" id="btn-fix-all-100"${showFixAllBtn ? "" : ' style="display:none"'}>Fix all now (${totalFixableCount})</button>`;
+          var fixAllLabel = "Fix all now";
+          if (typo100Count > 0 && colorVarCount > 0) {
+            fixAllLabel += " (Typography: " + typo100Count + ", Color Variable: " + colorVarCount + ")";
+          } else if (typo100Count > 0) {
+            fixAllLabel += " (Typography: " + typo100Count + ")";
+          } else if (colorVarCount > 0) {
+            fixAllLabel += " (Color Variable: " + colorVarCount + ")";
+          }
+          header.innerHTML = `<h3>Check Result</h3><button class="btn-fix-all" id="btn-fix-all-100"${showFixAllBtn ? "" : ' style="display:none"'}>${fixAllLabel}</button>`;
           resultsIssues.appendChild(header);
 
           // Handle "Fix all now" button (typography 100% match + color variable batch)
@@ -6242,6 +6403,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
             btnFixAll100.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
+              if (!gateFeature(PREMIUM_FEATURES.FIX_ALL)) return;
               handleFixAllNow(issues);
             };
           }
@@ -6281,10 +6443,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
             const issueCount = groupIssues.length;
             // For badge: count all issues, but ignored ones won't be counted in error/warn stats
             // For display: show all issues but mark ignored ones differently
-            const nonIgnoredErrorWarnCount = groupIssues.filter(i => {
-              if (i.ignored) return false; // Don't count ignored
-              return i.severity === "error" || i.severity === "warn";
-            }).length;
+            const nonIgnoredErrorWarnCount = groupIssues.reduce(function(sum, i) {
+              if (i.ignored) return sum;
+              if (i.severity !== "error" && i.severity !== "warn") return sum;
+              if (i.subIssues && i.subIssues.length > 0) return sum + i.subIssues.length;
+              return sum + 1;
+            }, 0);
 
             // Skip if no issues and no original issues (first scan)
             // But always show groups if there are any issues in the scan (even if filtered out)
@@ -6360,6 +6524,30 @@ const FONT_SIZE_THRESHOLD_PX = 4;
               });
             }
 
+            // Count fixable color-variable issues (has matchingVariable and opacity >= 1)
+            let _colorVarFixable = 0;
+            if (type === "color-variable") {
+              (allGrouped[type] || []).forEach(function(c) {
+                if (c.subIssues && c.subIssues.length > 0) {
+                  c.subIssues.forEach(function(si) {
+                    if ((si.matchingVariable || c.matchingVariable) && (!(si.colorOpacity || c.colorOpacity) || (si.colorOpacity || c.colorOpacity) >= 1)) _colorVarFixable++;
+                  });
+                } else if (c.matchingVariable && (!c.colorOpacity || c.colorOpacity >= 1)) {
+                  _colorVarFixable++;
+                }
+              });
+            }
+
+            // Build "Fix all now" button for category
+            let _fixAllBtn = "";
+            if (type === "typography-style" && _typo100 > 0) {
+              _fixAllBtn = `<button class="btn-fix-all" data-type="${type}">Fix all now (${_typo100})</button>`;
+            } else if (type === "color-variable" && _colorVarFixable > 0) {
+              _fixAllBtn = `<button class="btn-fix-all" data-type="${type}">Fix all now (${_colorVarFixable})</button>`;
+            } else if (issueCount > 0 && type !== "typography" && type !== "typography-style" && type !== "typography-check" && type !== "color-variable" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton) {
+              _fixAllBtn = `<button class="btn-fix-all" data-type="${type}">Fix all now</button>`;
+            }
+
             groupHeader.innerHTML = `
               <div class="issue-group-header-left">
                 <button class="issue-group-toggle" type="button">
@@ -6368,7 +6556,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
                 <h4>${getTypeDisplayName(type)}</h4>
                 <span class="badge">${nonIgnoredErrorWarnCount}</span>
               </div>
-              ${type === "typography-style" && _typo100 > 0 ? `<button class="btn-fix-all" data-type="${type}">Fix all now (${_typo100})</button>` : (issueCount > 0 && type !== "typography" && type !== "line-height" && type !== "naming" && type !== "component" && type !== "duplicate" && hasSuggestFixButton ? `<button class="btn-fix-all" data-type="${type}">Fix all now</button>` : "")}
+              ${_fixAllBtn}
             `;
             
             // Add click handler for collapse/expand
@@ -6409,9 +6597,18 @@ const FONT_SIZE_THRESHOLD_PX = 4;
                   e.preventDefault();
                   e.stopPropagation();
 
+                  // Pro feature gate
+                  if (!gateFeature(PREMIUM_FEATURES.FIX_ALL)) return;
+
                   // For typography-style, use 100% match fix
                   if (type === "typography-style") {
                     handleFixAll100PercentMatches(allGrouped[type] || []);
+                    return;
+                  }
+
+                  // For color-variable, use batch bind (same as top-level fix)
+                  if (type === "color-variable") {
+                    handleFixAllColorVariables(btnFixAll);
                     return;
                   }
 
@@ -6486,8 +6683,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
               `;
               groupContent.appendChild(emptyMsg);
             } else {
+              // Limit issues for free users on certain types
+              const limitResult = limitIssuesForFree(grouped[type], type);
+              const displayIssues = limitResult.issues;
+
               // Render issues
-              grouped[type].forEach((issue, index) => {
+              displayIssues.forEach((issue, index) => {
               const issueNumber = index + 1;
               
               // Check if issue is ignored
@@ -7079,6 +7280,19 @@ const FONT_SIZE_THRESHOLD_PX = 4;
                     if (groupedEl) groupContent.appendChild(groupedEl);
                   });
                 }
+              }
+
+              // Show upgrade notice for truncated issue types (free users)
+              if (limitResult.truncated) {
+                const upgradeNotice = document.createElement("div");
+                upgradeNotice.className = "upgrade-notice";
+                upgradeNotice.innerHTML = `
+                  <span>Showing ${FREE_ISSUE_LIMIT} of ${limitResult.total} issues.</span>
+                  <button class="upgrade-notice-btn">Upgrade to Pro to see all</button>
+                `;
+                const noticeBtn = upgradeNotice.querySelector(".upgrade-notice-btn");
+                if (noticeBtn) noticeBtn.onclick = () => requestCheckout();
+                groupContent.appendChild(upgradeNotice);
               }
             }
 
@@ -7797,7 +8011,8 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     }
   };
 
-  btnFillSpacingScale.onclick = () => {
+  if (btnFillSpacingScale) btnFillSpacingScale.onclick = () => {
+    if (!gateFeature(PREMIUM_FEATURES.FILL_SCALES)) return;
     try {
       replaceSpacingScaleWithTokens(currentReportData.tokens);
     } catch (e) {
@@ -7807,7 +8022,8 @@ const FONT_SIZE_THRESHOLD_PX = 4;
 
   // getColorBrightness is imported from ./utils/colorMath.js
 
-  btnFillColorScale.onclick = () => {
+  if (btnFillColorScale) btnFillColorScale.onclick = () => {
+    if (!gateFeature(PREMIUM_FEATURES.FILL_SCALES)) return;
     try {
       const tokens = currentReportData.tokens;
       if (!tokens || !Array.isArray(tokens.colors) || !tokens.colors.length) {
@@ -7861,7 +8077,8 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     };
   }
 
-  btnFillFontSizeScale.onclick = () => {
+  if (btnFillFontSizeScale) btnFillFontSizeScale.onclick = () => {
+    if (!gateFeature(PREMIUM_FEATURES.FILL_SCALES)) return;
     try {
       const tokens = currentReportData.tokens;
       if (!tokens || !Array.isArray(tokens.fontSize) || !tokens.fontSize.length) {
@@ -7895,7 +8112,8 @@ const FONT_SIZE_THRESHOLD_PX = 4;
     }
   };
 
-  btnFillLineHeightScale.onclick = () => {
+  if (btnFillLineHeightScale) btnFillLineHeightScale.onclick = () => {
+    if (!gateFeature(PREMIUM_FEATURES.FILL_SCALES)) return;
     try {
       const tokens = currentReportData.tokens;
       if (!tokens || !Array.isArray(tokens.lineHeight) || !tokens.lineHeight.length) {
@@ -7945,7 +8163,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   };
 
   // Use Typography for Font Size
-  btnFillFontSizeFromTypo.onclick = () => {
+  if (btnFillFontSizeFromTypo) btnFillFontSizeFromTypo.onclick = () => {
     try {
       if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
         alert("No typography styles defined. Please add typography styles or extract from Figma first.");
@@ -7982,7 +8200,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   };
 
   // Use Typography for Line Height
-  btnFillLineHeightFromTypo.onclick = () => {
+  if (btnFillLineHeightFromTypo) btnFillLineHeightFromTypo.onclick = () => {
     try {
       if (!typographyStyles || !Array.isArray(typographyStyles) || typographyStyles.length === 0) {
         alert("No typography styles defined. Please add typography styles or extract from Figma first.");
@@ -8564,8 +8782,9 @@ const FONT_SIZE_THRESHOLD_PX = 4;
         const exportGroup = document.getElementById("export-group");
         const exportDropdown = document.getElementById("export-dropdown");
         
-        btnExport.onclick = (e) => {
+        if (btnExport) btnExport.onclick = (e) => {
           e.stopPropagation();
+          if (!gateFeature(PREMIUM_FEATURES.EXPORT_REPORT)) return;
           exportDropdown.style.display = exportDropdown.style.display === "block" ? "none" : "block";
         };
 
@@ -8592,9 +8811,9 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   function updateFilterButtonCounts(issues) {
     if (!issues) return;
 
-    const errorCount = issues.filter(i => i.severity === "error" && !i.ignored).length;
-    const warnCount = issues.filter(i => i.severity === "warn" && !i.ignored).length;
-    const totalCount = issues.filter(i => !i.ignored).length;
+    const errorCount = issues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "error" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0);
+    const warnCount = issues.reduce(function(s, i) { return s + (!i.ignored && i.severity === "warn" ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0);
+    const totalCount = issues.reduce(function(s, i) { return s + (!i.ignored ? (i.subIssues && i.subIssues.length > 0 ? i.subIssues.length : 1) : 0); }, 0);
 
     const countAll = document.getElementById("filter-count-all");
     const countError = document.getElementById("filter-count-error");
@@ -8843,7 +9062,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
       }
     };
 
-    btnHistory.onclick = () => {
+    if (btnHistory) btnHistory.onclick = () => {
       const historyPanel = document.getElementById("history-panel");
       if (historyPanel) {
         const isVisible = historyPanel.style.display !== "none";
@@ -9134,6 +9353,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   
   if (btnExportSettings) {
     btnExportSettings.onclick = () => {
+      if (!gateFeature(PREMIUM_FEATURES.SETTINGS_IMPORT_EXPORT)) return;
       // Ensure all colors in colorScale have a name in colorNameMap
       const colorScaleValue = document.getElementById("color-scale")?.value || "";
       const colorsInScale = colorScaleValue
@@ -9206,6 +9426,7 @@ const FONT_SIZE_THRESHOLD_PX = 4;
 
   if (btnImportSettings) {
     btnImportSettings.onclick = () => {
+      if (!gateFeature(PREMIUM_FEATURES.SETTINGS_IMPORT_EXPORT)) return;
       // Reset state
       selectedImportFile = null;
       importFileData = null;
@@ -9401,6 +9622,12 @@ const FONT_SIZE_THRESHOLD_PX = 4;
   // Receive report from plugin code
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
+
+    // Handle payment status from code.js
+    if (msg && msg.type === "payment-status") {
+      setPaymentStatus(msg.isPro);
+      return;
+    }
 
     if (msg && msg.type === "create-color-style-result") {
       if (msg.success) {

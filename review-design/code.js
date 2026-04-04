@@ -1,6 +1,28 @@
 // code.js - runs in Figma plugin environment
 figma.showUI(__html__, { width: 600, height: 700 });
 
+// =============================================
+// PAYMENT / LICENSING (lazy — runs after plugin is fully loaded)
+// =============================================
+function checkPaymentStatus() {
+  try {
+    const hasPay = typeof figma !== "undefined" && figma.payments;
+    if (hasPay) {
+      const status = figma.payments.status;
+      const isPro = status && status.type === "PAID";
+      figma.ui.postMessage({ type: "payment-status", isPro: !!isPro });
+    } else {
+      figma.ui.postMessage({ type: "payment-status", isPro: false });
+    }
+  } catch (e) {
+    console.warn("[licensing] Payment check skipped:", e.message || e);
+    figma.ui.postMessage({ type: "payment-status", isPro: false });
+  }
+}
+
+// Delay payment check so it never blocks plugin startup
+setTimeout(checkPaymentStatus, 500);
+
 // Send master RULES config to UI so disabled checks are hidden from Scan Settings
 setTimeout(() => {
   figma.ui.postMessage({
@@ -6967,6 +6989,32 @@ figma.ui.onmessage = async msg => {
       } else {
         figma.notify("Node not found", { error: true });
       }
+      break;
+    }
+    case "initiate-checkout": {
+      try {
+        const hasPay = typeof figma !== "undefined" && figma.payments;
+        if (hasPay && typeof figma.payments.initiateCheckoutAsync === "function") {
+          await figma.payments.initiateCheckoutAsync({
+            interstitial: "PAID_FEATURE"
+          });
+          checkPaymentStatus();
+        } else {
+          figma.notify("Payments not available in development mode.", { error: true });
+        }
+      } catch (e) {
+        const msg = (e && e.message) || "";
+        if (msg.includes("cancel")) {
+          figma.notify("Checkout cancelled");
+        } else {
+          console.warn("[licensing] Checkout error:", msg);
+          figma.notify("Checkout failed. Please try again.", { error: true });
+        }
+      }
+      break;
+    }
+    case "check-payment-status": {
+      checkPaymentStatus();
       break;
     }
     default:
