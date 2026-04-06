@@ -1,4 +1,4 @@
-# Banner Cloner Pro - Photoshop UXP Plugin
+# Banner Cloner - Photoshop UXP Plugin
 
 ## Overview
 Plugin Photoshop UXP giup clone artboard nguon thanh nhieu banner sizes khac nhau. Dung cho workflow tao banner ads nhieu kich thuoc tu 1 design goc.
@@ -36,7 +36,7 @@ main.js         — All plugin logic (batchPlay commands, UI handlers)
 1. Install Adobe UXP Developer Tool
 2. Add plugin folder trong UXP Dev Tool
 3. Load vao Photoshop
-4. Panel xuat hien o menu Plugins > Banner Cloner Pro
+4. Panel xuat hien o menu Plugins > Banner Cloner
 
 ## Known Limitations
 - Chi resize artboard frame, chua auto-layout content ben trong

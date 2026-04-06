@@ -15,7 +15,7 @@
 
     <div class="section">
       <label class="label" for="sizesInput">Target Sizes</label>
-      <input id="sizesInput" type="text" value="300x250 160x600 728x90 300x600" />
+      <input id="sizesInput" type="text" value="300x250" />
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
     </div>
@@ -30,13 +30,9 @@
       <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
     </div>
 
-    <div class="section">
-      <button id="cloneBtn" class="primary full">Clone Artboards</button>
-    </div>
-
-    <div class="section export-section">
-      <button id="exportBtn" class="primary full export-all-btn">Export</button>
-      <div class="hint">Export all documents as JPG (output/) and PSD (working-file/) into one folder.</div>
+    <div class="section btn-row">
+      <button id="cloneBtn" class="primary">Clone Artboards</button>
+      <button id="exportBtn" class="primary export-all-btn">Export</button>
     </div>
 
     <div class="section" id="splitSection" style="display:none;">

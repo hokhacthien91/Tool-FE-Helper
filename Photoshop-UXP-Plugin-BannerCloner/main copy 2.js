@@ -425,7 +425,7 @@ async function cloneAll() {
       log("Clone error: " + e.message);
       throw e;
     }
-  }, { commandName: "Banner Cloner Pro - Clone" });
+  }, { commandName: "Banner Cloner - Clone" });
 }
 
 // ─── Export current document as PSD/JPG ───
@@ -509,7 +509,7 @@ async function exportDoc(format) {
       log("Export error: " + e.message);
       throw e;
     }
-  }, { commandName: `Banner Cloner Pro - Export ${format.toUpperCase()}` });
+  }, { commandName: `Banner Cloner - Export ${format.toUpperCase()}` });
 }
 
 // ─── Refresh source info ───

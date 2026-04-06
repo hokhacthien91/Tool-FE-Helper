@@ -1,6 +1,6 @@
 {
   "id": "com.oai.bannercloner.v2",
-  "name": "Banner Cloner Pro",
+  "name": "Banner Cloner",
   "version": "1.1.0",
   "main": "index.html",
   "host": {
@@ -16,7 +16,7 @@
       "type": "panel",
       "id": "banner-cloner-pro-panel",
       "label": {
-        "default": "Banner Cloner Pro"
+        "default": "Banner Cloner"
       },
       "minimumSize": {
         "width": 320,

@@ -212,15 +212,249 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
   }
 }
 
-// ─── Fit content layers inside canvas ───
+// ─── Smart Layout helpers ───
 
-async function fitContentLayers(parent, canvasW, canvasH, originX, originY) {
+async function captureContentLayout(artboardLayer, srcW, srcH) {
+  const artDesc = await getLayerDescriptor(artboardLayer.id);
+  const artRect = rectSize(artDesc.artboard?.artboardRect || artDesc.bounds);
+
+  const contentGroup = artboardLayer.layers
+    ? [...artboardLayer.layers].find(l => l.name.toLowerCase() === "content")
+    : null;
+  if (!contentGroup || !contentGroup.layers) return null;
+
+  const layout = [];
+  for (const child of contentGroup.layers) {
+    try {
+      // Use getGroupBounds for groups (getLayerBounds on groups returns artboard bounds)
+      const bounds = (child.layers && child.layers.length > 0)
+        ? await getGroupBounds(child)
+        : await getLayerBounds(child.id);
+      if (bounds.width === 0 || bounds.height === 0) continue;
+      layout.push({
+        name: child.name.toLowerCase(),
+        relCenterX: (bounds.left + bounds.width / 2 - artRect.left) / srcW,
+        relCenterY: (bounds.top + bounds.height / 2 - artRect.top) / srcH,
+        relWidth: bounds.width / srcW,
+        relHeight: bounds.height / srcH
+      });
+    } catch (e) { /* skip */ }
+  }
+  return layout.length > 0 ? layout : null;
+}
+
+async function scaleGroupChildren(group, scale) {
+  const leaves = [];
+  function collect(layer) {
+    if (layer.layers && layer.layers.length > 0) {
+      for (const child of layer.layers) collect(child);
+    } else {
+      leaves.push(layer);
+    }
+  }
+  collect(group);
+
+  for (const leaf of leaves) {
+    try {
+      const bounds = await getLayerBounds(leaf.id);
+      if (bounds.width === 0 || bounds.height === 0) continue;
+      const skipKinds = ["solidColor", "gradientFill", "pattern"];
+      if (skipKinds.includes(leaf.kind)) continue;
+
+      await selectLayerById(leaf.id);
+      await bpSafe([{
+        _obj: "transform",
+        _target: [{ _ref: "layer", _id: leaf.id }],
+        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+        width: { _unit: "percentUnit", _value: scale * 100 },
+        height: { _unit: "percentUnit", _value: scale * 100 },
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[SCALE] ERROR ${leaf.name}: ${e.message}`); }
+  }
+}
+
+async function moveGroupChildren(group, dx, dy) {
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+  log(`[MOVE] "${group.name}": dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+  try {
+    await selectLayerById(group.id);
+    await bp([{
+      _obj: "move",
+      _target: [{ _ref: "layer", _id: group.id }],
+      to: {
+        _obj: "offset",
+        horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
+        vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+      },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+    log(`[MOVE]   OK`);
+  } catch (e) {
+    log(`[MOVE]   group move failed, trying leaves: ${e.message}`);
+    // Fallback: move individual leaves
+    const leaves = [];
+    function collect(layer) {
+      if (layer.layers && layer.layers.length > 0) {
+        for (const child of layer.layers) collect(child);
+      } else {
+        leaves.push(layer);
+      }
+    }
+    collect(group);
+    for (const leaf of leaves) {
+      try {
+        await selectLayerById(leaf.id);
+        await bp([{
+          _obj: "move",
+          _target: [{ _ref: "layer", _id: leaf.id }],
+          to: {
+            _obj: "offset",
+            horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
+            vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } catch (e2) { log(`[MOVE]   "${leaf.name}" ERROR: ${e2.message}`); }
+    }
+  }
+}
+
+async function getGroupBounds(group) {
+  let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+  const leaves = [];
+  function collect(layer) {
+    if (layer.layers && layer.layers.length > 0) {
+      for (const child of layer.layers) collect(child);
+    } else {
+      leaves.push(layer);
+    }
+  }
+  collect(group);
+
+  for (const leaf of leaves) {
+    try {
+      const b = await getLayerBounds(leaf.id);
+      if (b.width === 0 || b.height === 0) continue;
+      if (b.left < minL) minL = b.left;
+      if (b.top < minT) minT = b.top;
+      if (b.right > maxR) maxR = b.right;
+      if (b.bottom > maxB) maxB = b.bottom;
+    } catch (e) { /* skip */ }
+  }
+  if (minL === Infinity) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  return { left: minL, top: minT, right: maxR, bottom: maxB, width: maxR - minL, height: maxB - minT };
+}
+
+// ─── Smart Layout: scale + reposition content groups ───
+
+async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX, originY, sourceLayout) {
   originX = originX || 0;
   originY = originY || 0;
-  // Collect all leaf layers that are NOT inside bg group
+
+  // Find content group
+  const contentGroup = parent.layers
+    ? [...parent.layers].find(l => l.name.toLowerCase() === "content")
+    : null;
+
+  // Fallback to old fitContentLayers if no content group or no source layout
+  if (!contentGroup || !sourceLayout) {
+    log(`[LAYOUT] No content group or source layout, fallback to fitContentLayers`);
+    return await fitContentLayers(parent, canvasW, canvasH, originX, originY);
+  }
+
+  log(`[LAYOUT] Smart layout: ${contentGroup.layers.length} groups, ${srcW}x${srcH} → ${canvasW}x${canvasH}`);
+
+  const padding = Math.round(Math.min(canvasW, canvasH) * 0.05);
+
+  // Target: artboard (0,0) to (canvasW, canvasH)
+  // originX/originY passed from caller (0 for Documents mode, artboard pos for Artboards mode)
+  const canvasLeft = originX;
+  const canvasTop = originY;
+  log(`[LAYOUT] Target area: (${canvasLeft},${canvasTop})-(${canvasLeft+canvasW},${canvasTop+canvasH})`);
+
+  for (const child of contentGroup.layers) {
+    const childName = child.name.toLowerCase();
+    const srcInfo = sourceLayout.find(s => s.name === childName);
+    if (!srcInfo) {
+      log(`[LAYOUT] "${child.name}": no source info, skip`);
+      continue;
+    }
+
+    try {
+      // Read actual bounds first, then scale to fit canvas
+      let bounds = await getGroupBounds(child);
+      if (bounds.width === 0 || bounds.height === 0) continue;
+
+      // Max 80% of canvas for any single group
+      const maxW = canvasW * 0.8;
+      const maxH = canvasH * 0.8;
+      const scaleToFitW = bounds.width > maxW ? maxW / bounds.width : 1;
+      const scaleToFitH = bounds.height > maxH ? maxH / bounds.height : 1;
+      const scale = Math.min(scaleToFitW, scaleToFitH, 1);
+
+      if (Math.abs(scale - 1) > 0.01) {
+        log(`[LAYOUT] "${child.name}": scale ${(scale * 100).toFixed(1)}% (actual ${Math.round(bounds.width)}x${Math.round(bounds.height)})`);
+        await scaleGroupChildren(child, scale);
+        bounds = await getGroupBounds(child);
+      } else {
+        log(`[LAYOUT] "${child.name}": no scale needed (${Math.round(bounds.width)}x${Math.round(bounds.height)})`);
+      }
+      if (bounds.width === 0 || bounds.height === 0) continue;
+      log(`[LAYOUT] "${child.name}": actual bounds ${Math.round(bounds.width)}x${Math.round(bounds.height)} at (${Math.round(bounds.left)},${Math.round(bounds.top)})`);
+      log(`[LAYOUT] "${child.name}": src rel cx=${srcInfo.relCenterX.toFixed(3)} cy=${srcInfo.relCenterY.toFixed(3)}`);
+
+      // Target position in artboard coords (0-based)
+      const targetCenterX = canvasLeft + srcInfo.relCenterX * canvasW;
+      const targetCenterY = canvasTop + srcInfo.relCenterY * canvasH;
+
+      // Current center (doc coords — move command uses doc coords)
+      const curCenterX = bounds.left + bounds.width / 2;
+      const curCenterY = bounds.top + bounds.height / 2;
+
+      let dx = targetCenterX - curCenterX;
+      let dy = targetCenterY - curCenterY;
+      log(`[LAYOUT] "${child.name}": target=(${Math.round(targetCenterX)},${Math.round(targetCenterY)}) cur=(${Math.round(curCenterX)},${Math.round(curCenterY)}) raw dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+
+      // Clamp: ensure final position within canvas
+      const pad = padding;
+      let newL = bounds.left + dx;
+      let newR = newL + bounds.width;
+      let newT = bounds.top + dy;
+      let newB = newT + bounds.height;
+
+      if (newR > canvasLeft + canvasW - pad) { dx -= newR - (canvasLeft + canvasW - pad); newL = bounds.left + dx; }
+      if (newL < canvasLeft + pad) { dx += (canvasLeft + pad) - newL; }
+      newT = bounds.top + dy; newB = newT + bounds.height;
+      if (newB > canvasTop + canvasH - pad) { dy -= newB - (canvasTop + canvasH - pad); newT = bounds.top + dy; }
+      if (newT < canvasTop + pad) { dy += (canvasTop + pad) - newT; }
+
+      log(`[LAYOUT] "${child.name}": move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+      await moveGroupChildren(child, dx, dy);
+    } catch (e) {
+      log(`[LAYOUT] "${child.name}" ERROR: ${e.message}`);
+    }
+  }
+
+  // Handle remaining layers outside content/background groups with fitContentLayers
+  log(`[LAYOUT] Fitting remaining layers outside content/background...`);
+  await fitContentLayers(parent, canvasW, canvasH, canvasLeft, canvasTop, true);
+}
+
+// ─── Fit content layers inside canvas (fallback) ───
+
+async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg) {
+  originX = originX || 0;
+  originY = originY || 0;
+  // Collect all leaf layers that are NOT inside bg group (and optionally not in content group)
   const leaves = [];
   function walk(layer) {
     if (isBgGroup(layer)) return;
+    if (skipContentBg && layer.name) {
+      const ln = layer.name.toLowerCase();
+      if (ln === "content" || ln === "guideline" || ln === "guidline") return;
+    }
     if (layer.layers && layer.layers.length > 0) {
       for (const child of layer.layers) walk(child);
     } else {
@@ -318,6 +552,10 @@ async function cloneAsArtboards() {
       const srcRect = source.size;
       const sourceDoc = app.activeDocument;
       log(`Source artboard: ${source.name} (${srcRect.width}x${srcRect.height})`);
+
+      // Capture content layout from source artboard
+      const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
+      if (sourceLayout) log(`[LAYOUT] Captured ${sourceLayout.length} content groups from source`);
 
       // Find the rightmost edge of all existing artboards
       let maxRight = srcRect.right;
@@ -433,6 +671,14 @@ async function cloneAsArtboards() {
         }]);
         log(`Canvas: ${target.width}x${target.height}`);
 
+        // DEBUG: check actual layer positions after canvasSize
+        try {
+          for (const l of tempDoc.layers) {
+            const b = await getLayerBounds(l.id);
+            if (b.width > 0) { log(`[DEBUG] After crop - "${l.name}": (${b.left},${b.top}) ${b.width}x${b.height}`); break; }
+          }
+        } catch(e) {}
+
         // 5. Scale background
         const bgGroup = findBgGroup(tempDoc);
         if (bgGroup) {
@@ -442,9 +688,9 @@ async function cloneAsArtboards() {
           } catch (e) { log(`BG scale skipped: ${e.message}`); }
         }
 
-        // 6. Fit content layers
+        // 6. Smart layout content
         try {
-          await fitContentLayers(tempDoc, target.width, target.height);
+          await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout);
         } catch (e) { log(`Fit content skipped: ${e.message}`); }
 
         // 7. Wrap all layers into an artboard
@@ -551,7 +797,7 @@ async function cloneAsArtboards() {
       log("Clone error: " + e.message);
       throw e;
     }
-  }, { commandName: "Banner Cloner Pro - Clone Artboards" });
+  }, { commandName: "Banner Cloner - Clone Artboards" });
 }
 
 // ─── Clone: each size → new document ───
@@ -578,6 +824,12 @@ async function cloneAll() {
         ? stripSizeSuffix(selectedAb.name)
         : stripSizeSuffix(sourceDoc.title.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, ""));
       log(`Source: ${selectedAb ? selectedAb.name : sourceDoc.title} (${srcW}x${srcH})`);
+
+      // Capture content layout from source
+      const sourceLayout = selectedAb
+        ? await captureContentLayout(selectedAb.layer, srcW, srcH)
+        : null;
+      if (sourceLayout) log(`[LAYOUT] Captured ${sourceLayout.length} content groups from source`);
 
       // Create a clean template doc with only the selected artboard's content
       await bp([{
@@ -692,9 +944,9 @@ async function cloneAll() {
           }
         }
 
-        // 6. Fit content layers: resize if too wide, move into canvas
+        // 6. Smart layout content
         try {
-          await fitContentLayers(newDoc, target.width, target.height);
+          await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout);
         } catch (e) {
           log(`Fit content skipped: ${e.message}`);
         }
@@ -723,10 +975,8 @@ async function cloneAll() {
             from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
             artboardRect: {
               _obj: "classFloatRect",
-              top: 0,
-              left: 0,
-              bottom: target.height,
-              right: target.width
+              top: 0, left: 0,
+              bottom: target.height, right: target.width
             },
             _options: { dialogOptions: "dontDisplay" }
           }]);
@@ -762,7 +1012,7 @@ async function cloneAll() {
       log("Clone error: " + e.message);
       throw e;
     }
-  }, { commandName: "Banner Cloner Pro - Clone" });
+  }, { commandName: "Banner Cloner - Clone" });
 }
 
 // ─── Export all documents as JPG + PSD into structured folder ───
@@ -865,7 +1115,7 @@ async function exportAll() {
       log("Export error: " + e.message);
       throw e;
     }
-  }, { commandName: "Banner Cloner Pro - Export" });
+  }, { commandName: "Banner Cloner - Export" });
 }
 
 // ─── Split artboards to separate documents + save PSD ───
@@ -960,7 +1210,7 @@ async function splitToDocuments() {
       log("Split error: " + e.message);
       throw e;
     }
-  }, { commandName: "Banner Cloner Pro - Split to Documents" });
+  }, { commandName: "Banner Cloner - Split to Documents" });
 }
 
 // ─── Refresh source info ───
