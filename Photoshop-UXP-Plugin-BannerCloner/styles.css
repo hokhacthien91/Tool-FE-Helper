@@ -137,6 +137,23 @@ button.full { width: 100%; }
   font-size: 13px;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+.size-group-header span { flex: 1; }
+.toggle-icon { flex: 0 0 auto; font-size: 10px; }
+.delete-group-btn {
+  flex: 0 0 auto;
+  background: #c62828;
+  color: white;
+  padding: 3px 8px;
+  font-size: 10px;
+  border-radius: 3px;
+  border: 0;
+  cursor: pointer;
 }
 .size-group-body { padding: 10px; }
 .rule-card {
@@ -186,6 +203,9 @@ button.full { width: 100%; }
   padding: 6px 8px;
   font-size: 13px;
   box-sizing: border-box;
+}
+.import-json-btn {
+  background: linear-gradient(90deg, var(--orange), var(--orange2));
 }
 .add-layer-btn {
   background: transparent;

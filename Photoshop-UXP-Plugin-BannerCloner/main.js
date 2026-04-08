@@ -583,14 +583,44 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
 
 // Capture original bounds of all layers (before smart layout modifies them)
 async function captureOriginalBounds(parent) {
-  const map = {}; // key: layer name (lowercase), value: { width, height }
+  const map = {}; // key: layer name (lowercase), value: { width, height, fontSize? }
   async function walk(layer) {
     if (layer.name) {
       try {
         const isGroup = layer.layers && layer.layers.length > 0;
         const bounds = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
         if (bounds.width > 0 && bounds.height > 0) {
-          map[layer.name.toLowerCase()] = { width: bounds.width, height: bounds.height };
+          const entry = { width: bounds.width, height: bounds.height };
+          // Capture fontSize for text layers
+          if (!isGroup && (layer.kind === "text" || layer.kind === "textLayer")) {
+            try {
+              const desc = await getLayerDescriptor(layer.id);
+              const textKey = desc.textKey;
+              if (textKey && textKey.textStyleRange && textKey.textStyleRange.length > 0) {
+                const style = textKey.textStyleRange[0].textStyle;
+                if (style && style.size) {
+                  entry.fontSize = style.size._value || style.size;
+                }
+              }
+            } catch (e) { /* skip fontSize capture */ }
+          }
+          // Capture fontSize from group's first text child
+          if (isGroup) {
+            try {
+              const firstText = findFirstTextLayer(layer);
+              if (firstText) {
+                const desc = await getLayerDescriptor(firstText.id);
+                const textKey = desc.textKey;
+                if (textKey && textKey.textStyleRange && textKey.textStyleRange.length > 0) {
+                  const style = textKey.textStyleRange[0].textStyle;
+                  if (style && style.size) {
+                    entry.fontSize = style.size._value || style.size;
+                  }
+                }
+              }
+            } catch (e) { /* skip */ }
+          }
+          map[layer.name.toLowerCase()] = entry;
         }
       } catch (e) { /* skip */ }
     }
@@ -602,6 +632,18 @@ async function captureOriginalBounds(parent) {
     for (const layer of parent.layers) await walk(layer);
   }
   return map;
+}
+
+function findFirstTextLayer(group) {
+  if (!group.layers) return null;
+  for (const child of group.layers) {
+    if (child.kind === "text" || child.kind === "textLayer") return child;
+    if (child.layers) {
+      const found = findFirstTextLayer(child);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 function findLayersByName(parent, targetName) {
@@ -620,7 +662,10 @@ function findLayersByName(parent, targetName) {
   return results;
 }
 
-async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, originX, originY, originalBounds) {
+async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, originX, originY, originalBounds, srcW, srcH) {
+  // Pre-compute scale from JSON using PSD source size as base
+  const baseSize = (srcW && srcH) ? findBaseSizeFromJson(srcW, srcH) : null;
+  if (baseSize) log(`[RULE] Base size from JSON: ${baseSize.name} (${baseSize.width}x${baseSize.height})`);
   originX = originX || 0;
   originY = originY || 0;
   const rules = layerRules[targetSizeKey];
@@ -631,6 +676,13 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
 
   for (const rule of rules) {
     if (!rule.name) continue;
+
+    // Skip background layer — handled by scaleBgCover
+    if (rule.name.toLowerCase() === getBgLayerName()) {
+      log(`[RULE] "${rule.name}": is bg layer, skip (handled by scaleBgCover)`);
+      continue;
+    }
+
     const layers = findLayersByName(docOrArtboard, rule.name);
     if (!layers.length) {
       log(`[RULE] "${rule.name}": not found, skip`);
@@ -657,10 +709,20 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       try {
         log(`[RULE] "${layer.name}" (id:${layer.id}) applying rule for ${targetSizeKey}`);
 
+        // Compute scale from JSON measurements (vs base size = PSD source) if no explicit scale
+        if (!rule.scale && baseSize) {
+          const computed = computeRuleScale(rule, baseSize);
+          if (computed !== null) {
+            rule._computedScale = computed;
+            log(`[RULE]   computed scale from JSON: ${computed.toFixed(4)}`);
+          }
+        }
+
         // Scale first (before positioning)
         // scaleVal is relative to ORIGINAL size, not current size
-        const scaleVal = rule.scale !== "" && rule.scale !== undefined ? parseFloat(rule.scale) : NaN;
-        if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
+        const rawScale = rule._computedScale || (rule.scale !== "" && rule.scale !== undefined ? parseFloat(rule.scale) : NaN);
+        const scaleVal = isNaN(rawScale) ? NaN : rawScale;
+        if (!isNaN(scaleVal) && scaleVal > 0) {
           const isGroupForScale = layer.layers && layer.layers.length > 0;
           const currentBounds = isGroupForScale ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
           const origBounds = originalBounds ? originalBounds[layer.name.toLowerCase()] : null;
@@ -784,6 +846,103 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           }
           log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
         }
+
+        // --- Extended fields from JSON import ---
+
+        // Opacity (0-1 → 0-100%)
+        if (rule.opacity !== undefined && rule.opacity !== "") {
+          const opacityVal = parseFloat(rule.opacity);
+          if (!isNaN(opacityVal)) {
+            const opacityPct = Math.round(opacityVal <= 1 ? opacityVal * 100 : opacityVal);
+            try {
+              await selectLayerById(layer.id);
+              await bp([{
+                _obj: "set",
+                _target: [{ _ref: "layer", _id: layer.id }],
+                to: { _obj: "layer", opacity: { _unit: "percentUnit", _value: opacityPct } },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              log(`[RULE]   opacity: ${opacityPct}%`);
+            } catch (e) { log(`[RULE]   opacity ERROR: ${e.message}`); }
+          }
+        }
+
+        // Background position (% based) — reposition layer based on % of canvas
+        if (rule.bgPositionX !== undefined || rule.bgPositionY !== undefined) {
+          try {
+            const bgBounds = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+            let bgDx = 0, bgDy = 0;
+            if (rule.bgPositionX !== undefined && rule.bgPositionX !== "") {
+              const pctX = parseFloat(rule.bgPositionX) / 100;
+              // Position: (canvas - layer) * pct
+              const maxOffsetX = bgBounds.width - canvasW;
+              if (maxOffsetX > 0) {
+                const targetLeft = originX - maxOffsetX * pctX;
+                bgDx = targetLeft - bgBounds.left;
+              } else {
+                const targetCenterX = originX + canvasW * pctX;
+                bgDx = targetCenterX - (bgBounds.left + bgBounds.width / 2);
+              }
+            }
+            if (rule.bgPositionY !== undefined && rule.bgPositionY !== "") {
+              const pctY = parseFloat(rule.bgPositionY) / 100;
+              const maxOffsetY = bgBounds.height - canvasH;
+              if (maxOffsetY > 0) {
+                const targetTop = originY - maxOffsetY * pctY;
+                bgDy = targetTop - bgBounds.top;
+              } else {
+                const targetCenterY = originY + canvasH * pctY;
+                bgDy = targetCenterY - (bgBounds.top + bgBounds.height / 2);
+              }
+            }
+            if (Math.abs(bgDx) > 0.5 || Math.abs(bgDy) > 0.5) {
+              if (isGroup) {
+                await moveGroupChildren(layer, bgDx, bgDy);
+              } else {
+                await selectLayerById(layer.id);
+                await bpSafe([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _id: layer.id }],
+                  to: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: Math.round(bgDx) },
+                    vertical: { _unit: "pixelsUnit", _value: Math.round(bgDy) }
+                  },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              }
+              log(`[RULE]   bgPosition: dx=${Math.round(bgDx)} dy=${Math.round(bgDy)}`);
+            }
+          } catch (e) { log(`[RULE]   bgPosition ERROR: ${e.message}`); }
+        }
+
+        // Gradient angle
+        if (rule.gradientAngle !== undefined && rule.gradientAngle !== "") {
+          const angle = parseFloat(rule.gradientAngle);
+          if (!isNaN(angle)) {
+            try {
+              await selectLayerById(layer.id);
+              const desc = await getLayerDescriptor(layer.id);
+              // Only apply to gradient fill layers
+              if (desc.adjustment && desc.adjustment.length > 0) {
+                const adj = desc.adjustment[0];
+                if (adj.gradient) {
+                  await bp([{
+                    _obj: "set",
+                    _target: [{ _ref: "layer", _id: layer.id }],
+                    to: {
+                      _obj: "gradientFill",
+                      angle: { _unit: "angleUnit", _value: angle }
+                    },
+                    _options: { dialogOptions: "dontDisplay" }
+                  }]);
+                  log(`[RULE]   gradientAngle: ${angle}°`);
+                }
+              }
+            } catch (e) { log(`[RULE]   gradientAngle ERROR: ${e.message}`); }
+          }
+        }
+
       } catch (e) {
         log(`[RULE]   ERROR "${layer.name}": ${e.message}`);
       }
@@ -933,7 +1092,7 @@ async function cloneAsArtboards() {
           }
         } catch(e) {}
 
-        // 5. Scale background
+        // 5. Scale background (always use scaleBgCover — JSON rule for bg will be skipped in applyLayerRules)
         const bgGroup = findBgGroup(tempDoc);
         if (bgGroup) {
           try {
@@ -952,7 +1111,7 @@ async function cloneAsArtboards() {
 
         // 6b. Apply layer rules from settings (using original bounds for correct scale)
         try {
-          await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds);
+          await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcRect.width, srcRect.height);
         } catch (e) { log(`Layer rules skipped: ${e.message}`); }
 
         // 7. Wrap all layers into an artboard
@@ -1195,7 +1354,7 @@ async function cloneAll() {
 
         log(`Canvas: ${target.width}x${target.height}`);
 
-        // 5. Scale background group as cover (fill + center)
+        // 5. Scale background group as cover (always — JSON rule for bg will be skipped in applyLayerRules)
         const bgGroup = findBgGroup(newDoc);
         if (bgGroup) {
           try {
@@ -1218,7 +1377,7 @@ async function cloneAll() {
 
         // 6b. Apply layer rules from settings (using original bounds for correct scale)
         try {
-          await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds);
+          await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcW, srcH);
         } catch (e) { log(`Layer rules skipped: ${e.message}`); }
 
         // 7. Wrap all layers into an Artboard
@@ -1554,15 +1713,47 @@ function renderSizeGroups() {
     const group = document.createElement("div");
     group.className = "size-group";
 
-    // Header
+    // Header — clickable toggle + delete button
     const header = document.createElement("div");
     header.className = "size-group-header";
-    header.textContent = sizeKey;
-    group.appendChild(header);
+
+    const toggleIcon = document.createElement("span");
+    toggleIcon.className = "toggle-icon";
+    toggleIcon.textContent = "\u25BC"; // ▼
+    header.appendChild(toggleIcon);
+
+    const headerTitle = document.createElement("span");
+    headerTitle.textContent = " " + sizeKey;
+    header.appendChild(headerTitle);
+
+    const deleteGroupBtn = document.createElement("button");
+    deleteGroupBtn.className = "delete-group-btn";
+    deleteGroupBtn.textContent = "X";
+    deleteGroupBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Remove from layerRules
+      delete layerRules[sizeKey];
+      saveLayerRules();
+      // Remove from Target Sizes input
+      const currentSizes = parseSizes(sizesInput.value).map(s => s.raw).filter(s => s !== sizeKey);
+      sizesInput.value = currentSizes.join(" ");
+      renderPresets();
+      renderSizeGroups();
+    });
+    header.appendChild(deleteGroupBtn);
 
     // Body
     const body = document.createElement("div");
     body.className = "size-group-body";
+
+    // Toggle collapse
+    header.addEventListener("click", () => {
+      const isHidden = body.style.display === "none";
+      body.style.display = isHidden ? "" : "none";
+      toggleIcon.textContent = isHidden ? "\u25BC" : "\u25B6"; // ▼ or ▶
+    });
+
+    group.appendChild(header);
 
     // Render layer rules
     rules.forEach((rule, idx) => {
@@ -1584,16 +1775,27 @@ function renderSizeGroups() {
       ruleHeader.appendChild(removeBtn);
       card.appendChild(ruleHeader);
 
-      // Fields
+      // Fields — base fields always shown
       const fields = document.createElement("div");
       fields.className = "rule-fields";
-      [
+      const baseDefs = [
         { key: "top", label: "Top", ph: "px" },
         { key: "left", label: "Left", ph: "px" },
         { key: "right", label: "Right", ph: "px" },
         { key: "bottom", label: "Bottom", ph: "px" },
         { key: "scale", label: "Scale", ph: "0.6" }
-      ].forEach(f => {
+      ];
+      // Extra fields — only shown if they have values (from JSON import)
+      const extraDefs = [
+        { key: "fontSize", label: "Font", ph: "px" },
+        { key: "targetWidth", label: "Width", ph: "px" },
+        { key: "opacity", label: "Opacity", ph: "0-1" },
+        { key: "bgPositionX", label: "BgX%", ph: "%" },
+        { key: "bgPositionY", label: "BgY%", ph: "%" },
+        { key: "gradientAngle", label: "GradAng", ph: "deg" }
+      ];
+      const allDefs = baseDefs.concat(extraDefs.filter(f => rule[f.key] !== undefined && rule[f.key] !== ""));
+      allDefs.forEach(f => {
         const wrap = document.createElement("div");
         wrap.className = "rule-field-item";
         const lbl = document.createElement("label");
@@ -1621,6 +1823,193 @@ function renderSizeGroups() {
     sizeGroupsContainer.appendChild(group);
   });
 }
+
+// ─── Import JSON ───
+
+const importJsonBtn = document.getElementById("importJsonBtn");
+const importInfoCard = document.getElementById("importInfoCard");
+const importModuleName = document.getElementById("importModuleName");
+const importSizeCount = document.getElementById("importSizeCount");
+
+function stripUnit(val) {
+  if (val === undefined || val === null) return "";
+  const s = String(val).trim();
+  // Remove px, %, etc.
+  return s.replace(/(px|%|em|rem|pt)$/i, "").trim();
+}
+
+function isValidValue(val) {
+  if (val === undefined || val === null) return false;
+  const s = String(val).trim();
+  if (s === "" || s === "auto" || s === "none" || s === "-1") return false;
+  const num = Number(stripUnit(s));
+  return !isNaN(num);
+}
+
+function parseNumericValue(val) {
+  if (val === undefined || val === null) return NaN;
+  return parseFloat(stripUnit(String(val)));
+}
+
+function cssDirectionToAngle(dir) {
+  const map = {
+    "to top": 0,
+    "to right": 90,
+    "to bottom": 180,
+    "to left": 270,
+    "to top right": 45,
+    "to bottom right": 135,
+    "to bottom left": 225,
+    "to top left": 315
+  };
+  return map[(dir || "").toLowerCase()] ?? null;
+}
+
+// Store raw JSON for runtime scale computation (so we can pick base size based on PSD source)
+let importedJson = null;
+
+// Find the JSON size that matches PSD source (or closest by area)
+function findBaseSizeFromJson(srcW, srcH) {
+  if (!importedJson || !importedJson.sizes) return null;
+  // Exact match by dimensions
+  const exact = importedJson.sizes.find(s => s.width === srcW && s.height === srcH);
+  if (exact) return exact;
+  // Exact match by name "WxH"
+  const nameMatch = importedJson.sizes.find(s => s.name === `${srcW}x${srcH}`);
+  if (nameMatch) return nameMatch;
+  // Fallback: largest size
+  return importedJson.sizes.reduce((a, b) => (a.width * a.height >= b.width * b.height) ? a : b);
+}
+
+// Compute scale for a rule using base size from PSD source
+function computeRuleScale(rule, baseSize) {
+  if (!baseSize || !baseSize.elements) return null;
+  const baseElem = baseSize.elements[rule.name];
+  if (!baseElem) return null;
+
+  const isTextOnly = TEXT_ONLY_ELEMENTS.has((rule.name || "").toLowerCase());
+
+  // Priority: widthElement > heightElement (skip for text-only) > fontSize > width
+  if (rule._widthElement !== undefined && isValidValue(baseElem.widthElement)) {
+    const baseW = parseNumericValue(baseElem.widthElement);
+    if (baseW > 0) return rule._widthElement / baseW;
+  }
+  if (!isTextOnly && rule._heightElement !== undefined && isValidValue(baseElem.heightElement)) {
+    const baseH = parseNumericValue(baseElem.heightElement);
+    if (baseH > 0) return rule._heightElement / baseH;
+  }
+  if (rule._fontSize !== undefined && isValidValue(baseElem.fontSize)) {
+    const baseF = parseNumericValue(baseElem.fontSize);
+    if (baseF > 0) return rule._fontSize / baseF;
+  }
+  if (rule._widthRaw !== undefined && isValidValue(baseElem.width)) {
+    const baseW = parseNumericValue(baseElem.width);
+    if (baseW > 0) return rule._widthRaw / baseW;
+  }
+  return null;
+}
+
+// Text-only layer names — heightElement is unreliable for these (often constant 24px)
+const TEXT_ONLY_ELEMENTS = new Set(["headline", "tagline", "subheadline", "subline", "title", "subtitle"]);
+
+function parseJsonToRules(json) {
+  const rules = {};
+  if (!json.sizes || !Array.isArray(json.sizes)) return rules;
+
+  importedJson = json;
+
+  for (const size of json.sizes) {
+    const sizeKey = size.name || `${size.width}x${size.height}`;
+    rules[sizeKey] = [];
+
+    if (!size.elements) continue;
+    for (const [elemName, elem] of Object.entries(size.elements)) {
+      const rule = { name: elemName };
+
+      // Position fields — strip "px", skip "auto"/"none"
+      rule.top = isValidValue(elem.top) ? String(parseNumericValue(elem.top)) : "";
+      rule.left = isValidValue(elem.left) ? String(parseNumericValue(elem.left)) : "";
+      rule.right = isValidValue(elem.right) ? String(parseNumericValue(elem.right)) : "";
+      rule.bottom = isValidValue(elem.bottom) ? String(parseNumericValue(elem.bottom)) : "";
+
+      // Scale — store raw values; computed at clone time using PSD source size as base
+      if (isValidValue(elem.scale)) {
+        rule.scale = String(parseNumericValue(elem.scale));
+      } else {
+        rule.scale = "";
+      }
+      // Store raw measurements for runtime scale computation
+      if (isValidValue(elem.widthElement)) rule._widthElement = parseNumericValue(elem.widthElement);
+      if (isValidValue(elem.heightElement)) rule._heightElement = parseNumericValue(elem.heightElement);
+      if (isValidValue(elem.fontSize)) rule._fontSize = parseNumericValue(elem.fontSize);
+      if (isValidValue(elem.width)) rule._widthRaw = parseNumericValue(elem.width);
+
+      // Background position (% based) — positionX/positionY
+      if (isValidValue(elem.positionX)) rule.bgPositionX = String(parseNumericValue(elem.positionX));
+      if (isValidValue(elem.positionY)) rule.bgPositionY = String(parseNumericValue(elem.positionY));
+
+      // Opacity — direct field
+      if (isValidValue(elem.opacity)) rule.opacity = String(elem.opacity);
+
+      // Color — "R, G, B" string
+      if (elem.color && elem.color !== "auto" && elem.color !== "none") rule.color = elem.color;
+
+      // Gradient direction — CSS syntax → angle
+      if (elem.direction) {
+        const angle = cssDirectionToAngle(elem.direction);
+        if (angle !== null) rule.gradientAngle = String(angle);
+      }
+
+      // maxWidth
+      if (isValidValue(elem.maxWidth)) rule.maxWidth = String(parseNumericValue(elem.maxWidth));
+
+      // paddingX/paddingY (stored for potential future use)
+      if (isValidValue(elem.paddingX)) rule.paddingX = String(parseNumericValue(elem.paddingX));
+      if (isValidValue(elem.paddingY)) rule.paddingY = String(parseNumericValue(elem.paddingY));
+
+      rules[sizeKey].push(rule);
+    }
+  }
+  return rules;
+}
+
+async function importJson() {
+  try {
+    const file = await fs.getFileForOpening({ types: ["json"] });
+    if (!file) { log("Import cancelled."); return; }
+
+    const contents = await file.read();
+    const json = JSON.parse(contents);
+
+    // Parse and populate layerRules
+    layerRules = parseJsonToRules(json);
+    saveLayerRules();
+
+    // Auto-fill Target Sizes in Documents tab
+    if (json.sizes && json.sizes.length > 0) {
+      const sizeStrings = json.sizes.map(s => s.name || `${s.width}x${s.height}`);
+      sizesInput.value = sizeStrings.join(" ");
+      renderPresets();
+    }
+
+    // Show import info
+    importInfoCard.style.display = "block";
+    importModuleName.textContent = json.moduleName || "Unknown";
+    importSizeCount.textContent = `${json.sizes ? json.sizes.length : 0} sizes`;
+
+    // Re-render settings
+    renderSizeGroups();
+
+    log(`[IMPORT] Loaded "${json.moduleName || "unknown"}" — ${Object.keys(layerRules).length} sizes`);
+    for (const [sizeKey, rules] of Object.entries(layerRules)) {
+      log(`[IMPORT]   ${sizeKey}: ${rules.length} elements (${rules.map(r => r.name).join(", ")})`);
+    }
+  } catch (e) {
+    log(`[IMPORT] Error: ${e.message}`);
+  }
+}
+
+importJsonBtn.addEventListener("click", importJson);
 
 // ─── Tab switching (updated) ───
 

@@ -11,6 +11,10 @@
     }
   },
   "manifestVersion": 5,
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess",
+    "allowCodeGenerationFromStrings": true
+  },
   "entrypoints": [
     {
       "type": "panel",
