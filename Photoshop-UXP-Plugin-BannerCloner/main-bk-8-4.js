@@ -165,161 +165,6 @@ function getBgLayerName() {
   return (skipLayerInput.value || "background").trim().toLowerCase();
 }
 
-// ─── Text + Shape helpers ───
-
-function isTextLayer(layer) {
-  return layer && (layer.kind === "text" || layer.kind === "textLayer");
-}
-
-function isShapeLayer(layer) {
-  if (!layer) return false;
-  const k = layer.kind;
-  // Photoshop UXP shape kinds vary: "shape", "shapeLayer", "solidFill", "vector", "solidColor"
-  return k === "shape" || k === "shapeLayer" || k === "solidFill" || k === "vector" || k === "solidColor";
-}
-
-function isImageLayer(layer) {
-  if (!layer) return false;
-  const k = layer.kind;
-  return k === "pixel" || k === "smartObject";
-}
-
-// Walk all leaves of a layer/group, return arrays by kind
-function collectLeavesByKind(parent) {
-  const texts = [], shapes = [], images = [], others = [];
-  function walk(l) {
-    if (l.layers && l.layers.length > 0) {
-      for (const c of l.layers) walk(c);
-    } else {
-      if (isTextLayer(l)) texts.push(l);
-      else if (isShapeLayer(l)) shapes.push(l);
-      else if (isImageLayer(l)) images.push(l);
-      else others.push(l);
-    }
-  }
-  if (parent.layers && parent.layers.length > 0) {
-    for (const c of parent.layers) walk(c);
-  } else {
-    walk(parent);
-  }
-  return { texts, shapes, images, others };
-}
-
-// Set font size directly on a text layer (px), preserving color/font/weight
-// Strategy: read textKey → compute scale ratio from current pt → transform the text layer
-// Transform on a text layer rescales fontSize while preserving all style properties
-async function setTextFontSize(layerId, sizePx) {
-  const doc = app.activeDocument;
-  const resolution = doc && doc.resolution ? doc.resolution : 72;
-  const sizePt = sizePx * 72 / resolution;
-
-  // Read current size from textKey
-  const desc = await getLayerDescriptor(layerId);
-  const textKey = desc.textKey;
-  if (!textKey || !textKey.textStyleRange || !textKey.textStyleRange.length) {
-    log(`[TEXT]   ERROR: no textKey/textStyleRange`);
-    return;
-  }
-  const currentPt = textKey.textStyleRange[0]?.textStyle?.size?._value;
-  if (!currentPt || currentPt <= 0) {
-    log(`[TEXT]   ERROR: no current size`);
-    return;
-  }
-  log(`[TEXT]   current: ${currentPt.toFixed(2)}pt → target: ${sizePt.toFixed(2)}pt (${sizePx}px, res=${resolution})`);
-
-  if (Math.abs(currentPt - sizePt) < 0.1) {
-    log(`[TEXT]   already at target size, skip`);
-    return;
-  }
-
-  // Approach 1: Mutate textStyleRange in textKey and write back
-  try {
-    const newRanges = textKey.textStyleRange.map(r => ({
-      _obj: "textStyleRange",
-      from: r.from,
-      to: r.to,
-      textStyle: {
-        ...r.textStyle,
-        _obj: "textStyle",
-        size: { _unit: "pointsUnit", _value: sizePt }
-      }
-    }));
-
-    await selectLayerById(layerId);
-    await bp([{
-      _obj: "set",
-      _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
-      to: {
-        _obj: "textLayer",
-        textStyleRange: newRanges
-      },
-      _options: { dialogOptions: "dontDisplay" }
-    }]);
-
-    // Verify
-    const descAfter = await getLayerDescriptor(layerId);
-    const newSize = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    log(`[TEXT]   approach1 result: ${newSize?.toFixed(2)}pt`);
-    if (newSize && Math.abs(newSize - sizePt) < 0.5) return;
-  } catch (e) {
-    log(`[TEXT]   approach1 ERROR: ${e.message}`);
-  }
-
-  // Approach 2 (fallback): transform-scale the text layer by ratio
-  try {
-    const ratio = sizePt / currentPt;
-    log(`[TEXT]   approach2: transform scale ${(ratio * 100).toFixed(1)}%`);
-    await selectLayerById(layerId);
-    await bpSafe([{
-      _obj: "transform",
-      _target: [{ _ref: "layer", _id: layerId }],
-      freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-      width: { _unit: "percentUnit", _value: ratio * 100 },
-      height: { _unit: "percentUnit", _value: ratio * 100 },
-      interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-      _options: { dialogOptions: "dontDisplay" }
-    }]);
-    const descAfter = await getLayerDescriptor(layerId);
-    const newSize = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    log(`[TEXT]   approach2 result: ${newSize?.toFixed(2)}pt`);
-  } catch (e) {
-    log(`[TEXT]   approach2 ERROR: ${e.message}`);
-  }
-}
-
-// Resize a shape layer to absolute width/height (uses non-uniform transform)
-async function resizeShapeLayer(layer, targetW, targetH) {
-  const bounds = await getLayerBounds(layer.id);
-  if (bounds.width === 0 || bounds.height === 0) return;
-  const scaleX = targetW / bounds.width;
-  const scaleY = targetH / bounds.height;
-  await selectLayerById(layer.id);
-  await bpSafe([{
-    _obj: "transform",
-    _target: [{ _ref: "layer", _id: layer.id }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    width: { _unit: "percentUnit", _value: scaleX * 100 },
-    height: { _unit: "percentUnit", _value: scaleY * 100 },
-    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-    _options: { dialogOptions: "dontDisplay" }
-  }]);
-}
-
-// Scale a single layer uniformly (e.g. logo by width)
-async function scaleLayerUniform(layer, scale) {
-  if (Math.abs(scale - 1) < 0.01) return;
-  await selectLayerById(layer.id);
-  await bpSafe([{
-    _obj: "transform",
-    _target: [{ _ref: "layer", _id: layer.id }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    width: { _unit: "percentUnit", _value: scale * 100 },
-    height: { _unit: "percentUnit", _value: scale * 100 },
-    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-    _options: { dialogOptions: "dontDisplay" }
-  }]);
-}
-
 function isBgGroup(layer) {
   return layer.name.toLowerCase() === getBgLayerName();
 }
@@ -838,15 +683,10 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       continue;
     }
 
-    const allLayers = findLayersByName(docOrArtboard, rule.name);
-    if (!allLayers.length) {
+    const layers = findLayersByName(docOrArtboard, rule.name);
+    if (!layers.length) {
       log(`[RULE] "${rule.name}": not found, skip`);
       continue;
-    }
-    // Only apply to first matching layer (avoid duplicates)
-    const layers = [allLayers[0]];
-    if (allLayers.length > 1) {
-      log(`[RULE] "${rule.name}": found ${allLayers.length} layers, applying only to first (id:${allLayers[0].id})`);
     }
 
     for (const layer of layers) {
@@ -869,68 +709,49 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       try {
         log(`[RULE] "${layer.name}" (id:${layer.id}) applying rule for ${targetSizeKey}`);
 
-        // ─── NEW: Direct sizing approach ───
-        // For text: set fontSize directly (no compound scaling)
-        // For shape (CTA bg): resize by widthElement × heightElement (non-uniform)
-        // For image (logo): scale uniformly by width
-        // Fallback: use computed scale (for explicit scale or pure groups)
-
-        const { texts, shapes, images, others } = collectLeavesByKind(layer);
-        log(`[RULE]   leaves: ${texts.length} text, ${shapes.length} shape, ${images.length} image, ${others.length} other`);
-        if (others.length > 0) {
-          for (const o of others) log(`[RULE]   other leaf: "${o.name}" kind=${o.kind}`);
-        }
-
-        let directApplied = false;
-        const targetW = rule._widthElement;
-        const targetH = rule._heightElement;
-        const hasBothWH = targetW !== undefined && targetH !== undefined;
-
-        // 1. TEXT: set fontSize directly
-        const targetFontSize = rule._fontSize;
-        if (targetFontSize && texts.length > 0) {
-          for (const txt of texts) {
-            try {
-              await setTextFontSize(txt.id, targetFontSize);
-              log(`[RULE]   text "${txt.name}": fontSize → ${targetFontSize}px`);
-            } catch (e) { log(`[RULE]   text "${txt.name}" fontSize ERROR: ${e.message}`); }
+        // Compute scale from JSON measurements (vs base size = PSD source) if no explicit scale
+        if (!rule.scale && baseSize) {
+          const computed = computeRuleScale(rule, baseSize);
+          if (computed !== null) {
+            rule._computedScale = computed;
+            log(`[RULE]   computed scale from JSON: ${computed.toFixed(4)}`);
           }
-          directApplied = true;
         }
 
-        // 2. NON-TEXT layers (shape, image, smartObject)
-        // If both widthElement + heightElement → non-uniform resize (CTA bg, button shape)
-        // Else if only widthElement → uniform scale (logo)
-        const nonTextLeaves = shapes.concat(images).concat(others.filter(o => !isTextLayer(o)));
-        if (nonTextLeaves.length > 0 && (targetW || targetH)) {
-          for (const lf of nonTextLeaves) {
-            try {
-              const lb = await getLayerBounds(lf.id);
-              if (lb.width === 0 || lb.height === 0) continue;
-              if (hasBothWH) {
-                // Non-uniform resize
-                await resizeShapeLayer(lf, targetW, targetH);
-                log(`[RULE]   non-text "${lf.name}" (${lf.kind}): resize → ${Math.round(targetW)}x${Math.round(targetH)}`);
-              } else if (targetW) {
-                // Uniform scale by width
-                const sc = targetW / lb.width;
-                await scaleLayerUniform(lf, sc);
-                log(`[RULE]   non-text "${lf.name}" (${lf.kind}): scale ${(sc * 100).toFixed(1)}% → width ${Math.round(targetW)}px`);
-              }
-            } catch (e) { log(`[RULE]   non-text "${lf.name}" ERROR: ${e.message}`); }
+        // Scale first (before positioning)
+        // scaleVal is relative to ORIGINAL size, not current size
+        const rawScale = rule._computedScale || (rule.scale !== "" && rule.scale !== undefined ? parseFloat(rule.scale) : NaN);
+        const scaleVal = isNaN(rawScale) ? NaN : rawScale;
+        if (!isNaN(scaleVal) && scaleVal > 0) {
+          const isGroupForScale = layer.layers && layer.layers.length > 0;
+          const currentBounds = isGroupForScale ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+          const origBounds = originalBounds ? originalBounds[layer.name.toLowerCase()] : null;
+
+          let actualScale = scaleVal;
+          if (origBounds && currentBounds.width > 0) {
+            const desiredW = origBounds.width * scaleVal;
+            actualScale = desiredW / currentBounds.width;
+            log(`[RULE]   orig: ${Math.round(origBounds.width)}px, current: ${Math.round(currentBounds.width)}px, desired: ${Math.round(desiredW)}px, actualScale: ${(actualScale * 100).toFixed(1)}%`);
           }
-          directApplied = true;
-        }
 
-        // 4. FALLBACK: explicit scale (only if direct sizing didn't apply)
-        if (!directApplied && rule.scale && rule.scale !== "") {
-          const scaleVal = parseFloat(rule.scale);
-          if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
-            const isGroupForScale = layer.layers && layer.layers.length > 0;
+          if (Math.abs(actualScale - 1) > 0.01) {
+            // Select all layers in the group, then transform as one unit
             if (isGroupForScale) {
-              const allChildren = texts.concat(shapes).concat(images);
+              // Select all children of the group
+              const allChildren = [];
+              function collectAll(l) {
+                if (l.layers && l.layers.length > 0) {
+                  for (const c of l.layers) collectAll(c);
+                } else {
+                  allChildren.push(l);
+                }
+              }
+              collectAll(layer);
+
               if (allChildren.length > 0) {
+                // Select first child
                 await selectLayerById(allChildren[0].id);
+                // Add remaining children to selection
                 for (let i = 1; i < allChildren.length; i++) {
                   await bp([{
                     _obj: "select",
@@ -940,20 +761,31 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
                     _options: { dialogOptions: "dontDisplay" }
                   }]);
                 }
+                // Transform all selected layers together
                 await bpSafe([{
                   _obj: "transform",
                   _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
                   freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-                  width: { _unit: "percentUnit", _value: scaleVal * 100 },
-                  height: { _unit: "percentUnit", _value: scaleVal * 100 },
+                  width: { _unit: "percentUnit", _value: actualScale * 100 },
+                  height: { _unit: "percentUnit", _value: actualScale * 100 },
                   interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
                   _options: { dialogOptions: "dontDisplay" }
                 }]);
+                log(`[RULE]   group-transform ${allChildren.length} layers as one unit`);
               }
             } else {
-              await scaleLayerUniform(layer, scaleVal);
+              await selectLayerById(layer.id);
+              await bpSafe([{
+                _obj: "transform",
+                _target: [{ _ref: "layer", _id: layer.id }],
+                freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+                width: { _unit: "percentUnit", _value: actualScale * 100 },
+                height: { _unit: "percentUnit", _value: actualScale * 100 },
+                interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
             }
-            log(`[RULE]   fallback explicit scale: ${(scaleVal * 100).toFixed(0)}%`);
+            log(`[RULE]   scaled to ${(scaleVal * 100).toFixed(0)}% of original`);
           }
         }
 
@@ -1832,7 +1664,6 @@ const sizeGroupsContainer = document.getElementById("sizeGroupsContainer");
 
 // Data: { "300x250": [{ name, top, left, right, bottom, scale }], ... }
 let layerRules = {};
-const collapsedSizes = new Set(); // size keys that are collapsed
 
 function loadLayerRules() {
   try {
@@ -1886,10 +1717,9 @@ function renderSizeGroups() {
     const header = document.createElement("div");
     header.className = "size-group-header";
 
-    const isCollapsed = collapsedSizes.has(sizeKey);
     const toggleIcon = document.createElement("span");
     toggleIcon.className = "toggle-icon";
-    toggleIcon.textContent = isCollapsed ? "\u25B6" : "\u25BC"; // ▶ or ▼
+    toggleIcon.textContent = "\u25BC"; // ▼
     header.appendChild(toggleIcon);
 
     const headerTitle = document.createElement("span");
@@ -1915,15 +1745,12 @@ function renderSizeGroups() {
     // Body
     const body = document.createElement("div");
     body.className = "size-group-body";
-    if (isCollapsed) body.style.display = "none";
 
     // Toggle collapse
     header.addEventListener("click", () => {
       const isHidden = body.style.display === "none";
       body.style.display = isHidden ? "" : "none";
       toggleIcon.textContent = isHidden ? "\u25BC" : "\u25B6"; // ▼ or ▶
-      if (isHidden) collapsedSizes.delete(sizeKey);
-      else collapsedSizes.add(sizeKey);
     });
 
     group.appendChild(header);

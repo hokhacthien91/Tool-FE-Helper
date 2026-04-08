@@ -166,10 +166,10 @@
           "fontSize": "15px",
           "paddingY": "7px",
           "paddingX": "15px",
-          "top": "auto",
+          "top": "158px",
           "left": "20px",
           "right": "auto",
-          "bottom": "58px",
+          "bottom": "auto",
           "widthElement": "125px",
           "heightElement": "35px"
         },
@@ -180,7 +180,7 @@
           "right": "auto",
           "bottom": "20px",
           "widthElement": "120px",
-          "heightElement": "22px"
+          "heightElement": "0px"
         }
       }
     },
@@ -265,23 +265,23 @@
           "direction": "to right"
         },
         "headline": {
-          "fontSize": "14px",
+          "fontSize": "11px",
           "maxWidth": "244px",
           "top": "25px",
           "left": "15px",
           "right": "auto",
           "bottom": "auto",
-          "widthElement": "179px",
-          "heightElement": "33px"
+          "widthElement": "145px",
+          "heightElement": "28px"
         },
         "tagline": {
           "fontSize": "11px",
           "maxWidth": "none",
-          "top": "99px",
+          "top": "64px",
           "left": "15px",
           "right": "auto",
           "bottom": "auto",
-          "widthElement": "134px",
+          "widthElement": "114px",
           "heightElement": "24px"
         },
         "cta": {
@@ -292,8 +292,8 @@
           "left": "15px",
           "right": "auto",
           "bottom": "69px",
-          "widthElement": "108px",
-          "heightElement": "26px"
+          "widthElement": "123px",
+          "heightElement": "35px"
         },
         "logo": {
           "width": "115px",
@@ -301,8 +301,8 @@
           "left": "18px",
           "right": "auto",
           "bottom": "25px",
-          "widthElement": "100px",
-          "heightElement": "18px"
+          "widthElement": "115px",
+          "heightElement": "21px"
         }
       }
     },
@@ -338,7 +338,7 @@
         "tagline": {
           "fontSize": "20px",
           "maxWidth": "none",
-          "top": "102px",
+          "top": "107px",
           "left": "36px",
           "right": "auto",
           "bottom": "auto",
@@ -349,10 +349,10 @@
           "fontSize": "16px",
           "paddingY": "8px",
           "paddingX": "24px",
-          "top": "auto",
-          "left": "35px",
+          "top": "474px",
+          "left": "36px",
           "right": "auto",
-          "bottom": "83px",
+          "bottom": "auto",
           "widthElement": "149px",
           "heightElement": "38px"
         },
@@ -633,8 +633,8 @@
         "headline": {
           "fontSize": "36px",
           "maxWidth": "407px",
-          "top": "52px",
-          "left": "74px",
+          "top": "26px",
+          "left": "40px",
           "right": "auto",
           "bottom": "auto",
           "widthElement": "407px",
@@ -643,8 +643,8 @@
         "tagline": {
           "fontSize": "28.56px",
           "maxWidth": "none",
-          "top": "250px",
-          "left": "0px",
+          "top": "155px",
+          "left": "40px",
           "right": "auto",
           "bottom": "auto",
           "widthElement": "295px",
@@ -654,8 +654,8 @@
           "fontSize": "19px",
           "paddingY": "16px",
           "paddingX": "65px",
-          "top": "406px",
-          "left": "28px",
+          "top": "338px",
+          "left": "40px",
           "right": "auto",
           "bottom": "auto",
           "widthElement": "250px",
@@ -663,8 +663,8 @@
         },
         "logo": {
           "width": "299px",
-          "top": "310px",
-          "left": "15px",
+          "top": "408px",
+          "left": "40px",
           "right": "auto",
           "bottom": "auto",
           "widthElement": "299px",
