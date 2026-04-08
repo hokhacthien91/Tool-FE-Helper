@@ -131,6 +131,36 @@ async function getLayerBounds(layerId) {
   return rectSize(desc.bounds);
 }
 
+async function getLayerBoundsNoEffects(layerId) {
+  const desc = await getLayerDescriptor(layerId);
+  return rectSize(desc.boundsNoEffects || desc.bounds);
+}
+
+async function getGroupBoundsNoEffects(group) {
+  let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+  const leaves = [];
+  function collect(layer) {
+    if (layer.layers && layer.layers.length > 0) {
+      for (const child of layer.layers) collect(child);
+    } else {
+      leaves.push(layer);
+    }
+  }
+  collect(group);
+  for (const leaf of leaves) {
+    try {
+      const b = await getLayerBoundsNoEffects(leaf.id);
+      if (b.width === 0 || b.height === 0) continue;
+      if (b.left < minL) minL = b.left;
+      if (b.top < minT) minT = b.top;
+      if (b.right > maxR) maxR = b.right;
+      if (b.bottom > maxB) maxB = b.bottom;
+    } catch (e) { /* skip */ }
+  }
+  if (minL === Infinity) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  return { left: minL, top: minT, right: maxR, bottom: maxB, width: maxR - minL, height: maxB - minT };
+}
+
 function getBgLayerName() {
   return (skipLayerInput.value || "background").trim().toLowerCase();
 }
@@ -349,9 +379,17 @@ async function getGroupBounds(group) {
 
 // ─── Smart Layout: scale + reposition content groups ───
 
-async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX, originY, sourceLayout) {
+async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX, originY, sourceLayout, targetSizeKey) {
   originX = originX || 0;
   originY = originY || 0;
+
+  // Build set of layer names that have rules → smart layout should skip them
+  const ruleNames = new Set();
+  if (targetSizeKey && layerRules[targetSizeKey]) {
+    for (const rule of layerRules[targetSizeKey]) {
+      if (rule.name) ruleNames.add(rule.name.toLowerCase());
+    }
+  }
 
   // Find content group
   const contentGroup = parent.layers
@@ -361,21 +399,27 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
   // Fallback to old fitContentLayers if no content group or no source layout
   if (!contentGroup || !sourceLayout) {
     log(`[LAYOUT] No content group or source layout, fallback to fitContentLayers`);
-    return await fitContentLayers(parent, canvasW, canvasH, originX, originY);
+    return await fitContentLayers(parent, canvasW, canvasH, originX, originY, false, ruleNames);
   }
 
   log(`[LAYOUT] Smart layout: ${contentGroup.layers.length} groups, ${srcW}x${srcH} → ${canvasW}x${canvasH}`);
+  if (ruleNames.size > 0) log(`[LAYOUT] Skipping layers with rules: ${[...ruleNames].join(", ")}`);
 
   const padding = Math.round(Math.min(canvasW, canvasH) * 0.05);
 
-  // Target: artboard (0,0) to (canvasW, canvasH)
-  // originX/originY passed from caller (0 for Documents mode, artboard pos for Artboards mode)
   const canvasLeft = originX;
   const canvasTop = originY;
   log(`[LAYOUT] Target area: (${canvasLeft},${canvasTop})-(${canvasLeft+canvasW},${canvasTop+canvasH})`);
 
   for (const child of contentGroup.layers) {
     const childName = child.name.toLowerCase();
+
+    // Skip if this layer has a rule configured
+    if (ruleNames.has(childName)) {
+      log(`[LAYOUT] "${child.name}": has rule in settings, skip`);
+      continue;
+    }
+
     const srcInfo = sourceLayout.find(s => s.name === childName);
     if (!srcInfo) {
       log(`[LAYOUT] "${child.name}": no source info, skip`);
@@ -439,30 +483,34 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
 
   // Handle remaining layers outside content/background groups with fitContentLayers
   log(`[LAYOUT] Fitting remaining layers outside content/background...`);
-  await fitContentLayers(parent, canvasW, canvasH, canvasLeft, canvasTop, true);
+  await fitContentLayers(parent, canvasW, canvasH, canvasLeft, canvasTop, true, ruleNames);
 }
 
 // ─── Fit content layers inside canvas (fallback) ───
 
-async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg) {
+async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg, ruleNames) {
   originX = originX || 0;
   originY = originY || 0;
   // Collect all leaf layers that are NOT inside bg group (and optionally not in content group)
   const leaves = [];
-  function walk(layer) {
+  function walk(layer, insideRuledGroup) {
     if (isBgGroup(layer)) return;
     if (skipContentBg && layer.name) {
       const ln = layer.name.toLowerCase();
       if (ln === "content" || ln === "guideline" || ln === "guidline") return;
     }
+    // Skip if this layer or an ancestor has a rule
+    const isRuled = insideRuledGroup || (ruleNames && layer.name && ruleNames.has(layer.name.toLowerCase()));
+    if (isRuled) return;
     if (layer.layers && layer.layers.length > 0) {
-      for (const child of layer.layers) walk(child);
+      for (const child of layer.layers) walk(child, isRuled);
     } else {
       leaves.push(layer);
     }
   }
-  for (const layer of parent.layers) walk(layer);
+  for (const layer of parent.layers) walk(layer, false);
 
+  
   const canvasLeft = originX;
   const canvasRight = originX + canvasW;
   const canvasTop = originY;
@@ -531,13 +579,219 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
   }
 }
 
-// ─── Tab switching ───
+// ─── Apply Layer Rules ───
 
-function switchMode(mode) {
-  cloneMode = mode;
-  tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
-  splitSection.style.display = mode === "artboards" ? "block" : "none";
+// Capture original bounds of all layers (before smart layout modifies them)
+async function captureOriginalBounds(parent) {
+  const map = {}; // key: layer name (lowercase), value: { width, height }
+  async function walk(layer) {
+    if (layer.name) {
+      try {
+        const isGroup = layer.layers && layer.layers.length > 0;
+        const bounds = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+        if (bounds.width > 0 && bounds.height > 0) {
+          map[layer.name.toLowerCase()] = { width: bounds.width, height: bounds.height };
+        }
+      } catch (e) { /* skip */ }
+    }
+    if (layer.layers) {
+      for (const child of layer.layers) await walk(child);
+    }
+  }
+  if (parent.layers) {
+    for (const layer of parent.layers) await walk(layer);
+  }
+  return map;
 }
+
+function findLayersByName(parent, targetName) {
+  const results = [];
+  function walk(layer) {
+    if (layer.name && layer.name.toLowerCase() === targetName.toLowerCase()) {
+      results.push(layer);
+    }
+    if (layer.layers) {
+      for (const child of layer.layers) walk(child);
+    }
+  }
+  if (parent.layers) {
+    for (const layer of parent.layers) walk(layer);
+  }
+  return results;
+}
+
+async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, originX, originY, originalBounds) {
+  originX = originX || 0;
+  originY = originY || 0;
+  const rules = layerRules[targetSizeKey];
+  if (!rules || !rules.length) return;
+
+  // Collect all rule names to skip children of matched groups
+  const matchedGroupIds = new Set();
+
+  for (const rule of rules) {
+    if (!rule.name) continue;
+    const layers = findLayersByName(docOrArtboard, rule.name);
+    if (!layers.length) {
+      log(`[RULE] "${rule.name}": not found, skip`);
+      continue;
+    }
+
+    for (const layer of layers) {
+      // Skip if this layer is a child of an already-matched group
+      let parent = layer.parent;
+      let skipThis = false;
+      while (parent) {
+        if (matchedGroupIds.has(parent.id)) { skipThis = true; break; }
+        parent = parent.parent;
+      }
+      if (skipThis) {
+        log(`[RULE] "${layer.name}": skipped (parent group already has rule)`);
+        continue;
+      }
+
+      // If this is a group, mark it so its children are skipped
+      if (layer.layers && layer.layers.length > 0) {
+        matchedGroupIds.add(layer.id);
+      }
+      try {
+        log(`[RULE] "${layer.name}" (id:${layer.id}) applying rule for ${targetSizeKey}`);
+
+        // Scale first (before positioning)
+        // scaleVal is relative to ORIGINAL size, not current size
+        const scaleVal = rule.scale !== "" && rule.scale !== undefined ? parseFloat(rule.scale) : NaN;
+        if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
+          const isGroupForScale = layer.layers && layer.layers.length > 0;
+          const currentBounds = isGroupForScale ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+          const origBounds = originalBounds ? originalBounds[layer.name.toLowerCase()] : null;
+
+          let actualScale = scaleVal;
+          if (origBounds && currentBounds.width > 0) {
+            const desiredW = origBounds.width * scaleVal;
+            actualScale = desiredW / currentBounds.width;
+            log(`[RULE]   orig: ${Math.round(origBounds.width)}px, current: ${Math.round(currentBounds.width)}px, desired: ${Math.round(desiredW)}px, actualScale: ${(actualScale * 100).toFixed(1)}%`);
+          }
+
+          if (Math.abs(actualScale - 1) > 0.01) {
+            // Select all layers in the group, then transform as one unit
+            if (isGroupForScale) {
+              // Select all children of the group
+              const allChildren = [];
+              function collectAll(l) {
+                if (l.layers && l.layers.length > 0) {
+                  for (const c of l.layers) collectAll(c);
+                } else {
+                  allChildren.push(l);
+                }
+              }
+              collectAll(layer);
+
+              if (allChildren.length > 0) {
+                // Select first child
+                await selectLayerById(allChildren[0].id);
+                // Add remaining children to selection
+                for (let i = 1; i < allChildren.length; i++) {
+                  await bp([{
+                    _obj: "select",
+                    _target: [{ _ref: "layer", _id: allChildren[i].id }],
+                    selectionModifier: { _enum: "selectionModifierType", _value: "addToSelection" },
+                    makeVisible: false,
+                    _options: { dialogOptions: "dontDisplay" }
+                  }]);
+                }
+                // Transform all selected layers together
+                await bpSafe([{
+                  _obj: "transform",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+                  width: { _unit: "percentUnit", _value: actualScale * 100 },
+                  height: { _unit: "percentUnit", _value: actualScale * 100 },
+                  interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                log(`[RULE]   group-transform ${allChildren.length} layers as one unit`);
+              }
+            } else {
+              await selectLayerById(layer.id);
+              await bpSafe([{
+                _obj: "transform",
+                _target: [{ _ref: "layer", _id: layer.id }],
+                freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+                width: { _unit: "percentUnit", _value: actualScale * 100 },
+                height: { _unit: "percentUnit", _value: actualScale * 100 },
+                interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            }
+            log(`[RULE]   scaled to ${(scaleVal * 100).toFixed(0)}% of original`);
+          }
+        }
+
+        // Position: get current bounds WITHOUT effects for accurate positioning
+        const isGroup = layer.layers && layer.layers.length > 0;
+        const boundsWithFx = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+        const boundsNoFx = isGroup ? await getGroupBoundsNoEffects(layer) : await getLayerBoundsNoEffects(layer.id);
+        log(`[RULE]   boundsWithFx: (${Math.round(boundsWithFx.left)},${Math.round(boundsWithFx.top)}) ${Math.round(boundsWithFx.width)}x${Math.round(boundsWithFx.height)}`);
+        log(`[RULE]   boundsNoFx:   (${Math.round(boundsNoFx.left)},${Math.round(boundsNoFx.top)}) ${Math.round(boundsNoFx.width)}x${Math.round(boundsNoFx.height)}`);
+        const bounds = boundsNoFx;
+        if (bounds.width === 0 || bounds.height === 0) { log(`[RULE]   skip: zero bounds`); continue; }
+
+        let dx = 0, dy = 0;
+        const hasTop = rule.top !== "" && rule.top !== undefined;
+        const hasLeft = rule.left !== "" && rule.left !== undefined;
+        const hasRight = rule.right !== "" && rule.right !== undefined;
+        const hasBottom = rule.bottom !== "" && rule.bottom !== undefined;
+        log(`[RULE]   rule: top=${rule.top} left=${rule.left} right=${rule.right} bottom=${rule.bottom} | hasTop=${hasTop} hasLeft=${hasLeft} hasRight=${hasRight} hasBottom=${hasBottom}`);
+        log(`[RULE]   canvas: ${canvasW}x${canvasH} origin: (${originX},${originY})`);
+
+        // Priority: top > bottom, left > right
+        if (hasTop) {
+          const targetTop = originY + parseFloat(rule.top);
+          dy = targetTop - bounds.top;
+          log(`[RULE]   top: targetTop=${targetTop} bounds.top=${Math.round(bounds.top)} dy=${Math.round(dy)}`);
+        } else if (hasBottom) {
+          const targetBottom = originY + canvasH - parseFloat(rule.bottom);
+          dy = targetBottom - bounds.bottom;
+          log(`[RULE]   bottom: targetBottom=${targetBottom} bounds.bottom=${Math.round(bounds.bottom)} dy=${Math.round(dy)}`);
+        }
+
+        if (hasLeft) {
+          const targetLeft = originX + parseFloat(rule.left);
+          dx = targetLeft - bounds.left;
+          log(`[RULE]   left: targetLeft=${targetLeft} bounds.left=${Math.round(bounds.left)} dx=${Math.round(dx)}`);
+        } else if (hasRight) {
+          const targetRight = originX + canvasW - parseFloat(rule.right);
+          dx = targetRight - bounds.right;
+          log(`[RULE]   right: targetRight=${targetRight} bounds.right=${Math.round(bounds.right)} dx=${Math.round(dx)}`);
+        }
+
+        log(`[RULE]   final move: dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          if (isGroup) {
+            await moveGroupChildren(layer, dx, dy);
+          } else {
+            await selectLayerById(layer.id);
+            await bpSafe([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: layer.id }],
+              to: {
+                _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
+                vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          }
+          log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+        }
+      } catch (e) {
+        log(`[RULE]   ERROR "${layer.name}": ${e.message}`);
+      }
+    }
+  }
+}
+
+// ─── Tab switching ─── (moved to bottom, near settings logic)
 
 // ─── Clone: each size → artboard in same document ───
 
@@ -688,10 +942,18 @@ async function cloneAsArtboards() {
           } catch (e) { log(`BG scale skipped: ${e.message}`); }
         }
 
+        // 5b. Capture original layer bounds before smart layout
+        const origBounds = await captureOriginalBounds(tempDoc);
+
         // 6. Smart layout content
         try {
-          await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout);
+          await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout, target.raw);
         } catch (e) { log(`Fit content skipped: ${e.message}`); }
+
+        // 6b. Apply layer rules from settings (using original bounds for correct scale)
+        try {
+          await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds);
+        } catch (e) { log(`Layer rules skipped: ${e.message}`); }
 
         // 7. Wrap all layers into an artboard
         await bp([{
@@ -944,12 +1206,20 @@ async function cloneAll() {
           }
         }
 
+        // 5b. Capture original layer bounds before smart layout
+        const origBounds = await captureOriginalBounds(newDoc);
+
         // 6. Smart layout content
         try {
-          await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout);
+          await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout, target.raw);
         } catch (e) {
           log(`Fit content skipped: ${e.message}`);
         }
+
+        // 6b. Apply layer rules from settings (using original bounds for correct scale)
+        try {
+          await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds);
+        } catch (e) { log(`Layer rules skipped: ${e.message}`); }
 
         // 7. Wrap all layers into an Artboard
         try {
@@ -1228,6 +1498,150 @@ async function refreshSource() {
   }
 }
 
+// ─── Settings: Layer Rules per target size ───
+
+const settingsPanel = document.getElementById("settingsPanel");
+const sizeGroupsContainer = document.getElementById("sizeGroupsContainer");
+
+// Data: { "300x250": [{ name, top, left, right, bottom, scale }], ... }
+let layerRules = {};
+
+function loadLayerRules() {
+  try {
+    const raw = localStorage.getItem("bannerCloner_layerRules");
+    if (raw) layerRules = JSON.parse(raw);
+  } catch (e) { layerRules = {}; }
+}
+
+function saveLayerRules() {
+  localStorage.setItem("bannerCloner_layerRules", JSON.stringify(layerRules));
+}
+
+function getRulesForSize(sizeKey) {
+  if (!layerRules[sizeKey]) layerRules[sizeKey] = [];
+  return layerRules[sizeKey];
+}
+
+function createRuleInput(value, placeholder, sizeKey, idx, field) {
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = value;
+  inp.placeholder = placeholder;
+  inp.addEventListener("change", () => {
+    const rules = getRulesForSize(sizeKey);
+    if (rules[idx]) {
+      rules[idx][field] = inp.value.trim();
+      saveLayerRules();
+    }
+  });
+  return inp;
+}
+
+function renderSizeGroups() {
+  while (sizeGroupsContainer.firstChild) sizeGroupsContainer.removeChild(sizeGroupsContainer.firstChild);
+  const sizes = parseSizes(sizesInput.value).map(s => s.raw);
+
+  if (!sizes.length) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "Add target sizes in Documents tab first.";
+    sizeGroupsContainer.appendChild(hint);
+    return;
+  }
+
+  sizes.forEach(sizeKey => {
+    const rules = getRulesForSize(sizeKey);
+    const group = document.createElement("div");
+    group.className = "size-group";
+
+    // Header
+    const header = document.createElement("div");
+    header.className = "size-group-header";
+    header.textContent = sizeKey;
+    group.appendChild(header);
+
+    // Body
+    const body = document.createElement("div");
+    body.className = "size-group-body";
+
+    // Render layer rules
+    rules.forEach((rule, idx) => {
+      const card = document.createElement("div");
+      card.className = "rule-card";
+
+      // Name + remove
+      const ruleHeader = document.createElement("div");
+      ruleHeader.className = "rule-header";
+      ruleHeader.appendChild(createRuleInput(rule.name || "", "Layer name (e.g. cta)", sizeKey, idx, "name"));
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-rule-btn";
+      removeBtn.textContent = "X";
+      removeBtn.addEventListener("click", () => {
+        rules.splice(idx, 1);
+        saveLayerRules();
+        renderSizeGroups();
+      });
+      ruleHeader.appendChild(removeBtn);
+      card.appendChild(ruleHeader);
+
+      // Fields
+      const fields = document.createElement("div");
+      fields.className = "rule-fields";
+      [
+        { key: "top", label: "Top", ph: "px" },
+        { key: "left", label: "Left", ph: "px" },
+        { key: "right", label: "Right", ph: "px" },
+        { key: "bottom", label: "Bottom", ph: "px" },
+        { key: "scale", label: "Scale", ph: "0.6" }
+      ].forEach(f => {
+        const wrap = document.createElement("div");
+        wrap.className = "rule-field-item";
+        const lbl = document.createElement("label");
+        lbl.textContent = f.label;
+        wrap.appendChild(lbl);
+        wrap.appendChild(createRuleInput(rule[f.key] ?? "", f.ph, sizeKey, idx, f.key));
+        fields.appendChild(wrap);
+      });
+      card.appendChild(fields);
+      body.appendChild(card);
+    });
+
+    // Add layer button
+    const addBtn = document.createElement("button");
+    addBtn.className = "add-layer-btn";
+    addBtn.textContent = "+ Add Layer";
+    addBtn.addEventListener("click", () => {
+      rules.push({ name: "", top: "", left: "", right: "", bottom: "", scale: "" });
+      saveLayerRules();
+      renderSizeGroups();
+    });
+    body.appendChild(addBtn);
+
+    group.appendChild(body);
+    sizeGroupsContainer.appendChild(group);
+  });
+}
+
+// ─── Tab switching (updated) ───
+
+const mainContent = document.querySelectorAll(".app > .section, .app > #splitSection");
+
+function switchMode(mode) {
+  cloneMode = mode === "settings" ? cloneMode : mode;
+  tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
+  splitSection.style.display = (mode === "artboards") ? "block" : "none";
+
+  if (mode === "settings") {
+    mainContent.forEach(el => el.style.display = "none");
+    settingsPanel.style.display = "block";
+    renderSizeGroups();
+  } else {
+    mainContent.forEach(el => el.style.display = "");
+    settingsPanel.style.display = "none";
+    splitSection.style.display = mode === "artboards" ? "block" : "none";
+  }
+}
+
 // ─── Event listeners ───
 
 sizesInput.addEventListener("input", renderPresets);
@@ -1241,6 +1655,7 @@ tabBtns.forEach(btn => btn.addEventListener("click", () => switchMode(btn.datase
 splitBtn.addEventListener("click", splitToDocuments);
 
 document.addEventListener("DOMContentLoaded", () => {
+  loadLayerRules();
   renderPresets();
   setTimeout(refreshSource, 150);
 });

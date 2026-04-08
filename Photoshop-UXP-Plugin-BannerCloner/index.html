@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Banner Cloner Pro</title>
+  <title>Banner Cloner</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,10 +11,11 @@
     <div class="tab-bar">
       <button class="tab-btn active" data-mode="documents">Documents</button>
       <button class="tab-btn" data-mode="artboards">Artboards</button>
+      <button class="tab-btn" data-mode="settings">Settings</button>
     </div>
 
     <div class="section">
-      <label class="label" for="sizesInput">Target Sizes</label>
+      <label class="label" for="sizesInput">Target Sizes 5</label>
       <input id="sizesInput" type="text" value="300x250" />
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
@@ -49,6 +50,16 @@
     <div class="section">
       <label class="label">Logs</label>
       <pre id="logBox" class="log-box">Ready.</pre>
+    </div>
+
+    <!-- Settings Panel (hidden by default) -->
+    <div id="settingsPanel" class="settings-panel" style="display:none;">
+      <div class="section">
+        <label class="label">Layer Rules</label>
+        <div class="hint">Auto-synced from Target Sizes. Set position/scale for layers in each size.</div>
+      </div>
+
+      <div id="sizeGroupsContainer"></div>
     </div>
   </div>
   <script src="main.js"></script>

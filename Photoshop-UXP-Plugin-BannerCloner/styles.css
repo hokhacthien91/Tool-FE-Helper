@@ -12,8 +12,8 @@
   --orange2: #ff9800;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; overflow-x: auto;}
-.app { padding: 0 16px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; overflow-x: auto; overflow-y: auto; }
+.app { padding: 0 16px; height: 100vh; overflow-y: auto; }
 h1 { margin: 0 0 6px; font-size: 28px; }
 .muted { color: var(--muted); margin: 0 0 18px; line-height: 1.4; }
 .tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
@@ -120,4 +120,81 @@ button.full { width: 100%; }
   white-space: pre-wrap;
   overflow: auto;
   font-size: 13px;
+}
+
+/* Settings */
+.settings-panel { margin-top: 8px; }
+.size-group {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.size-group-header {
+  background: var(--panel);
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+.size-group-body { padding: 10px; }
+.rule-card {
+  background: #363636;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.rule-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.rule-header input { flex: 1; }
+.remove-rule-btn {
+  background: #c62828;
+  color: white;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  min-width: auto;
+  flex-shrink: 0;
+}
+.rule-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rule-field-item {
+  flex: 1 1 60px;
+  min-width: 55px;
+}
+.rule-field-item label {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.rule-field-item input {
+  width: 100%;
+  background: #ececec;
+  color: #111;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.add-layer-btn {
+  background: transparent;
+  color: var(--accent);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
