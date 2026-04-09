@@ -13,7 +13,7 @@ uxp.entrypoints.setup({
 
 const PRESETS = ["300x250","160x600","728x90","970x250","300x600","320x50","320x100","336x280","250x250","200x200"];
 
-let cloneMode = "documents"; // "documents" | "artboards"
+let cloneMode = "artboards"; // "documents" | "artboards"
 
 const sizesInput = document.getElementById("sizesInput");
 const presetWrap = document.getElementById("presetWrap");
@@ -163,6 +163,44 @@ async function getGroupBoundsNoEffects(group) {
 
 function getBgLayerName() {
   return (skipLayerInput.value || "background").trim().toLowerCase();
+}
+
+const BG_LAYER_KEY = "bannerCloner.bgLayerName";
+const SIZES_KEY = "bannerCloner.targetSizes";
+const SUFFIX_KEY = "bannerCloner.suffixName";
+
+function loadBgLayerName() {
+  try {
+    const saved = localStorage.getItem(BG_LAYER_KEY);
+    if (saved) skipLayerInput.value = saved;
+  } catch (e) {}
+}
+
+function saveBgLayerName() {
+  try {
+    localStorage.setItem(BG_LAYER_KEY, skipLayerInput.value || "background");
+  } catch (e) {}
+}
+
+function loadTargetSizes() {
+  try {
+    const saved = localStorage.getItem(SIZES_KEY);
+    if (saved) sizesInput.value = saved;
+    const suffix = localStorage.getItem(SUFFIX_KEY);
+    if (suffix !== null) suffixNameEl.checked = suffix === "1";
+  } catch (e) {}
+}
+
+function saveTargetSizes() {
+  try {
+    localStorage.setItem(SIZES_KEY, sizesInput.value || "");
+  } catch (e) {}
+}
+
+function saveSuffixPref() {
+  try {
+    localStorage.setItem(SUFFIX_KEY, suffixNameEl.checked ? "1" : "0");
+  } catch (e) {}
 }
 
 // ─── Text + Shape helpers ───
@@ -1718,9 +1756,6 @@ async function exportAll() {
 // ─── Split artboards to separate documents + save PSD ───
 
 async function splitToDocuments() {
-  const folder = await fs.getFolder();
-  if (!folder) { log("Split cancelled."); return; }
-
   await core.executeAsModal(async () => {
     try {
       const doc = app.activeDocument;
@@ -1787,22 +1822,10 @@ async function splitToDocuments() {
           } catch (e) { /* skip */ }
         }
 
-        // Save as PSD
-        const file = await folder.createFile(abName + ".psd", { overwrite: true });
-        const token = await fs.createSessionToken(file);
-        await bp([{
-          _obj: "save",
-          as: { _obj: "photoshop35Format", maximizeCompatibility: true },
-          in: { _path: token, _kind: "local" },
-          copy: true,
-          lowerCase: true,
-          _options: { dialogOptions: "dontDisplay" }
-        }]);
-
-        log(`Saved & opened: ${abName}.psd`);
+        log(`Opened: ${abName}`);
       }
 
-      log(`=== Split complete: ${artboards.length} document(s) ===`);
+      log(`=== Split complete: ${artboards.length} document(s) opened. Click Export to save. ===`);
     } catch (e) {
       log("Split error: " + e.message);
       throw e;
@@ -1832,7 +1855,7 @@ const sizeGroupsContainer = document.getElementById("sizeGroupsContainer");
 
 // Data: { "300x250": [{ name, top, left, right, bottom, scale }], ... }
 let layerRules = {};
-const collapsedSizes = new Set(); // size keys that are collapsed
+const expandedSizes = new Set(); // size keys that are explicitly expanded (default: collapsed)
 
 function loadLayerRules() {
   try {
@@ -1886,7 +1909,7 @@ function renderSizeGroups() {
     const header = document.createElement("div");
     header.className = "size-group-header";
 
-    const isCollapsed = collapsedSizes.has(sizeKey);
+    const isCollapsed = !expandedSizes.has(sizeKey);
     const toggleIcon = document.createElement("span");
     toggleIcon.className = "toggle-icon";
     toggleIcon.textContent = isCollapsed ? "\u25B6" : "\u25BC"; // ▶ or ▼
@@ -1922,8 +1945,8 @@ function renderSizeGroups() {
       const isHidden = body.style.display === "none";
       body.style.display = isHidden ? "" : "none";
       toggleIcon.textContent = isHidden ? "\u25BC" : "\u25B6"; // ▼ or ▶
-      if (isHidden) collapsedSizes.delete(sizeKey);
-      else collapsedSizes.add(sizeKey);
+      if (isHidden) expandedSizes.add(sizeKey);
+      else expandedSizes.delete(sizeKey);
     });
 
     group.appendChild(header);
@@ -2186,7 +2209,7 @@ importJsonBtn.addEventListener("click", importJson);
 
 // ─── Tab switching (updated) ───
 
-const mainContent = document.querySelectorAll(".app > .section, .app > #splitSection");
+const mainContent = document.querySelectorAll(".app > .section:not(.shared-section), .app > #splitSection");
 
 function switchMode(mode) {
   cloneMode = mode === "settings" ? cloneMode : mode;
@@ -2206,7 +2229,8 @@ function switchMode(mode) {
 
 // ─── Event listeners ───
 
-sizesInput.addEventListener("input", renderPresets);
+sizesInput.addEventListener("input", () => { renderPresets(); saveTargetSizes(); });
+suffixNameEl.addEventListener("change", saveSuffixPref);
 refreshBtn.addEventListener("click", refreshSource);
 cloneBtn.addEventListener("click", () => {
   if (cloneMode === "artboards") cloneAsArtboards();
@@ -2215,9 +2239,12 @@ cloneBtn.addEventListener("click", () => {
 exportBtn.addEventListener("click", exportAll);
 tabBtns.forEach(btn => btn.addEventListener("click", () => switchMode(btn.dataset.mode)));
 splitBtn.addEventListener("click", splitToDocuments);
+skipLayerInput.addEventListener("input", saveBgLayerName);
 
 document.addEventListener("DOMContentLoaded", () => {
   loadLayerRules();
+  loadBgLayerName();
+  loadTargetSizes();
   renderPresets();
   setTimeout(refreshSource, 150);
 });

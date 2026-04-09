@@ -1,0 +1,11 @@
+Step
+1. nhận 1 file psd size (các kích thước mong muốn + các config đi kèm)
+2. convert psd to html storybook.
+3. create các size tương ứng trong storybook
+4. config vị trí trong storybook
+5. export json data trong storybook
+6. import json data trong psd
+7. run clone size.
+8. check và config
+9. export psd+jpg
+10. done 

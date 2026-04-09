@@ -9,26 +9,16 @@
 <body>
   <div class="app">
     <div class="tab-bar">
-      <button class="tab-btn active" data-mode="documents">Documents</button>
-      <button class="tab-btn" data-mode="artboards">Artboards</button>
+      <button class="tab-btn" data-mode="documents" style="display:none;">Documents</button>
+      <button class="tab-btn active" data-mode="artboards">Artboards</button>
       <button class="tab-btn" data-mode="settings">Settings</button>
     </div>
 
-    <div class="section">
-      <label class="label" for="sizesInput">Target Sizes 6</label>
+    <div class="section shared-section" id="targetSizesSection">
+      <label class="label" for="sizesInput">Target Sizes</label>
       <input id="sizesInput" type="text" value="300x250" />
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
-    </div>
-
-    <div class="section checkboxes">
-      <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
-    </div>
-
-    <div class="section">
-      <label class="label" for="skipLayerInput">Background Layer</label>
-      <input id="skipLayerInput" type="text" value="background" />
-      <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
     </div>
 
     <div class="section btn-row">
@@ -54,6 +44,16 @@
 
     <!-- Settings Panel (hidden by default) -->
     <div id="settingsPanel" class="settings-panel" style="display:none;">
+      <div class="section checkboxes">
+        <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
+      </div>
+
+      <div class="section">
+        <label class="label" for="skipLayerInput">Background Layer</label>
+        <input id="skipLayerInput" type="text" value="background" />
+        <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
+      </div>
+
       <div class="section">
         <label class="label">Layer Rules</label>
         <div class="hint">Auto-synced from Target Sizes. Import JSON to populate all rules.</div>
