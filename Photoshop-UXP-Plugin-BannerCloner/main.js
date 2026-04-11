@@ -11,9 +11,14 @@ uxp.entrypoints.setup({
   }
 });
 
-const PRESETS = ["300x250","160x600","728x90","970x250","300x600","320x50","320x100","336x280","250x250","200x200"];
+const PRESETS = ["300x250","300x600","160x600","728x90","320x50","300x50","970x250","480x320","1080x1080","1080x1920","1920x1080","1080x1440","1080x1350"];
 
 let cloneMode = "artboards"; // "documents" | "artboards"
+
+const GG_PREFIX = "GG-";
+function hasGGPrefix(name) {
+  return !!(name && name.toLowerCase().startsWith(GG_PREFIX.toLowerCase()));
+}
 
 const sizesInput = document.getElementById("sizesInput");
 const presetWrap = document.getElementById("presetWrap");
@@ -22,12 +27,21 @@ const refreshBtn = document.getElementById("refreshBtn");
 const sourceNameEl = document.getElementById("sourceName");
 const sourceSizeEl = document.getElementById("sourceSize");
 const suffixNameEl = document.getElementById("suffixName");
+const smartMatchEl = document.getElementById("smartMatchEnabled");
 const skipLayerInput = document.getElementById("skipLayerInput");
 const logBox = document.getElementById("logBox");
 const exportBtn = document.getElementById("exportBtn");
 const tabBtns = document.querySelectorAll(".tab-btn");
 const splitSection = document.getElementById("splitSection");
 const splitBtn = document.getElementById("splitBtn");
+const getImagesBtn = document.getElementById("getImagesBtn");
+const imageListContainer = document.getElementById("imageListContainer");
+const exportAssetsBtn = document.getElementById("exportAssetsBtn");
+const exportAssetsAction = document.getElementById("exportAssetsAction");
+const exportAssetsPanel = document.getElementById("exportAssetsPanel");
+const ignoreLayerInput = document.getElementById("ignoreLayerInput");
+let scannedAssets = [];
+const IGNORE_KEY = "bannerCloner.ignoreAssets";
 
 function log(message) {
   console.log(message);
@@ -162,12 +176,13 @@ async function getGroupBoundsNoEffects(group) {
 }
 
 function getBgLayerName() {
-  return (skipLayerInput.value || "background").trim().toLowerCase();
+  return (skipLayerInput.value || "GG-background").trim().toLowerCase();
 }
 
 const BG_LAYER_KEY = "bannerCloner.bgLayerName";
 const SIZES_KEY = "bannerCloner.targetSizes";
 const SUFFIX_KEY = "bannerCloner.suffixName";
+const SMART_MATCH_KEY = "bannerCloner.smartMatch";
 
 function loadBgLayerName() {
   try {
@@ -188,6 +203,8 @@ function loadTargetSizes() {
     if (saved) sizesInput.value = saved;
     const suffix = localStorage.getItem(SUFFIX_KEY);
     if (suffix !== null) suffixNameEl.checked = suffix === "1";
+    const smart = localStorage.getItem(SMART_MATCH_KEY);
+    if (smart !== null) smartMatchEl.checked = smart === "1";
   } catch (e) {}
 }
 
@@ -200,6 +217,12 @@ function saveTargetSizes() {
 function saveSuffixPref() {
   try {
     localStorage.setItem(SUFFIX_KEY, suffixNameEl.checked ? "1" : "0");
+  } catch (e) {}
+}
+
+function saveSmartMatchPref() {
+  try {
+    localStorage.setItem(SMART_MATCH_KEY, smartMatchEl.checked ? "1" : "0");
   } catch (e) {}
 }
 
@@ -363,8 +386,18 @@ function isBgGroup(layer) {
 }
 
 function findBgGroup(parent) {
+  // 1. Exact match with configured bg layer name (must have GG- prefix)
   for (const layer of parent.layers) {
-    if (isBgGroup(layer)) return layer;
+    if (isBgGroup(layer) && hasGGPrefix(layer.name)) return layer;
+  }
+  // 2. Fallback: first GG- layer whose name contains "background" or "bg"
+  for (const layer of parent.layers) {
+    if (!hasGGPrefix(layer.name)) continue;
+    const n = layer.name.toLowerCase();
+    if (n.includes("background") || n.includes("-bg")) {
+      log(`[BG] auto-detected: "${layer.name}" (configured "${getBgLayerName()}" not found)`);
+      return layer;
+    }
   }
   return null;
 }
@@ -448,6 +481,7 @@ async function captureContentLayout(artboardLayer, srcW, srcH) {
 
   const layout = [];
   for (const child of contentGroup.layers) {
+    if (!hasGGPrefix(child.name)) continue; // Only capture [GG-] layers
     try {
       // Use getGroupBounds for groups (getLayerBounds on groups returns artboard bounds)
       const bounds = (child.layers && child.layers.length > 0)
@@ -605,6 +639,12 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
   log(`[LAYOUT] Target area: (${canvasLeft},${canvasTop})-(${canvasLeft+canvasW},${canvasTop+canvasH})`);
 
   for (const child of contentGroup.layers) {
+    // Only process [GG-] layers
+    if (!hasGGPrefix(child.name)) {
+      log(`[LAYOUT] "${child.name}": no [GG-] prefix, skip`);
+      continue;
+    }
+
     const childName = child.name.toLowerCase();
 
     // Skip if this layer has a rule configured
@@ -686,7 +726,7 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
   originY = originY || 0;
   // Collect all leaf layers that are NOT inside bg group (and optionally not in content group)
   const leaves = [];
-  function walk(layer, insideRuledGroup) {
+  function walk(layer, insideRuledGroup, insideGG) {
     if (isBgGroup(layer)) return;
     if (skipContentBg && layer.name) {
       const ln = layer.name.toLowerCase();
@@ -695,13 +735,15 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
     // Skip if this layer or an ancestor has a rule
     const isRuled = insideRuledGroup || (ruleNames && layer.name && ruleNames.has(layer.name.toLowerCase()));
     if (isRuled) return;
+    // Track [GG-] scope: layer has prefix or is inside a [GG-] group
+    const inGG = insideGG || hasGGPrefix(layer.name);
     if (layer.layers && layer.layers.length > 0) {
-      for (const child of layer.layers) walk(child, isRuled);
+      for (const child of layer.layers) walk(child, isRuled, inGG);
     } else {
-      leaves.push(layer);
+      if (inGG) leaves.push(layer); // Only collect [GG-] layers
     }
   }
-  for (const layer of parent.layers) walk(layer, false);
+  for (const layer of parent.layers) walk(layer, false, false);
 
   
   const canvasLeft = originX;
@@ -876,6 +918,12 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       continue;
     }
 
+    // Safety: only apply rules to [GG-] layers
+    if (!hasGGPrefix(rule.name)) {
+      log(`[RULE] "${rule.name}": no [GG-] prefix, skip`);
+      continue;
+    }
+
     const allLayers = findLayersByName(docOrArtboard, rule.name);
     if (!allLayers.length) {
       log(`[RULE] "${rule.name}": not found, skip`);
@@ -920,8 +968,9 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         }
 
         let directApplied = false;
-        const targetW = rule._widthElement;
-        const targetH = rule._heightElement;
+        // Priority: width (raw) > widthElement, height (raw) > heightElement
+        const targetW = rule._widthRaw !== undefined ? rule._widthRaw : rule._widthElement;
+        const targetH = rule._heightRaw !== undefined ? rule._heightRaw : rule._heightElement;
         const hasBothWH = targetW !== undefined && targetH !== undefined;
 
         // 1. TEXT: set fontSize directly
@@ -1298,27 +1347,39 @@ async function cloneAsArtboards() {
           }
         } catch(e) {}
 
-        // 5. Scale background (always use scaleBgCover — JSON rule for bg will be skipped in applyLayerRules)
-        const bgGroup = findBgGroup(tempDoc);
-        if (bgGroup) {
-          try {
-            log(`BG: "${bgGroup.name}" → cover`);
-            await scaleBgCover(bgGroup, target.width, target.height);
-          } catch (e) { log(`BG scale skipped: ${e.message}`); }
+        // Decide which layout pipeline to run
+        const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
+        const smartEnabled = smartMatchEl.checked;
+        const runBg = hasRules || smartEnabled;
+        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!runBg ? " (canvas only)" : ""}`);
+
+        // 5. Scale background (JSON rule for bg is handled here; applyLayerRules skips bg)
+        if (runBg) {
+          const bgGroup = findBgGroup(tempDoc);
+          if (bgGroup) {
+            try {
+              log(`BG: "${bgGroup.name}" → cover`);
+              await scaleBgCover(bgGroup, target.width, target.height);
+            } catch (e) { log(`BG scale skipped: ${e.message}`); }
+          }
         }
 
-        // 5b. Capture original layer bounds before smart layout
-        const origBounds = await captureOriginalBounds(tempDoc);
+        // 5b. Capture original layer bounds before smart layout (needed by applyLayerRules)
+        const origBounds = hasRules ? await captureOriginalBounds(tempDoc) : null;
 
-        // 6. Smart layout content
-        try {
-          await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout, target.raw);
-        } catch (e) { log(`Fit content skipped: ${e.message}`); }
+        // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
+        if (smartEnabled) {
+          try {
+            await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout, target.raw);
+          } catch (e) { log(`Fit content skipped: ${e.message}`); }
+        }
 
-        // 6b. Apply layer rules from settings (using original bounds for correct scale)
-        try {
-          await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcRect.width, srcRect.height);
-        } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+        // 6b. Apply layer rules from JSON (highest priority)
+        if (hasRules) {
+          try {
+            await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcRect.width, srcRect.height);
+          } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+        }
 
         // 7. Wrap all layers into an artboard
         await bp([{
@@ -1560,31 +1621,43 @@ async function cloneAll() {
 
         log(`Canvas: ${target.width}x${target.height}`);
 
-        // 5. Scale background group as cover (always — JSON rule for bg will be skipped in applyLayerRules)
-        const bgGroup = findBgGroup(newDoc);
-        if (bgGroup) {
-          try {
-            log(`BG: "${bgGroup.name}" → cover`);
-            await scaleBgCover(bgGroup, target.width, target.height);
-          } catch (e) {
-            log(`BG scale skipped: ${e.message}`);
+        // Decide which layout pipeline to run
+        const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
+        const smartEnabled = smartMatchEl.checked;
+        const runBg = hasRules || smartEnabled;
+        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!runBg ? " (canvas only)" : ""}`);
+
+        // 5. Scale background group as cover (JSON rule for bg handled here; applyLayerRules skips bg)
+        if (runBg) {
+          const bgGroup = findBgGroup(newDoc);
+          if (bgGroup) {
+            try {
+              log(`BG: "${bgGroup.name}" → cover`);
+              await scaleBgCover(bgGroup, target.width, target.height);
+            } catch (e) {
+              log(`BG scale skipped: ${e.message}`);
+            }
           }
         }
 
-        // 5b. Capture original layer bounds before smart layout
-        const origBounds = await captureOriginalBounds(newDoc);
+        // 5b. Capture original layer bounds before smart layout (needed by applyLayerRules)
+        const origBounds = hasRules ? await captureOriginalBounds(newDoc) : null;
 
-        // 6. Smart layout content
-        try {
-          await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout, target.raw);
-        } catch (e) {
-          log(`Fit content skipped: ${e.message}`);
+        // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
+        if (smartEnabled) {
+          try {
+            await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout, target.raw);
+          } catch (e) {
+            log(`Fit content skipped: ${e.message}`);
+          }
         }
 
-        // 6b. Apply layer rules from settings (using original bounds for correct scale)
-        try {
-          await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcW, srcH);
-        } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+        // 6b. Apply layer rules from JSON (highest priority)
+        if (hasRules) {
+          try {
+            await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcW, srcH);
+          } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+        }
 
         // 7. Wrap all layers into an Artboard
         try {
@@ -2042,6 +2115,12 @@ function isValidValue(val) {
   return !isNaN(num);
 }
 
+// Size fields ("0px" → treat as placeholder, not a real value)
+function isValidSize(val) {
+  if (!isValidValue(val)) return false;
+  return parseNumericValue(val) > 0;
+}
+
 function parseNumericValue(val) {
   if (val === undefined || val === null) return NaN;
   return parseFloat(stripUnit(String(val)));
@@ -2135,10 +2214,12 @@ function parseJsonToRules(json) {
         rule.scale = "";
       }
       // Store raw measurements for runtime scale computation
-      if (isValidValue(elem.widthElement)) rule._widthElement = parseNumericValue(elem.widthElement);
-      if (isValidValue(elem.heightElement)) rule._heightElement = parseNumericValue(elem.heightElement);
-      if (isValidValue(elem.fontSize)) rule._fontSize = parseNumericValue(elem.fontSize);
-      if (isValidValue(elem.width)) rule._widthRaw = parseNumericValue(elem.width);
+      // Use isValidSize() for dimensions — "0px" is a placeholder, not a real size
+      if (isValidSize(elem.widthElement)) rule._widthElement = parseNumericValue(elem.widthElement);
+      if (isValidSize(elem.heightElement)) rule._heightElement = parseNumericValue(elem.heightElement);
+      if (isValidSize(elem.fontSize)) rule._fontSize = parseNumericValue(elem.fontSize);
+      if (isValidSize(elem.width)) rule._widthRaw = parseNumericValue(elem.width);
+      if (isValidSize(elem.height)) rule._heightRaw = parseNumericValue(elem.height);
 
       // Background position (% based) — positionX/positionY
       if (isValidValue(elem.positionX)) rule.bgPositionX = String(parseNumericValue(elem.positionX));
@@ -2207,22 +2288,938 @@ async function importJson() {
 
 importJsonBtn.addEventListener("click", importJson);
 
+// ─── Export Layer JSON ───
+
+const exportLayerJsonBtn = document.getElementById("exportLayerJsonBtn");
+
+async function readTextStyle(layerId) {
+  try {
+    const desc = await getLayerDescriptor(layerId);
+    const textKey = desc.textKey;
+    if (!textKey || !textKey.textStyleRange || !textKey.textStyleRange.length) return null;
+    const style = textKey.textStyleRange[0]?.textStyle;
+    if (!style) return null;
+
+    const doc = app.activeDocument;
+    const resolution = doc && doc.resolution ? doc.resolution : 72;
+    const sizePt = style.size?._value || 0;
+    const sizePx = Math.round(sizePt * resolution / 72 * 100) / 100;
+
+    const result = { fontSize: sizePx + "px" };
+
+    if (style.fontName) result.fontFamily = style.fontName;
+    if (style.fontStyleName) result.fontWeight = style.fontStyleName;
+
+    // Leading (line-height)
+    if (style.leading?._value) {
+      const leadPt = style.leading._value;
+      result.lineHeight = Math.round(leadPt * resolution / 72 * 100) / 100 + "px";
+    }
+
+    // Tracking (letter-spacing)
+    if (style.tracking !== undefined && style.tracking !== 0) {
+      result.tracking = style.tracking;
+    }
+
+    // Color
+    const c = style.color;
+    if (c) {
+      const r = Math.round(c.red?._value ?? c.red ?? 0);
+      const g = Math.round(c.green?._value ?? c.green ?? 0);
+      const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+      result.color = `${r}, ${g}, ${b}`;
+    }
+
+    // Font caps → textTransform
+    if (style.fontCaps?._value) {
+      const caps = style.fontCaps._value;
+      if (caps === "allCaps") result.textTransform = "uppercase";
+      else if (caps === "smallCaps") result.textTransform = "smallCaps";
+    } else if (style.fontCaps && style.fontCaps !== "normal") {
+      result.textTransform = String(style.fontCaps);
+    }
+
+    // Text content
+    if (textKey.textKey) result.content = textKey.textKey;
+
+    // Text alignment
+    const paraRange = textKey.paragraphStyleRange;
+    if (paraRange && paraRange.length > 0) {
+      const paraStyle = paraRange[0]?.paragraphStyle;
+      if (paraStyle?.align?._value) {
+        result.alignment = paraStyle.align._value;
+      } else if (paraStyle?.align) {
+        result.alignment = String(paraStyle.align);
+      }
+    }
+
+    return result;
+  } catch (e) { return null; }
+}
+
+function readFillColor(desc) {
+  try {
+    const adj = desc.adjustment;
+    if (!adj || !adj.length) return null;
+    const c = adj[0]?.color;
+    if (!c) return null;
+    const r = Math.round(c.red?._value ?? c.red ?? 0);
+    const g = Math.round(c.green?._value ?? c.green ?? 0);
+    const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+    return `${r}, ${g}, ${b}`;
+  } catch (e) { return null; }
+}
+
+function readGradient(desc) {
+  try {
+    const adj = desc.adjustment;
+    if (!adj || !adj.length) return null;
+    const grad = adj[0]?.gradient;
+    if (!grad) return null;
+    const result = {};
+    if (grad.name) result.name = grad.name;
+    // Type (linear, radial, etc.)
+    if (adj[0].type?._value) result.type = adj[0].type._value;
+    else if (adj[0].type) result.type = String(adj[0].type);
+    // Angle
+    if (adj[0].angle?._value !== undefined) result.angle = adj[0].angle._value;
+    // Color stops
+    const colors = grad.colors;
+    if (colors && colors.length) {
+      result.stops = colors.map(stop => {
+        const c = stop.color;
+        const r = Math.round(c?.red?._value ?? c?.red ?? 0);
+        const g = Math.round(c?.green?._value ?? c?.green ?? 0);
+        const b = Math.round(c?.blue?._value ?? c?.blue ?? 0);
+        return {
+          color: `${r}, ${g}, ${b}`,
+          location: stop.location ?? 0
+        };
+      });
+    }
+    return result;
+  } catch (e) { return null; }
+}
+
+function readLayerEffects(desc) {
+  try {
+    const fx = desc.layerEffects;
+    if (!fx) return null;
+    const result = {};
+    // Drop Shadow
+    if (fx.dropShadow) {
+      const ds = fx.dropShadow;
+      result.dropShadow = {
+        enabled: ds.enabled !== false,
+        opacity: ds.opacity?._value ?? ds.opacity,
+        angle: ds.localLightingAngle?._value ?? ds.localLightingAngle,
+        distance: ds.distance?._value ?? ds.distance,
+        spread: ds.chokeMatte?._value ?? ds.chokeMatte,
+        size: ds.blur?._value ?? ds.blur
+      };
+      const c = ds.color;
+      if (c) {
+        const r = Math.round(c.red?._value ?? c.red ?? 0);
+        const g = Math.round(c.green?._value ?? c.green ?? 0);
+        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+        result.dropShadow.color = `${r}, ${g}, ${b}`;
+      }
+    }
+    // Inner Shadow
+    if (fx.innerShadow) {
+      const is = fx.innerShadow;
+      result.innerShadow = {
+        enabled: is.enabled !== false,
+        opacity: is.opacity?._value ?? is.opacity,
+        angle: is.localLightingAngle?._value ?? is.localLightingAngle,
+        distance: is.distance?._value ?? is.distance,
+        size: is.blur?._value ?? is.blur
+      };
+    }
+    // Stroke
+    if (fx.frameFX) {
+      const st = fx.frameFX;
+      result.stroke = {
+        enabled: st.enabled !== false,
+        size: st.size?._value ?? st.size,
+        position: st.style?._value ?? st.style,
+        opacity: st.opacity?._value ?? st.opacity
+      };
+      const c = st.color;
+      if (c) {
+        const r = Math.round(c.red?._value ?? c.red ?? 0);
+        const g = Math.round(c.green?._value ?? c.green ?? 0);
+        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+        result.stroke.color = `${r}, ${g}, ${b}`;
+      }
+    }
+    // Outer Glow
+    if (fx.outerGlow) {
+      const og = fx.outerGlow;
+      result.outerGlow = {
+        enabled: og.enabled !== false,
+        opacity: og.opacity?._value ?? og.opacity,
+        size: og.blur?._value ?? og.blur
+      };
+    }
+    // Inner Glow
+    if (fx.innerGlow) {
+      const ig = fx.innerGlow;
+      result.innerGlow = {
+        enabled: ig.enabled !== false,
+        opacity: ig.opacity?._value ?? ig.opacity,
+        size: ig.blur?._value ?? ig.blur
+      };
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch (e) { return null; }
+}
+
+function readBorderRadius(desc) {
+  try {
+    const origins = desc.keyOriginType;
+    if (!origins || !origins.length) return null;
+    for (const origin of origins) {
+      const radii = origin.keyOriginRRectRadii;
+      if (radii) {
+        const val = (v) => Math.round((v?._value ?? v ?? 0) * 100) / 100;
+        const tl = val(radii.topLeft);
+        const tr = val(radii.topRight);
+        const bl = val(radii.bottomLeft);
+        const br = val(radii.bottomRight);
+        if (tl === 0 && tr === 0 && bl === 0 && br === 0) return null;
+        if (tl === tr && tr === bl && bl === br) return tl;
+        return { topLeft: tl, topRight: tr, bottomLeft: bl, bottomRight: br };
+      }
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+function readTransform(desc) {
+  try {
+    const tx = desc.textKey?.transform || desc.transform;
+    if (!tx) return null;
+    const val = (v) => v?._value ?? v;
+    return {
+      xx: val(tx.xx), xy: val(tx.xy),
+      yx: val(tx.yx), yy: val(tx.yy),
+      tx: val(tx.tx), ty: val(tx.ty)
+    };
+  } catch (e) { return null; }
+}
+
+async function collectLayerInfo(layer, artLeft, artTop) {
+  const info = { name: layer.name, kind: layer.kind || "unknown" };
+
+  // Visible
+  info.visible = layer.visible !== false;
+
+  const isGroup = layer.layers && layer.layers.length > 0;
+
+  // Bounds
+  try {
+    const bounds = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+    info.bounds = {
+      top: Math.round(bounds.top - artTop),
+      left: Math.round(bounds.left - artLeft),
+      width: Math.round(bounds.width),
+      height: Math.round(bounds.height)
+    };
+  } catch (e) {
+    log(`[EXPORT JSON] Warning: cannot read bounds for "${layer.name}": ${e.message}`);
+  }
+
+  // Opacity & blend mode
+  try {
+    if (layer.opacity !== undefined) info.opacity = Math.round(layer.opacity * 100) / 100;
+    if (layer.blendMode) info.blendMode = layer.blendMode;
+  } catch (e) {
+    log(`[EXPORT JSON] Warning: cannot read opacity/blendMode for "${layer.name}": ${e.message}`);
+  }
+
+  // Layer descriptor (for extra properties)
+  let desc = null;
+  if (!isGroup) {
+    try { desc = await getLayerDescriptor(layer.id); } catch (e) {}
+  }
+
+  // Text properties
+  if (isTextLayer(layer)) {
+    const textStyle = await readTextStyle(layer.id);
+    if (textStyle) info.text = textStyle;
+  }
+
+  // Fill color (solidColor layers)
+  if (desc && (layer.kind === "solidColor" || layer.kind === "solidFill")) {
+    const fill = readFillColor(desc);
+    if (fill) info.fillColor = fill;
+  }
+
+  // Gradient (gradientFill layers)
+  if (desc && (layer.kind === "gradientFill" || layer.kind === "gradient")) {
+    const grad = readGradient(desc);
+    if (grad) info.gradient = grad;
+  }
+
+  // Border radius (shape layers)
+  if (desc) {
+    const radius = readBorderRadius(desc);
+    if (radius !== null) info.borderRadius = radius;
+  }
+
+  // Layer effects
+  if (desc) {
+    const fx = readLayerEffects(desc);
+    if (fx) info.layerEffects = fx;
+  }
+
+  // Transform
+  if (desc) {
+    const tx = readTransform(desc);
+    if (tx) info.transform = tx;
+  }
+
+  // Children (recursive)
+  if (layer.layers && layer.layers.length > 0) {
+    info.children = [];
+    for (const child of layer.layers) {
+      info.children.push(await collectLayerInfo(child, artLeft, artTop));
+    }
+  }
+
+  return info;
+}
+
+async function exportLayerJson() {
+  try {
+    const source = await resolveSelectedArtboard();
+    log(`[EXPORT JSON] Reading artboard: ${source.name} (${source.size.width}x${source.size.height})`);
+
+    const artLeft = source.size.left;
+    const artTop = source.size.top;
+
+    const layers = [];
+    for (const child of source.layer.layers) {
+      layers.push(await collectLayerInfo(child, artLeft, artTop));
+    }
+
+    const json = {
+      artboard: source.name,
+      width: source.size.width,
+      height: source.size.height,
+      layers: layers
+    };
+
+    // Save to file
+    const file = await fs.getFileForSaving(source.name + "_layers.json", { types: ["json"] });
+    if (!file) { log("[EXPORT JSON] Cancelled."); return; }
+
+    await file.write(JSON.stringify(json, null, 2));
+    log(`[EXPORT JSON] Saved: ${file.name}`);
+  } catch (e) {
+    log(`[EXPORT JSON] Error: ${e.message}`);
+  }
+}
+
+exportLayerJsonBtn.addEventListener("click", exportLayerJson);
+
+// ─── Export Assets ───
+
+function isImageLayerForAssets(layer) {
+  if (!layer) return false;
+  const k = layer.kind;
+  return k === "pixel" || k === "smartObject";
+}
+
+function getIgnoreKeywords() {
+  return (ignoreLayerInput.value || "")
+    .split(",")
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isIgnoredLayer(name, keywords) {
+  if (!keywords.length) return false;
+  const lower = name.toLowerCase();
+  return keywords.some(kw => lower.includes(kw));
+}
+
+async function scanArtboardImages() {
+  try {
+    const source = await resolveSelectedArtboard();
+    log(`[ASSETS] Scanning: ${source.name} (${source.size.width}x${source.size.height})`);
+
+    const ignoreKws = getIgnoreKeywords();
+    if (ignoreKws.length) log(`[ASSETS] Ignoring: ${ignoreKws.join(", ")}`);
+
+    const images = [];
+    function walk(layer) {
+      // Skip entire group/layer if name matches ignore keywords
+      if (isIgnoredLayer(layer.name, ignoreKws)) {
+        log(`[ASSETS] Ignored: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
+        return;
+      }
+      if (layer.layers && layer.layers.length > 0) {
+        for (const child of layer.layers) walk(child);
+      } else if (isImageLayerForAssets(layer)) {
+        images.push(layer);
+      }
+    }
+    for (const child of source.layer.layers) walk(child);
+
+    scannedAssets = [];
+    for (const img of images) {
+      const bounds = await getLayerBounds(img.id);
+      if (bounds.width === 0 || bounds.height === 0) continue;
+
+      // Detect default type from smartObject file reference
+      let defaultType = "PNG";
+      try {
+        if (img.kind === "smartObject") {
+          const desc = await getLayerDescriptor(img.id);
+          const fileRef = desc.smartObjectMore?.fileReference;
+          if (fileRef && /\.jpe?g$/i.test(fileRef)) defaultType = "JPG";
+        }
+      } catch (e) {}
+
+      scannedAssets.push({
+        layerId: img.id,
+        layerName: img.name,
+        exportName: img.name,
+        kind: img.kind,
+        sizeMode: "C",
+        scale: 2,
+        type: defaultType,
+        bounds: bounds,
+        artboardRect: source.size
+      });
+    }
+
+    log(`[ASSETS] Found ${scannedAssets.length} image layer(s)`);
+    renderAssetList();
+  } catch (e) {
+    log(`[ASSETS] Error: ${e.message}`);
+  }
+}
+
+function createAssetCycleBtn(label, options, currentValue, onChange) {
+  const wrap = document.createElement("div");
+  wrap.className = "asset-field-item";
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  wrap.appendChild(lbl);
+  let idx = options.findIndex(o => o.value === currentValue);
+  if (idx < 0) idx = 0;
+  const btn = document.createElement("button");
+  btn.className = "asset-cycle-btn";
+  btn.textContent = options[idx].label;
+  btn.addEventListener("click", () => {
+    idx = (idx + 1) % options.length;
+    btn.textContent = options[idx].label;
+    onChange(options[idx].value);
+  });
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function renderAssetList() {
+  while (imageListContainer.firstChild) imageListContainer.removeChild(imageListContainer.firstChild);
+
+  if (scannedAssets.length === 0) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "No image layers found.";
+    imageListContainer.appendChild(hint);
+    exportAssetsAction.style.display = "none";
+    return;
+  }
+
+  exportAssetsAction.style.display = "";
+
+  scannedAssets.forEach((asset) => {
+    const card = document.createElement("div");
+    card.className = "asset-row";
+
+    // Name input + kind badge + remove button
+    const nameRow = document.createElement("div");
+    nameRow.className = "asset-row-header";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = asset.exportName;
+    nameInput.addEventListener("change", () => { asset.exportName = nameInput.value.trim() || asset.layerName; });
+    const kindBadge = document.createElement("span");
+    kindBadge.className = "asset-kind-badge";
+    kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : "Pixel";
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "remove-rule-btn";
+    removeBtn.textContent = "✕";
+    removeBtn.addEventListener("click", () => {
+      scannedAssets.splice(scannedAssets.indexOf(asset), 1);
+      renderAssetList();
+    });
+    nameRow.appendChild(nameInput);
+    nameRow.appendChild(kindBadge);
+    nameRow.appendChild(removeBtn);
+    card.appendChild(nameRow);
+
+    // Dropdowns row
+    const fieldsRow = document.createElement("div");
+    fieldsRow.className = "asset-row-fields";
+
+    const sizeOptions = [
+      { value: "A", label: "A - Original" },
+      { value: "B", label: "B - Clipped" },
+      { value: "C", label: "C - Bounds" }
+    ];
+    if (asset.kind === "smartObject") {
+      sizeOptions.push({ value: "D", label: "D - Embedded" });
+    }
+    fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
+
+    fieldsRow.appendChild(createAssetCycleBtn("Scale", [
+      { value: "1", label: "1x" },
+      { value: "2", label: "2x" },
+      { value: "3", label: "3x" }
+    ], String(asset.scale), (v) => { asset.scale = parseInt(v); }));
+
+    fieldsRow.appendChild(createAssetCycleBtn("Type", [
+      { value: "PNG", label: "PNG" },
+      { value: "JPG", label: "JPG" }
+    ], asset.type, (v) => { asset.type = v; }));
+
+    // Per-asset export button (same row, last position)
+    const exportWrap = document.createElement("div");
+    exportWrap.className = "asset-field-item asset-export-item";
+    const exportLbl = document.createElement("label");
+    exportLbl.textContent = "\u00A0";
+    exportWrap.appendChild(exportLbl);
+    const exportOneBtn = document.createElement("button");
+    exportOneBtn.className = "primary export-all-btn asset-export-one-btn";
+    exportOneBtn.textContent = "Export";
+    exportOneBtn.addEventListener("click", () => exportSingleAsset(asset));
+    exportWrap.appendChild(exportOneBtn);
+    fieldsRow.appendChild(exportWrap);
+
+    card.appendChild(fieldsRow);
+    imageListContainer.appendChild(card);
+  });
+}
+
+// Create a timestamped subfolder inside a picked folder
+async function createTimestampedSubfolder(parentFolder, label) {
+  const now = new Date();
+  const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+  const name = `${label}-${ts}`;
+  return await parentFolder.createFolder(name);
+}
+
+async function exportSingleAsset(asset) {
+  const parent = await fs.getFolder();
+  if (!parent) { log("[ASSETS] Export cancelled."); return; }
+
+  const safeAsset = asset.exportName.replace(/[<>:"/\\|?*]/g, "_");
+  const subfolder = await createTimestampedSubfolder(parent, `assets-${safeAsset}`);
+  log(`[ASSETS] Output: ${subfolder.name}/`);
+
+  const backup = scannedAssets;
+  scannedAssets = [asset];
+  try {
+    await runExportAssetsFlow(subfolder);
+  } finally {
+    scannedAssets = backup;
+  }
+}
+
+function computeIntersection(layerBounds, artboardRect) {
+  const left = Math.max(layerBounds.left, artboardRect.left);
+  const top = Math.max(layerBounds.top, artboardRect.top);
+  const right = Math.min(layerBounds.right, artboardRect.right);
+  const bottom = Math.min(layerBounds.bottom, artboardRect.bottom);
+  return {
+    left, top, right, bottom,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top)
+  };
+}
+
+async function getSmartObjectOriginalSize(layerId) {
+  // Try opening SO contents to read original doc size
+  await selectLayerById(layerId);
+  await bp([{ _obj: "placedLayerEditContents", _options: { dialogOptions: "dontDisplay" } }]);
+  const soDoc = app.activeDocument;
+  const w = soDoc.width;
+  const h = soDoc.height;
+  await bp([{ _obj: "close", saving: { _enum: "yesNo", _value: "no" }, _options: { dialogOptions: "dontDisplay" } }]);
+  return { width: w, height: h };
+}
+
+// Save active document as PNG or JPG to a folder using UXP photoshop API
+async function saveActiveDocAs(folder, filename, type) {
+  const file = await folder.createFile(filename, { overwrite: true });
+  const doc = app.activeDocument;
+  if (type === "JPG") {
+    await doc.saveAs.jpg(file, { quality: 12 }, true);
+  } else {
+    await doc.saveAs.png(file, { compression: 6 }, true);
+  }
+}
+
+// Crop active document canvas to a rect (in current doc coords)
+async function cropCanvasTo(left, top, right, bottom) {
+  await bp([{
+    _obj: "crop",
+    to: {
+      _obj: "rectangle",
+      top: { _unit: "pixelsUnit", _value: top },
+      left: { _unit: "pixelsUnit", _value: left },
+      bottom: { _unit: "pixelsUnit", _value: bottom },
+      right: { _unit: "pixelsUnit", _value: right }
+    },
+    delete: true,
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Resize active document image
+async function resizeImage(width, height, constrain) {
+  await bp([{
+    _obj: "imageSize",
+    width: { _unit: "pixelsUnit", _value: width },
+    height: { _unit: "pixelsUnit", _value: height },
+    constrainProportions: !!constrain,
+    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Walk all layers recursively
+function walkAllLayers(layers, callback) {
+  for (const l of layers) {
+    callback(l);
+    if (l.layers && l.layers.length) walkAllLayers(l.layers, callback);
+  }
+}
+
+// Find layer by name in a tree
+function findLayerByName(layers, name) {
+  for (const l of layers) {
+    if (l.name === name) return l;
+    if (l.layers && l.layers.length) {
+      const found = findLayerByName(l.layers, name);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+// Check if SO is vector-based (would open Illustrator on Edit Contents)
+async function isVectorSmartObject(layerId) {
+  try {
+    const desc = await getLayerDescriptor(layerId);
+    const fileRef = desc.smartObjectMore?.fileReference || "";
+    const placedType = desc.smartObjectMore?.placed?._value || "";
+    return /\.(ai|eps|pdf|svg)$/i.test(fileRef) || placedType === "vectorData";
+  } catch (e) {
+    return false;
+  }
+}
+
+async function exportAssets() {
+  if (scannedAssets.length === 0) { log("[ASSETS] No assets to export."); return; }
+
+  const parent = await fs.getFolder();
+  if (!parent) { log("[ASSETS] Export cancelled."); return; }
+
+  // Derive label from source doc name
+  let label = "assets";
+  try {
+    const docName = (app.activeDocument.name || "assets").replace(/\.(psd|psb|jpg|jpeg|png|tif|tiff)$/i, "");
+    label = `assets-${docName.replace(/[<>:"/\\|?*]/g, "_")}`;
+  } catch (e) {}
+
+  const subfolder = await createTimestampedSubfolder(parent, label);
+  log(`[ASSETS] Output: ${subfolder.name}/`);
+
+  await runExportAssetsFlow(subfolder);
+}
+
+async function runExportAssetsFlow(folder) {
+  await core.executeAsModal(async () => {
+    const sourceDoc = app.activeDocument;
+    const sourceDocId = sourceDoc.id;
+
+    for (let i = 0; i < scannedAssets.length; i++) {
+      const asset = scannedAssets[i];
+      let tempDocId = null;
+
+      try {
+        log(`[ASSETS] (${i + 1}/${scannedAssets.length}) ${asset.exportName} — mode=${asset.sizeMode}, ${asset.scale}x, ${asset.type}`);
+
+        // Filename
+        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_");
+        const modeLabel = { A: "original", B: "clipped", C: "bounds", D: "embedded" }[asset.sizeMode] || asset.sizeMode;
+        const extLower = asset.type === "JPG" ? "jpg" : "png";
+        const filename = `${safeName}-${modeLabel}-${asset.scale}x.${extLower}`;
+
+        // Switch to source doc
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "document", _id: sourceDocId }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+
+        // ── Mode D: Edit Contents (raster SO only) ──
+        if (asset.sizeMode === "D") {
+          if (asset.kind !== "smartObject") {
+            log(`[ASSETS] Skipped "${asset.exportName}" — Mode D requires Smart Object`);
+            continue;
+          }
+          if (await isVectorSmartObject(asset.layerId)) {
+            log(`[ASSETS] Skipped "${asset.exportName}" — vector SO (use Mode A/B/C)`);
+            continue;
+          }
+
+          await selectLayerById(asset.layerId);
+          await bp([{ _obj: "placedLayerEditContents", _options: { dialogOptions: "dontDisplay" } }]);
+
+          if (app.activeDocument.id === sourceDocId) {
+            log(`[ASSETS] Skipped "${asset.exportName}" — failed to open SO contents`);
+            continue;
+          }
+          tempDocId = app.activeDocument.id;
+
+          if (asset.scale !== 1) {
+            const w = app.activeDocument.width;
+            const h = app.activeDocument.height;
+            await resizeImage(Math.round(w * asset.scale), Math.round(h * asset.scale), true);
+          }
+          if (asset.type === "JPG") {
+            try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]); } catch (e) {}
+          }
+
+          await saveActiveDocAs(folder, filename, asset.type);
+
+          // Close temp doc by ID
+          await bp([{
+            _obj: "close",
+            _target: [{ _ref: "document", _id: tempDocId }],
+            saving: { _enum: "yesNo", _value: "no" }
+          }]);
+          tempDocId = null;
+          log(`[ASSETS] Saved: ${filename}`);
+          continue;
+        }
+
+        // ── Mode A/B/C: Create new doc → duplicate layer into it → save ──
+
+        // Determine target rect based on mode
+        let targetRect;
+        if (asset.sizeMode === "B") {
+          const inter = computeIntersection(asset.bounds, asset.artboardRect);
+          if (inter.width <= 0 || inter.height <= 0) {
+            log(`[ASSETS] Skipped "${asset.exportName}" — empty intersection`);
+            continue;
+          }
+          targetRect = { left: inter.left, top: inter.top, width: inter.width, height: inter.height };
+        } else {
+          // Mode A and Mode C: layer bounds
+          targetRect = {
+            left: asset.bounds.left,
+            top: asset.bounds.top,
+            width: asset.bounds.width,
+            height: asset.bounds.height
+          };
+        }
+
+        log(`[DEBUG] targetRect: left=${targetRect.left} top=${targetRect.top} w=${targetRect.width} h=${targetRect.height}`);
+        log(`[DEBUG] asset.bounds: left=${asset.bounds.left} top=${asset.bounds.top} w=${asset.bounds.width} h=${asset.bounds.height}`);
+        log(`[DEBUG] artboardRect: left=${asset.artboardRect.left} top=${asset.artboardRect.top} w=${asset.artboardRect.width} h=${asset.artboardRect.height}`);
+
+        // Create new transparent document with target dimensions
+        const tempDocName = "__asset_temp_" + Date.now() + "__";
+        const sourceRes = sourceDoc.resolution || 72;
+        log(`[DEBUG] Creating temp doc: ${tempDocName}, ${targetRect.width}x${targetRect.height}@${sourceRes}dpi`);
+        await bp([{
+          _obj: "make",
+          new: {
+            _obj: "document",
+            width: { _unit: "distanceUnit", _value: targetRect.width },
+            height: { _unit: "distanceUnit", _value: targetRect.height },
+            resolution: { _unit: "densityUnit", _value: sourceRes },
+            mode: { _class: "RGBColorMode" },
+            depth: 8,
+            fill: { _enum: "fill", _value: "transparent" },
+            profile: "sRGB IEC61966-2.1",
+            name: tempDocName
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+
+        if (app.activeDocument.id === sourceDocId) {
+          log(`[ASSETS] Skipped "${asset.exportName}" — make doc failed`);
+          continue;
+        }
+        tempDocId = app.activeDocument.id;
+        log(`[DEBUG] Temp doc created. ID=${tempDocId}, size=${app.activeDocument.width}x${app.activeDocument.height}, layers=${app.activeDocument.layers.length}`);
+
+        // Switch back to source doc
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "document", _id: sourceDocId }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[DEBUG] Switched to source doc. activeDoc.id=${app.activeDocument.id}, sourceDocId=${sourceDocId}`);
+
+        // Select target layer in source
+        await selectLayerById(asset.layerId);
+        log(`[DEBUG] Selected source layer: ${asset.layerName} (id=${asset.layerId})`);
+
+        // Duplicate layer into the new temp doc by name
+        await bp([{
+          _obj: "duplicate",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          to: { _ref: "document", _name: tempDocName },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[DEBUG] Duplicate layer command sent. activeDoc.id after dup=${app.activeDocument.id}`);
+
+        // Switch to temp doc
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "document", _id: tempDocId }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[DEBUG] Switched to temp doc. layers=${app.activeDocument.layers.length}, activeLayers=${app.activeDocument.activeLayers.length}`);
+        if (app.activeDocument.layers.length > 0) {
+          for (const l of app.activeDocument.layers) {
+            try {
+              const b = await getLayerBounds(l.id);
+              log(`[DEBUG]   layer "${l.name}" kind=${l.kind} bounds=L${b.left},T${b.top} ${b.width}x${b.height}`);
+            } catch (e) {
+              log(`[DEBUG]   layer "${l.name}" kind=${l.kind} (no bounds: ${e.message})`);
+            }
+          }
+        }
+
+        // Note: PS auto-places duplicated layers at (0,0) of the new doc — no move needed
+        // Delete the empty default "Layer 1" if it exists
+        try {
+          const layers = [...app.activeDocument.layers];
+          for (const l of layers) {
+            if (l.name === "Layer 1" && l.kind === "pixel") {
+              const b = await getLayerBounds(l.id);
+              if (b.width === 0 && b.height === 0) {
+                await selectLayerById(l.id);
+                await bp([{
+                  _obj: "delete",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              }
+            }
+          }
+        } catch (e) {}
+
+        // Mode C: trim transparent edges to remove padding inside the layer bounds
+        if (asset.sizeMode === "C") {
+          try {
+            await bp([{
+              _obj: "trim",
+              trimBasedOn: { _enum: "trimBasedOn", _value: "transparency" },
+              top: true, bottom: true, left: true, right: true,
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          } catch (e) { /* may fail if fully opaque or empty */ }
+        }
+
+        // Apply scale
+        if (asset.scale !== 1) {
+          const w = app.activeDocument.width;
+          const h = app.activeDocument.height;
+          await resizeImage(Math.round(w * asset.scale), Math.round(h * asset.scale), true);
+        }
+
+        // Flatten for JPG
+        if (asset.type === "JPG") {
+          try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]); } catch (e) {}
+        }
+
+        // Save
+        await saveActiveDocAs(folder, filename, asset.type);
+
+        // Close temp doc by ID
+        await bp([{
+          _obj: "close",
+          _target: [{ _ref: "document", _id: tempDocId }],
+          saving: { _enum: "yesNo", _value: "no" }
+        }]);
+        tempDocId = null;
+
+        log(`[ASSETS] Saved: ${filename}`);
+
+      } catch (e) {
+        log(`[ASSETS] Error "${asset.exportName}": ${e.message}`);
+        // Cleanup temp doc by ID if it exists
+        if (tempDocId && tempDocId !== sourceDocId) {
+          try {
+            await bp([{
+              _obj: "close",
+              _target: [{ _ref: "document", _id: tempDocId }],
+              saving: { _enum: "yesNo", _value: "no" }
+            }]);
+          } catch (e2) {}
+        }
+      }
+    }
+
+    // Switch back to source doc
+    try {
+      await bp([{
+        _obj: "select",
+        _target: [{ _ref: "document", _id: sourceDocId }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) {}
+
+    log(`[ASSETS] === Export complete: ${scannedAssets.length} asset(s) ===`);
+
+  }, { commandName: "Banner Cloner - Export Assets" });
+}
+
+getImagesBtn.addEventListener("click", scanArtboardImages);
+exportAssetsBtn.addEventListener("click", exportAssets);
+ignoreLayerInput.addEventListener("input", () => {
+  try { localStorage.setItem(IGNORE_KEY, ignoreLayerInput.value); } catch (e) {}
+});
+try { const saved = localStorage.getItem(IGNORE_KEY); if (saved) ignoreLayerInput.value = saved; } catch (e) {}
+
 // ─── Tab switching (updated) ───
 
 const mainContent = document.querySelectorAll(".app > .section:not(.shared-section), .app > #splitSection");
 
 function switchMode(mode) {
-  cloneMode = mode === "settings" ? cloneMode : mode;
+  cloneMode = (mode === "settings" || mode === "exportAssets") ? cloneMode : mode;
   tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
-  splitSection.style.display = (mode === "artboards") ? "block" : "none";
+
+  const targetSizesSection = document.getElementById("targetSizesSection");
 
   if (mode === "settings") {
     mainContent.forEach(el => el.style.display = "none");
     settingsPanel.style.display = "block";
+    exportAssetsPanel.style.display = "none";
+    if (targetSizesSection) targetSizesSection.style.display = "";
     renderSizeGroups();
+  } else if (mode === "exportAssets") {
+    mainContent.forEach(el => el.style.display = "none");
+    settingsPanel.style.display = "none";
+    exportAssetsPanel.style.display = "block";
+    if (targetSizesSection) targetSizesSection.style.display = "none";
   } else {
     mainContent.forEach(el => el.style.display = "");
     settingsPanel.style.display = "none";
+    exportAssetsPanel.style.display = "none";
+    if (targetSizesSection) targetSizesSection.style.display = "";
     splitSection.style.display = mode === "artboards" ? "block" : "none";
   }
 }
@@ -2231,6 +3228,7 @@ function switchMode(mode) {
 
 sizesInput.addEventListener("input", () => { renderPresets(); saveTargetSizes(); });
 suffixNameEl.addEventListener("change", saveSuffixPref);
+smartMatchEl.addEventListener("change", saveSmartMatchPref);
 refreshBtn.addEventListener("click", refreshSource);
 cloneBtn.addEventListener("click", () => {
   if (cloneMode === "artboards") cloneAsArtboards();

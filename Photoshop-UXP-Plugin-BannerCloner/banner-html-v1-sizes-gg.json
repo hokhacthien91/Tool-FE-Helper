@@ -1,0 +1,798 @@
+{
+  "moduleName": "banner-html-v1",
+  "sizes": [
+    {
+      "name": "970x250",
+      "width": 970,
+      "height": 250,
+      "elements": {
+        "GG-background": {
+          "scale": 1.95,
+          "positionX": "50%",
+          "positionY": "86%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "36px",
+          "maxWidth": "407px",
+          "top": "40px",
+          "left": "50px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "407px",
+          "heightElement": "90px"
+        },
+        "GG-tagline": {
+          "fontSize": "28.56px",
+          "maxWidth": "none",
+          "top": "181px",
+          "left": "50px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "295px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "19px",
+          "paddingY": "16px",
+          "paddingX": "78px",
+          "top": "40px",
+          "left": "642px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "276px",
+          "heightElement": "59px"
+        },
+        "GG-logo": {
+          "width": "274px",
+          "top": "155px",
+          "left": "642px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "274px",
+          "heightElement": "51px"
+        }
+      }
+    },
+    {
+      "name": "728x90",
+      "width": 728,
+      "height": 90,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "16px",
+          "maxWidth": "199px",
+          "top": "14px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "199px",
+          "heightElement": "40px"
+        },
+        "GG-tagline": {
+          "fontSize": "13px",
+          "maxWidth": "none",
+          "top": "55px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "134px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "12px",
+          "paddingY": "8px",
+          "paddingX": "27px",
+          "top": "12px",
+          "left": "auto",
+          "right": "20px",
+          "bottom": "auto",
+          "widthElement": "130px",
+          "heightElement": "33px"
+        },
+        "GG-logo": {
+          "width": "130px",
+          "top": "53px",
+          "left": "auto",
+          "right": "20px",
+          "bottom": "auto",
+          "widthElement": "130px",
+          "heightElement": "24px"
+        }
+      }
+    },
+    {
+      "name": "300x250",
+      "width": 300,
+      "height": 250,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "17px",
+          "maxWidth": "199px",
+          "top": "14px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "199px",
+          "heightElement": "43px"
+        },
+        "GG-tagline": {
+          "fontSize": "17px",
+          "maxWidth": "none",
+          "top": "68px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "175px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "15px",
+          "paddingY": "7px",
+          "paddingX": "15px",
+          "top": "158px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "125px",
+          "heightElement": "35px"
+        },
+        "GG-logo": {
+          "width": "120px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "20px",
+          "widthElement": "120px",
+          "heightElement": "22px"
+        }
+      }
+    },
+    {
+      "name": "336x280",
+      "width": 336,
+      "height": 280,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "22px",
+          "maxWidth": "254px",
+          "top": "22px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "254px",
+          "heightElement": "55px"
+        },
+        "GG-tagline": {
+          "fontSize": "19px",
+          "maxWidth": "none",
+          "top": "88px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "196px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "15px",
+          "paddingY": "7px",
+          "paddingX": "28px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "58px",
+          "widthElement": "151px",
+          "heightElement": "35px"
+        },
+        "GG-logo": {
+          "width": "150px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "20px",
+          "widthElement": "150px",
+          "heightElement": "28px"
+        }
+      }
+    },
+    {
+      "name": "160x600",
+      "width": 160,
+      "height": 600,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "11px",
+          "maxWidth": "244px",
+          "top": "70px",
+          "left": "15px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "145px",
+          "heightElement": "28px"
+        },
+        "GG-tagline": {
+          "fontSize": "11px",
+          "maxWidth": "none",
+          "top": "24px",
+          "left": "15px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "114px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "15px",
+          "paddingY": "7px",
+          "paddingX": "14px",
+          "top": "auto",
+          "left": "15px",
+          "right": "auto",
+          "bottom": "69px",
+          "widthElement": "123px",
+          "heightElement": "35px"
+        },
+        "GG-logo": {
+          "width": "115px",
+          "top": "auto",
+          "left": "18px",
+          "right": "auto",
+          "bottom": "25px",
+          "widthElement": "115px",
+          "heightElement": "21px"
+        }
+      }
+    },
+    {
+      "name": "300x600",
+      "width": 300,
+      "height": 600,
+      "elements": {
+        "GG-background": {
+          "scale": 1.5,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "20px",
+          "maxWidth": "229px",
+          "top": "30px",
+          "left": "34px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "229px",
+          "heightElement": "50px"
+        },
+        "GG-tagline": {
+          "fontSize": "20px",
+          "maxWidth": "none",
+          "top": "100px",
+          "left": "34px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "206px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "16px",
+          "paddingY": "8px",
+          "paddingX": "24px",
+          "top": "474px",
+          "left": "36px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "149px",
+          "heightElement": "38px"
+        },
+        "GG-logo": {
+          "width": "150px",
+          "top": "auto",
+          "left": "35px",
+          "right": "auto",
+          "bottom": "35px",
+          "widthElement": "150px",
+          "heightElement": "28px"
+        }
+      }
+    },
+    {
+      "name": "250x250",
+      "width": 250,
+      "height": 250,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "16px",
+          "maxWidth": "194px",
+          "top": "22px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "194px",
+          "heightElement": "40px"
+        },
+        "GG-tagline": {
+          "fontSize": "14px",
+          "maxWidth": "none",
+          "top": "72px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "145px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "15px",
+          "paddingY": "7px",
+          "paddingX": "16px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "58px",
+          "widthElement": "127px",
+          "heightElement": "35px"
+        },
+        "GG-logo": {
+          "width": "125px",
+          "top": "205px",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "125px",
+          "heightElement": "23px"
+        }
+      }
+    },
+    {
+      "name": "200x200",
+      "width": 200,
+      "height": 200,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "13px",
+          "maxWidth": "254px",
+          "top": "9px",
+          "left": "21px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "179px",
+          "heightElement": "33px"
+        },
+        "GG-tagline": {
+          "fontSize": "13px",
+          "maxWidth": "none",
+          "top": "51px",
+          "left": "21px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "134px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "12px",
+          "paddingY": "4px",
+          "paddingX": "16px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "41px",
+          "widthElement": "108px",
+          "heightElement": "26px"
+        },
+        "GG-logo": {
+          "width": "100px",
+          "top": "auto",
+          "left": "20px",
+          "right": "auto",
+          "bottom": "13px",
+          "widthElement": "100px",
+          "heightElement": "18px"
+        }
+      }
+    },
+    {
+      "name": "320x50",
+      "width": 320,
+      "height": 50,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "9px",
+          "maxWidth": "119px",
+          "top": "6px",
+          "left": "15px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "119px",
+          "heightElement": "23px"
+        },
+        "GG-tagline": {
+          "fontSize": "9px",
+          "maxWidth": "none",
+          "top": "26px",
+          "left": "15px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "93px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "9px",
+          "paddingY": "3px",
+          "paddingX": "6px",
+          "top": "1px",
+          "left": "auto",
+          "right": "20px",
+          "bottom": "auto",
+          "widthElement": "69px",
+          "heightElement": "24px"
+        },
+        "GG-logo": {
+          "width": "65px",
+          "top": "31px",
+          "left": "auto",
+          "right": "19px",
+          "bottom": "auto",
+          "widthElement": "65px",
+          "heightElement": "12px"
+        }
+      }
+    },
+    {
+      "name": "320x100",
+      "width": 320,
+      "height": 100,
+      "elements": {
+        "GG-background": {
+          "scale": 2.25,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.2,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "10px",
+          "maxWidth": "134px",
+          "top": "22px",
+          "left": "12px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "134px",
+          "heightElement": "25px"
+        },
+        "GG-tagline": {
+          "fontSize": "10px",
+          "maxWidth": "none",
+          "top": "58px",
+          "left": "12px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "103px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "10px",
+          "paddingY": "4px",
+          "paddingX": "12px",
+          "top": "auto",
+          "left": "auto",
+          "right": "11px",
+          "bottom": "53px",
+          "widthElement": "87px",
+          "heightElement": "25px"
+        },
+        "GG-logo": {
+          "width": "85px",
+          "top": "64px",
+          "left": "auto",
+          "right": "12px",
+          "bottom": "auto",
+          "widthElement": "85px",
+          "heightElement": "16px"
+        }
+      }
+    },
+    {
+      "name": "700x500",
+      "width": 700,
+      "height": 500,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "36px",
+          "maxWidth": "407px",
+          "top": "52px",
+          "left": "56px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "407px",
+          "heightElement": "90px"
+        },
+        "GG-tagline": {
+          "fontSize": "28.56px",
+          "maxWidth": "none",
+          "top": "173px",
+          "left": "55px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "295px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "19px",
+          "paddingY": "16px",
+          "paddingX": "65px",
+          "top": "301px",
+          "left": "56px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "250px",
+          "heightElement": "59px"
+        },
+        "GG-logo": {
+          "width": "245px",
+          "top": "400px",
+          "left": "56px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "245px",
+          "heightElement": "45px"
+        }
+      }
+    },
+    {
+      "name": "900x500",
+      "width": 900,
+      "height": 500,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "36px",
+          "maxWidth": "407px",
+          "top": "51px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "407px",
+          "heightElement": "90px"
+        },
+        "GG-tagline": {
+          "fontSize": "28.56px",
+          "maxWidth": "none",
+          "top": "226px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "295px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "19px",
+          "paddingY": "16px",
+          "paddingX": "65px",
+          "top": "420px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "250px",
+          "heightElement": "59px"
+        },
+        "GG-logo": {
+          "width": "245px",
+          "top": "330px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "245px",
+          "heightElement": "45px"
+        }
+      }
+    },
+    {
+      "name": "800x200",
+      "width": 800,
+      "height": 200,
+      "elements": {
+        "GG-background": {
+          "scale": 1,
+          "positionX": "50%",
+          "positionY": "50%"
+        },
+        "GG-overlay": {
+          "opacity": 0.1,
+          "color": "0, 0, 0"
+        },
+        "GG-gradient": {
+          "opacity": 0.45,
+          "color": "0, 0, 0",
+          "direction": "to right"
+        },
+        "GG-headline": {
+          "fontSize": "23px",
+          "maxWidth": "263px",
+          "top": "81px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "263px",
+          "heightElement": "58px"
+        },
+        "GG-tagline": {
+          "fontSize": "23px",
+          "maxWidth": "none",
+          "top": "154px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "237px",
+          "heightElement": "24px"
+        },
+        "GG-cta": {
+          "fontSize": "19px",
+          "paddingY": "16px",
+          "paddingX": "65px",
+          "top": "0px",
+          "left": "62px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "250px",
+          "heightElement": "59px"
+        },
+        "GG-logo": {
+          "width": "245px",
+          "top": "139px",
+          "left": "535px",
+          "right": "auto",
+          "bottom": "auto",
+          "widthElement": "245px",
+          "heightElement": "45px"
+        }
+      }
+    }
+  ]
+}

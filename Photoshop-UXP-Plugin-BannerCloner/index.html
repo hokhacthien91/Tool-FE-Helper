@@ -12,6 +12,7 @@
       <button class="tab-btn" data-mode="documents" style="display:none;">Documents</button>
       <button class="tab-btn active" data-mode="artboards">Artboards</button>
       <button class="tab-btn" data-mode="settings">Settings</button>
+      <button class="tab-btn" data-mode="exportAssets">Assets</button>
     </div>
 
     <div class="section shared-section" id="targetSizesSection">
@@ -37,20 +38,32 @@
       <button id="refreshBtn" class="link-btn">Refresh Source</button>
     </div>
 
-    <div class="section">
-      <label class="label">Logs</label>
-      <pre id="logBox" class="log-box">Ready.</pre>
+    <!-- Export Assets Panel (hidden by default) -->
+    <div id="exportAssetsPanel" style="display:none;">
+      <div class="section">
+        <label class="label" for="ignoreLayerInput">Ignore layers</label>
+        <input id="ignoreLayerInput" type="text" value="" />
+        <div class="hint">Layer names containing these keywords will be skipped (comma-separated)</div>
+      </div>
+      <div class="section btn-row">
+        <button id="getImagesBtn" class="primary">Get Images</button>
+      </div>
+      <div id="imageListContainer"></div>
+      <div class="section" id="exportAssetsAction" style="display:none;">
+        <button id="exportAssetsBtn" class="primary export-all-btn full">Export Assets</button>
+      </div>
     </div>
 
     <!-- Settings Panel (hidden by default) -->
     <div id="settingsPanel" class="settings-panel" style="display:none;">
       <div class="section checkboxes">
+        <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
         <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
       </div>
 
       <div class="section">
         <label class="label" for="skipLayerInput">Background Layer</label>
-        <input id="skipLayerInput" type="text" value="background" />
+        <input id="skipLayerInput" type="text" value="GG-background" />
         <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
       </div>
 
@@ -60,7 +73,8 @@
       </div>
 
       <div class="section btn-row">
-        <button id="importJsonBtn" class="primary import-json-btn full">Import JSON</button>
+        <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
+        <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
       </div>
 
       <div id="importInfoCard" class="section info-card" style="display:none;">
@@ -69,6 +83,12 @@
       </div>
 
       <div id="sizeGroupsContainer"></div>
+    </div>
+
+    <!-- Logs (always visible at the bottom of all tabs) -->
+    <div class="section shared-section" id="logsSection">
+      <label class="label">Logs</label>
+      <pre id="logBox" class="log-box">Ready.</pre>
     </div>
   </div>
   <script src="main.js"></script>
