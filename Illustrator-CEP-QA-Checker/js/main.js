@@ -6,6 +6,7 @@
 const csi = new CSInterface();
 
 let lastScan = null;        // { frames, summary, stats }
+let lastColorResult = null; // { matched, off }
 let liveInterval = null;
 let lastLiveKey = "";
 let lastScanFilteredSummary = null;
@@ -83,16 +84,34 @@ function emptyState(msg) {
   return div;
 }
 
+function copyToast(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    showSaveToast("Copied: " + text);
+  } catch (e) {}
+}
+
 function addMetricRow(parent, label, value, opts) {
   opts = opts || {};
   const row = document.createElement("div");
-  row.className = "metric-row" + (opts.highlight ? " highlight" : "");
+  row.className = "metric-row" + (opts.highlight ? " highlight" : "") + (opts.diff ? " diff" : "");
   const l = document.createElement("span");
   l.className = "metric-label";
   l.textContent = label;
   const v = document.createElement("span");
-  v.className = "metric-value";
+  v.className = "metric-value copyable";
   v.textContent = value;
+  v.title = "Click to copy";
+  v.addEventListener("click", (e) => {
+    e.stopPropagation();
+    copyToast(String(value));
+  });
   row.appendChild(l);
   row.appendChild(v);
   parent.appendChild(row);
@@ -145,121 +164,151 @@ function buildRunCard(run, opts) {
   if (run.missing) card.classList.add("missing");
 
   const parsedStyle = parseFontStyle(run.style);
+  const hexVal = run.color && run.color.hex ? run.color.hex : (run.color ? run.color.model : "");
+  const sizeVal = run.size ? fmt(run.size) + "pt" : "";
+  const weightVal = parsedStyle.weightName;
 
-  /* ─── Head: font family only ─── */
-  const head = document.createElement("div");
-  head.className = "run-head";
+  /* ─── Summary line (always visible) ─── */
+  const summary = document.createElement("div");
+  summary.className = "run-summary";
 
-  const famWrap = document.createElement("div");
-  famWrap.className = "run-family-wrap";
+  const summaryLeft = document.createElement("div");
+  summaryLeft.className = "run-summary-left";
 
-  const fam = document.createElement("div");
+  const fam = document.createElement("span");
   fam.className = "run-family";
   fam.textContent = run.family || "(no font)";
-  famWrap.appendChild(fam);
+  summaryLeft.appendChild(fam);
 
-  head.appendChild(famWrap);
+  const meta = document.createElement("span");
+  meta.className = "run-meta";
+  meta.textContent = [weightVal, sizeVal, hexVal].filter(Boolean).join(" · ");
+  summaryLeft.appendChild(meta);
+
+  summary.appendChild(summaryLeft);
+
+  const summaryRight = document.createElement("div");
+  summaryRight.className = "run-summary-right";
 
   if (run.missing) {
     const b = document.createElement("span");
     b.className = "run-missing-badge";
     b.textContent = "MISSING";
-    head.appendChild(b);
+    summaryRight.appendChild(b);
   }
   if (typeof opts.count === "number") {
-    const c = document.createElement("div");
+    const c = document.createElement("span");
     c.className = "run-count-badge";
     c.textContent = "×" + opts.count;
-    head.appendChild(c);
+    summaryRight.appendChild(c);
   }
-  card.appendChild(head);
 
-  /* ─── Metrics table (label / value) ─── */
+  const sw = document.createElement("span");
+  sw.className = "color-swatch-sm";
+  sw.style.background = colorPreview(run.color);
+  summaryRight.appendChild(sw);
+
+  const arrow = document.createElement("span");
+  arrow.className = "expand-icon";
+  arrow.textContent = "▸";
+  summaryRight.appendChild(arrow);
+
+  summary.appendChild(summaryRight);
+  card.appendChild(summary);
+
+  /* ─── Detail section ─── */
+  const detail = document.createElement("div");
+  detail.className = "run-detail";
+  const startOpen = opts.expanded || false;
+  detail.style.display = startOpen ? "" : "none";
+  if (startOpen) { arrow.textContent = "▾"; card.classList.add("expanded"); }
+
   const metrics = document.createElement("div");
   metrics.className = "run-metrics";
 
-  addMetricRow(
-    metrics,
-    "font-weight",
-    `${parsedStyle.weightNum}  (${parsedStyle.weightName})`
-  );
-  addMetricRow(
-    metrics,
-    "font-style",
+  const d = opts.diffs || new Set();
+  addMetricRow(metrics, "font-weight",
+    `${parsedStyle.weightNum}  (${parsedStyle.weightName})`, { diff: d.has("style") });
+  addMetricRow(metrics, "font-style",
     parsedStyle.isItalic ? "italic" : "normal",
-    parsedStyle.isItalic ? { highlight: true } : {}
-  );
-
-  addMetricRow(metrics, "font-size", run.size ? fmt(run.size) + " pt" : "—", { highlight: true });
+    { highlight: parsedStyle.isItalic, diff: d.has("style") });
+  addMetricRow(metrics, "font-size",
+    run.size ? fmt(run.size) + " pt" : "—", { highlight: true, diff: d.has("size") });
 
   const leadingStr = run.autoLeading
     ? "auto" + (run.leading ? " (" + fmt(run.leading) + " pt)" : "")
     : (run.leading ? fmt(run.leading) + " pt" : "—");
-  addMetricRow(metrics, "line-height", leadingStr);
+  addMetricRow(metrics, "line-height", leadingStr, { diff: d.has("leading") || d.has("autoLeading") });
 
   if (run.tracking != null && run.size) {
     const trPt = (run.tracking * run.size) / 1000;
-    const trStr = `${fmt(trPt)} pt  (${Math.round(run.tracking)})`;
-    addMetricRow(metrics, "letter-spacing", trStr);
+    addMetricRow(metrics, "letter-spacing", `${fmt(trPt)} pt  (${Math.round(run.tracking)})`, { diff: d.has("tracking") });
   } else {
-    addMetricRow(metrics, "letter-spacing", "—");
+    addMetricRow(metrics, "letter-spacing", "—", { diff: d.has("tracking") });
   }
 
   if (run.baselineShift != null && Math.abs(run.baselineShift) > 0.01) {
     addMetricRow(metrics, "baseline-shift", fmt(run.baselineShift) + " pt");
   }
 
-  /* Color row with swatch */
+  /* Color row */
   const colorRow = document.createElement("div");
-  colorRow.className = "metric-row color-row";
+  colorRow.className = "metric-row color-row" + (d.has("color") ? " diff" : "");
   const colLabel = document.createElement("span");
   colLabel.className = "metric-label";
   colLabel.textContent = "color";
   colorRow.appendChild(colLabel);
   const colVal = document.createElement("span");
-  colVal.className = "metric-value color-value";
-  const sw = document.createElement("span");
-  sw.className = "color-swatch";
-  sw.style.background = colorPreview(run.color);
-  colVal.appendChild(sw);
-  const hex = document.createElement("span");
-  hex.className = "color-hex";
-  hex.textContent = run.color && run.color.hex ? run.color.hex : (run.color ? run.color.model : "—");
-  colVal.appendChild(hex);
+  colVal.className = "metric-value color-value copyable";
+  colVal.title = "Click to copy";
+  const swBig = document.createElement("span");
+  swBig.className = "color-swatch";
+  swBig.style.background = colorPreview(run.color);
+  colVal.appendChild(swBig);
+  const hexSpan = document.createElement("span");
+  hexSpan.className = "color-hex";
+  hexSpan.textContent = hexVal || "—";
+  colVal.appendChild(hexSpan);
+  colVal.addEventListener("click", (e) => { e.stopPropagation(); copyToast(hexVal); });
   colorRow.appendChild(colVal);
   metrics.appendChild(colorRow);
 
-  if (run.color && run.color.model && run.color.model !== "RGB" && run.color.hex) {
-    const sub = document.createElement("div");
-    sub.className = "color-sub";
-    sub.textContent = run.color.display;
-    metrics.appendChild(sub);
-  } else if (run.color && !run.color.hex && run.color.display) {
+  if (run.color && run.color.display && (run.color.model !== "RGB" || !run.color.hex)) {
     const sub = document.createElement("div");
     sub.className = "color-sub";
     sub.textContent = run.color.display;
     metrics.appendChild(sub);
   }
 
-  card.appendChild(metrics);
+  detail.appendChild(metrics);
 
-  /* PS name (small, bottom) */
   if (run.psName) {
     const ps = document.createElement("div");
     ps.className = "run-ps";
     ps.textContent = "PostScript: " + run.psName;
-    card.appendChild(ps);
+    detail.appendChild(ps);
   }
 
-  /* Sample text */
   const sample = opts.sample != null ? opts.sample : (run.text || "");
   if (sample) {
     const s = document.createElement("div");
     s.className = "run-sample";
     const trimmed = String(sample).replace(/\s+/g, " ").trim();
     s.textContent = '"' + trimmed.slice(0, 80) + (trimmed.length > 80 ? "…" : "") + '"';
-    card.appendChild(s);
+    detail.appendChild(s);
   }
+
+  card.appendChild(detail);
+
+  /* Toggle expand/collapse on summary click */
+  summary.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = detail.style.display !== "none";
+    detail.style.display = open ? "none" : "";
+    arrow.textContent = open ? "▸" : "▾";
+    card.classList.toggle("expanded", !open);
+  });
+
   return card;
 }
 
@@ -272,10 +321,23 @@ function toggleLive() {
     liveInterval = setInterval(pollLive, 500);
     pollLive();
   } else {
-    document.getElementById("liveStatus").textContent = "Live inspect tat.";
+    document.getElementById("liveStatus").textContent = "Live inspect off.";
     document.getElementById("liveStatus").classList.remove("active");
     document.getElementById("liveResult").innerHTML = "";
   }
+}
+
+function findDiffKeys(runs) {
+  if (runs.length <= 1) return new Set();
+  const props = ["family", "style", "size", "leading", "autoLeading", "tracking"];
+  const diffs = new Set();
+  for (const p of props) {
+    const vals = new Set(runs.map((r) => JSON.stringify(r[p])));
+    if (vals.size > 1) diffs.add(p);
+  }
+  const hexes = new Set(runs.map((r) => r.color ? r.color.hex : ""));
+  if (hexes.size > 1) diffs.add("color");
+  return diffs;
 }
 
 function pollLive() {
@@ -296,31 +358,122 @@ function pollLive() {
       if (lastLiveKey !== k) {
         lastLiveKey = k;
         statusEl.textContent = data.reason === "nodoc"
-          ? "Khong co document dang mo."
-          : "Chon 1 text frame tren canvas de xem info.";
+          ? "No document open."
+          : "Select any item on canvas to inspect.";
         statusEl.classList.remove("active");
         resultEl.innerHTML = "";
       }
       return;
     }
     const frames = data.frames || [];
-    const key = frames.map((f) => f.runs.map((r) => r.key).join(";")).join("||");
+    const pathColors = data.pathColors || [];
+    const key = frames.map((f) => f.runs.map((r) => r.key).join(";")).join("||")
+      + "@@" + pathColors.map((p) => (p.fill ? p.fill.hex : "") + (p.stroke ? p.stroke.hex : "")).join(";");
     if (key === lastLiveKey) return;
     lastLiveKey = key;
 
-    const totalRuns = frames.reduce((s, f) => s + f.runs.length, 0);
-    statusEl.textContent = `${frames.length} text frame(s) selected — ${totalRuns} run(s).`;
+    const parts = [];
+    if (frames.length) parts.push(`${frames.length} text`);
+    if (pathColors.length) parts.push(`${pathColors.length} shape`);
+    statusEl.textContent = parts.join(", ") + " selected";
     statusEl.classList.add("active");
     resultEl.innerHTML = "";
-    frames.forEach((f, i) => {
-      if (frames.length > 1) {
+
+    if (frames.length) {
+      const allRuns = [];
+      frames.forEach((f) => {
+        f.runs.forEach((r) => {
+          r._sample = (f.contents || "").replace(/\s+/g, " ").trim();
+          allRuns.push(r);
+        });
+      });
+      const diffs = findDiffKeys(allRuns);
+      allRuns.forEach((r) => resultEl.appendChild(buildRunCard(r, { sample: r._sample, diffs, expanded: true })));
+    }
+
+    if (pathColors.length) {
+      pathColors.forEach((p) => {
+        const card = document.createElement("div");
+        card.className = "run-card";
         const head = document.createElement("div");
-        head.className = "detail-frame-head";
-        head.innerHTML = `<strong>#${i + 1}</strong><span>${escapeHtml((f.contents || "").slice(0, 40))}</span>`;
-        resultEl.appendChild(head);
-      }
-      f.runs.forEach((r) => resultEl.appendChild(buildRunCard(r, { sample: f.contents })));
-    });
+        head.className = "run-summary";
+        const left = document.createElement("div");
+        left.className = "run-summary-left";
+        const name = document.createElement("span");
+        name.className = "run-family";
+        name.textContent = p.name || p.type;
+        left.appendChild(name);
+        const meta = document.createElement("span");
+        meta.className = "run-meta";
+        meta.textContent = p.type;
+        left.appendChild(meta);
+        head.appendChild(left);
+        card.appendChild(head);
+
+        const metrics = document.createElement("div");
+        metrics.className = "run-metrics";
+        metrics.style.marginTop = "8px";
+
+        if (p.fill) {
+          const row = document.createElement("div");
+          row.className = "metric-row";
+          const label = document.createElement("span");
+          label.className = "metric-label";
+          label.textContent = "fill";
+          row.appendChild(label);
+          const val = document.createElement("span");
+          val.className = "metric-value color-value copyable";
+          val.title = "Click to copy";
+          const sw = document.createElement("span");
+          sw.className = "color-swatch";
+          sw.style.background = colorPreview(p.fill);
+          val.appendChild(sw);
+          const hex = document.createElement("span");
+          hex.className = "color-hex";
+          hex.textContent = p.fill.hex || p.fill.model;
+          val.appendChild(hex);
+          val.addEventListener("click", (e) => { e.stopPropagation(); copyToast(p.fill.hex || p.fill.display); });
+          row.appendChild(val);
+          metrics.appendChild(row);
+          if (p.fill.display && p.fill.model !== "RGB") {
+            const sub = document.createElement("div");
+            sub.className = "color-sub";
+            sub.textContent = p.fill.display;
+            metrics.appendChild(sub);
+          }
+        }
+        if (p.stroke) {
+          const row = document.createElement("div");
+          row.className = "metric-row";
+          const label = document.createElement("span");
+          label.className = "metric-label";
+          label.textContent = "stroke";
+          row.appendChild(label);
+          const val = document.createElement("span");
+          val.className = "metric-value color-value copyable";
+          val.title = "Click to copy";
+          const sw = document.createElement("span");
+          sw.className = "color-swatch";
+          sw.style.background = colorPreview(p.stroke);
+          val.appendChild(sw);
+          const hex = document.createElement("span");
+          hex.className = "color-hex";
+          hex.textContent = p.stroke.hex || p.stroke.model;
+          val.appendChild(hex);
+          val.addEventListener("click", (e) => { e.stopPropagation(); copyToast(p.stroke.hex || p.stroke.display); });
+          row.appendChild(val);
+          metrics.appendChild(row);
+          if (p.stroke.display && p.stroke.model !== "RGB") {
+            const sub = document.createElement("div");
+            sub.className = "color-sub";
+            sub.textContent = p.stroke.display;
+            metrics.appendChild(sub);
+          }
+        }
+        card.appendChild(metrics);
+        resultEl.appendChild(card);
+      });
+    }
   });
 }
 
@@ -382,7 +535,7 @@ function renderScanResult(result) {
   document.getElementById("scanUniqueCount").textContent = result.stats.uniqueCount;
   document.getElementById("scanViewToggle").style.display = "";
   document.getElementById("scanFilterSection").style.display = "";
-  document.getElementById("exportCsvBtn").disabled = result.stats.runCount === 0;
+  document.getElementById("exportReportBtn").disabled = result.stats.runCount === 0;
   document.getElementById("scanFilterInput").value = "";
 
   renderScanSummaryFiltered();
@@ -422,7 +575,7 @@ function renderScanSummaryFiltered() {
   summaryEl.innerHTML = "";
   const items = getFilteredSortedSummary();
   if (items.length === 0) {
-    summaryEl.appendChild(emptyState(lastScan && lastScan.summary && lastScan.summary.length > 0 ? "No results matching filter." : "Khong co text nao."));
+    summaryEl.appendChild(emptyState(lastScan && lastScan.summary && lastScan.summary.length > 0 ? "No results matching filter." : "No text found."));
     return;
   }
   for (const s of items) {
@@ -437,7 +590,7 @@ function renderScanDetails(result) {
   const detailsEl = document.getElementById("scanDetails");
   detailsEl.innerHTML = "";
   if (!result.frames || result.frames.length === 0) {
-    detailsEl.appendChild(emptyState("Khong co text frame."));
+    detailsEl.appendChild(emptyState("No text frames found."));
     return;
   }
   result.frames.forEach((f, idx) => {
@@ -468,62 +621,159 @@ function selectFramesByIdx(idxs) {
   });
 }
 
-/* ─── Export CSV ─── */
-function csvEscape(v) {
-  const s = String(v == null ? "" : v);
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
+/* ─── Export Excel XML (multi-sheet, styled) ─── */
+function xmlEsc(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function buildCsv(scan) {
-  const headers = [
-    "Frame #", "Text", "Family", "Style", "PostScript",
-    "Size (pt)", "Leading (pt)", "Auto Leading", "Tracking", "H Scale %", "V Scale %", "Baseline Shift",
-    "Color Model", "Hex", "Color Display", "Missing"
-  ];
-  const rows = [headers];
-  scan.frames.forEach((f, idx) => {
+function xlCell(val, styleId) {
+  const s = String(val == null ? "" : val);
+  const isNum = s !== "" && !isNaN(s) && s.trim() !== "";
+  const type = isNum ? "Number" : "String";
+  const attr = styleId ? ` ss:StyleID="${styleId}"` : "";
+  return `<Cell${attr}><Data ss:Type="${type}">${xmlEsc(s)}</Data></Cell>`;
+}
+
+function xlRow(cells, styleId) {
+  const attr = styleId ? ` ss:StyleID="${styleId}"` : "";
+  return `<Row${attr}>${cells.join("")}</Row>`;
+}
+
+function buildFontRows() {
+  if (!lastScan || !lastScan.frames) return [];
+  const rows = [];
+  lastScan.frames.forEach((f, idx) => {
     f.runs.forEach((r) => {
-      rows.push([
-        idx + 1,
-        (f.contents || "").replace(/\s+/g, " ").slice(0, 200),
-        r.family,
-        r.style,
-        r.psName,
-        fmt(r.size),
-        fmt(r.leading),
-        r.autoLeading ? "YES" : "",
-        r.tracking != null ? Math.round(r.tracking) : "",
-        fmt(r.hScale),
-        fmt(r.vScale),
-        fmt(r.baselineShift),
-        r.color ? r.color.model : "",
-        r.color ? r.color.hex : "",
-        r.color ? r.color.display : "",
-        r.missing ? "YES" : "",
-      ]);
+      const parsed = parseFontStyle(r.style);
+      const leadingStr = r.autoLeading ? "auto" : fmt(r.leading);
+      const trackingPt = (r.tracking != null && r.size)
+        ? fmt((r.tracking * r.size) / 1000) : "0";
+      const isMissing = r.missing;
+      const sid = isMissing ? "sRed" : null;
+      rows.push(xlRow([
+        xlCell(idx + 1, sid),
+        xlCell((f.contents || "").replace(/\s+/g, " ").slice(0, 50), sid),
+        xlCell(r.family, sid),
+        xlCell(`${parsed.weightNum} (${parsed.weightName})`, sid),
+        xlCell(parsed.isItalic ? "italic" : "normal", sid),
+        xlCell(fmt(r.size), sid),
+        xlCell(leadingStr, sid),
+        xlCell(trackingPt, sid),
+        xlCell(r.color ? r.color.hex : "", sid),
+        xlCell(r.color ? r.color.model : "", sid),
+        xlCell(isMissing ? "YES" : "", sid),
+      ]));
     });
   });
-  return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  return rows;
 }
 
-function exportCsv() {
-  if (!lastScan) { log("Hay Scan truoc khi export."); return; }
-  const csv = buildCsv(lastScan);
-  csi.evalScript('qaSavePath("qa-report.csv")', (path) => {
-    path = String(path || "").replace(/^"|"$/g, "");
-    if (!path) { log("Da huy export."); return; }
-    try {
-      if (window.cep && window.cep.fs && typeof window.cep.fs.writeFile === "function") {
-        const res = window.cep.fs.writeFile(path, csv);
-        if (res && res.err) { log("Write failed (err=" + res.err + ")"); return; }
-        log("Exported CSV: " + path);
-      } else {
-        log("cep.fs not available. Enable --enable-nodejs in manifest.");
-      }
-    } catch (e) {
-      log("Export error: " + e.message);
-    }
+function buildColorRows() {
+  if (!lastColorResult) return [];
+  const rows = [];
+  for (const c of lastColorResult.off) {
+    rows.push(xlRow([
+      xlCell("OFF-PALETTE", "sRed"),
+      xlCell(c.baseHex || c.hex || "", "sRed"),
+      xlCell(c.model || "", "sRed"),
+      xlCell((c.sourceTypes || []).join(", "), "sRed"),
+      xlCell(c.count || 1, "sRed"),
+      xlCell("", "sRed"),
+      xlCell(c.tint != null && c.tint < 100 ? Math.round(c.tint) + "%" : "", "sRed"),
+    ]));
+  }
+  for (const c of lastColorResult.matched) {
+    rows.push(xlRow([
+      xlCell("MATCHED"),
+      xlCell(c.baseHex || c.hex || ""),
+      xlCell(c.model || ""),
+      xlCell((c.sourceTypes || []).join(", ")),
+      xlCell(c.count || 1),
+      xlCell(c.matchName || ""),
+      xlCell(c.tint != null && c.tint < 100 ? Math.round(c.tint) + "%" : ""),
+    ]));
+  }
+  return rows;
+}
+
+function buildExcelXml() {
+  const fontHeaders = ["#", "Text", "Font Family", "font-weight", "font-style",
+    "font-size (pt)", "line-height (pt)", "letter-spacing", "Color Hex", "Color Model", "Missing Font"];
+  const colorHeaders = ["Status", "Hex", "Color Model", "Source Types", "Items", "Matched Name", "Tint %"];
+
+  const fontRows = buildFontRows();
+  const colorRows = buildColorRows();
+  const hasFonts = fontRows.length > 0;
+  const hasColors = colorRows.length > 0;
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:x="urn:schemas-microsoft-com:office:excel">
+<Styles>
+ <Style ss:ID="Default" ss:Name="Normal">
+  <Font ss:FontName="Arial" ss:Size="11"/>
+ </Style>
+ <Style ss:ID="sHead">
+  <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+  <Interior ss:Color="#333333" ss:Pattern="Solid"/>
+  <Alignment ss:Horizontal="Center"/>
+ </Style>
+ <Style ss:ID="sRed">
+  <Font ss:FontName="Arial" ss:Size="11" ss:Color="#B00020"/>
+  <Interior ss:Color="#FFE0E0" ss:Pattern="Solid"/>
+ </Style>
+</Styles>`;
+
+  if (hasFonts) {
+    xml += `\n<Worksheet ss:Name="Font Check">
+<Table ss:DefaultColumnWidth="100">
+<Column ss:Width="35"/><Column ss:Width="220"/><Column ss:Width="160"/>
+<Column ss:Width="120"/><Column ss:Width="80"/><Column ss:Width="80"/>
+<Column ss:Width="80"/><Column ss:Width="80"/><Column ss:Width="90"/>
+<Column ss:Width="80"/><Column ss:Width="80"/>
+${xlRow(fontHeaders.map((h) => xlCell(h, "sHead")))}
+${fontRows.join("\n")}
+</Table></Worksheet>`;
+  }
+
+  if (hasColors) {
+    xml += `\n<Worksheet ss:Name="Color Check">
+<Table ss:DefaultColumnWidth="100">
+<Column ss:Width="100"/><Column ss:Width="90"/><Column ss:Width="90"/>
+<Column ss:Width="160"/><Column ss:Width="60"/><Column ss:Width="130"/>
+<Column ss:Width="60"/>
+${xlRow(colorHeaders.map((h) => xlCell(h, "sHead")))}
+${colorRows.join("\n")}
+</Table></Worksheet>`;
+  }
+
+  if (!hasFonts && !hasColors) {
+    xml += `\n<Worksheet ss:Name="Empty">
+<Table><Row><Cell><Data ss:Type="String">No data. Run Scan and/or Check Colors first.</Data></Cell></Row></Table>
+</Worksheet>`;
+  }
+
+  xml += "\n</Workbook>";
+  return xml;
+}
+
+function exportReport() {
+  if (!lastScan && !lastColorResult) { log("Run Scan or Check Colors first."); return; }
+  const xml = buildExcelXml();
+  csi.evalScript('qaSavePath("qa-report.xls")', (rawPath) => {
+    let path = String(rawPath || "").replace(/^"|"$/g, "").trim();
+    if (!path) { log("Export cancelled."); return; }
+    if (!/\.\w+$/.test(path)) path += ".xls";
+    const escaped = xml.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r/g, "").replace(/\n/g, "\\n");
+    const pathEsc = path.replace(/\\/g, "/");
+    callHost(`qaWriteFile("${pathEsc}", "${escaped}")`, (data) => {
+      if (!data.ok) { log("Write failed: " + data.error); return; }
+      log("Exported report: " + data.path);
+    });
   });
 }
 
@@ -886,6 +1136,7 @@ function runColorCheck() {
       setTabColor("color", "pass");
     }
 
+    lastColorResult = { matched, off };
     log(`Done in ${dt}ms — ${data.colors.length} colors, ${off.length} off-palette.`);
     renderColorResult(matched, off, new Date().toLocaleTimeString());
   });
@@ -1019,7 +1270,7 @@ document.querySelectorAll(".view-btn").forEach((b) =>
   b.addEventListener("click", () => switchView(b.dataset.view)));
 document.getElementById("liveEnabled").addEventListener("change", toggleLive);
 document.getElementById("scanBtn").addEventListener("click", runScan);
-document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
+document.getElementById("exportReportBtn").addEventListener("click", exportReport);
 
 document.getElementById("profileSelect").addEventListener("change", (e) => {
   if (paletteUnsaved && !confirm("Unsaved changes. Discard?")) {
@@ -1040,16 +1291,22 @@ document.getElementById("paletteInput").addEventListener("input", () => {
   updatePalettePreview();
 });
 document.getElementById("colorCheckBtn").addEventListener("click", runColorCheck);
+document.getElementById("exportReportBtn2").addEventListener("click", exportReport);
 initMatchToggle();
 
 document.getElementById("scanFilterInput").addEventListener("input", renderScanSummaryFiltered);
 document.getElementById("scanSortSelect").addEventListener("change", renderScanSummaryFiltered);
 
-document.getElementById("logsToggle").addEventListener("click", () => {
+document.getElementById("logsToggle").addEventListener("click", (e) => {
+  if (e.target.id === "clearLogBtn") return;
   const toggle = document.getElementById("logsToggle");
   const box = document.getElementById("logBox");
   const open = toggle.classList.toggle("open");
   box.style.display = open ? "" : "none";
+});
+document.getElementById("clearLogBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  document.getElementById("logBox").textContent = "Ready.";
 });
 
 switchMode("live");

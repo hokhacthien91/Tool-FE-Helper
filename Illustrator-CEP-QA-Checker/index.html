@@ -19,12 +19,12 @@
       <div class="section">
         <label class="checkbox-row">
           <input id="liveEnabled" type="checkbox" checked />
-          <span>Auto detect selection (click text on canvas)</span>
+          <span>Auto detect selection</span>
         </label>
-        <div class="hint">Chon 1 text frame tren canvas de xem font info.</div>
+        <div class="hint">Click a text frame on canvas to inspect font info. Click any value to copy.</div>
       </div>
       <div class="section">
-        <div id="liveStatus" class="status-line">Chua chon gi.</div>
+        <div id="liveStatus" class="status-line">No selection.</div>
       </div>
       <div id="liveResult" class="runs-list"></div>
     </div>
@@ -36,18 +36,18 @@
         <div class="radio-row">
           <label class="radio-row-item">
             <input type="radio" name="scanScope" value="document" checked />
-            <span>Toan document</span>
+            <span>Entire document</span>
           </label>
           <label class="radio-row-item">
             <input type="radio" name="scanScope" value="selection" />
-            <span>Selection</span>
+            <span>Current selection</span>
           </label>
         </div>
       </div>
 
       <div class="section btn-row">
         <button id="scanBtn" class="primary">Scan</button>
-        <button id="exportCsvBtn" class="primary export-all-btn" disabled>Export CSV</button>
+        <button id="exportReportBtn" class="primary export-all-btn" disabled>Export Report (.xls)</button>
       </div>
 
       <div id="scanSpinner" class="spinner-row" style="display:none;">
@@ -132,6 +132,7 @@
       <div id="colorResultSection" style="display:none;">
         <div class="section">
           <div id="colorResultStatus" class="color-result-status"></div>
+          <button id="exportReportBtn2" class="primary export-all-btn full" style="margin-top:8px;">Export Report (.xls)</button>
         </div>
 
         <div class="section" id="colorOffSection" style="display:none;">
@@ -154,6 +155,7 @@
       <div class="collapsible-header" id="logsToggle">
         <span class="toggle-icon">&#9654;</span>
         <label class="label">Logs</label>
+        <button id="clearLogBtn" class="small-btn" style="margin-left:auto;font-size:10px;padding:3px 8px;">Clear</button>
       </div>
       <pre id="logBox" class="log-box" style="display:none;">Ready.</pre>
     </div>

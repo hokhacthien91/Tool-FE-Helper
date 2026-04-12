@@ -385,9 +385,10 @@ function qaGetSelection() {
         var doc = app.activeDocument;
         var sel;
         try { sel = doc.selection; } catch (e1) { sel = []; }
+        if (!sel || sel.length === 0) return jsonEncode({ ok: true, empty: true, reason: "empty" });
+
         var tfs = [];
-        collectTextFrames(sel || [], tfs);
-        if (tfs.length === 0) return jsonEncode({ ok: true, empty: true, reason: "empty" });
+        collectTextFrames(sel, tfs);
         fontInstalledCache = {};
         var out = [];
         for (var i = 0; i < tfs.length; i++) {
@@ -397,7 +398,41 @@ function qaGetSelection() {
                 runs: extractRuns(tf)
             });
         }
-        return jsonEncode({ ok: true, frames: out });
+
+        var pathColors = [];
+        for (var j = 0; j < sel.length; j++) {
+            var item = sel[j];
+            var type = "";
+            try { type = item.typename; } catch (e2) {}
+            if (type === "TextFrame") continue;
+            var itemName = "";
+            try { itemName = item.name || ""; } catch (e3) {}
+            if (!itemName) itemName = type + " " + (j + 1);
+            var fillInfo = null, strokeInfo = null;
+            if (type === "PathItem" || type === "CompoundPathItem" || type === "GroupItem") {
+                try {
+                    var fc = item.fillColor;
+                    if (fc && fc.typename !== "NoColor") fillInfo = colorToInfo(fc);
+                } catch (ef) {}
+                try {
+                    var sc = item.strokeColor;
+                    if (sc && sc.typename !== "NoColor") strokeInfo = colorToInfo(sc);
+                } catch (es) {}
+            }
+            if (fillInfo || strokeInfo) {
+                pathColors.push({
+                    name: itemName,
+                    type: type,
+                    fill: fillInfo,
+                    stroke: strokeInfo
+                });
+            }
+        }
+
+        if (out.length === 0 && pathColors.length === 0) {
+            return jsonEncode({ ok: true, empty: true, reason: "empty" });
+        }
+        return jsonEncode({ ok: true, frames: out, pathColors: pathColors });
     } catch (err) {
         return errResp(err);
     }
@@ -426,13 +461,27 @@ function qaSelectFrames(idxsCsv) {
 
 function qaSavePath(defaultName) {
     try {
-        var f = File.saveDialog("Save QA Report", "CSV:*.csv");
+        var f = File.saveDialog("Save QA Report", "All:*.*");
         if (!f) return "";
         var p = f.fsName;
-        if (!/\.csv$/i.test(p)) p += ".csv";
+        if (!/\.\w+$/.test(p)) p += ".xls";
         return p;
     } catch (e) {
         return "";
+    }
+}
+
+function qaWriteFile(path, content) {
+    try {
+        var f = new File(path);
+        f.encoding = "UTF-8";
+        var ok = f.open("w");
+        if (!ok) return jsonEncode({ ok: false, error: "Cannot open file: " + path });
+        f.write(content);
+        f.close();
+        return jsonEncode({ ok: true, path: path });
+    } catch (e) {
+        return errResp(e);
     }
 }
 

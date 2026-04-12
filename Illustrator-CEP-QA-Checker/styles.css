@@ -234,32 +234,64 @@ button.full { width: 100%; }
 .run-card.missing {
   border-color: var(--red);
 }
-.run-card .run-head {
+/* ─── Compact summary line ─── */
+.run-card .run-summary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
   gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #404040;
+  cursor: pointer;
 }
-.run-card .run-family-wrap {
+.run-card .run-summary-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .run-card .run-family {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   color: #fff;
-  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.run-card .run-style-line {
+.run-card .run-meta {
+  font-size: 11px;
   color: var(--muted);
-  font-size: 12px;
-  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-card .run-summary-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.run-card .color-swatch-sm {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.run-card .expand-icon {
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 0.15s;
+  width: 12px;
+  text-align: center;
+}
+/* ─── Detail section (expanded) ─── */
+.run-card .run-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #404040;
+}
+.run-card.expanded {
+  background: #3a3a3a;
 }
 .run-card .run-metrics {
   display: flex;
@@ -288,9 +320,31 @@ button.full { width: 100%; }
   font-family: "Courier New", monospace;
   text-align: right;
 }
+.run-card .metric-row .metric-value.copyable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.15s;
+}
+.run-card .metric-row .metric-value.copyable:hover {
+  background: rgba(76,147,234,0.2);
+}
 .run-card .metric-row.highlight .metric-value {
   color: var(--accent2);
   font-size: 14px;
+}
+.run-card .metric-row.diff {
+  background: rgba(255, 152, 0, 0.12);
+  border-radius: 3px;
+  margin: 0 -6px;
+  padding: 5px 6px;
+}
+.run-card .metric-row.diff .metric-label {
+  color: var(--orange2);
+}
+.run-card .metric-row.diff .metric-value {
+  color: var(--orange2);
 }
 .run-card .color-row .color-value {
   display: flex;
