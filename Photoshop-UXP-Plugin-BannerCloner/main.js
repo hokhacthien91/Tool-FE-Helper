@@ -912,11 +912,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
   for (const rule of rules) {
     if (!rule.name) continue;
 
-    // Skip background layer — handled by scaleBgCover
-    if (rule.name.toLowerCase() === getBgLayerName()) {
-      log(`[RULE] "${rule.name}": is bg layer, skip (handled by scaleBgCover)`);
-      continue;
-    }
+    // Background layer: let JSON rule handle it (scaleBgCover is skipped when JSON rules exist)
 
     // Safety: only apply rules to [GG-] layers
     if (!hasGGPrefix(rule.name)) {
@@ -1009,9 +1005,25 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           directApplied = true;
         }
 
-        // 4. FALLBACK: explicit scale (only if direct sizing didn't apply)
-        if (!directApplied && rule.scale && rule.scale !== "") {
-          const scaleVal = parseFloat(rule.scale);
+        // 4. Scale: explicit scale or bg cover
+        if (!directApplied) {
+          let scaleVal = rule.scale ? parseFloat(rule.scale) : NaN;
+
+          // For bg-related layers: compute cover scale, then multiply by JSON scale factor
+          const isBgRelated = rule.name.toLowerCase() === getBgLayerName()
+            || rule.name.toLowerCase().includes("background")
+            || rule.name.toLowerCase().includes("-bg");
+          if (isBgRelated) {
+            const bgBounds = (layer.layers && layer.layers.length > 0)
+              ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+            if (bgBounds.width > 0 && bgBounds.height > 0) {
+              const coverScale = Math.max(canvasW / bgBounds.width, canvasH / bgBounds.height);
+              const jsonFactor = (!isNaN(scaleVal) && scaleVal > 0) ? scaleVal : 1;
+              scaleVal = coverScale * jsonFactor;
+              log(`[RULE]   bg cover: ${(coverScale * 100).toFixed(1)}% × JSON ${jsonFactor} = ${(scaleVal * 100).toFixed(1)}%`);
+            }
+          }
+
           if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
             const isGroupForScale = layer.layers && layer.layers.length > 0;
             if (isGroupForScale) {
@@ -1040,7 +1052,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
             } else {
               await scaleLayerUniform(layer, scaleVal);
             }
-            log(`[RULE]   fallback explicit scale: ${(scaleVal * 100).toFixed(0)}%`);
+            log(`[RULE]   scale: ${(scaleVal * 100).toFixed(0)}%`);
           }
         }
 
@@ -1350,15 +1362,15 @@ async function cloneAsArtboards() {
         // Decide which layout pipeline to run
         const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
         const smartEnabled = smartMatchEl.checked;
-        const runBg = hasRules || smartEnabled;
-        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!runBg ? " (canvas only)" : ""}`);
+        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
 
-        // 5. Scale background (JSON rule for bg is handled here; applyLayerRules skips bg)
-        if (runBg) {
+        // 5. Scale background — only when NO JSON rules (smart match fallback)
+        // When JSON rules exist, applyLayerRules handles bg children with precise scale/position
+        if (!hasRules && smartEnabled) {
           const bgGroup = findBgGroup(tempDoc);
           if (bgGroup) {
             try {
-              log(`BG: "${bgGroup.name}" → cover`);
+              log(`BG: "${bgGroup.name}" → cover (smart match)`);
               await scaleBgCover(bgGroup, target.width, target.height);
             } catch (e) { log(`BG scale skipped: ${e.message}`); }
           }
@@ -1624,15 +1636,14 @@ async function cloneAll() {
         // Decide which layout pipeline to run
         const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
         const smartEnabled = smartMatchEl.checked;
-        const runBg = hasRules || smartEnabled;
-        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!runBg ? " (canvas only)" : ""}`);
+        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
 
-        // 5. Scale background group as cover (JSON rule for bg handled here; applyLayerRules skips bg)
-        if (runBg) {
+        // 5. Scale background — only when NO JSON rules (smart match fallback)
+        if (!hasRules && smartEnabled) {
           const bgGroup = findBgGroup(newDoc);
           if (bgGroup) {
             try {
-              log(`BG: "${bgGroup.name}" → cover`);
+              log(`BG: "${bgGroup.name}" → cover (smart match)`);
               await scaleBgCover(bgGroup, target.width, target.height);
             } catch (e) {
               log(`BG scale skipped: ${e.message}`);

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QA Checker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-mode="live">Live</button>
+      <button class="tab-btn" data-mode="scan">Scan<span class="tab-badge" id="badgeScan"></span></button>
+      <button class="tab-btn" data-mode="color">Color<span class="tab-badge" id="badgeColor"></span></button>
+    </div>
+
+    <!-- ─── LIVE MODE ─── -->
+    <div id="livePanel" class="mode-panel">
+      <div class="section">
+        <label class="checkbox-row">
+          <input id="liveEnabled" type="checkbox" checked />
+          <span>Auto detect selection (click text on canvas)</span>
+        </label>
+        <div class="hint">Chon 1 text frame tren canvas de xem font info.</div>
+      </div>
+      <div class="section">
+        <div id="liveStatus" class="status-line">Chua chon gi.</div>
+      </div>
+      <div id="liveResult" class="runs-list"></div>
+    </div>
+
+    <!-- ─── SCAN MODE ─── -->
+    <div id="scanPanel" class="mode-panel" style="display:none;">
+      <div class="section">
+        <label class="label">Scope</label>
+        <div class="radio-row">
+          <label class="radio-row-item">
+            <input type="radio" name="scanScope" value="document" checked />
+            <span>Toan document</span>
+          </label>
+          <label class="radio-row-item">
+            <input type="radio" name="scanScope" value="selection" />
+            <span>Selection</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section btn-row">
+        <button id="scanBtn" class="primary">Scan</button>
+        <button id="exportCsvBtn" class="primary export-all-btn" disabled>Export CSV</button>
+      </div>
+
+      <div id="scanSpinner" class="spinner-row" style="display:none;">
+        <div class="spinner"></div>
+        <span>Scanning...</span>
+      </div>
+
+      <div class="section info-card" id="scanInfoCard" style="display:none;">
+        <div><strong>Text frames:</strong> <span id="scanFrameCount">0</span></div>
+        <div><strong>Total runs:</strong> <span id="scanRunCount">0</span></div>
+        <div><strong>Unique styles:</strong> <span id="scanUniqueCount">0</span></div>
+        <div><strong>Last checked:</strong> <span id="scanTimestamp">—</span></div>
+      </div>
+
+      <div class="section view-toggle" id="scanViewToggle" style="display:none;">
+        <button class="view-btn active" data-view="summary">Summary</button>
+        <button class="view-btn" data-view="details">Details</button>
+      </div>
+
+      <div class="section" id="scanFilterSection" style="display:none;">
+        <div class="filter-row">
+          <input id="scanFilterInput" type="text" placeholder="Filter by font name, hex, size..." />
+          <select id="scanSortSelect">
+            <option value="count">Sort: Count</option>
+            <option value="family">Sort: Font</option>
+            <option value="size">Sort: Size</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="scanSummary" class="runs-list"></div>
+      <div id="scanDetails" class="runs-list" style="display:none;"></div>
+    </div>
+
+    <!-- ─── COLOR MODE ─── -->
+    <div id="colorPanel" class="mode-panel" style="display:none;">
+
+      <div class="section">
+        <label class="label">Profile</label>
+        <div class="profile-row">
+          <select id="profileSelect"></select>
+          <button id="profileNewBtn" class="small-btn">New</button>
+          <button id="profileRenameBtn" class="small-btn">Rename</button>
+          <button id="profileDeleteBtn" class="small-btn danger-btn">Delete</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="palette-header">
+          <label class="label">Palette</label>
+          <span id="paletteCount" class="palette-count">0 colors</span>
+        </div>
+        <textarea id="paletteInput" rows="10" placeholder="// Primary&#10;black  #021C42&#10;#195ED5&#10;#C62828&#10;&#10;// Paste hex per line, optionally with name"></textarea>
+        <div class="palette-swatches" id="paletteSwatches"></div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="paletteImportBtn" class="small-btn">Import JSON</button>
+          <button id="palettePickBtn" class="small-btn">Pick from file</button>
+          <button id="paletteSaveBtn" class="primary small-btn">Save</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <label class="label">Check</label>
+        <div class="radio-row" style="margin-bottom:8px;">
+          <label class="radio-row-item">
+            <input type="radio" name="colorScope" value="document" checked />
+            <span>Document</span>
+          </label>
+          <label class="radio-row-item">
+            <input type="radio" name="colorScope" value="selection" />
+            <span>Selection</span>
+          </label>
+        </div>
+        <button id="colorCheckBtn" class="primary full" disabled>Check Colors</button>
+      </div>
+
+      <div id="colorSpinner" class="spinner-row" style="display:none;">
+        <div class="spinner"></div>
+        <span>Checking colors...</span>
+      </div>
+
+      <div id="colorResultSection" style="display:none;">
+        <div class="section">
+          <div id="colorResultStatus" class="color-result-status"></div>
+        </div>
+
+        <div class="section" id="colorOffSection" style="display:none;">
+          <label class="label">Off-palette</label>
+          <div id="colorOffList" class="color-list"></div>
+        </div>
+
+        <div class="section" id="colorMatchSection" style="display:none;">
+          <div class="collapsible-header" id="colorMatchToggle">
+            <span class="toggle-icon">&#9654;</span>
+            <label class="label">Matched</label>
+          </div>
+          <div id="colorMatchList" class="color-list" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── LOGS ─── -->
+    <div class="section shared-section" id="logsSection">
+      <div class="collapsible-header" id="logsToggle">
+        <span class="toggle-icon">&#9654;</span>
+        <label class="label">Logs</label>
+      </div>
+      <pre id="logBox" class="log-box" style="display:none;">Ready.</pre>
+    </div>
+  </div>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
