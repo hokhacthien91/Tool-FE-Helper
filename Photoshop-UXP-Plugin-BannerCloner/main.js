@@ -43,10 +43,49 @@ const ignoreLayerInput = document.getElementById("ignoreLayerInput");
 let scannedAssets = [];
 const IGNORE_KEY = "bannerCloner.ignoreAssets";
 
+const cloneProgress = document.getElementById("cloneProgress");
+const progressFill = document.getElementById("progressFill");
+const progressText = document.getElementById("progressText");
+const jsonStatus = document.getElementById("jsonStatus");
+
 function log(message) {
   console.log(message);
-  logBox.textContent += "\n" + message;
+  const line = document.createElement("div");
+  line.textContent = message;
+  if (/error/i.test(message)) line.style.color = "#ef5350";
+  else if (/complete|created/i.test(message)) line.style.color = "#66bb6a";
+  logBox.appendChild(line);
   logBox.scrollTop = logBox.scrollHeight;
+}
+
+function setProgress(current, total, sizeLabel) {
+  cloneProgress.style.display = "block";
+  const pct = Math.round((current / total) * 100);
+  progressFill.style.width = pct + "%";
+  progressText.textContent = `Cloning ${sizeLabel}... (${current}/${total})`;
+}
+
+function hideProgress() {
+  cloneProgress.style.display = "none";
+  progressFill.style.width = "0%";
+}
+
+function updateJsonStatus() {
+  const ruleCount = Object.keys(layerRules).length;
+  if (ruleCount > 0) {
+    const totalRules = Object.values(layerRules).reduce((sum, r) => sum + r.length, 0);
+    jsonStatus.textContent = `JSON: ${ruleCount} sizes, ${totalRules} rules`;
+    jsonStatus.className = "json-status loaded";
+  } else {
+    jsonStatus.textContent = "No JSON imported";
+    jsonStatus.className = "json-status";
+  }
+}
+
+function updateSizesCount() {
+  const label = document.getElementById("sizesCountLabel");
+  const count = parseSizes(sizesInput.value).length;
+  if (label) label.textContent = count > 0 ? `(${count} selected)` : "";
 }
 
 function parseSizes(input) {
@@ -73,6 +112,8 @@ function renderPresets() {
       const next = list.includes(size) ? list.filter(x => x !== size) : [...list, size];
       sizesInput.value = next.join(" ");
       renderPresets();
+      saveTargetSizes();
+      updateSizesCount();
     });
     presetWrap.appendChild(chip);
   });
@@ -1225,8 +1266,10 @@ async function cloneAsArtboards() {
   const targets = parseSizes(sizesInput.value);
   if (!targets.length) { log("No valid sizes found."); return; }
 
-  await core.executeAsModal(async () => {
-    try {
+  cloneBtn.disabled = true;
+  cloneBtn.textContent = "Cloning...";
+  try {
+    await core.executeAsModal(async () => {
       const source = await resolveSelectedArtboard();
       const baseName = stripSizeSuffix(source.name);
       const srcRect = source.size;
@@ -1322,7 +1365,9 @@ async function cloneAsArtboards() {
       }
       log(`Template doc created`);
 
-      for (const target of targets) {
+      for (let ti = 0; ti < targets.length; ti++) {
+        const target = targets[ti];
+        setProgress(ti + 1, targets.length, target.raw);
         log(`--- Clone ${target.raw} ---`);
         const newName = suffixNameEl.checked ? `${baseName}_${target.raw}` : target.raw;
 
@@ -1493,11 +1538,14 @@ async function cloneAsArtboards() {
 
       log("=== Clone complete ===");
       log(`${targets.length} artboard(s) created in same document.`);
-    } catch (e) {
-      log("Clone error: " + e.message);
-      throw e;
-    }
-  }, { commandName: "Banner Cloner - Clone Artboards" });
+    }, { commandName: "Banner Cloner - Clone Artboards" });
+  } catch (e) {
+    log("Clone error: " + e.message);
+  } finally {
+    hideProgress();
+    cloneBtn.disabled = false;
+    cloneBtn.textContent = "Clone Artboards";
+  }
 }
 
 // ─── Clone: each size → new document ───
@@ -1509,8 +1557,10 @@ async function cloneAll() {
     return;
   }
 
-  await core.executeAsModal(async () => {
-    try {
+  cloneBtn.disabled = true;
+  cloneBtn.textContent = "Cloning...";
+  try {
+    await core.executeAsModal(async () => {
       const sourceDoc = app.activeDocument;
       if (!sourceDoc) throw new Error("No document is currently open.");
 
@@ -1602,7 +1652,9 @@ async function cloneAll() {
       }
       log(`Template doc created`);
 
-      for (const target of targets) {
+      for (let ti = 0; ti < targets.length; ti++) {
+        const target = targets[ti];
+        setProgress(ti + 1, targets.length, target.raw);
         log(`--- Clone ${target.raw} ---`);
         const newName = suffixNameEl.checked ? `${baseName}_${target.raw}` : target.raw;
 
@@ -1727,11 +1779,14 @@ async function cloneAll() {
 
       log("=== Clone complete ===");
       log(`${targets.length} document(s) created. Adjust content, then Export.`);
-    } catch (e) {
-      log("Clone error: " + e.message);
-      throw e;
-    }
-  }, { commandName: "Banner Cloner - Clone" });
+    }, { commandName: "Banner Cloner - Clone" });
+  } catch (e) {
+    log("Clone error: " + e.message);
+  } finally {
+    hideProgress();
+    cloneBtn.disabled = false;
+    cloneBtn.textContent = "Clone Artboards";
+  }
 }
 
 // ─── Export all documents as JPG + PSD into structured folder ───
@@ -1750,8 +1805,8 @@ async function exportAll() {
   const folder = await fs.getFolder();
   if (!folder) { log("Export cancelled."); return; }
 
-  await core.executeAsModal(async () => {
-    try {
+  try {
+    await core.executeAsModal(async () => {
       const docs = app.documents;
       if (!docs.length) { log("No documents open."); return; }
 
@@ -1772,8 +1827,12 @@ async function exportAll() {
       const workingFolder = await rootFolder.createFolder("working-file");
 
       log(`Exporting ${docs.length} document(s) to ${baseName}-output-working-file/`);
+      exportBtn.disabled = true;
+      exportBtn.textContent = "Exporting...";
 
-      for (const doc of docs) {
+      for (let di = 0; di < docs.length; di++) {
+        const doc = docs[di];
+        setProgress(di + 1, docs.length, doc.name || `doc ${di + 1}`);
         await bp([{
           _obj: "select",
           _target: [{ _ref: "document", _id: doc.id }],
@@ -1830,18 +1889,21 @@ async function exportAll() {
       }
 
       log(`=== Export complete ===`);
-    } catch (e) {
-      log("Export error: " + e.message);
-      throw e;
-    }
-  }, { commandName: "Banner Cloner - Export" });
+    }, { commandName: "Banner Cloner - Export" });
+  } catch (e) {
+    log("Export error: " + e.message);
+  } finally {
+    hideProgress();
+    exportBtn.disabled = false;
+    exportBtn.textContent = "Export";
+  }
 }
 
 // ─── Split artboards to separate documents + save PSD ───
 
 async function splitToDocuments() {
-  await core.executeAsModal(async () => {
-    try {
+  try {
+    await core.executeAsModal(async () => {
       const doc = app.activeDocument;
       if (!doc) { log("No document open."); return; }
       const docId = doc.id;
@@ -1857,8 +1919,12 @@ async function splitToDocuments() {
 
       if (!artboards.length) { log("No artboards found."); return; }
       log(`Splitting ${artboards.length} artboard(s) to documents...`);
+      splitBtn.disabled = true;
+      splitBtn.textContent = "Splitting...";
 
-      for (const ab of artboards) {
+      for (let si = 0; si < artboards.length; si++) {
+        const ab = artboards[si];
+        setProgress(si + 1, artboards.length, ab.name);
         const abName = ab.name.replace(/[<>:"/\\|?*]/g, "_");
         log(`Splitting: ${abName}`);
 
@@ -1910,11 +1976,14 @@ async function splitToDocuments() {
       }
 
       log(`=== Split complete: ${artboards.length} document(s) opened. Click Export to save. ===`);
-    } catch (e) {
-      log("Split error: " + e.message);
-      throw e;
-    }
-  }, { commandName: "Banner Cloner - Split to Documents" });
+    }, { commandName: "Banner Cloner - Split to Documents" });
+  } catch (e) {
+    log("Split error: " + e.message);
+  } finally {
+    hideProgress();
+    splitBtn.disabled = false;
+    splitBtn.textContent = "Split to Documents";
+  }
 }
 
 // ─── Refresh source info ───
@@ -2292,6 +2361,7 @@ async function importJson() {
     for (const [sizeKey, rules] of Object.entries(layerRules)) {
       log(`[IMPORT]   ${sizeKey}: ${rules.length} elements (${rules.map(r => r.name).join(", ")})`);
     }
+    updateJsonStatus();
   } catch (e) {
     log(`[IMPORT] Error: ${e.message}`);
   }
@@ -3237,7 +3307,20 @@ function switchMode(mode) {
 
 // ─── Event listeners ───
 
-sizesInput.addEventListener("input", () => { renderPresets(); saveTargetSizes(); });
+// ─── Log toggle/clear ───
+const logToggle = document.getElementById("logToggle");
+const logClearBtn = document.getElementById("logClearBtn");
+
+logToggle.addEventListener("click", () => {
+  logBox.classList.toggle("collapsed");
+  try { localStorage.setItem("bannerCloner.logCollapsed", logBox.classList.contains("collapsed") ? "1" : "0"); } catch (e) {}
+});
+logClearBtn.addEventListener("click", () => { logBox.innerHTML = ""; log("Ready."); });
+try {
+  if (localStorage.getItem("bannerCloner.logCollapsed") === "1") logBox.classList.add("collapsed");
+} catch (e) {}
+
+sizesInput.addEventListener("input", () => { renderPresets(); saveTargetSizes(); updateSizesCount(); });
 suffixNameEl.addEventListener("change", saveSuffixPref);
 smartMatchEl.addEventListener("change", saveSmartMatchPref);
 refreshBtn.addEventListener("click", refreshSource);
@@ -3255,5 +3338,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadBgLayerName();
   loadTargetSizes();
   renderPresets();
+  updateSizesCount();
+  updateJsonStatus();
   setTimeout(refreshSource, 150);
 });

@@ -16,7 +16,7 @@
     </div>
 
     <div class="section shared-section" id="targetSizesSection">
-      <label class="label" for="sizesInput">Target Sizes</label>
+      <label class="label" for="sizesInput">Target Sizes <span id="sizesCountLabel" class="sizes-count"></span></label>
       <input id="sizesInput" type="text" value="300x250" />
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
@@ -27,6 +27,11 @@
       <button id="exportBtn" class="primary export-all-btn">Export</button>
     </div>
 
+    <div id="cloneProgress" class="section shared-section clone-progress" style="display:none;">
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      <div id="progressText" class="progress-text">Cloning...</div>
+    </div>
+
     <div class="section" id="splitSection" style="display:none;">
       <button id="splitBtn" class="primary full split-btn">Split to Documents</button>
       <div class="hint">Split each artboard into a separate document and save as PSD.</div>
@@ -35,6 +40,7 @@
     <div class="section info-card">
       <div><strong>Source:</strong> <span id="sourceName">-</span></div>
       <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
+      <div id="jsonStatus" class="json-status">No JSON imported</div>
       <button id="refreshBtn" class="link-btn">Refresh Source</button>
     </div>
 
@@ -87,8 +93,11 @@
 
     <!-- Logs (always visible at the bottom of all tabs) -->
     <div class="section shared-section" id="logsSection">
-      <label class="label">Logs</label>
-      <pre id="logBox" class="log-box">Ready.</pre>
+      <div class="log-header">
+        <label class="label" id="logToggle">Logs</label>
+        <button id="logClearBtn" class="log-clear-btn">Clear</button>
+      </div>
+      <pre id="logBox" class="log-box"><div>Ready.</div></pre>
     </div>
   </div>
   <script src="main.js"></script>
