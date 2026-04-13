@@ -57,11 +57,22 @@ function rgbToHex(r, g, b) {
 }
 
 function cmykToRgb(c, m, y, k) {
-    return {
-        r: Math.round(255 * (1 - c / 100) * (1 - k / 100)),
-        g: Math.round(255 * (1 - m / 100) * (1 - k / 100)),
-        b: Math.round(255 * (1 - y / 100) * (1 - k / 100))
-    };
+    // Use Illustrator's color management (ICC profile) for accurate conversion
+    try {
+        var rgb = app.convertSampleColor(
+            ImageColorSpace.CMYK, [c, m, y, k],
+            ImageColorSpace.RGB,
+            ColorConvertPurpose.defaultpurpose
+        );
+        return { r: Math.round(rgb[0]), g: Math.round(rgb[1]), b: Math.round(rgb[2]) };
+    } catch (e) {
+        // Fallback: simple math (no ICC)
+        return {
+            r: Math.round(255 * (1 - c / 100) * (1 - k / 100)),
+            g: Math.round(255 * (1 - m / 100) * (1 - k / 100)),
+            b: Math.round(255 * (1 - y / 100) * (1 - k / 100))
+        };
+    }
 }
 
 function colorToInfo(color) {
@@ -96,7 +107,17 @@ function colorToInfo(color) {
         }
         if (type === "GrayColor") {
             var gr = color.gray;
-            var v = Math.round(255 - (gr / 100) * 255);
+            var v;
+            try {
+                var grgb = app.convertSampleColor(
+                    ImageColorSpace.GrayScale, [gr],
+                    ImageColorSpace.RGB,
+                    ColorConvertPurpose.defaultpurpose
+                );
+                v = Math.round(grgb[0]);
+            } catch (egr) {
+                v = Math.round(255 - (gr / 100) * 255);
+            }
             var gx = rgbToHex(v, v, v);
             return { model: "Gray", hex: gx, display: "Gray " + fmtNum(gr) + "  = " + gx, r: v, g: v, b: v };
         }

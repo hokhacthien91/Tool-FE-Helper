@@ -32,6 +32,8 @@ Illustrator-CEP-QA-Checker/
   styles.css            Dark theme CSS
   .debug                Dev debug config (Chrome DevTools port 8092)
   sample-palette.json   File JSON mẫu để test Import palette
+  install-mac.command   Script cài đặt 1-click cho macOS (double-click để chạy)
+  install-win.bat       Script cài đặt 1-click cho Windows (double-click để chạy)
   README.txt            File này
 
 
@@ -98,7 +100,22 @@ FLOW CỦA PLUGIN
 
 
 =======================================================================
-HƯỚNG DẪN CÀI ĐẶT TRÊN MÁY MỚI (macOS)
+CÀI ĐẶT NHANH (1-CLICK)
+=======================================================================
+
+macOS:  Double-click file "install-mac.command"
+         (nếu macOS chặn "Not Opened" → chuột phải → Open → Open lần nữa)
+Windows: Double-click file "install-win.bat"
+         (nếu báo lỗi symlink → chuột phải → Run as administrator)
+
+Script sẽ tự động:
+  1. Bật CEP Debug Mode (CSXS 10, 11, 12)
+  2. Tạo symlink từ folder plugin vào thư mục extensions của Adobe
+Sau khi chạy xong, khởi động lại Illustrator → Window → Extensions → QA Checker.
+
+
+=======================================================================
+HƯỚNG DẪN CÀI ĐẶT THỦ CÔNG TRÊN MÁY MỚI (macOS)
 =======================================================================
 
 BƯỚC 1: Copy plugin
@@ -170,7 +187,7 @@ BƯỚC 6 (tuỳ chọn): Setup Color palette
 
 
 =======================================================================
-HƯỚNG DẪN CÀI ĐẶT TRÊN MÁY MỚI (Windows)
+HƯỚNG DẪN CÀI ĐẶT THỦ CÔNG TRÊN MÁY MỚI (Windows)
 =======================================================================
 
 BƯỚC 1: Copy plugin
@@ -235,16 +252,3 @@ Color check sai:
   - Exact hex match — CMYK file convert sang hex có thể chênh 1-2 giá trị
     so với palette hex. Nên dùng cùng color mode.
   - Spot color: plugin dùng base color 100% để match, bỏ qua tint %.
-
-
-=======================================================================
-GIỚI HẠN HIỆN TẠI
-=======================================================================
-- Text trong Symbol, Placed items có thể không detect được.
-- CMYK → RGB là gần đúng (không dùng ICC profile, sai 1-3 giá trị hex).
-- Gradient/Pattern fill: scan được gradient stops, không decompose pattern.
-- Live mode poll mỗi 500ms (CEP không có native selection event).
-- Export .xls là Excel XML Spreadsheet — một số tính năng Excel nâng cao
-  không support (pivot, chart, v.v.), nhưng đủ cho QC report.
-- evalScript có giới hạn độ dài string (~1MB) — file rất lớn (500+ items)
-  có thể gặp lỗi khi export.

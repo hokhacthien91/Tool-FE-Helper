@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /Users/thien.ho/Projects/Tool-FE-Helper/Illustrator-CEP-QA-Checker/install-mac.command)",
+      "Bash(open http://localhost:8080)"
+    ]
+  }
+}

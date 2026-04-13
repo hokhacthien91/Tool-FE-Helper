@@ -1,29 +1,10 @@
 {
-  "name": "TF Sales Pitch Deck",
+  "name": "Brand Palette",
   "version": "2024.11",
   "colors": [
-    { "name": "black",             "hex": "#021C42", "group": "primary" },
-    { "name": "primary/400",       "hex": "#195ED5", "group": "primary" },
-    { "name": "primary/300",       "hex": "#0E65FB", "group": "primary" },
-    { "name": "primary/200",       "hex": "#6E9DED", "group": "primary" },
-    { "name": "primary/100",       "hex": "#F1F2FE", "group": "primary" },
-
-    { "name": "semantic/error",    "hex": "#C62828", "group": "semantic" },
-    { "name": "semantic/info",     "hex": "#0277BD", "group": "semantic" },
-    { "name": "semantic/success",  "hex": "#2E7D32", "group": "semantic" },
-    { "name": "semantic/warning",  "hex": "#E6DC02", "group": "semantic" },
-
-    { "name": "secondary/400",    "hex": "#F34C43", "group": "secondary" },
-    { "name": "secondary/300",    "hex": "#FF8A3D", "group": "secondary" },
-    { "name": "secondary/200",    "hex": "#FFA366", "group": "secondary" },
-    { "name": "secondary/100",    "hex": "#FFC199", "group": "secondary" },
-
-    { "name": "gray/600",         "hex": "#495057", "group": "neutral" },
-    { "name": "gray/500",         "hex": "#868E96", "group": "neutral" },
-    { "name": "gray/400",         "hex": "#ADB5BD", "group": "neutral" },
-    { "name": "gray/300",         "hex": "#DEE2E6", "group": "neutral" },
-    { "name": "gray/200",         "hex": "#F7F7F5", "group": "neutral" },
-    { "name": "gray/100",         "hex": "#F8F9FA", "group": "neutral" },
-    { "name": "white",            "hex": "#FFFFFF", "group": "neutral" }
+    { "name": "Red 032",  "hex": "#E71316" },
+    { "name": "Teal",     "hex": "#00677F"},
+    { "name": "Yellow",   "hex": "#F1B434" },
+    { "name": "",      "hex": "#9BD3DD" }
   ]
 }

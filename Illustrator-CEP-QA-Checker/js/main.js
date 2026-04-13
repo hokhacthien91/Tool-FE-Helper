@@ -807,6 +807,15 @@ function getActiveProfile() {
 }
 
 /* ─── Palette parsing ─── */
+function hexDistance(hex1, hex2) {
+  const n1 = parseInt(hex1.replace("#", ""), 16);
+  const n2 = parseInt(hex2.replace("#", ""), 16);
+  const r = Math.abs(((n1 >> 16) & 255) - ((n2 >> 16) & 255));
+  const g = Math.abs(((n1 >> 8) & 255) - ((n2 >> 8) & 255));
+  const b = Math.abs((n1 & 255) - (n2 & 255));
+  return Math.max(r, g, b);
+}
+
 function normalizeHex(raw) {
   let s = String(raw).trim().toUpperCase();
   if (s.charAt(0) !== "#") s = "#" + s;
@@ -825,21 +834,36 @@ function parsePaletteText(text) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (trimmed.startsWith("//")) continue;
-    const parts = trimmed.split(/\s+/);
+
     let hex = null;
     let name = "";
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const h = normalizeHex(parts[i]);
-      if (h) {
-        hex = h;
-        name = parts.slice(0, i).join(" ").trim();
-        break;
+
+    // Format: #HEX // Name
+    const commentIdx = trimmed.indexOf("//");
+    if (commentIdx > 0) {
+      const before = trimmed.substring(0, commentIdx).trim();
+      const after = trimmed.substring(commentIdx + 2).trim();
+      const h = normalizeHex(before);
+      if (h) { hex = h; name = after; }
+    }
+
+    // Fallback: Name #HEX or just #HEX
+    if (!hex) {
+      const parts = trimmed.split(/\s+/);
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const h = normalizeHex(parts[i]);
+        if (h) {
+          hex = h;
+          name = parts.slice(0, i).join(" ").trim();
+          break;
+        }
+      }
+      if (!hex) {
+        const h = normalizeHex(parts[0]);
+        if (h) { hex = h; name = ""; }
       }
     }
-    if (!hex) {
-      const h = normalizeHex(parts[0]);
-      if (h) { hex = h; name = ""; }
-    }
+
     if (hex && !seen[hex]) {
       seen[hex] = true;
       colors.push({ hex, name: name || "" });
@@ -1055,7 +1079,7 @@ function paletteImportJson() {
             lastGroup = group;
           }
           const name = c.name || c.label || "";
-          lines.push(name ? name + "  " + hex : hex);
+          lines.push(name ? hex + " // " + name : hex);
         }
         document.getElementById("paletteInput").value = lines.join("\n");
         paletteUnsaved = true;
@@ -1124,6 +1148,14 @@ function runColorCheck() {
         c.matchName = paletteNames[checkHex] || "";
         matched.push(c);
       } else {
+        // Find nearest palette color + distance
+        let bestDist = Infinity, bestHex = "";
+        for (const p of palette) {
+          const d = hexDistance(checkHex, p.hex);
+          if (d < bestDist) { bestDist = d; bestHex = p.hex; }
+        }
+        c.nearestHex = bestHex;
+        c.nearestDist = bestDist;
         off.push(c);
       }
     }
@@ -1160,6 +1192,7 @@ function renderColorResult(matched, off, timestamp) {
   offList.innerHTML = "";
   if (off.length > 0) {
     offSection.style.display = "";
+    document.getElementById("colorOffCount").textContent = off.length;
     for (const c of off) {
       offList.appendChild(buildColorItem(c, true));
     }
@@ -1172,6 +1205,7 @@ function renderColorResult(matched, off, timestamp) {
   matchList.innerHTML = "";
   if (matched.length > 0) {
     matchSection.style.display = "";
+    document.getElementById("colorMatchCount").textContent = matched.length;
     for (const c of matched) {
       matchList.appendChild(buildColorItem(c, false));
     }
@@ -1202,6 +1236,15 @@ function buildColorItem(c, isOff) {
     nameLine.className = "ci-name";
     nameLine.textContent = c.matchName;
     info.appendChild(nameLine);
+  }
+
+  if (isOff && c.nearestHex) {
+    const nearLine = document.createElement("div");
+    nearLine.className = "ci-detail";
+    nearLine.style.color = "#ff9800";
+    nearLine.style.fontFamily = '"Courier New", monospace';
+    nearLine.textContent = "nearest: " + c.nearestHex + " (diff " + c.nearestDist + ")";
+    info.appendChild(nearLine);
   }
 
   if (c.tint != null && c.tint < 100) {

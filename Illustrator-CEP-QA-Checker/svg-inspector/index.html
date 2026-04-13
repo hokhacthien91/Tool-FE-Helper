@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVG Inspector</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <svg class="header-logo" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+      <span class="header-title">SVG Inspector</span>
+      <span class="header-version">v0.2.0</span>
+    </div>
+    <div class="header-right">
+      <a href="readme.html" class="header-help" data-tooltip="User Guide">?</a>
+    </div>
+  </header>
+
+  <div class="app-split">
+
+    <!-- ═══ LEFT: Upload + Preview ═══ -->
+    <div class="panel-left">
+      <div class="section">
+        <div class="upload-area" id="uploadArea">
+          <input type="file" id="fileInput" accept=".svg" hidden />
+          <div class="upload-content" id="uploadContent">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p>Drop <strong>.svg</strong> file here or <span class="link">browse</span></p>
+          </div>
+          <div class="file-info" id="fileInfo" hidden>
+            <span id="fileName"></span>
+            <button id="clearFile" title="Remove file">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty state when no file -->
+      <div id="emptyPreview" class="empty-preview">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="m21 15-5-5L5 21"/>
+        </svg>
+        <p>Upload a SVG file to preview</p>
+      </div>
+
+      <div id="previewSection" style="display:none;">
+        <div class="preview-container" id="previewContainer"></div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT: Tabs + Panels ═══ -->
+    <div class="panel-right">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-mode="color">Color<span class="tab-badge" id="badgeColor"></span></button>
+        <button class="tab-btn" data-mode="font">Font<span class="tab-badge" id="badgeFont"></span></button>
+      </div>
+
+      <!-- ─── COLOR TAB ─── -->
+      <div id="colorPanel" class="mode-panel">
+        <div class="section">
+          <label class="label">Profile</label>
+          <div class="profile-row">
+            <select id="profileSelect"></select>
+            <button id="profileNewBtn" class="small-btn">New</button>
+            <button id="profileRenameBtn" class="small-btn">Rename</button>
+            <button id="profileDeleteBtn" class="small-btn danger-btn">Delete</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="palette-header">
+            <label class="label">Palette</label>
+            <span id="paletteCount" class="palette-count">0 colors</span>
+          </div>
+          <textarea id="paletteInput" rows="6"
+            placeholder="// Primary&#10;black  #021C42&#10;#195ED5&#10;#C62828&#10;&#10;// Paste hex per line, optionally with name"></textarea>
+          <div class="palette-swatches" id="paletteSwatches"></div>
+          <div class="btn-row" style="margin-top:8px;">
+            <button id="paletteImportBtn" class="small-btn">Import JSON</button>
+            <input type="file" id="jsonFileInput" accept=".json" hidden />
+            <button id="palettePickBtn" class="small-btn">Pick from file</button>
+            <button id="paletteSaveBtn" class="primary small-btn">Save</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <label class="label">Scan</label>
+          <div class="tolerance-row">
+            <span class="tolerance-label">Tolerance</span>
+            <input type="range" id="toleranceSlider" min="0" max="60" value="0" />
+            <span id="toleranceValue" class="tolerance-val">0</span>
+          </div>
+          <div class="hint">0 = exact match. Higher = allows color difference.</div>
+          <button id="colorCheckBtn" class="primary full" disabled style="margin-top:8px;">Scan &amp; Check Colors</button>
+        </div>
+
+        <div id="colorSpinner" class="spinner-row" style="display:none;">
+          <div class="spinner"></div>
+          <span>Scanning file...</span>
+        </div>
+
+        <div class="info-card" id="scanInfoCard" style="display:none;">
+          <div><strong>Text elements:</strong> <span id="scanTextCount">0</span></div>
+          <div><strong>Unique styles:</strong> <span id="scanStyleCount">0</span></div>
+          <div><strong>Colors found:</strong> <span id="scanColorCount">0</span></div>
+          <div><strong>Last checked:</strong> <span id="scanTimestamp">-</span></div>
+        </div>
+
+        <div id="colorResultSection" style="display:none;">
+          <div class="section">
+            <div id="colorResultStatus" class="color-result-status"></div>
+            <button id="exportReportBtn" class="export-btn full" style="margin-top:8px;">Export Report (.xls)</button>
+          </div>
+          <div class="section" id="colorOffSection" style="display:none;">
+            <label class="label">Off-palette <span id="offCount" class="count-badge count-fail"></span></label>
+            <div id="colorOffList" class="color-list"></div>
+          </div>
+          <div class="section" id="colorMatchSection" style="display:none;">
+            <div class="collapsible-header" id="colorMatchToggle">
+              <span class="toggle-icon">&#9654;</span>
+              <label class="label">Matched <span id="matchCount" class="count-badge count-pass"></span></label>
+            </div>
+            <div id="colorMatchList" class="color-list" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── FONT TAB ─── -->
+      <div id="fontPanel" class="mode-panel" style="display:none;">
+        <div id="fontEmpty" class="empty-state">Upload a file to see fonts.</div>
+        <div id="fontResult" class="runs-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── Toast ─── -->
+  <div class="save-toast" id="toast"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
