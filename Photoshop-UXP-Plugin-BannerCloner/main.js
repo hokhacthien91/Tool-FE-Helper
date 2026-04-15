@@ -52,10 +52,22 @@ function log(message) {
   console.log(message);
   const line = document.createElement("div");
   line.textContent = message;
-  if (/error/i.test(message)) line.style.color = "#ef5350";
-  else if (/complete|created/i.test(message)) line.style.color = "#66bb6a";
+  if (/error/i.test(message)) {
+    line.className = "log-error";
+    // Auto-expand log if collapsed
+    logBox.classList.remove("collapsed");
+    // Flash the log header to grab attention
+    const header = document.querySelector(".log-header");
+    if (header) {
+      header.classList.add("log-has-error");
+      setTimeout(() => header.classList.remove("log-has-error"), 3000);
+    }
+  } else if (/complete|created/i.test(message)) {
+    line.className = "log-success";
+  }
   logBox.appendChild(line);
-  logBox.scrollTop = logBox.scrollHeight;
+  // Scroll to the new line
+  line.scrollIntoView({ block: "nearest" });
 }
 
 function setProgress(current, total, sizeLabel) {
@@ -120,7 +132,8 @@ function renderPresets() {
 }
 
 function stripSizeSuffix(name) {
-  return name.replace(/_\d+x\d+$/i, "");
+  const m = name.match(/([-_ ])\d+x\d+$/i);
+  return { base: name.replace(/[-_ ]\d+x\d+$/i, ""), sep: m ? m[1] : "_" };
 }
 
 // ─── Photoshop helpers ───
@@ -1005,10 +1018,25 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         }
 
         let directApplied = false;
-        // Priority: width (raw) > widthElement, height (raw) > heightElement
-        const targetW = rule._widthRaw !== undefined ? rule._widthRaw : rule._widthElement;
-        const targetH = rule._heightRaw !== undefined ? rule._heightRaw : rule._heightElement;
-        const hasBothWH = targetW !== undefined && targetH !== undefined;
+        // Resolve target dimensions — never mix raw (from CSS width/height)
+        // with element (from widthElement/heightElement) to avoid stale data mismatch
+        let targetW, targetH, hasBothWH;
+        const hasRawW = rule._widthRaw !== undefined;
+        const hasRawH = rule._heightRaw !== undefined;
+        const hasElemW = rule._widthElement !== undefined;
+        const hasElemH = rule._heightElement !== undefined;
+
+        if (hasRawW || hasRawH) {
+          // Use raw group only — uniform if missing one dimension
+          targetW = hasRawW ? rule._widthRaw : undefined;
+          targetH = hasRawH ? rule._heightRaw : undefined;
+          hasBothWH = hasRawW && hasRawH;
+        } else {
+          // Fallback to element group
+          targetW = hasElemW ? rule._widthElement : undefined;
+          targetH = hasElemH ? rule._heightElement : undefined;
+          hasBothWH = hasElemW && hasElemH;
+        }
 
         // 1. TEXT: set fontSize directly
         const targetFontSize = rule._fontSize;
@@ -1023,8 +1051,8 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         }
 
         // 2. NON-TEXT layers (shape, image, smartObject)
-        // If both widthElement + heightElement → non-uniform resize (CTA bg, button shape)
-        // Else if only widthElement → uniform scale (logo)
+        // Both W+H from same source → non-uniform resize (CTA bg, button shape)
+        // Only W → uniform scale (logo)
         const nonTextLeaves = shapes.concat(images).concat(others.filter(o => !isTextLayer(o)));
         if (nonTextLeaves.length > 0 && (targetW || targetH)) {
           for (const lf of nonTextLeaves) {
@@ -1032,7 +1060,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
               const lb = await getLayerBounds(lf.id);
               if (lb.width === 0 || lb.height === 0) continue;
               if (hasBothWH) {
-                // Non-uniform resize
+                // Non-uniform resize (both from same source)
                 await resizeShapeLayer(lf, targetW, targetH);
                 log(`[RULE]   non-text "${lf.name}" (${lf.kind}): resize → ${Math.round(targetW)}x${Math.round(targetH)}`);
               } else if (targetW) {
@@ -1271,10 +1299,13 @@ async function cloneAsArtboards() {
   try {
     await core.executeAsModal(async () => {
       const source = await resolveSelectedArtboard();
-      const baseName = stripSizeSuffix(source.name);
+      const { base: baseName, sep: baseSep } = stripSizeSuffix(source.name);
       const srcRect = source.size;
       const sourceDoc = app.activeDocument;
+      const srcBounds = await getLayerBounds(source.id);
       log(`Source artboard: ${source.name} (${srcRect.width}x${srcRect.height})`);
+      log(`[POS] source artboardRect=(${srcRect.left},${srcRect.top},${srcRect.right},${srcRect.bottom})`);
+      log(`[POS] source bounds=(${srcBounds.left},${srcBounds.top},${srcBounds.right},${srcBounds.bottom})`);
 
       // Capture content layout from source artboard
       const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
@@ -1369,7 +1400,7 @@ async function cloneAsArtboards() {
         const target = targets[ti];
         setProgress(ti + 1, targets.length, target.raw);
         log(`--- Clone ${target.raw} ---`);
-        const newName = suffixNameEl.checked ? `${baseName}_${target.raw}` : target.raw;
+        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}` : target.raw;
 
         // 1. Switch to template doc and duplicate it → temp doc
         await bp([{
@@ -1491,15 +1522,24 @@ async function cloneAsArtboards() {
           _options: { dialogOptions: "dontDisplay" }
         }]);
 
-        // The duplicated artboard should be the active/top layer
-        const newAb = app.activeDocument.activeLayers[0] || app.activeDocument.layers[0];
+        // Select the topmost layer (the newly duplicated artboard)
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "front" }],
+          makeVisible: false,
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        const newAb = app.activeDocument.activeLayers[0];
         if (newAb) {
           const abDesc = await getLayerDescriptor(newAb.id);
           const abRect = rectSize(abDesc.artboard?.artboardRect || abDesc.bounds);
-          const moveX = nextX - abRect.left;
-          const moveY = srcRect.top - abRect.top;
+          const abBounds = rectSize(abDesc.bounds);
+          log(`[POS] "${newAb.name}" artboardRect=(${abRect.left},${abRect.top}) bounds=(${abBounds.left},${abBounds.top})`);
+          const moveX = nextX - abBounds.left;
+          const moveY = srcBounds.top - abBounds.top;
+          log(`[POS] "${newAb.name}" target=(${nextX},${srcBounds.top}) move=(${Math.round(moveX)},${Math.round(moveY)})`);
           if (Math.abs(moveX) > 0.5 || Math.abs(moveY) > 0.5) {
-            await bpSafe([{
+            await bp([{
               _obj: "move",
               _target: [{ _ref: "layer", _id: newAb.id }],
               to: {
@@ -1510,7 +1550,9 @@ async function cloneAsArtboards() {
               _options: { dialogOptions: "dontDisplay" }
             }]);
           }
-          log(`Positioned at x=${nextX}`);
+          // Verify after move
+          const afterBounds = await getLayerBounds(newAb.id);
+          log(`[POS] "${newAb.name}" afterBounds=(${afterBounds.left},${afterBounds.top}) expected=(${nextX},${srcBounds.top})`);
         }
 
         nextX += target.width + 80;
@@ -1536,6 +1578,26 @@ async function cloneAsArtboards() {
         _options: { dialogOptions: "dontDisplay" }
       }]);
 
+      // Restore source artboard if it drifted during cloning
+      const finalSrcDesc = await getLayerDescriptor(source.id);
+      const finalSrcRect = rectSize(finalSrcDesc.artboard?.artboardRect || finalSrcDesc.bounds);
+      const driftX = srcRect.left - finalSrcRect.left;
+      const driftY = srcRect.top - finalSrcRect.top;
+      if (Math.abs(driftX) > 0.5 || Math.abs(driftY) > 0.5) {
+        log(`[POS] Source drifted to (${finalSrcRect.left},${finalSrcRect.top}). Restoring to (${srcRect.left},${srcRect.top})...`);
+        await selectLayerById(source.id);
+        await bp([{
+          _obj: "move",
+          _target: [{ _ref: "layer", _id: source.id }],
+          to: {
+            _obj: "offset",
+            horizontal: { _unit: "pixelsUnit", _value: Math.round(driftX) },
+            vertical: { _unit: "pixelsUnit", _value: Math.round(driftY) }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[POS] Source restored.`);
+      }
       log("=== Clone complete ===");
       log(`${targets.length} artboard(s) created in same document.`);
     }, { commandName: "Banner Cloner - Clone Artboards" });
@@ -1570,7 +1632,7 @@ async function cloneAll() {
 
       const srcW = selectedAb ? selectedAb.size.width : sourceDoc.width;
       const srcH = selectedAb ? selectedAb.size.height : sourceDoc.height;
-      const baseName = selectedAb
+      const { base: baseName, sep: baseSep } = selectedAb
         ? stripSizeSuffix(selectedAb.name)
         : stripSizeSuffix(sourceDoc.title.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, ""));
       log(`Source: ${selectedAb ? selectedAb.name : sourceDoc.title} (${srcW}x${srcH})`);
@@ -1656,7 +1718,7 @@ async function cloneAll() {
         const target = targets[ti];
         setProgress(ti + 1, targets.length, target.raw);
         log(`--- Clone ${target.raw} ---`);
-        const newName = suffixNameEl.checked ? `${baseName}_${target.raw}` : target.raw;
+        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}` : target.raw;
 
         // 1. Switch to template doc and duplicate it
         await bp([{
@@ -1817,7 +1879,7 @@ async function exportAll() {
         _options: { dialogOptions: "dontDisplay" }
       }]);
       const firstName = await getDocName(app.activeDocument);
-      const baseName = stripSizeSuffix(firstName.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, "")).replace(/[<>:"/\\|?*]/g, "_");
+      const baseName = stripSizeSuffix(firstName.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, "")).base.replace(/[<>:"/\\|?*]/g, "_");
 
       // Create folder structure with timestamp
       const now = new Date();
@@ -1841,7 +1903,7 @@ async function exportAll() {
 
         const activeDoc = app.activeDocument;
         const rawName = await getDocName(activeDoc);
-        const docName = rawName.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, "").replace(/[<>:"/\\|?*]/g, "_");
+        const docName = rawName.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, "").replace(/[<>:"/\\|?*]/g, "_").toLowerCase();
         log(`Exporting: ${docName}`);
 
         // Save PSD to working-file/
@@ -1865,13 +1927,23 @@ async function exportAll() {
         }]);
         await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]);
 
+        // Cap width at 3000px (maintain aspect ratio)
+        const maxW = 3000;
+        const curW = app.activeDocument.width;
+        if (curW > maxW) {
+          const ratio = maxW / curW;
+          const newH = Math.round(app.activeDocument.height * ratio);
+          await resizeImage(maxW, newH, true);
+          log(`Resized ${docName}: ${curW}px → ${maxW}px (h=${newH})`);
+        }
+
         const jpgFile = await outputFolder.createFile(docName + ".jpg", { overwrite: true });
         const jpgToken = await fs.createSessionToken(jpgFile);
         await bp([{
           _obj: "save",
           as: {
             _obj: "JPEG",
-            extendedQuality: 10,
+            extendedQuality: 8,
             matteColor: { _enum: "matteColor", _value: "white" }
           },
           in: { _path: jpgToken, _kind: "local" },
@@ -2769,7 +2841,7 @@ async function scanArtboardImages() {
         layerName: img.name,
         exportName: img.name,
         kind: img.kind,
-        sizeMode: "C",
+        sizeMode: "A",
         scale: 2,
         type: defaultType,
         bounds: bounds,
@@ -2795,6 +2867,21 @@ function createAssetCycleBtn(label, options, currentValue, onChange) {
   const btn = document.createElement("button");
   btn.className = "asset-cycle-btn";
   btn.textContent = options[idx].label;
+  // Tooltip shows only the description of the currently selected option
+  const buildTooltip = (curIdx) => {
+    const o = options[curIdx];
+    return `${o.label}${o.tooltip ? "\n" + o.tooltip : ""}`;
+  };
+  const hasTooltip = options.some(o => o.tooltip);
+  if (hasTooltip) {
+    btn.addEventListener("mouseenter", (e) => {
+      showCustomTooltip(buildTooltip(idx), e.clientX, e.clientY);
+    });
+    btn.addEventListener("mousemove", (e) => {
+      moveCustomTooltip(e.clientX, e.clientY);
+    });
+    btn.addEventListener("mouseleave", () => hideCustomTooltip());
+  }
   btn.addEventListener("click", () => {
     idx = (idx + 1) % options.length;
     btn.textContent = options[idx].label;
@@ -2802,6 +2889,51 @@ function createAssetCycleBtn(label, options, currentValue, onChange) {
   });
   wrap.appendChild(btn);
   return wrap;
+}
+
+// ─── Custom tooltip (UXP doesn't support native title attribute) ───
+let _tooltipEl = null;
+function ensureTooltipEl() {
+  if (!_tooltipEl) {
+    _tooltipEl = document.createElement("div");
+    _tooltipEl.id = "customTooltip";
+    document.body.appendChild(_tooltipEl);
+  }
+  return _tooltipEl;
+}
+function showCustomTooltip(text, x, y) {
+  const el = ensureTooltipEl();
+  el.textContent = text;
+  // Pre-position off-screen so we can measure first
+  el.style.left = "-9999px";
+  el.style.top = "-9999px";
+  el.style.display = "block";
+  // Force reflow so getBoundingClientRect returns real size
+  void el.offsetWidth;
+  moveCustomTooltip(x, y);
+}
+function moveCustomTooltip(x, y) {
+  if (!_tooltipEl || _tooltipEl.style.display === "none") return;
+  const offset = 14;
+  const pad = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = _tooltipEl.offsetWidth || 320;
+  const h = _tooltipEl.offsetHeight || 80;
+  let left = x + offset;
+  let top = y + offset;
+  // Flip horizontally if would overflow right edge
+  if (left + w + pad > vw) left = x - w - offset;
+  // Clamp left to be at least pad px from left edge
+  if (left < pad) left = pad;
+  // Flip vertically if would overflow bottom edge
+  if (top + h + pad > vh) top = y - h - offset;
+  if (top < pad) top = pad;
+  _tooltipEl.style.left = left + "px";
+  _tooltipEl.style.top = top + "px";
+}
+function hideCustomTooltip() {
+  if (_tooltipEl) _tooltipEl.style.display = "none";
 }
 
 function renderAssetList() {
@@ -2849,12 +2981,12 @@ function renderAssetList() {
     fieldsRow.className = "asset-row-fields";
 
     const sizeOptions = [
-      { value: "A", label: "A - Original" },
-      { value: "B", label: "B - Clipped" },
-      { value: "C", label: "C - Bounds" }
+      { value: "A", label: "A - Original", tooltip: "Full layer bounds (including parts outside artboard)" },
+      { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
+      { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
     ];
     if (asset.kind === "smartObject") {
-      sizeOptions.push({ value: "D", label: "D - Embedded" });
+      sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
     }
     fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
 
@@ -2937,10 +3069,20 @@ async function getSmartObjectOriginalSize(layerId) {
 
 // Save active document as PNG or JPG to a folder using UXP photoshop API
 async function saveActiveDocAs(folder, filename, type) {
+  // Cap width at 3000px (maintain aspect ratio)
+  const maxW = 3000;
+  const curW = app.activeDocument.width;
+  if (curW > maxW) {
+    const ratio = maxW / curW;
+    const newH = Math.round(app.activeDocument.height * ratio);
+    await resizeImage(maxW, newH, true);
+    log(`Resized ${filename}: ${curW}px → ${maxW}px (h=${newH})`);
+  }
+
   const file = await folder.createFile(filename, { overwrite: true });
   const doc = app.activeDocument;
   if (type === "JPG") {
-    await doc.saveAs.jpg(file, { quality: 12 }, true);
+    await doc.saveAs.jpg(file, { quality: 8 }, true);
   } else {
     await doc.saveAs.png(file, { compression: 6 }, true);
   }
@@ -3038,10 +3180,9 @@ async function runExportAssetsFlow(folder) {
         log(`[ASSETS] (${i + 1}/${scannedAssets.length}) ${asset.exportName} — mode=${asset.sizeMode}, ${asset.scale}x, ${asset.type}`);
 
         // Filename
-        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_");
-        const modeLabel = { A: "original", B: "clipped", C: "bounds", D: "embedded" }[asset.sizeMode] || asset.sizeMode;
+        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_").toLowerCase();
         const extLower = asset.type === "JPG" ? "jpg" : "png";
-        const filename = `${safeName}-${modeLabel}-${asset.scale}x.${extLower}`;
+        const filename = `${safeName}.${extLower}`;
 
         // Switch to source doc
         await bp([{
@@ -3263,6 +3404,28 @@ async function runExportAssetsFlow(folder) {
       }]);
     } catch (e) {}
 
+    // Save layers.json to the same folder
+    try {
+      const source = await resolveSelectedArtboard();
+      const artLeft = source.size.left;
+      const artTop = source.size.top;
+      const layersInfo = [];
+      for (const child of source.layer.layers) {
+        layersInfo.push(await collectLayerInfo(child, artLeft, artTop));
+      }
+      const json = {
+        artboard: source.name,
+        width: source.size.width,
+        height: source.size.height,
+        layers: layersInfo
+      };
+      const jsonFile = await folder.createFile("layers.json", { overwrite: true });
+      await jsonFile.write(JSON.stringify(json, null, 2));
+      log(`[ASSETS] Saved: layers.json`);
+    } catch (e) {
+      log(`[ASSETS] layers.json skipped: ${e.message}`);
+    }
+
     log(`[ASSETS] === Export complete: ${scannedAssets.length} asset(s) ===`);
 
   }, { commandName: "Banner Cloner - Export Assets" });
@@ -3302,6 +3465,7 @@ function switchMode(mode) {
     exportAssetsPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "";
     splitSection.style.display = mode === "artboards" ? "block" : "none";
+    splitBtn.style.display = mode === "artboards" ? "" : "none";
   }
 }
 

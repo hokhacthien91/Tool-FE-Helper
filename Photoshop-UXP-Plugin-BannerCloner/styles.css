@@ -60,10 +60,15 @@ input[type="checkbox"]:checked::after {
 }
 
 body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; font-size: 13px; overflow-x: auto; overflow-y: auto; }
-.app { padding: 0 16px; height: 100vh; overflow-y: auto; }
+.app { padding: 60px 16px 10px; height: 100vh; overflow-y: auto; }
 h1 { margin: 0 0 6px; font-size: 28px; }
 .muted { color: var(--muted); margin: 0 0 18px; line-height: 1.4; }
-.tab-bar { display: flex; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+.tab-bar { display: flex; margin-bottom: 16px; border-bottom: 2px solid var(--border);
+    position: fixed;
+    top: 0;
+    width: 100%;
+    left: 0;
+    background: #000; }
 .tab-btn {
   flex: 1;
   background: transparent;
@@ -213,12 +218,32 @@ button.full { width: 100%; }
   font-weight: 400;
 }
 
+.log-error {
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.1);
+  padding: 2px 4px;
+  border-radius: 2px;
+  border-left: 3px solid #ef5350;
+}
+.log-success {
+  color: #66bb6a;
+}
 .log-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
+}
+.log-header.log-has-error {
+  animation: error-flash 0.6s ease 3;
+}
+.log-header.log-has-error .label {
+  color: #ef5350;
+}
+@keyframes error-flash {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(239, 83, 80, 0.2); }
 }
 .log-header .label { margin-bottom: 0; }
 .log-clear-btn {
@@ -402,6 +427,24 @@ button.full { width: 100%; }
   font-weight: 700;
   text-align: center;
   cursor: pointer;
+}
+#customTooltip {
+  position: fixed;
+  z-index: 999999;
+  background: #1a1a1a;
+  color: #f3f3f3;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  display: none;
+  width: 320px;
+  max-width: 320px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.7);
 }
 .asset-export-one-btn {
   width: 100%;

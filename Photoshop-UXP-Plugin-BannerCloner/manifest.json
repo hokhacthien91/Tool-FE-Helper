@@ -11,6 +11,15 @@
     }
   },
   "manifestVersion": 5,
+  "icons": [
+    {
+      "width": 23,
+      "height": 23,
+      "path": "icon.png",
+      "scale": [1, 2],
+      "theme": ["all"]
+    }
+  ],
   "requiredPermissions": {
     "localFileSystem": "fullAccess",
     "allowCodeGenerationFromStrings": true
