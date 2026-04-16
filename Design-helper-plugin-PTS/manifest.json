@@ -1,0 +1,30 @@
+{
+  "id": "com.gravityglobal.replace-matching-layers",
+  "name": "Replace Matching Layers",
+  "version": "1.0.0",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "host": [
+    {
+      "app": "PS",
+      "minVersion": "23.0.0"
+    }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "replaceMatchingLayersPanel",
+      "label": {
+        "default": "Replace Matching Layers"
+      },
+      "minimumSize": { "width": 360, "height": 480 },
+      "maximumSize": { "width": 2000, "height": 2000 },
+      "preferredDockedSize": { "width": 420, "height": 640 },
+      "preferredFloatingSize": { "width": 480, "height": 720 }
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "request",
+    "clipboard": "readAndWrite"
+  }
+}

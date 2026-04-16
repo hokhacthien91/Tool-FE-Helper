@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Content Replacer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="section scan-mode">
+      <div class="label">Scan mode</div>
+      <label class="radio-row">
+        <input type="radio" name="scanMode" value="current" checked />
+        <span>Current document (multiple artboards)</span>
+      </label>
+      <label class="radio-row">
+        <input type="radio" name="scanMode" value="all" />
+        <span>All open documents</span>
+      </label>
+    </div>
+
+    <div class="section btn-row">
+      <button id="scanBtn" class="primary">Scan</button>
+      <button id="applyBtn" class="primary is-disabled" disabled>Apply</button>
+      <button id="saveBtn" class="primary export-all-btn is-disabled" disabled>Save</button>
+    </div>
+    <div id="summaryBar" class="summary-bar"></div>
+
+    <div class="section info-card" id="infoCard">
+      <div><strong>Open Docs:</strong> <span id="docCount">0</span></div>
+      <div><strong>Targets:</strong> <span id="targetCount">0</span> <span id="targetBreakdown" class="sizes-count"></span></div>
+      <div id="scanStatus" class="json-status">Not scanned yet</div>
+      <div id="dirtyStatus" class="json-status"></div>
+    </div>
+
+    <div id="progressSection" class="section clone-progress" style="display:none;">
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      <div id="progressText" class="progress-text">Working…</div>
+    </div>
+
+    <div id="emptyState" class="section empty-state">
+      <strong>Get started</strong>
+      Open your PSD in Photoshop, then click <b>Scan</b>.<br/>
+      Switch to <b>All open documents</b> if each size is a separate PSD.
+      Layers with the same name across artboards or files are grouped into one row.
+    </div>
+
+    <div id="textSection" class="section" style="display:none;">
+      <div class="section-heading">
+        <div class="label">Text layers <span id="textCount" class="sizes-count"></span></div>
+      </div>
+      <div class="hint">Type new content — applied to every target that has a layer with this name. Leave blank to skip.</div>
+      <div id="textList"></div>
+    </div>
+
+    <div id="imageSection" class="section" style="display:none;">
+      <div class="section-heading">
+        <div class="label">Image / Logo layers <span id="imageCount" class="sizes-count"></span></div>
+      </div>
+      <div class="hint">Pick a replacement file — raster layers are auto-converted to Smart Objects so position &amp; size are preserved.</div>
+      <div id="imageList"></div>
+    </div>
+
+    <div id="noResultsState" class="section empty-state" style="display:none;">
+      <strong>No replaceable layers found</strong>
+      Scan found no text or image leaf layers in the open documents.
+    </div>
+
+    <div class="section" id="logsSection">
+      <div class="log-header">
+        <div class="label" id="logToggle">Logs <span class="toggle-icon">▼</span></div>
+        <div class="log-btn-group">
+          <button id="logCopyBtn" class="log-clear-btn">Copy</button>
+          <button id="logClearBtn" class="log-clear-btn">Clear</button>
+        </div>
+      </div>
+      <pre id="logBox" class="log-box"><div>Ready.</div></pre>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RML Spike — Record API</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <section class="card">
+      <h2>Setup</h2>
+      <p class="muted">
+        Set: <code>RML_Spike</code>, Action: <code>rec1</code>
+      </p>
+      <div class="row">
+        <button class="btn" id="btnT1">1. Create action set + action</button>
+        <button class="btn" id="btnCleanup">Cleanup</button>
+        <button class="btn" id="btnVerifyParent">Verify action parent</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Start recording</h2>
+      <div class="row">
+        <button class="btn" id="btnT2a">2a. record</button>
+        <button class="btn" id="btnT2b">2b. startRecording</button>
+        <button class="btn" id="btnT2c">2c. set recording=true</button>
+      </div>
+    </section>
+
+    <section class="card" style="border-color: #2ecc71;">
+      <h2>🎯 Stop — dontRecord+forceNotify flags (NEW)</h2>
+      <p class="muted">Listener caught PS emitting <code>dontRecord:true, forceNotify:true, _isCommand:false</code> at descriptor top-level. Testing this shape.</p>
+      <div class="row">
+        <button class="btn" id="btnStopFlags1">M. stop + 3 flags</button>
+        <button class="btn" id="btnStopFlags2">N. set recording=false + flags</button>
+        <button class="btn" id="btnStopFlags3">O. stopRecording + flags</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnStopFlags4">P. record false + flags</button>
+        <button class="btn" id="btnStopFlags5">Q. Just flags, no verb</button>
+      </div>
+    </section>
+
+    <section class="card card-highlight">
+      <h2>Stop recording — old approaches</h2>
+      <p class="muted">Testing non-recordable flag approaches.</p>
+      <div class="row">
+        <button class="btn" id="btnStopA">A. stop + _isCommand:false</button>
+        <button class="btn" id="btnStopB">B. stop + suppressMessages</button>
+        <button class="btn" id="btnStopC">C. stop + dontRecord option</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnStopD">D. endRecording</button>
+        <button class="btn" id="btnStopE">E. stopAction</button>
+        <button class="btn" id="btnStopF">F. recordStop</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnStopG">G. finish</button>
+        <button class="btn" id="btnStopH">H. cancel</button>
+        <button class="btn" id="btnStopI">I. terminate</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnStopJ">J. pause</button>
+        <button class="btn" id="btnStopK">K. break</button>
+        <button class="btn" id="btnStopL">L. abort</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Legacy stop tests</h2>
+      <div class="row">
+        <button class="btn" id="btnT3a">3a. stop (bare)</button>
+        <button class="btn" id="btnT3b">3b. stopRecording</button>
+        <button class="btn" id="btnT3c">3c. set recording=false</button>
+      </div>
+    </section>
+
+    <section class="card card-important" style="border-color: #2ecc71;">
+      <h2>🎯 New APIs discovered</h2>
+      <p class="muted">photoshop.action exposes <code>recordCommand</code> + <code>recordAction</code>. photoshop.app exposes <code>actionTree</code>, <code>Action</code>, <code>ActionSet</code>.</p>
+      <div class="row">
+        <button class="btn" id="btnProbeRecordAction">Probe recordAction()</button>
+        <button class="btn" id="btnProbeRecordCommand">Probe recordCommand()</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnDumpActionTreeObj">Dump app.actionTree</button>
+        <button class="btn" id="btnDumpActionSetClass">Dump ActionSet class</button>
+        <button class="btn" id="btnDumpActionClass">Dump Action class</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnRecordActionEmpty">Call recordAction(emptyFn)</button>
+        <button class="btn" id="btnRecordActionModal">recordAction inside modal</button>
+      </div>
+    </section>
+
+    <section class="card card-important">
+      <h2>🔬 API discovery</h2>
+      <p class="muted">Inspect what the Photoshop / UXP APIs actually expose.</p>
+      <div class="row">
+        <button class="btn" id="btnDumpPhotoshop">Dump photoshop module</button>
+        <button class="btn" id="btnDumpAction">Dump photoshop.action</button>
+        <button class="btn" id="btnDumpApp">Dump photoshop.app</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnDumpCore">Dump photoshop.core</button>
+        <button class="btn" id="btnDumpActionTree">Inspect action sets tree</button>
+        <button class="btn" id="btnProbeActions">Probe recordable-state</button>
+      </div>
+    </section>
+
+    <section class="card card-important">
+      <h2>🎧 Listener — reverse engineer</h2>
+      <p class="muted">
+        The most reliable path: turn listener on, then press the NATIVE stop button
+        (the square ■ in PS Actions panel) to see what descriptor PS emits
+        internally.
+      </p>
+      <div class="row">
+        <button class="btn" id="btnDumpNotifs">Start listener</button>
+        <button class="btn" id="btnStopNotifs">Stop listener</button>
+        <button class="btn" id="btnDumpAllEvents">List known events</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Inspect</h2>
+      <div class="row">
+        <button class="btn" id="btnT5">Read step count</button>
+        <button class="btn" id="btnGetSet">Dump set descriptor</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Replay</h2>
+      <p class="muted">Select 1+ target layers in PS, then click.</p>
+      <div class="row">
+        <button class="btn" id="btnT4">Play on selected target(s)</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <button class="btn btn-ghost" id="btnClear">Clear log</button>
+        <button class="btn btn-ghost" id="btnCopy">Copy log</button>
+      </div>
+      <pre id="log" class="log"></pre>
+    </section>
+
+  </div>
+  <script src="index.js"></script>
+</body>
+</html>

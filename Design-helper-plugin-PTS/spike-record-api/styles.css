@@ -1,0 +1,107 @@
+:root {
+  --bg: #2b2b2b;
+  --bg-2: #333;
+  --bg-3: #3a3a3a;
+  --fg: #e6e6e6;
+  --muted: #9a9a9a;
+  --border: #444;
+  --accent: #2d7cf7;
+  --ok: #27ae60;
+  --warn: #e0a030;
+  --danger: #d9534f;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px/1.45 -apple-system, "Segoe UI", sans-serif;
+  height: 100%;
+  width: 100%;
+}
+
+html { overflow: hidden; }
+body { overflow-y: auto; overflow-x: hidden; }
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 0;
+}
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-highlight { border-color: var(--warn); }
+.card-important { border-color: var(--accent); }
+
+h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.btn:hover { background: var(--bg-3); }
+.btn-ghost { background: transparent; }
+
+p { margin: 0; }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 11px; font-style: italic; }
+
+code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+}
+
+.log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 8px;
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  font: 10px/1.45 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  color: var(--fg);
+}
+
+.log .ok { color: var(--ok); }
+.log .warn { color: var(--warn); }
+.log .err { color: var(--danger); }
+.log .dim { color: var(--muted); }

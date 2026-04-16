@@ -9,11 +9,45 @@ Dùng cho workflow tạo banner ads nhiều kích thước từ 1 design gốc.
 - styles.css     — Dark theme styles
 - main.js        — All plugin logic
 
-## Cách cài
-1. Cài Adobe UXP Developer Tool
-2. Add plugin folder trong UXP Dev Tool
-3. Load vào Photoshop
-4. Panel xuất hiện ở menu Plugins > Banner Cloner Pro
+## Setup trên máy mới
+
+### Yêu cầu
+- **Photoshop** 23.0.0 trở lên (2022+)
+- **Adobe Creative Cloud Desktop** (để cài UXP Developer Tool)
+- macOS hoặc Windows
+
+### Bước 1 — Cài UXP Developer Tool
+1. Mở **Creative Cloud Desktop** → tab **Apps**
+2. Tìm **UXP Developer Tool** (trong mục Extensions & Plugins / Desktop Apps) → Install
+   - Nếu không thấy: tải trực tiếp tại https://developer.adobe.com/photoshop/uxp/2022/guides/devtool/installation/
+3. Mở UXP Developer Tool sau khi cài xong
+
+### Bước 2 — Clone / copy plugin về máy
+```
+git clone <repo-url> Photoshop-UXP-Plugin-BannerCloner
+```
+Hoặc copy cả folder plugin này sang máy mới (cần có `manifest.json`, `index.html`, `main.js`, `styles.css`, `icon.png`, `icon@2x.png`).
+
+### Bước 3 — Add plugin vào UXP Dev Tool
+1. Mở **Photoshop** trước (Dev Tool cần Photoshop đang chạy)
+2. Mở **UXP Developer Tool** → click **Add Plugin...**
+3. Chọn file `manifest.json` trong folder plugin
+4. Plugin xuất hiện trong list với tên "Banner Cloner Pro"
+
+### Bước 4 — Load vào Photoshop
+1. Trong UXP Dev Tool, click nút **••• (Actions)** bên cạnh plugin
+2. Chọn **Load** → panel sẽ hiện trong Photoshop
+3. Mở panel tại menu **Plugins > Banner Cloner Pro** (hoặc **Window > Extensions**)
+
+### Bước 5 — Pin panel (optional)
+- Kéo panel vào workspace, save workspace để lần sau mở Photoshop là có sẵn
+- Mỗi lần khởi động lại Photoshop, cần **Load** lại từ UXP Dev Tool (development mode)
+
+### Troubleshooting
+- **Plugin không hiện trong menu**: check manifest.json hợp lệ, Photoshop version ≥ 23.0.0
+- **Lỗi "manifest invalid"**: mở manifest.json trong UXP Dev Tool → xem log error
+- **Panel blank/trắng**: right-click panel → **Debug** → mở DevTools xem console
+- **Reload sau khi sửa code**: click **Reload** trong UXP Dev Tool (không cần Load lại)
 
 ## Tính năng
 

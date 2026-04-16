@@ -440,20 +440,36 @@ function isBgGroup(layer) {
 }
 
 function findBgGroup(parent) {
-  // 1. Exact match with configured bg layer name (must have GG- prefix)
-  for (const layer of parent.layers) {
-    if (isBgGroup(layer) && hasGGPrefix(layer.name)) return layer;
-  }
-  // 2. Fallback: first GG- layer whose name contains "background" or "bg"
-  for (const layer of parent.layers) {
-    if (!hasGGPrefix(layer.name)) continue;
-    const n = layer.name.toLowerCase();
-    if (n.includes("background") || n.includes("-bg")) {
-      log(`[BG] auto-detected: "${layer.name}" (configured "${getBgLayerName()}" not found)`);
-      return layer;
+  // 1. Exact match with configured bg layer name (must have GG- prefix) — recursive
+  function findExact(node) {
+    if (!node.layers) return null;
+    for (const layer of node.layers) {
+      if (isBgGroup(layer) && hasGGPrefix(layer.name)) return layer;
+      const found = findExact(layer);
+      if (found) return found;
     }
+    return null;
   }
-  return null;
+  const exact = findExact(parent);
+  if (exact) return exact;
+
+  // 2. Fallback: first GG- layer whose name contains "background" or "bg" — recursive
+  function findFallback(node) {
+    if (!node.layers) return null;
+    for (const layer of node.layers) {
+      if (hasGGPrefix(layer.name)) {
+        const n = layer.name.toLowerCase();
+        if (n.includes("background") || n.includes("-bg")) {
+          log(`[BG] auto-detected: "${layer.name}" (configured "${getBgLayerName()}" not found)`);
+          return layer;
+        }
+      }
+      const found = findFallback(layer);
+      if (found) return found;
+    }
+    return null;
+  }
+  return findFallback(parent);
 }
 
 async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
@@ -2099,14 +2115,13 @@ function getRulesForSize(sizeKey) {
 }
 
 function createRuleInput(value, placeholder, sizeKey, idx, field) {
-  const inp = document.createElement("input");
-  inp.type = "text";
+  const inp = document.createElement("sp-textfield");
   inp.value = value;
-  inp.placeholder = placeholder;
+  if (placeholder) inp.setAttribute("placeholder", placeholder);
   inp.addEventListener("change", () => {
     const rules = getRulesForSize(sizeKey);
     if (rules[idx]) {
-      rules[idx][field] = inp.value.trim();
+      rules[idx][field] = String(inp.value || "").trim();
       saveLayerRules();
     }
   });
@@ -2867,18 +2882,14 @@ function createAssetCycleBtn(label, options, currentValue, onChange) {
   const btn = document.createElement("button");
   btn.className = "asset-cycle-btn";
   btn.textContent = options[idx].label;
-  // Tooltip shows only the description of the currently selected option
-  const buildTooltip = (curIdx) => {
-    const o = options[curIdx];
-    return `${o.label}${o.tooltip ? "\n" + o.tooltip : ""}`;
-  };
+  // Tooltip shows all options + descriptions, with current marked
+  const buildTooltip = (curIdx) => options.map((o, i) =>
+    `${i === curIdx ? "● " : "  "}${o.label}${o.tooltip ? " — " + o.tooltip : ""}`
+  ).join("\n");
   const hasTooltip = options.some(o => o.tooltip);
   if (hasTooltip) {
-    btn.addEventListener("mouseenter", (e) => {
-      showCustomTooltip(buildTooltip(idx), e.clientX, e.clientY);
-    });
-    btn.addEventListener("mousemove", (e) => {
-      moveCustomTooltip(e.clientX, e.clientY);
+    btn.addEventListener("mouseenter", () => {
+      showCustomTooltipNearButton(buildTooltip(idx), btn);
     });
     btn.addEventListener("mouseleave", () => hideCustomTooltip());
   }
@@ -2901,36 +2912,40 @@ function ensureTooltipEl() {
   }
   return _tooltipEl;
 }
-function showCustomTooltip(text, x, y) {
+function showCustomTooltip(text) {
   const el = ensureTooltipEl();
   el.textContent = text;
-  // Pre-position off-screen so we can measure first
+  el.style.display = "block";
+}
+function showCustomTooltipNearButton(text, anchorEl) {
+  const el = ensureTooltipEl();
+  el.textContent = text;
+  // Reset to measure natural size
   el.style.left = "-9999px";
   el.style.top = "-9999px";
   el.style.display = "block";
-  // Force reflow so getBoundingClientRect returns real size
   void el.offsetWidth;
-  moveCustomTooltip(x, y);
-}
-function moveCustomTooltip(x, y) {
-  if (!_tooltipEl || _tooltipEl.style.display === "none") return;
-  const offset = 14;
   const pad = 8;
+  const gap = 50;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const w = _tooltipEl.offsetWidth || 320;
-  const h = _tooltipEl.offsetHeight || 80;
-  let left = x + offset;
-  let top = y + offset;
-  // Flip horizontally if would overflow right edge
-  if (left + w + pad > vw) left = x - w - offset;
-  // Clamp left to be at least pad px from left edge
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const r = anchorEl.getBoundingClientRect();
+  // Prefer ABOVE the button (avoids overlapping inputs below, which tend to bleed through in UXP)
+  let top = r.top - h - gap;
+  if (top < pad) {
+    // Fallback: place below the button
+    top = r.bottom + gap;
+    // If still overflow bottom, clamp
+    if (top + h + pad > vh) top = Math.max(pad, vh - h - pad);
+  }
+  // Align left edge with button, clamp inside viewport
+  let left = r.left;
+  if (left + w + pad > vw) left = vw - w - pad;
   if (left < pad) left = pad;
-  // Flip vertically if would overflow bottom edge
-  if (top + h + pad > vh) top = y - h - offset;
-  if (top < pad) top = pad;
-  _tooltipEl.style.left = left + "px";
-  _tooltipEl.style.top = top + "px";
+  el.style.left = left + "px";
+  el.style.top = top + "px";
 }
 function hideCustomTooltip() {
   if (_tooltipEl) _tooltipEl.style.display = "none";
@@ -2957,10 +2972,9 @@ function renderAssetList() {
     // Name input + kind badge + remove button
     const nameRow = document.createElement("div");
     nameRow.className = "asset-row-header";
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
+    const nameInput = document.createElement("sp-textfield");
     nameInput.value = asset.exportName;
-    nameInput.addEventListener("change", () => { asset.exportName = nameInput.value.trim() || asset.layerName; });
+    nameInput.addEventListener("change", () => { asset.exportName = String(nameInput.value || "").trim() || asset.layerName; });
     const kindBadge = document.createElement("span");
     kindBadge.className = "asset-kind-badge";
     kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : "Pixel";
@@ -3031,7 +3045,7 @@ async function exportSingleAsset(asset) {
   const parent = await fs.getFolder();
   if (!parent) { log("[ASSETS] Export cancelled."); return; }
 
-  const safeAsset = asset.exportName.replace(/[<>:"/\\|?*]/g, "_");
+  const safeAsset = asset.exportName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-");
   const subfolder = await createTimestampedSubfolder(parent, `assets-${safeAsset}`);
   log(`[ASSETS] Output: ${subfolder.name}/`);
 
@@ -3180,7 +3194,7 @@ async function runExportAssetsFlow(folder) {
         log(`[ASSETS] (${i + 1}/${scannedAssets.length}) ${asset.exportName} — mode=${asset.sizeMode}, ${asset.scale}x, ${asset.type}`);
 
         // Filename
-        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_").toLowerCase();
+        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
         const extLower = asset.type === "JPG" ? "jpg" : "png";
         const filename = `${safeName}.${extLower}`;
 

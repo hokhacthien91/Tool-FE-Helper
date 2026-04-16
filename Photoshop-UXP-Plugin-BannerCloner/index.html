@@ -17,7 +17,7 @@
 
     <div class="section shared-section" id="targetSizesSection">
       <label class="label" for="sizesInput">Target Sizes <span id="sizesCountLabel" class="sizes-count"></span></label>
-      <input id="sizesInput" type="text" value="300x250" />
+      <sp-textfield id="sizesInput" value="300x250"></sp-textfield>
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
     </div>
@@ -48,7 +48,7 @@
     <div id="exportAssetsPanel" style="display:none;">
       <div class="section">
         <label class="label" for="ignoreLayerInput">Ignore layers</label>
-        <input id="ignoreLayerInput" type="text" value="" />
+        <sp-textfield id="ignoreLayerInput" value=""></sp-textfield>
         <div class="hint">Layer names containing these keywords will be skipped (comma-separated)</div>
       </div>
       <div class="section btn-row">
@@ -69,7 +69,7 @@
 
       <div class="section">
         <label class="label" for="skipLayerInput">Background Layer</label>
-        <input id="skipLayerInput" type="text" value="GG-background" />
+        <sp-textfield id="skipLayerInput" value="GG-background"></sp-textfield>
         <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
       </div>
 

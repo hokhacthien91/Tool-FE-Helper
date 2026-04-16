@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Replace Matching Layers</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Mode switch -->
+    <section class="mode-switch">
+      <label class="mode-btn active"><input type="radio" name="mode" value="replace" checked /><span>Replace layer</span></label>
+      <label class="mode-btn"><input type="radio" name="mode" value="record" /><span>Record &amp; Replay</span></label>
+    </section>
+
+    <!-- STEP 1 — Source -->
+    <section class="step" id="stepSource">
+      <div class="step-title"><span class="step-num">1</span> Source</div>
+      <div id="sourceCard" class="source-card empty">
+        <div class="source-empty">
+          Select a layer or group in Photoshop, then click below.
+        </div>
+        <div class="source-filled" hidden>
+          <div class="source-name" id="sourceName"></div>
+          <div class="source-path" id="sourcePath"></div>
+        </div>
+      </div>
+      <button id="btnRefreshSource" class="btn btn-primary btn-block">Use current selection</button>
+    </section>
+
+    <!-- STEP 1.5 — Record (only in record mode) -->
+    <section class="step" id="stepRecord" hidden>
+      <div class="step-title"><span class="step-num">2</span> Record steps</div>
+      <div id="recordStatus" class="record-status idle">Ready to record. Click below to start.</div>
+      <div class="action-row">
+        <button id="btnStartRecord" class="btn btn-danger btn-grow">● Start recording</button>
+        <button id="btnStopRecord" class="btn btn-primary btn-grow" hidden>✓ I've stopped recording</button>
+      </div>
+      <button id="btnCancelRecord" class="btn btn-ghost btn-block" hidden>Discard recording</button>
+      <button id="btnInspectRecord" class="btn btn-ghost btn-block" hidden>🔍 Inspect recorded steps</button>
+    </section>
+
+    <!-- STEP 2 — Scope -->
+    <section class="step" id="stepScope" hidden>
+      <div class="step-title"><span class="step-num">2</span> Where to replace?</div>
+      <div class="radio-stack">
+        <label><input type="radio" name="scope" value="currentDocument" checked /> <span>This document</span></label>
+        <label><input type="radio" name="scope" value="selectedArtboards" /> <span>Selected artboards</span></label>
+        <label><input type="radio" name="scope" value="openedDocuments" /> <span>All opened documents</span></label>
+      </div>
+    </section>
+
+    <!-- STEP 3 — Find -->
+    <section class="step" id="stepFind" hidden>
+      <button id="btnFindMatches" class="btn btn-primary btn-block btn-lg">Find matches</button>
+    </section>
+
+    <!-- Preview -->
+    <section class="step" id="stepPreview" hidden>
+      <div class="step-title">Preview <span id="previewCount" class="muted"></span></div>
+
+      <div id="warningBanner" class="warn-banner" hidden></div>
+
+      <div class="row row-tight">
+        <input type="search" id="previewSearch" placeholder="Filter by name / path..." class="col-full" />
+      </div>
+      <div class="row row-tight">
+        <div class="right">
+          <button id="btnSelectAll" class="btn btn-ghost btn-sm">All</button>
+          <button id="btnSelectNone" class="btn btn-ghost btn-sm">None</button>
+        </div>
+      </div>
+      <div id="previewList" class="preview-list"></div>
+
+      <div class="action-row">
+        <button id="btnDryRun" class="btn btn-ghost" disabled>Dry run</button>
+        <button id="btnApply" class="btn btn-danger btn-grow" disabled>Replace</button>
+      </div>
+    </section>
+
+    <!-- Advanced -->
+    <section class="collapsible">
+      <button class="collapse-toggle" data-target="advBody">
+        <span class="chev">▸</span> Advanced options
+      </button>
+      <div class="collapse-body" id="advBody" hidden>
+
+        <div class="adv-group">
+          <div class="adv-label">How to find matching layers</div>
+          <select id="matchPreset">
+            <option value="safe" selected>Name + Type (recommended)</option>
+            <option value="name">Name only (risky)</option>
+            <option value="strict">Name + Type + Path</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <div id="customRules" class="custom-rules" hidden>
+            <label><input type="checkbox" id="ruleExactName" checked /> Name</label>
+            <label><input type="checkbox" id="ruleSameType" checked /> Type</label>
+            <label><input type="checkbox" id="ruleSameParentPath" /> Parent path</label>
+            <label><input type="checkbox" id="ruleSameArtboardName" /> Artboard name</label>
+          </div>
+        </div>
+
+        <div class="adv-group replace-only">
+          <div class="adv-label">How to place the new layer</div>
+          <select id="positionMode">
+            <option value="keepTargetBounds" selected>Keep target position &amp; size</option>
+            <option value="keepTargetAnchor">Keep target position only</option>
+            <option value="useSourcePosition">Use source position</option>
+          </select>
+          <div id="anchorRow" class="anchor-row" hidden>
+            <span class="adv-sublabel">Anchor</span>
+            <select id="anchor">
+              <option value="topLeft" selected>Top-left</option>
+              <option value="center">Center</option>
+              <option value="bottomLeft">Bottom-left</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="adv-group replace-only">
+          <div class="adv-label">Keep from target</div>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="preserveVisibility" /> Visibility</label>
+            <label class="chip"><input type="checkbox" id="preserveOpacity" /> Opacity</label>
+            <label class="chip"><input type="checkbox" id="preserveBlendMode" /> Blend mode</label>
+            <label class="chip"><input type="checkbox" id="preserveTargetName" /> Name</label>
+          </div>
+        </div>
+
+        <div class="adv-group adv-toggles">
+          <label><input type="checkbox" id="skipLockedTargets" checked /> Skip locked targets</label>
+          <label><input type="checkbox" id="excludeSourceSubtree" checked /> Exclude source subtree</label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Log -->
+    <section class="collapsible">
+      <button class="collapse-toggle" data-target="logBody">
+        <span class="chev">▸</span> Log
+      </button>
+      <div class="collapse-body" id="logBody" hidden>
+        <div class="row row-tight">
+          <div class="right">
+            <button id="btnExportLog" class="btn btn-ghost btn-sm">Copy</button>
+            <button id="btnClearLog" class="btn btn-ghost btn-sm">Clear</button>
+          </div>
+        </div>
+        <pre id="logView" class="log-view"></pre>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>
