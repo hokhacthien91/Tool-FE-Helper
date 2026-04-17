@@ -1,6 +1,6 @@
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
-const { app, core, action } = require("photoshop");
+const { app, core, action, constants } = require("photoshop");
 
 uxp.entrypoints.setup({
   panels: {
@@ -80,13 +80,47 @@ logClearBtn.addEventListener("click", () => { logBox.innerHTML = ""; });
 
 logCopyBtn.addEventListener("click", async () => {
   const text = logBox.innerText || logBox.textContent || "";
+  let copied = false;
+
+  // Method 1: execCommand with temp textarea
   try {
-    await navigator.clipboard.writeText(text);
-    const orig = logCopyBtn.textContent;
-    logCopyBtn.textContent = "Copied";
-    setTimeout(() => { logCopyBtn.textContent = orig; }, 1200);
-  } catch (e) {
-    log(`Copy error: ${e.message || e}`);
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    copied = document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch (e) {}
+
+  // Method 2: navigator.clipboard
+  if (!copied) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (e) {}
+  }
+
+  // Method 3: save to file as last resort
+  if (!copied) {
+    try {
+      const file = await fs.getFileForSaving("content-replacer-log.txt", { types: ["txt"] });
+      if (file) {
+        await file.write(text);
+        logCopyBtn.textContent = "Saved!";
+        setTimeout(() => { logCopyBtn.textContent = "Copy"; }, 1500);
+        return;
+      }
+    } catch (e) {
+      log(`Copy failed: ${e.message || e}`);
+      return;
+    }
+  }
+
+  if (copied) {
+    logCopyBtn.textContent = "Copied!";
+    setTimeout(() => { logCopyBtn.textContent = "Copy"; }, 1500);
   }
 });
 
@@ -174,23 +208,25 @@ async function isArtboardLayer(layer) {
   } catch (e) { return false; }
 }
 
-function walkLeavesInContainer(container, onLeaf) {
+function walkLeavesInContainer(container, onLeaf, parentPath) {
   const children = container.layers || [];
   for (const c of children) {
-    if (isGroupLike(c)) walkLeavesInContainer(c, onLeaf);
-    else onLeaf(c);
+    const path = parentPath ? `${parentPath} / ${c.name}` : c.name;
+    if (isGroupLike(c)) walkLeavesInContainer(c, onLeaf, path);
+    else onLeaf(c, path);
   }
 }
 
 // ─── Scan ──────────────────────────────────────────────
-function collectLeaf(leaf, docInfo, targetName, textMap, imageMap) {
-  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: leaf.id, target: targetName };
+function collectLeaf(leaf, layerPath, docInfo, targetName, textMap, imageMap) {
+  // Key = layerPath (e.g. "content / logo") so layers at different hierarchy are separate entries
+  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: leaf.id, target: targetName, layerPath };
   if (isTextLayer(leaf)) {
-    if (!textMap.has(leaf.name)) textMap.set(leaf.name, { name: leaf.name, occurrences: [] });
-    textMap.get(leaf.name).occurrences.push(occ);
+    if (!textMap.has(layerPath)) textMap.set(layerPath, { name: leaf.name, displayPath: layerPath, occurrences: [] });
+    textMap.get(layerPath).occurrences.push(occ);
   } else if (isImageLayer(leaf)) {
-    if (!imageMap.has(leaf.name)) imageMap.set(leaf.name, { name: leaf.name, occurrences: [] });
-    imageMap.get(leaf.name).occurrences.push(occ);
+    if (!imageMap.has(layerPath)) imageMap.set(layerPath, { name: leaf.name, displayPath: layerPath, occurrences: [] });
+    imageMap.get(layerPath).occurrences.push(occ);
   }
 }
 
@@ -227,12 +263,12 @@ async function scanDocuments() {
       totalTargets += artboards.length;
       abBasedDocs++;
       for (const ab of artboards) {
-        walkLeavesInContainer(ab.layer, (leaf) => collectLeaf(leaf, docInfo, `${doc.name} / ${ab.name}`, textMap, imageMap));
+        walkLeavesInContainer(ab.layer, (leaf, path) => collectLeaf(leaf, path, docInfo, `${doc.name} / ${ab.name}`, textMap, imageMap));
       }
     } else {
       totalTargets += 1;
       flatDocs++;
-      walkLeavesInContainer(doc, (leaf) => collectLeaf(leaf, docInfo, doc.name, textMap, imageMap));
+      walkLeavesInContainer(doc, (leaf, path) => collectLeaf(leaf, path, docInfo, doc.name, textMap, imageMap));
     }
     state.docs.push(docInfo);
   }
@@ -270,11 +306,13 @@ async function locateLayer(entry, btnEl) {
       btnEl.textContent = entry.occurrences.length > 1
         ? `Show ${entry._locateIdx + 1}/${entry.occurrences.length}`
         : "Show";
-      btnEl.title = hidden ? `${occ.target} (hidden)` : `${occ.target}`;
+      const pathInfo = occ.layerPath || occ.target;
+      btnEl.title = hidden ? `${pathInfo} (hidden)` : pathInfo;
       btnEl.classList.toggle("locate-btn-hidden", hidden);
     }
-    const hiddenNote = hidden ? "  ⚠ layer is HIDDEN — toggle eye icon in Layers panel to view" : "";
-    log(`[SHOW] ${entry.name} → ${occ.target}${hiddenNote}`);
+    const hiddenNote = hidden ? "  ⚠ HIDDEN" : "";
+    const pathNote = occ.layerPath ? ` (${occ.layerPath})` : "";
+    log(`[SHOW] ${entry.name} → ${occ.target}${pathNote}${hiddenNote}`);
   } catch (e) {
     log(`Locate error: ${e.message || e}`);
   }
@@ -298,7 +336,7 @@ function renderTextList() {
       </div>
       <input type="text" class="replace-row-input" placeholder="Leave empty to skip" />
     `;
-    row.querySelector(".replace-row-name").textContent = entry.name;
+    row.querySelector(".replace-row-name").textContent = entry.displayPath || entry.name;
     const input = row.querySelector("input");
     input.value = entry.newContent || "";
     input.addEventListener("input", () => {
@@ -332,7 +370,7 @@ function renderImageList() {
         <button class="file-clear-btn" style="display:none;">Clear</button>
       </div>
     `;
-    row.querySelector(".replace-row-name").textContent = entry.name;
+    row.querySelector(".replace-row-name").textContent = entry.displayPath || entry.name;
     const showBtn = row.querySelector(".locate-btn");
     showBtn.addEventListener("click", () => locateLayer(state.imageEntries[idx], showBtn));
     const pickBtn    = row.querySelector(".file-pick-btn");
@@ -429,9 +467,12 @@ async function hideTargetLayer() {
 }
 
 // ─── Replace operations ────────────────────────────────
-async function replaceTextOnLayer(layerId, newContent) {
-  await selectLayerById(layerId);
-  const preDesc = await getLayerDescriptor(layerId);
+async function replaceTextOnLayer(occ, newContent) {
+  await selectLayerById(occ.layerId);
+  const preDesc = await getTargetLayerDescriptor();
+  if (preDesc.layerID !== occ.layerId) {
+    throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${preDesc.layerID})`);
+  }
   const wasVisible = preDesc.visible !== false;
   await bp([{
     _obj: "set",
@@ -442,32 +483,58 @@ async function replaceTextOnLayer(layerId, newContent) {
   if (!wasVisible) await hideTargetLayer();
 }
 
-async function replaceImageOnLayer(layerId, token) {
-  await selectLayerById(layerId);
+async function replaceImageOnLayer(occ, token) {
+  await selectLayerById(occ.layerId);
 
-  // 1. Capture old bounds + visibility BEFORE any transformation
-  const oldDesc = await getLayerDescriptor(layerId);
+  // 1. Verify the selection actually matches our target (catches stale IDs).
+  const oldDesc = await getTargetLayerDescriptor();
+  if (oldDesc.layerID !== occ.layerId) {
+    throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${oldDesc.layerID})`);
+  }
   const oldBounds = rectSize(oldDesc.boundsNoEffects || oldDesc.bounds);
   const wasVisible = oldDesc.visible !== false;
   const isSmartObject = !!oldDesc.smartObject;
 
-  // 2. Convert pixel → SO if needed (active layer becomes the new SO with a new id)
+  // 2. Convert pixel → SO if needed; verify the result IS a SO before replacing.
   if (!isSmartObject) {
+    // Track original parent so we can move the SO back if newPlacedLayer reparents it
+    const originalLayer = app.activeDocument.activeLayers[0];
+    const originalParent = originalLayer?.parent;
+    const originalParentId = originalParent?.id;
+
     await bp([{ _obj: "newPlacedLayer", _options: { dialogOptions: "dontDisplay" } }]);
+
+    const afterConvertDesc = await getTargetLayerDescriptor();
+    if (!afterConvertDesc.smartObject) {
+      throw new Error(`Convert to Smart Object failed for layer "${oldDesc.name || occ.layerId}"`);
+    }
+    occ.layerId = afterConvertDesc.layerID;
+
+    // Check if newPlacedLayer moved the SO outside its original parent group
+    const newLayer = app.activeDocument.activeLayers[0];
+    if (originalParentId && newLayer.parent?.id !== originalParentId && originalParent) {
+      try {
+        newLayer.move(originalParent, constants.ElementPlacement.PLACEATBEGINNING);
+        log(`  ↳ moved SO back into "${originalParent.name}"`);
+      } catch (e) {
+        log(`  ↳ warning: could not restore parent group: ${e.message || e}`);
+      }
+    }
   }
 
-  // 3. Replace contents — new image imports at its native size inside the SO container
+  // 3. Replace contents — only runs on a verified SO.
   await bp([{
     _obj: "placedLayerReplaceContents",
     null: { _path: token },
     _options: { dialogOptions: "dontDisplay" }
   }]);
 
-  // 4. Resolve the working layer id (active layer after convert/replace)
-  const workingId = app.activeDocument.activeLayers[0]?.id || layerId;
+  // 4. Re-read target descriptor; update id in case replace reassigned it.
+  const postDesc = await getTargetLayerDescriptor();
+  occ.layerId = postDesc.layerID;
 
   // 5. Combined uniform scale (by width) + move, in a single transform step.
-  const afterBounds = await getLayerBounds(workingId);
+  const afterBounds = rectSize(postDesc.boundsNoEffects || postDesc.bounds);
   let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
   if (oldBounds.width > 0 && afterBounds.width > 0) {
     s = oldBounds.width / afterBounds.width;
@@ -538,7 +605,7 @@ async function runTextOps(textOps, step, totalSteps) {
 async function runOneTextOp(entry, occ) {
   try {
     await switchActiveDoc(occ.docId);
-    await replaceTextOnLayer(occ.layerId, entry.newContent);
+    await replaceTextOnLayer(occ, entry.newContent);
     state.modifiedDocIds.add(occ.docId);
     log(`[TEXT] ${entry.name} → "${entry.newContent}"  (${occ.target})`);
   } catch (e) {
@@ -559,7 +626,7 @@ async function runImageOps(imageOps, step, totalSteps) {
 async function runOneImageOp(entry, occ) {
   try {
     await switchActiveDoc(occ.docId);
-    const result = await replaceImageOnLayer(occ.layerId, entry.token);
+    const result = await replaceImageOnLayer(occ, entry.token);
     state.modifiedDocIds.add(occ.docId);
     log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target})${formatImageInfo(result)}`);
   } catch (e) {

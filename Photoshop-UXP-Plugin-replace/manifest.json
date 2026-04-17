@@ -13,7 +13,8 @@
   "manifestVersion": 5,
   "requiredPermissions": {
     "localFileSystem": "fullAccess",
-    "allowCodeGenerationFromStrings": true
+    "allowCodeGenerationFromStrings": true,
+    "clipboard": "readAndWrite"
   },
   "entrypoints": [
     {
