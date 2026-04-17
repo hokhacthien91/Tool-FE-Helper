@@ -15,14 +15,23 @@ uxp.entrypoints.setup({
 const state = {
   docs: [],            // [{ id, name, artboardCount }]
   totalTargets: 0,
-  textEntries: [],     // [{ name, occurrences: [{ docId, docName, layerId, target }], newContent, _locateIdx }]
-  imageEntries: [],    // [{ name, occurrences: [...], file, token, _locateIdx }]
+  textEntries: [],     // [{ name, occurrences: [...], newContent, linkId, _locateIdx }]
+  imageEntries: [],    // [{ name, occurrences: [...], file, token, linkId, _locateIdx }]
+  idCounter: 0,
   modifiedDocIds: new Set(),
   hasScanned: false,
   scanMode: "current", // "current" | "all"
+  matchByNameOnly: false,
 };
 
+function nextLinkId() { return `#${++state.idCounter}`; }
+function entryDisplayName(entry) {
+  return state.matchByNameOnly ? entry.name : (entry.displayPath || entry.name);
+}
+
 const SCAN_MODE_KEY = "contentReplacer.scanMode";
+
+
 function loadScanMode() {
   try {
     const v = localStorage.getItem(SCAN_MODE_KEY);
@@ -193,7 +202,7 @@ function rectSize(rect) {
 
 async function getLayerBounds(layerId) {
   const desc = await getLayerDescriptor(layerId);
-  return rectSize(desc.boundsNoEffects || desc.bounds);
+  return rectSize(desc.bounds);
 }
 
 // ─── Layer kind helpers ────────────────────────────────
@@ -219,14 +228,16 @@ function walkLeavesInContainer(container, onLeaf, parentPath) {
 
 // ─── Scan ──────────────────────────────────────────────
 function collectLeaf(leaf, layerPath, docInfo, targetName, textMap, imageMap) {
-  // Key = layerPath (e.g. "content / logo") so layers at different hierarchy are separate entries
+  // matchByNameOnly: key = leaf name (ignores parent path → merges all paths)
+  // default: key = full path (case-insensitive)
+  const key = state.matchByNameOnly ? leaf.name.toLowerCase() : layerPath.toLowerCase();
   const occ = { docId: docInfo.id, docName: docInfo.name, layerId: leaf.id, target: targetName, layerPath };
   if (isTextLayer(leaf)) {
-    if (!textMap.has(layerPath)) textMap.set(layerPath, { name: leaf.name, displayPath: layerPath, occurrences: [] });
-    textMap.get(layerPath).occurrences.push(occ);
+    if (!textMap.has(key)) textMap.set(key, { name: leaf.name, displayPath: layerPath, occurrences: [] });
+    textMap.get(key).occurrences.push(occ);
   } else if (isImageLayer(leaf)) {
-    if (!imageMap.has(layerPath)) imageMap.set(layerPath, { name: leaf.name, displayPath: layerPath, occurrences: [] });
-    imageMap.get(layerPath).occurrences.push(occ);
+    if (!imageMap.has(key)) imageMap.set(key, { name: leaf.name, displayPath: layerPath, occurrences: [] });
+    imageMap.get(key).occurrences.push(occ);
   }
 }
 
@@ -274,9 +285,11 @@ async function scanDocuments() {
   }
 
   state.totalTargets = totalTargets;
-  state.textEntries  = [...textMap.values()].map(e => ({ ...e, newContent: "" }));
-  state.imageEntries = [...imageMap.values()].map(e => ({ ...e, file: null, token: null }));
+  const sortByPath = (a, b) => (a.displayPath || a.name).localeCompare(b.displayPath || b.name, undefined, { numeric: true, sensitivity: "base" });
+  state.textEntries  = [...textMap.values()].map(e => ({ ...e, newContent: "", linkId: "" })).sort(sortByPath);
+  state.imageEntries = [...imageMap.values()].map(e => ({ ...e, file: null, token: null, linkId: "" })).sort(sortByPath);
   state.hasScanned = true;
+  state.idCounter = 0;
 
   docCountEl.textContent = openDocs.length;
   targetCountEl.textContent = totalTargets;
@@ -318,35 +331,159 @@ async function locateLayer(entry, btnEl) {
   }
 }
 
-// ─── Render ────────────────────────────────────────────
+// ─── Render helpers ────────────────────────────────────
+function groupEntriesByName(entries) {
+  const groups = new Map();
+  entries.forEach((entry, idx) => {
+    const key = entry.name.toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ entry, idx });
+  });
+  return groups;
+}
+
+function createGroupWrapper(name, count, container) {
+  if (count <= 1) return container; // no group needed
+  const group = document.createElement("div");
+  group.className = "layer-group";
+  group.innerHTML = `
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name"></span>
+      <span class="layer-group-count">(${count})</span>
+    </div>
+    <div class="layer-group-body"></div>
+  `;
+  group.querySelector(".layer-group-name").textContent = name;
+  const header = group.querySelector(".layer-group-header");
+  const body = group.querySelector(".layer-group-body");
+  header.addEventListener("click", () => {
+    body.classList.toggle("collapsed");
+    header.querySelector(".toggle-icon").textContent = body.classList.contains("collapsed") ? "▶" : "▼";
+  });
+  container.appendChild(group);
+  return body;
+}
+
+function buildTextRow(entry, idx) {
+  const row = document.createElement("div");
+  row.className = "replace-row";
+  row.innerHTML = `
+    <div class="replace-row-head">
+      <span class="replace-row-name"></span>
+      <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-id">
+      <input type="text" class="link-id-input" placeholder="Link ID" />
+    </div>
+    <textarea class="replace-row-input" rows="2" placeholder="Leave empty to skip"></textarea>
+  `;
+  row.querySelector(".replace-row-name").textContent = entryDisplayName(entry);
+  const idInput = row.querySelector(".link-id-input");
+  idInput.value = entry.linkId || "";
+  idInput.addEventListener("input", () => { state.textEntries[idx].linkId = idInput.value; });
+
+  const input = row.querySelector("textarea");
+  input.value = entry.newContent || "";
+  input.addEventListener("input", () => {
+    state.textEntries[idx].newContent = input.value;
+    input.rows = Math.max(2, input.value.split("\n").length);
+    // Auto-generate linkId when content is entered
+    if (input.value.length > 0 && !idInput.value) {
+      const newId = nextLinkId();
+      idInput.value = newId;
+      state.textEntries[idx].linkId = newId;
+    }
+    refreshApplyEnabled();
+  });
+  const showBtn = row.querySelector(".locate-btn");
+  showBtn.addEventListener("click", () => locateLayer(state.textEntries[idx], showBtn));
+  return row;
+}
+
+function buildImageRow(entry, idx) {
+  const row = document.createElement("div");
+  row.className = "replace-row";
+  row.innerHTML = `
+    <div class="replace-row-head">
+      <span class="replace-row-name"></span>
+      <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-id">
+      <input type="text" class="link-id-input" placeholder="Link ID" />
+    </div>
+    <div class="replace-row-file">
+      <button class="file-pick-btn">Browse…</button>
+      <span class="file-name">No file picked</span>
+      <button class="file-clear-btn" style="display:none;">Clear</button>
+    </div>
+  `;
+  row.querySelector(".replace-row-name").textContent = entryDisplayName(entry);
+  const idInput = row.querySelector(".link-id-input");
+  idInput.value = entry.linkId || "";
+  idInput.addEventListener("input", () => { state.imageEntries[idx].linkId = idInput.value; });
+  const showBtn = row.querySelector(".locate-btn");
+  showBtn.addEventListener("click", () => locateLayer(state.imageEntries[idx], showBtn));
+  const pickBtn    = row.querySelector(".file-pick-btn");
+  const clearBtn   = row.querySelector(".file-clear-btn");
+  const fileNameEl = row.querySelector(".file-name");
+
+  const updateFileDisplay = () => {
+    const cur = state.imageEntries[idx];
+    if (cur.file) {
+      fileNameEl.textContent = cur.file.name;
+      fileNameEl.classList.add("has-file");
+      clearBtn.style.display = "inline-block";
+    } else {
+      fileNameEl.textContent = "No file picked";
+      fileNameEl.classList.remove("has-file");
+      clearBtn.style.display = "none";
+    }
+    refreshApplyEnabled();
+  };
+
+  pickBtn.addEventListener("click", async () => {
+    try {
+      const file = await fs.getFileForOpening({ types: ["png", "jpg", "jpeg", "gif", "psd", "tif", "tiff", "bmp", "eps", "ai", "svg", "pdf"] });
+      if (!file) return;
+      const token = fs.createSessionToken(file);
+      state.imageEntries[idx].file = file;
+      state.imageEntries[idx].token = token;
+      // Auto-generate linkId when file is picked
+      if (!idInput.value) {
+        const newId = nextLinkId();
+        idInput.value = newId;
+        state.imageEntries[idx].linkId = newId;
+      }
+      updateFileDisplay();
+    } catch (e) {
+      log(`File picker error: ${e.message || e}`);
+    }
+  });
+  clearBtn.addEventListener("click", () => {
+    state.imageEntries[idx].file = null;
+    state.imageEntries[idx].token = null;
+    updateFileDisplay();
+  });
+  return row;
+}
+
+// ─── Render lists ──────────────────────────────────────
 function renderTextList() {
   textList.innerHTML = "";
   textCount.textContent = state.textEntries.length ? `(${state.textEntries.length})` : "";
   if (!state.textEntries.length) { textSection.style.display = "none"; return; }
   textSection.style.display = "block";
 
-  state.textEntries.forEach((entry, idx) => {
-    const row = document.createElement("div");
-    row.className = "replace-row";
-    row.innerHTML = `
-      <div class="replace-row-head">
-        <span class="replace-row-name"></span>
-        <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
-        <button class="locate-btn">Show</button>
-      </div>
-      <input type="text" class="replace-row-input" placeholder="Leave empty to skip" />
-    `;
-    row.querySelector(".replace-row-name").textContent = entry.displayPath || entry.name;
-    const input = row.querySelector("input");
-    input.value = entry.newContent || "";
-    input.addEventListener("input", () => {
-      state.textEntries[idx].newContent = input.value;
-      refreshApplyEnabled();
-    });
-    const showBtn = row.querySelector(".locate-btn");
-    showBtn.addEventListener("click", () => locateLayer(state.textEntries[idx], showBtn));
-    textList.appendChild(row);
-  });
+  const groups = groupEntriesByName(state.textEntries);
+  for (const [name, items] of groups) {
+    const target = createGroupWrapper(name, items.length, textList);
+    for (const { entry, idx } of items) {
+      target.appendChild(buildTextRow(entry, idx));
+    }
+  }
 }
 
 function renderImageList() {
@@ -355,61 +492,13 @@ function renderImageList() {
   if (!state.imageEntries.length) { imageSection.style.display = "none"; return; }
   imageSection.style.display = "block";
 
-  state.imageEntries.forEach((entry, idx) => {
-    const row = document.createElement("div");
-    row.className = "replace-row";
-    row.innerHTML = `
-      <div class="replace-row-head">
-        <span class="replace-row-name"></span>
-        <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
-        <button class="locate-btn">Show</button>
-      </div>
-      <div class="replace-row-file">
-        <button class="file-pick-btn">Browse…</button>
-        <span class="file-name">No file picked</span>
-        <button class="file-clear-btn" style="display:none;">Clear</button>
-      </div>
-    `;
-    row.querySelector(".replace-row-name").textContent = entry.displayPath || entry.name;
-    const showBtn = row.querySelector(".locate-btn");
-    showBtn.addEventListener("click", () => locateLayer(state.imageEntries[idx], showBtn));
-    const pickBtn    = row.querySelector(".file-pick-btn");
-    const clearBtn   = row.querySelector(".file-clear-btn");
-    const fileNameEl = row.querySelector(".file-name");
-
-    const updateFileDisplay = () => {
-      const cur = state.imageEntries[idx];
-      if (cur.file) {
-        fileNameEl.textContent = cur.file.name;
-        fileNameEl.classList.add("has-file");
-        clearBtn.style.display = "inline-block";
-      } else {
-        fileNameEl.textContent = "No file picked";
-        fileNameEl.classList.remove("has-file");
-        clearBtn.style.display = "none";
-      }
-      refreshApplyEnabled();
-    };
-
-    pickBtn.addEventListener("click", async () => {
-      try {
-        const file = await fs.getFileForOpening({ types: ["png", "jpg", "jpeg", "gif", "psd", "tif", "tiff", "bmp"] });
-        if (!file) return;
-        const token = fs.createSessionToken(file);
-        state.imageEntries[idx].file = file;
-        state.imageEntries[idx].token = token;
-        updateFileDisplay();
-      } catch (e) {
-        log(`File picker error: ${e.message || e}`);
-      }
-    });
-    clearBtn.addEventListener("click", () => {
-      state.imageEntries[idx].file = null;
-      state.imageEntries[idx].token = null;
-      updateFileDisplay();
-    });
-    imageList.appendChild(row);
-  });
+  const groups = groupEntriesByName(state.imageEntries);
+  for (const [name, items] of groups) {
+    const target = createGroupWrapper(name, items.length, imageList);
+    for (const { entry, idx } of items) {
+      target.appendChild(buildImageRow(entry, idx));
+    }
+  }
 }
 
 function renderEmptyStates() {
@@ -474,14 +563,82 @@ async function replaceTextOnLayer(occ, newContent) {
     throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${preDesc.layerID})`);
   }
   const wasVisible = preDesc.visible !== false;
+  const psContent = newContent.replace(/\r?\n/g, "\r");
+
+  // Read textKey descriptor to preserve font-size, color, weight, leading, anti-alias, text box, etc.
+  // Only pass clean, writable properties (full textKey object causes "program error").
+  const tk = preDesc.textKey;
+  // textShape can be at textKey.textShape OR preDesc.textShape (varies by PS version)
+  if (tk && !tk.textShape && preDesc.textShape) {
+    tk.textShape = preDesc.textShape;
+  }
+  const toObj = { _obj: "textLayer", textKey: psContent };
+
+  if (tk) {
+    const newLen = psContent.length;
+
+    if (tk.textStyleRange && tk.textStyleRange.length) {
+      const ranges = tk.textStyleRange.map((r, i, arr) => {
+        const clone = { _obj: "textStyleRange", from: r.from, to: r.to, textStyle: r.textStyle };
+        if (i === arr.length - 1) clone.to = newLen;
+        return clone;
+      });
+      if (ranges.length === 1) ranges[0].from = 0;
+      toObj.textStyleRange = ranges;
+    }
+
+    if (tk.paragraphStyleRange && tk.paragraphStyleRange.length) {
+      const paras = tk.paragraphStyleRange.map((p, i, arr) => {
+        const clone = { _obj: "paragraphStyleRange", from: p.from, to: p.to, paragraphStyle: p.paragraphStyle };
+        if (i === arr.length - 1) clone.to = newLen;
+        return clone;
+      });
+      if (paras.length === 1) paras[0].from = 0;
+      toObj.paragraphStyleRange = paras;
+    }
+
+    // Preserve anti-aliasing (Sharp, Crisp, Smooth, etc.)
+    if (tk.antiAlias) toObj.antiAlias = tk.antiAlias;
+
+    // Preserve text orientation (horizontal/vertical)
+    if (tk.orientation) toObj.orientation = tk.orientation;
+
+    // Preserve paragraph text box if present (auto, no toggle needed)
+    if (tk.textShape && tk.textShape.length) {
+      const origShape = tk.textShape[0];
+      if (origShape && origShape.char?._value === "box" && origShape.bounds) {
+        const ob = origShape.bounds;
+        const cleanShape = {
+          _obj: "textShape",
+          char: { _enum: "char", _value: "box" },
+          bounds: {
+            _obj: "rectangle",
+            top:    Number(ob.top?._value    ?? ob.top    ?? 0),
+            left:   Number(ob.left?._value   ?? ob.left   ?? 0),
+            bottom: Number(ob.bottom?._value ?? ob.bottom ?? 0),
+            right:  Number(ob.right?._value  ?? ob.right  ?? 0),
+          },
+        };
+        if (origShape.orientation) cleanShape.orientation = origShape.orientation;
+        if (origShape.transform) cleanShape.transform = origShape.transform;
+        if (origShape.rowCount != null) cleanShape.rowCount = origShape.rowCount;
+        if (origShape.columnCount != null) cleanShape.columnCount = origShape.columnCount;
+        toObj.textShape = [cleanShape];
+      }
+    }
+  }
+
+  // Set content + styles
   await bp([{
     _obj: "set",
     _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
-    to: { _obj: "textLayer", textKey: newContent },
+    to: toObj,
     _options: { dialogOptions: "dontDisplay" }
   }]);
+
   if (!wasVisible) await hideTargetLayer();
 }
+
 
 async function replaceImageOnLayer(occ, token) {
   await selectLayerById(occ.layerId);
@@ -491,50 +648,38 @@ async function replaceImageOnLayer(occ, token) {
   if (oldDesc.layerID !== occ.layerId) {
     throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${oldDesc.layerID})`);
   }
-  const oldBounds = rectSize(oldDesc.boundsNoEffects || oldDesc.bounds);
+  const oldBounds = rectSize(oldDesc.bounds);
   const wasVisible = oldDesc.visible !== false;
   const isSmartObject = !!oldDesc.smartObject;
 
-  // 2. Convert pixel → SO if needed; verify the result IS a SO before replacing.
-  if (!isSmartObject) {
-    // Track original parent so we can move the SO back if newPlacedLayer reparents it
-    const originalLayer = app.activeDocument.activeLayers[0];
-    const originalParent = originalLayer?.parent;
-    const originalParentId = originalParent?.id;
-
-    await bp([{ _obj: "newPlacedLayer", _options: { dialogOptions: "dontDisplay" } }]);
-
-    const afterConvertDesc = await getTargetLayerDescriptor();
-    if (!afterConvertDesc.smartObject) {
-      throw new Error(`Convert to Smart Object failed for layer "${oldDesc.name || occ.layerId}"`);
-    }
-    occ.layerId = afterConvertDesc.layerID;
-
-    // Check if newPlacedLayer moved the SO outside its original parent group
-    const newLayer = app.activeDocument.activeLayers[0];
-    if (originalParentId && newLayer.parent?.id !== originalParentId && originalParent) {
-      try {
-        newLayer.move(originalParent, constants.ElementPlacement.PLACEATBEGINNING);
-        log(`  ↳ moved SO back into "${originalParent.name}"`);
-      } catch (e) {
-        log(`  ↳ warning: could not restore parent group: ${e.message || e}`);
-      }
-    }
-  }
-
-  // 3. Replace contents — only runs on a verified SO.
+  // 2. Place new image as fresh SO (avoids stale descriptor from placedLayerReplaceContents)
+  const oldLayerId = occ.layerId;
   await bp([{
-    _obj: "placedLayerReplaceContents",
-    null: { _path: token },
+    _obj: "placeEvent",
+    null: { _path: token, _kind: "local" },
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: { _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: 0 },
+              vertical:   { _unit: "pixelsUnit", _value: 0 } },
     _options: { dialogOptions: "dontDisplay" }
   }]);
 
-  // 4. Re-read target descriptor; update id in case replace reassigned it.
+  // 3. Read fresh descriptor from the newly placed SO
   const postDesc = await getTargetLayerDescriptor();
   occ.layerId = postDesc.layerID;
 
-  // 5. Combined uniform scale (by width) + move, in a single transform step.
-  const afterBounds = rectSize(postDesc.boundsNoEffects || postDesc.bounds);
+  // 4. Delete old layer (placeEvent doesn't remove it)
+  try {
+    await bp([{
+      _obj: "delete",
+      _target: [{ _ref: "layer", _id: oldLayerId }],
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) { /* old layer may already be gone */ }
+
+  // Re-select the new SO
+  await selectLayerById(occ.layerId);
+  const afterBounds = rectSize(postDesc.bounds);
   let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
   if (oldBounds.width > 0 && afterBounds.width > 0) {
     s = oldBounds.width / afterBounds.width;
@@ -565,7 +710,45 @@ async function replaceImageOnLayer(occ, token) {
   return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible };
 }
 
+// Resolve link IDs: rows with same linkId inherit value from first row that has content
+function resolveLinkedEntries() {
+  // Text: group by linkId, fill empty rows from first row with content
+  const textById = new Map();
+  for (const e of state.textEntries) {
+    if (!e.linkId) continue;
+    if (!textById.has(e.linkId)) textById.set(e.linkId, []);
+    textById.get(e.linkId).push(e);
+  }
+  for (const [, group] of textById) {
+    const source = group.find(e => (e.newContent || "").length > 0);
+    if (!source) continue;
+    for (const e of group) {
+      if (e !== source && !(e.newContent || "").length) {
+        e.newContent = source.newContent;
+      }
+    }
+  }
+  // Image: group by linkId, fill empty rows from first row with file
+  const imgById = new Map();
+  for (const e of state.imageEntries) {
+    if (!e.linkId) continue;
+    if (!imgById.has(e.linkId)) imgById.set(e.linkId, []);
+    imgById.get(e.linkId).push(e);
+  }
+  for (const [, group] of imgById) {
+    const source = group.find(e => !!e.token);
+    if (!source) continue;
+    for (const e of group) {
+      if (e !== source && !e.token) {
+        e.file = source.file;
+        e.token = source.token;
+      }
+    }
+  }
+}
+
 async function applyReplacements() {
+  resolveLinkedEntries();
   const textOps  = state.textEntries.filter(e => (e.newContent || "").length > 0);
   const imageOps = state.imageEntries.filter(e => !!e.token);
 
@@ -706,6 +889,16 @@ document.querySelectorAll('input[name="scanMode"]').forEach(radio => {
 loadScanMode();
 const initRadio = document.querySelector(`input[name="scanMode"][value="${state.scanMode}"]`);
 if (initRadio) initRadio.checked = true;
+
+// Match by name only toggle — auto re-scan when changed
+const matchByNameEl = document.getElementById("matchByNameOnly");
+if (matchByNameEl) {
+  matchByNameEl.checked = state.matchByNameOnly;
+  matchByNameEl.addEventListener("change", () => {
+    state.matchByNameOnly = matchByNameEl.checked;
+    if (state.hasScanned) scanBtn.click();
+  });
+}
 
 applyBtn.addEventListener("click", async () => {
   setDisabled(applyBtn, true);
