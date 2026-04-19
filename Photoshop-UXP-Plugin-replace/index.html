@@ -27,7 +27,7 @@
 
     <div class="section btn-row">
       <button id="scanBtn" class="primary">Scan</button>
-      <button id="applyBtn" class="primary is-disabled" disabled>Apply</button>
+      <button id="applyBtn" class="primary is-disabled replace-only" disabled>Apply</button>
       <button id="saveBtn" class="primary export-all-btn is-disabled" disabled>Save</button>
     </div>
     <div id="summaryBar" class="summary-bar"></div>
@@ -51,11 +51,30 @@
     </div>
 
     <div id="layerSection" class="section" style="display:none;">
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="replace">✏ Replace</button>
+        <button class="mode-tab" data-mode="action">▶ Run Action</button>
+      </div>
+      <div class="search-bar">
+        <input id="searchInput" type="text" placeholder="Search layer name…" />
+        <button id="searchClearBtn" class="search-clear" title="Clear">×</button>
+      </div>
       <div class="filter-bar">
         <button class="filter-btn active" data-filter="all">All <span id="countAll" class="sizes-count"></span></button>
         <button class="filter-btn" data-filter="text">Text <span id="countText" class="sizes-count"></span></button>
         <button class="filter-btn" data-filter="image">Image <span id="countImage" class="sizes-count"></span></button>
+        <button class="filter-btn" data-filter="group">Group <span id="countGroup" class="sizes-count"></span></button>
         <button class="filter-btn" data-filter="other">Other <span id="countOther" class="sizes-count"></span></button>
+        <button class="filter-btn select-btn action-only" id="selectAllBtn">Select All</button>
+        <button class="filter-btn select-btn action-only" id="deselectAllBtn">Deselect All</button>
+      </div>
+      <div id="actionBar" class="action-bar" style="display:none;">
+        <div class="action-bar-row">
+          <select id="actionSetSelect" class="action-select"><option value="">Loading...</option></select>
+          <select id="actionSelect" class="action-select"><option value="">Select action</option></select>
+          <button id="refreshActionsBtn" class="filter-btn action-refresh-btn" title="Reload Actions from Photoshop">↻</button>
+        </div>
+        <button id="runActionBtn" class="primary action-run-btn is-disabled" disabled>Run Action</button>
       </div>
       <div id="layerList"></div>
     </div>
@@ -75,6 +94,11 @@
       </div>
       <pre id="logBox" class="log-box"><div>Ready.</div></pre>
     </div>
+
+    <footer class="app-footer">
+      <div class="footer-title">Content Replacer <span class="footer-version">v0.1.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
+      <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
+    </footer>
   </div>
   <script src="main.js"></script>
 </body>

@@ -21,7 +21,9 @@ const state = {
   hasScanned: false,
   scanMode: "current",
   matchByNameOnly: false,
-  activeFilter: "all", // "all" | "text" | "image" | "other"
+  activeFilter: "all", // "all" | "text" | "image" | "group" | "other"
+  mode: "replace",      // "replace" | "action"
+  searchQuery: "",
 };
 
 function nextLinkId() { return `#${++state.idCounter}`; }
@@ -135,11 +137,13 @@ logToggle.addEventListener("click", () => {
 });
 
 // ─── Progress ──────────────────────────────────────────
-function setProgress(current, total, label) {
+async function setProgress(current, total, label) {
   progressSection.style.display = "block";
   const pct = total ? Math.round((current / total) * 100) : 0;
   progressFill.style.width = pct + "%";
   progressText.textContent = `${label} (${current}/${total})`;
+  // Yield to UI thread so DOM can repaint
+  await new Promise(r => setTimeout(r, 0));
 }
 function hideProgress() {
   progressSection.style.display = "none";
@@ -148,7 +152,7 @@ function hideProgress() {
 
 // ─── batchPlay helpers ─────────────────────────────────
 async function bp(commands) {
-  return await action.batchPlay(commands, { synchronousExecution: true, modalBehavior: "execute" });
+  return await action.batchPlay(commands, { synchronousExecution: false, modalBehavior: "execute" });
 }
 
 async function getLayerDescriptor(layerId) {
@@ -213,12 +217,16 @@ async function isArtboardLayer(layer) {
   } catch (e) { return false; }
 }
 
-function walkLeavesInContainer(container, onLeaf, parentPath) {
+function walkNodesInContainer(container, onNode, parentPath) {
   const children = container.layers || [];
   for (const c of children) {
     const path = parentPath ? `${parentPath} / ${c.name}` : c.name;
-    if (isGroupLike(c)) walkLeavesInContainer(c, onLeaf, path);
-    else onLeaf(c, path);
+    if (isGroupLike(c)) {
+      onNode(c, path);
+      walkNodesInContainer(c, onNode, path);
+    } else {
+      onNode(c, path);
+    }
   }
 }
 
@@ -226,14 +234,15 @@ function walkLeavesInContainer(container, onLeaf, parentPath) {
 function getLayerKind(layer) {
   if (isTextLayer(layer))  return "text";
   if (isImageLayer(layer)) return "image";
+  if (isGroupLike(layer))  return "group";
   return "other";
 }
 
-function collectLeaf(leaf, layerPath, docInfo, targetName, layerMap) {
-  const key = state.matchByNameOnly ? leaf.name.toLowerCase() : layerPath.toLowerCase();
-  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: leaf.id, target: targetName, layerPath };
+function collectNode(node, layerPath, docInfo, targetName, layerMap) {
+  const key = state.matchByNameOnly ? node.name.toLowerCase() : layerPath.toLowerCase();
+  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: node.id, target: targetName, layerPath };
   if (!layerMap.has(key)) {
-    layerMap.set(key, { name: leaf.name, displayPath: layerPath, kind: getLayerKind(leaf), occurrences: [] });
+    layerMap.set(key, { name: node.name, displayPath: layerPath, kind: getLayerKind(node), occurrences: [] });
   }
   layerMap.get(key).occurrences.push(occ);
 }
@@ -270,12 +279,12 @@ async function scanDocuments() {
       totalTargets += artboards.length;
       abBasedDocs++;
       for (const ab of artboards) {
-        walkLeavesInContainer(ab.layer, (leaf, path) => collectLeaf(leaf, path, docInfo, `${doc.name} / ${ab.name}`, layerMap));
+        walkNodesInContainer(ab.layer, (node, path) => collectNode(node, path, docInfo, `${doc.name} / ${ab.name}`, layerMap));
       }
     } else {
       totalTargets += 1;
       flatDocs++;
-      walkLeavesInContainer(doc, (leaf, path) => collectLeaf(leaf, path, docInfo, doc.name, layerMap));
+      walkNodesInContainer(doc, (node, path) => collectNode(node, path, docInfo, doc.name, layerMap));
     }
     state.docs.push(docInfo);
   }
@@ -283,7 +292,7 @@ async function scanDocuments() {
   state.totalTargets = totalTargets;
   const sortByPath = (a, b) => (a.displayPath || a.name).localeCompare(b.displayPath || b.name, undefined, { numeric: true, sensitivity: "base" });
   state.allEntries = [...layerMap.values()].map(e => ({
-    ...e, newContent: "", file: null, token: null, newName: "", linkId: "",
+    ...e, newContent: "", file: null, token: null, newName: "", linkId: "", selected: false,
   })).sort(sortByPath);
 
   state.hasScanned = true;
@@ -297,10 +306,11 @@ async function scanDocuments() {
   targetBreakdown.textContent = parts.length ? `(${parts.join(" + ")})` : "";
   const tCount = state.allEntries.filter(e => e.kind === "text").length;
   const iCount = state.allEntries.filter(e => e.kind === "image").length;
+  const gCount = state.allEntries.filter(e => e.kind === "group").length;
   const oCount = state.allEntries.filter(e => e.kind === "other").length;
-  scanStatus.textContent = `Found ${tCount} text, ${iCount} image, ${oCount} other layers`;
+  scanStatus.textContent = `Found ${tCount} text, ${iCount} image, ${gCount} group, ${oCount} other layers`;
   scanStatus.className = "json-status loaded";
-  log(`Scan (${state.scanMode}): ${openDocs.length} doc(s), ${totalTargets} target(s) → ${tCount} text + ${iCount} image + ${oCount} other`);
+  log(`Scan (${state.scanMode}): ${openDocs.length} doc(s), ${totalTargets} target(s) → ${tCount} text + ${iCount} image + ${gCount} group + ${oCount} other`);
 }
 
 // ─── Locate layer (Show button) ────────────────────────
@@ -388,6 +398,7 @@ function buildUnifiedRow(entry, idx) {
 
   row.innerHTML = `
     <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox" />
       <span class="replace-row-name"></span>
       <span class="replace-row-kind">${entry.kind}</span>
       <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
@@ -401,17 +412,37 @@ function buildUnifiedRow(entry, idx) {
     ${contentHTML}
   `;
 
-  // Name label — click to copy to New name
+  // Name label — click behavior depends on mode
   const nameLabel = row.querySelector(".replace-row-name");
   nameLabel.textContent = entryDisplayName(entry);
   nameLabel.style.cursor = "pointer";
-  nameLabel.title = "Click to copy to New name";
   const nameInput = row.querySelector(".new-name-input");
-  nameLabel.addEventListener("click", () => {
+
+  // Row checkbox (for action selection)
+  const checkbox = row.querySelector(".row-checkbox");
+  checkbox.checked = !!entry.selected;
+  checkbox.addEventListener("click", e => e.stopPropagation());
+  checkbox.addEventListener("change", () => {
+    state.allEntries[idx].selected = checkbox.checked;
+    refreshActionBar();
+  });
+
+  nameLabel.addEventListener("click", e => {
+    if (state.mode === "action") return; // let row-head handler toggle
     nameInput.value = entry.name;
     state.allEntries[idx].newName = entry.name;
     nameInput.focus();
     refreshApplyEnabled();
+  });
+
+  // In action mode: clicking row head (except Show btn) toggles checkbox
+  row.querySelector(".replace-row-head").addEventListener("click", e => {
+    if (state.mode !== "action") return;
+    if (e.target.closest(".locate-btn")) return;
+    const next = !state.allEntries[idx].selected;
+    state.allEntries[idx].selected = next;
+    checkbox.checked = next;
+    refreshActionBar();
   });
 
   // Show button
@@ -490,11 +521,15 @@ function buildUnifiedRow(entry, idx) {
 
 function renderLayerList() {
   layerList.innerHTML = "";
-  const filtered = state.allEntries.filter(e =>
-    state.activeFilter === "all" || e.kind === state.activeFilter
-  );
+  const q = state.searchQuery.trim().toLowerCase();
+  const filtered = state.allEntries.filter(e => {
+    if (state.activeFilter !== "all" && e.kind !== state.activeFilter) return false;
+    if (q && !(e.name || "").toLowerCase().includes(q) && !(e.displayPath || "").toLowerCase().includes(q)) return false;
+    return true;
+  });
   if (!filtered.length && state.allEntries.length) {
-    layerList.innerHTML = '<div class="hint" style="text-align:center;">No layers match this filter.</div>';
+    const msg = q ? `No layers match "${state.searchQuery}".` : "No layers match this filter.";
+    layerList.innerHTML = `<div class="hint" style="text-align:center;">${msg}</div>`;
     return;
   }
 
@@ -502,10 +537,12 @@ function renderLayerList() {
   const cAll   = document.getElementById("countAll");
   const cText  = document.getElementById("countText");
   const cImage = document.getElementById("countImage");
+  const cGroup = document.getElementById("countGroup");
   const cOther = document.getElementById("countOther");
   if (cAll)   cAll.textContent   = `(${state.allEntries.length})`;
   if (cText)  cText.textContent  = `(${state.allEntries.filter(e => e.kind === "text").length})`;
   if (cImage) cImage.textContent = `(${state.allEntries.filter(e => e.kind === "image").length})`;
+  if (cGroup) cGroup.textContent = `(${state.allEntries.filter(e => e.kind === "group").length})`;
   if (cOther) cOther.textContent = `(${state.allEntries.filter(e => e.kind === "other").length})`;
 
   const groups = groupEntriesByName(filtered);
@@ -845,7 +882,7 @@ async function applyReplacements() {
   if (!totalSteps) { log("Nothing to apply."); return; }
 
   let step = 0;
-  setProgress(0, totalSteps, "Applying");
+  await setProgress(0, totalSteps, "Applying");
 
   try {
     await core.executeAsModal(async () => {
@@ -866,7 +903,7 @@ async function runTextOps(textOps, step, totalSteps) {
   for (const entry of textOps) {
     for (const occ of entry.occurrences) {
       await runOneTextOp(entry, occ);
-      step++; setProgress(step, totalSteps, "Replacing text");
+      step++; await setProgress(step, totalSteps, "Replacing text");
     }
   }
   return step;
@@ -887,7 +924,7 @@ async function runImageOps(imageOps, step, totalSteps) {
   for (const entry of imageOps) {
     for (const occ of entry.occurrences) {
       await runOneImageOp(entry, occ);
-      step++; setProgress(step, totalSteps, "Replacing images");
+      step++; await setProgress(step, totalSteps, "Replacing images");
     }
   }
   return step;
@@ -916,7 +953,7 @@ async function runRenameOps(renameOps, step, totalSteps) {
       } catch (e) {
         log(`[RENAME] ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
       }
-      step++; setProgress(step, totalSteps, "Renaming");
+      step++; await setProgress(step, totalSteps, "Renaming");
     }
   }
   return step;
@@ -936,7 +973,7 @@ async function saveModifiedDocs() {
   if (!docIds.length) { log("Nothing to save."); return; }
 
   let step = 0;
-  setProgress(0, docIds.length, "Saving");
+  await setProgress(0, docIds.length, "Saving");
   try {
     await core.executeAsModal(async () => {
       for (const docId of docIds) {
@@ -949,7 +986,7 @@ async function saveModifiedDocs() {
         } catch (e) {
           log(`Save error (doc ${docId}): ${e.message || e}`);
         }
-        step++; setProgress(step, docIds.length, "Saving");
+        step++; await setProgress(step, docIds.length, "Saving");
       }
     }, { commandName: "Content Replacer: Save" });
     log("Save done.");
@@ -972,6 +1009,7 @@ scanBtn.addEventListener("click", async () => {
     renderEmptyStates();
     refreshApplyEnabled();
     refreshSaveEnabled();
+    ensureActionsLoaded();
   } catch (e) {
     log(`Scan error: ${e.message || e}`);
   } finally {
@@ -1032,7 +1070,253 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
   });
 });
 
+// ─── Action feature ────────────────────────────────────
+const actionBar       = document.getElementById("actionBar");
+const actionSetSelect = document.getElementById("actionSetSelect");
+const actionSelect    = document.getElementById("actionSelect");
+const runActionBtn    = document.getElementById("runActionBtn");
+const refreshActionsBtn = document.getElementById("refreshActionsBtn");
+const selectAllBtn    = document.getElementById("selectAllBtn");
+const deselectAllBtn  = document.getElementById("deselectAllBtn");
+
+const ACTION_SET_KEY = "contentReplacer.lastActionSet";
+const ACTION_KEY     = "contentReplacer.lastAction";
+let actionSetsCache = null; // [{ name, actions: [name, ...] }]
+
+// Select all visible (respects filter + search)
+selectAllBtn.addEventListener("click", () => {
+  const q = state.searchQuery.trim().toLowerCase();
+  state.allEntries.forEach(e => {
+    const matchFilter = state.activeFilter === "all" || e.kind === state.activeFilter;
+    const matchSearch = !q
+      || (e.name || "").toLowerCase().includes(q)
+      || (e.displayPath || "").toLowerCase().includes(q);
+    if (matchFilter && matchSearch) e.selected = true;
+  });
+  renderLayerList();
+  refreshActionBar();
+});
+deselectAllBtn.addEventListener("click", () => {
+  state.allEntries.forEach(e => { e.selected = false; });
+  renderLayerList();
+  refreshActionBar();
+});
+
+// Load PS Actions palette via app.actionTree (no batchPlay → no error dialogs)
+async function loadActionSets() {
+  if (actionSetsCache) return actionSetsCache;
+  const sets = [];
+  try {
+    const tree = app.actionTree;
+    if (tree) {
+      for (const set of Array.from(tree)) {
+        try {
+          const actions = Array.from(set.actions || []).map(a => a.name);
+          sets.push({ name: set.name, actions });
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    log(`Load actions error: ${e.message || e}`);
+  }
+  actionSetsCache = sets;
+  return sets;
+}
+
+function populateActionSetDropdown(sets) {
+  actionSetSelect.innerHTML = "";
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "— Select set —";
+  actionSetSelect.appendChild(opt0);
+  for (const s of sets) {
+    const opt = document.createElement("option");
+    opt.value = s.name;
+    opt.textContent = `${s.name} (${s.actions.length})`;
+    actionSetSelect.appendChild(opt);
+  }
+  // Restore last used
+  try {
+    const last = localStorage.getItem(ACTION_SET_KEY);
+    if (last) actionSetSelect.value = last;
+  } catch (e) {}
+  populateActionDropdown();
+}
+
+function populateActionDropdown() {
+  actionSelect.innerHTML = "";
+  const setName = actionSetSelect.value;
+  const set = actionSetsCache?.find(s => s.name === setName);
+  if (!set) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "— Select set first —";
+    actionSelect.appendChild(opt);
+    refreshRunBtn();
+    return;
+  }
+  for (const a of set.actions) {
+    const opt = document.createElement("option");
+    opt.value = a;
+    opt.textContent = a;
+    actionSelect.appendChild(opt);
+  }
+  // Restore last used
+  try {
+    const last = localStorage.getItem(ACTION_KEY);
+    if (last && set.actions.includes(last)) actionSelect.value = last;
+  } catch (e) {}
+  refreshRunBtn();
+}
+
+actionSetSelect.addEventListener("change", () => {
+  try { localStorage.setItem(ACTION_SET_KEY, actionSetSelect.value); } catch (e) {}
+  populateActionDropdown();
+});
+refreshActionsBtn.addEventListener("click", async () => {
+  refreshActionsBtn.disabled = true;
+  actionSetsCache = null;
+  try {
+    const sets = await loadActionSets();
+    populateActionSetDropdown(sets);
+    log(`Reloaded ${sets.length} action set(s)`);
+  } finally {
+    refreshActionsBtn.disabled = false;
+  }
+});
+actionSelect.addEventListener("change", () => {
+  try { localStorage.setItem(ACTION_KEY, actionSelect.value); } catch (e) {}
+  refreshRunBtn();
+});
+
+function getSelectedCount() {
+  const selected = state.allEntries.filter(e => e.selected);
+  const totalOcc = selected.reduce((s, e) => s + e.occurrences.length, 0);
+  return { rows: selected.length, layers: totalOcc };
+}
+
+function refreshActionBar() {
+  actionBar.style.display = state.mode === "action" ? "block" : "none";
+  refreshRunBtn();
+}
+
+function refreshRunBtn() {
+  const { rows, layers } = getSelectedCount();
+  const hasAction = actionSetSelect.value && actionSelect.value;
+  setDisabled(runActionBtn, !(rows > 0 && hasAction));
+  runActionBtn.textContent = rows > 0 ? `Run Action (${layers} layers)` : "Run Action";
+  let reason = "";
+  if (rows === 0 && !hasAction) reason = "Select at least 1 layer and pick an action";
+  else if (rows === 0) reason = "Select at least 1 layer";
+  else if (!hasAction) reason = "Pick an action set and action";
+  runActionBtn.title = reason;
+}
+
+// Run action on selected layers
+runActionBtn.addEventListener("click", async () => {
+  const setName = actionSetSelect.value;
+  const actName = actionSelect.value;
+  if (!setName || !actName) return;
+
+  const selected = state.allEntries.filter(e => e.selected);
+  const totalOcc = selected.reduce((s, e) => s + e.occurrences.length, 0);
+  if (!totalOcc) return;
+
+  setDisabled(runActionBtn, true);
+  let step = 0;
+  await setProgress(0, totalOcc, "Running action");
+
+  try {
+    await core.executeAsModal(async () => {
+      for (const entry of selected) {
+        for (const occ of entry.occurrences) {
+          try {
+            await switchActiveDoc(occ.docId);
+            await selectLayerById(occ.layerId);
+            await bp([{
+              _obj: "play",
+              _target: [
+                { _ref: "action", _name: actName },
+                { _ref: "actionSet", _name: setName }
+              ],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            state.modifiedDocIds.add(occ.docId);
+            log(`[ACTION] ${actName} → ${entry.name}  (${occ.target})`);
+          } catch (e) {
+            log(`[ACTION] ERROR ${entry.name} in ${occ.target}: ${e.message || e}`);
+          }
+          step++;
+          await setProgress(step, totalOcc, "Running action");
+        }
+      }
+    }, { commandName: `Content Replacer: ${actName}` });
+    log(`Action done. ${step} layer(s) processed.`);
+  } catch (e) {
+    log(`Action error: ${e.message || e}`);
+  } finally {
+    hideProgress();
+    refreshSaveEnabled();
+    refreshRunBtn();
+  }
+});
+
+// Load actions when scan completes (lazy)
+async function ensureActionsLoaded() {
+  if (!actionSetsCache) {
+    const sets = await loadActionSets();
+    populateActionSetDropdown(sets);
+    log(`Loaded ${sets.length} action set(s)`);
+  }
+}
+
 // Initial state
+// ─── Search by layer name ──────────────────────────────
+const searchInput   = document.getElementById("searchInput");
+const searchClearBtn = document.getElementById("searchClearBtn");
+const searchBar     = document.querySelector(".search-bar");
+
+function applySearch() {
+  const val = searchInput.value || "";
+  if (val === state.searchQuery) return; // no-op
+  state.searchQuery = val;
+  searchBar.classList.toggle("has-value", !!val);
+  renderLayerList();
+}
+// UXP input event is unreliable on delete; listen to multiple events
+["input", "keyup", "change", "paste", "cut"].forEach(ev => {
+  searchInput.addEventListener(ev, () => setTimeout(applySearch, 0));
+});
+searchClearBtn.addEventListener("click", () => {
+  searchInput.value = "";
+  applySearch();
+  searchInput.focus();
+});
+
+// ─── Mode tabs (Replace / Action) ──────────────────────
+const MODE_KEY = "contentReplacer.mode";
+const modeTabs = document.querySelectorAll(".mode-tab");
+
+function setMode(mode) {
+  state.mode = mode === "action" ? "action" : "replace";
+  document.body.classList.toggle("mode-replace", state.mode === "replace");
+  document.body.classList.toggle("mode-action",  state.mode === "action");
+  modeTabs.forEach(t => t.classList.toggle("active", t.dataset.mode === state.mode));
+  try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {}
+  refreshActionBar();
+}
+
+modeTabs.forEach(tab => {
+  tab.addEventListener("click", () => setMode(tab.dataset.mode));
+});
+
+// Restore last used mode
+try {
+  const saved = localStorage.getItem(MODE_KEY);
+  if (saved === "action" || saved === "replace") setMode(saved);
+  else setMode("replace");
+} catch (e) { setMode("replace"); }
+
 renderEmptyStates();
 refreshApplyEnabled();
 refreshSaveEnabled();

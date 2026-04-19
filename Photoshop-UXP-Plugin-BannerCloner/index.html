@@ -53,6 +53,7 @@
       </div>
       <div class="section btn-row">
         <button id="getImagesBtn" class="primary">Get Images</button>
+        <button id="addGroupBtn" class="primary">+ Add Group</button>
       </div>
       <div id="imageListContainer"></div>
       <div class="section" id="exportAssetsAction" style="display:none;">
@@ -65,6 +66,7 @@
       <div class="section checkboxes">
         <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
         <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
+        <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" checked /> <span>Require GG- prefix for layer rules</span></label>
       </div>
 
       <div class="section">
@@ -81,6 +83,9 @@
       <div class="section btn-row">
         <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
         <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
+      </div>
+      <div class="section btn-row">
+        <button id="applyRulesBtn" class="primary">Apply Rules to Existing</button>
       </div>
 
       <div id="importInfoCard" class="section info-card" style="display:none;">

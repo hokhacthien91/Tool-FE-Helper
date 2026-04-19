@@ -35,12 +35,14 @@ const tabBtns = document.querySelectorAll(".tab-btn");
 const splitSection = document.getElementById("splitSection");
 const splitBtn = document.getElementById("splitBtn");
 const getImagesBtn = document.getElementById("getImagesBtn");
+const addGroupBtn = document.getElementById("addGroupBtn");
 const imageListContainer = document.getElementById("imageListContainer");
 const exportAssetsBtn = document.getElementById("exportAssetsBtn");
 const exportAssetsAction = document.getElementById("exportAssetsAction");
 const exportAssetsPanel = document.getElementById("exportAssetsPanel");
 const ignoreLayerInput = document.getElementById("ignoreLayerInput");
 let scannedAssets = [];
+let scannedArtboards = [];
 const IGNORE_KEY = "bannerCloner.ignoreAssets";
 
 const cloneProgress = document.getElementById("cloneProgress");
@@ -323,31 +325,39 @@ function collectLeavesByKind(parent) {
 // Set font size directly on a text layer (px), preserving color/font/weight
 // Strategy: read textKey → compute scale ratio from current pt → transform the text layer
 // Transform on a text layer rescales fontSize while preserving all style properties
-async function setTextFontSize(layerId, sizePx) {
-  const doc = app.activeDocument;
-  const resolution = doc && doc.resolution ? doc.resolution : 72;
-  const sizePt = sizePx * 72 / resolution;
-
-  // Read current size from textKey
+async function setTextFontSize(layerId, targetPx) {
   const desc = await getLayerDescriptor(layerId);
   const textKey = desc.textKey;
   if (!textKey || !textKey.textStyleRange || !textKey.textStyleRange.length) {
     log(`[TEXT]   ERROR: no textKey/textStyleRange`);
     return;
   }
-  const currentPt = textKey.textStyleRange[0]?.textStyle?.size?._value;
-  if (!currentPt || currentPt <= 0) {
+  const rawPt = textKey.textStyleRange[0]?.textStyle?.size?._value;
+  if (!rawPt || rawPt <= 0) {
     log(`[TEXT]   ERROR: no current size`);
     return;
   }
-  log(`[TEXT]   current: ${currentPt.toFixed(2)}pt → target: ${sizePt.toFixed(2)}pt (${sizePx}px, res=${resolution})`);
 
-  if (Math.abs(currentPt - sizePt) < 0.1) {
+  // Visual size = raw pt × transform scale (1pt = 1px)
+  let scale = 1;
+  const tx = textKey.transform;
+  if (tx) {
+    const yy = tx.yy?._value ?? tx.yy ?? 1;
+    scale = Math.abs(yy);
+  }
+  const visualPx = rawPt * scale;
+  log(`[TEXT]   current: raw=${rawPt.toFixed(2)}pt × scale=${scale.toFixed(4)} = ${visualPx.toFixed(2)}px → target: ${targetPx}px`);
+
+  if (Math.abs(visualPx - targetPx) < 0.5) {
     log(`[TEXT]   already at target size, skip`);
     return;
   }
 
-  // Approach 1: Mutate textStyleRange in textKey and write back
+  // Calculate new raw pt to achieve target visual size: newRawPt = targetPx / scale
+  const newRawPt = scale > 0.001 ? targetPx / scale : targetPx;
+  log(`[TEXT]   newRawPt: ${newRawPt.toFixed(2)}pt (targetPx / scale)`);
+
+  // Approach 1: Set font size directly via textStyleRange
   try {
     const newRanges = textKey.textStyleRange.map(r => ({
       _obj: "textStyleRange",
@@ -356,7 +366,7 @@ async function setTextFontSize(layerId, sizePx) {
       textStyle: {
         ...r.textStyle,
         _obj: "textStyle",
-        size: { _unit: "pointsUnit", _value: sizePt }
+        size: { _unit: "pointsUnit", _value: newRawPt }
       }
     }));
 
@@ -373,16 +383,22 @@ async function setTextFontSize(layerId, sizePx) {
 
     // Verify
     const descAfter = await getLayerDescriptor(layerId);
-    const newSize = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    log(`[TEXT]   approach1 result: ${newSize?.toFixed(2)}pt`);
-    if (newSize && Math.abs(newSize - sizePt) < 0.5) return;
+    const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+    if (afterPt) {
+      let afterScale = 1;
+      const afterTx = descAfter.textKey?.transform;
+      if (afterTx) afterScale = Math.abs(afterTx.yy?._value ?? afterTx.yy ?? 1);
+      const afterVisual = afterPt * afterScale;
+      log(`[TEXT]   approach1 result: ${afterVisual.toFixed(2)}px (raw=${afterPt.toFixed(2)}pt)`);
+      if (Math.abs(afterVisual - targetPx) < 1) return;
+    }
   } catch (e) {
     log(`[TEXT]   approach1 ERROR: ${e.message}`);
   }
 
-  // Approach 2 (fallback): transform-scale the text layer by ratio
+  // Approach 2 (fallback): transform-scale by visual ratio
   try {
-    const ratio = sizePt / currentPt;
+    const ratio = targetPx / visualPx;
     log(`[TEXT]   approach2: transform scale ${(ratio * 100).toFixed(1)}%`);
     await selectLayerById(layerId);
     await bpSafe([{
@@ -395,8 +411,13 @@ async function setTextFontSize(layerId, sizePx) {
       _options: { dialogOptions: "dontDisplay" }
     }]);
     const descAfter = await getLayerDescriptor(layerId);
-    const newSize = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    log(`[TEXT]   approach2 result: ${newSize?.toFixed(2)}pt`);
+    const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+    if (afterPt) {
+      let afterScale = 1;
+      const afterTx = descAfter.textKey?.transform;
+      if (afterTx) afterScale = Math.abs(afterTx.yy?._value ?? afterTx.yy ?? 1);
+      log(`[TEXT]   approach2 result: ${(afterPt * afterScale).toFixed(2)}px`);
+    }
   } catch (e) {
     log(`[TEXT]   approach2 ERROR: ${e.message}`);
   }
@@ -951,10 +972,15 @@ function findFirstTextLayer(group) {
   return null;
 }
 
+function normalizeName(name) {
+  return (name || "").replace(/[\r\n]+/g, " ").trim().toLowerCase();
+}
+
 function findLayersByName(parent, targetName) {
+  const target = normalizeName(targetName);
   const results = [];
   function walk(layer) {
-    if (layer.name && layer.name.toLowerCase() === targetName.toLowerCase()) {
+    if (layer.name && normalizeName(layer.name) === target) {
       results.push(layer);
     }
     if (layer.layers) {
@@ -984,8 +1010,9 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
 
     // Background layer: let JSON rule handle it (scaleBgCover is skipped when JSON rules exist)
 
-    // Safety: only apply rules to [GG-] layers
-    if (!hasGGPrefix(rule.name)) {
+    // Safety: only apply rules to [GG-] layers (when checkbox is checked)
+    const requireGG = document.getElementById("requireGGPrefix")?.checked !== false;
+    if (requireGG && !hasGGPrefix(rule.name)) {
       log(`[RULE] "${rule.name}": no [GG-] prefix, skip`);
       continue;
     }
@@ -2456,6 +2483,81 @@ async function importJson() {
 
 importJsonBtn.addEventListener("click", importJson);
 
+// ─── Apply Rules to Existing Artboards ───
+
+const applyRulesBtn = document.getElementById("applyRulesBtn");
+
+async function applyRulesToExisting() {
+  const ruleKeys = Object.keys(layerRules);
+  if (!ruleKeys.length) { log("[APPLY] No layer rules loaded. Import JSON first."); return; }
+
+  applyRulesBtn.disabled = true;
+  applyRulesBtn.textContent = "Applying...";
+  try {
+    await core.executeAsModal(async () => {
+      const doc = app.activeDocument;
+      if (!doc) { log("[APPLY] No document open."); return; }
+
+      // Find all artboards
+      const artboards = [];
+      for (const layer of doc.layers) {
+        const desc = await getLayerDescriptor(layer.id);
+        if (desc.artboardEnabled || desc.artboard) {
+          const rect = desc.artboard?.artboardRect || desc.bounds;
+          const size = rectSize(rect);
+          artboards.push({ layer, size, name: layer.name });
+        }
+      }
+      if (!artboards.length) { log("[APPLY] No artboards found."); return; }
+
+      // Determine source size (largest artboard or base from JSON)
+      let srcW = 0, srcH = 0;
+      if (importedJson && importedJson.sizes && importedJson.sizes.length) {
+        const largest = importedJson.sizes.reduce((a, b) => (a.width * a.height >= b.width * b.height) ? a : b);
+        srcW = largest.width;
+        srcH = largest.height;
+      } else {
+        const largest = artboards.reduce((a, b) => (a.size.width * a.size.height >= b.size.width * b.size.height) ? a : b);
+        srcW = largest.size.width;
+        srcH = largest.size.height;
+      }
+      log(`[APPLY] Source size: ${srcW}x${srcH}`);
+
+      let applied = 0;
+      for (let i = 0; i < artboards.length; i++) {
+        const ab = artboards[i];
+        // Extract size key from artboard name (e.g. "Banner_1280x900" → "1280x900")
+        const sizeMatch = ab.name.match(/(\d+x\d+)/i);
+        const sizeKey = sizeMatch ? sizeMatch[1] : `${ab.size.width}x${ab.size.height}`;
+
+        const rules = layerRules[sizeKey];
+        if (!rules || !rules.length) {
+          log(`[APPLY] ${ab.name}: no rules for "${sizeKey}", skip`);
+          continue;
+        }
+
+        log(`[APPLY] ${i + 1}/${artboards.length}: ${ab.name} → ${sizeKey} (${rules.length} rules)`);
+
+        const origBounds = await captureOriginalBounds(ab.layer);
+        const originX = ab.size.left;
+        const originY = ab.size.top;
+
+        await applyLayerRules(ab.layer, sizeKey, ab.size.width, ab.size.height, originX, originY, origBounds, srcW, srcH);
+        applied++;
+      }
+
+      log(`[APPLY] === Done: ${applied}/${artboards.length} artboard(s) updated ===`);
+    }, { commandName: "Banner Cloner - Apply Rules" });
+  } catch (e) {
+    log(`[APPLY] Error: ${e.message}`);
+  } finally {
+    applyRulesBtn.disabled = false;
+    applyRulesBtn.textContent = "Apply Rules to Existing";
+  }
+}
+
+applyRulesBtn.addEventListener("click", applyRulesToExisting);
+
 // ─── Export Layer JSON ───
 
 const exportLayerJsonBtn = document.getElementById("exportLayerJsonBtn");
@@ -2468,20 +2570,24 @@ async function readTextStyle(layerId) {
     const style = textKey.textStyleRange[0]?.textStyle;
     if (!style) return null;
 
-    const doc = app.activeDocument;
-    const resolution = doc && doc.resolution ? doc.resolution : 72;
     const sizePt = style.size?._value || 0;
-    const sizePx = Math.round(sizePt * resolution / 72 * 100) / 100;
 
-    const result = { fontSize: sizePx + "px" };
+    // Apply text transform scale (PS Character panel shows scaled size)
+    let scale = 1;
+    const tx = textKey.transform;
+    if (tx) {
+      const yy = tx.yy?._value ?? tx.yy ?? 1;
+      scale = Math.abs(yy);
+    }
+
+    const result = { fontSize: Math.round(sizePt * scale * 100) / 100 + "px" };
 
     if (style.fontName) result.fontFamily = style.fontName;
     if (style.fontStyleName) result.fontWeight = style.fontStyleName;
 
     // Leading (line-height)
     if (style.leading?._value) {
-      const leadPt = style.leading._value;
-      result.lineHeight = Math.round(leadPt * resolution / 72 * 100) / 100 + "px";
+      result.lineHeight = Math.round(style.leading._value * scale * 100) / 100 + "px";
     }
 
     // Tracking (letter-spacing)
@@ -2557,7 +2663,7 @@ function readGradient(desc) {
       result.stops = colors.map(stop => {
         const c = stop.color;
         const r = Math.round(c?.red?._value ?? c?.red ?? 0);
-        const g = Math.round(c?.green?._value ?? c?.green ?? 0);
+        const g = Math.round(c?.grain?._value ?? c?.grain ?? c?.green?._value ?? c?.green ?? 0);
         const b = Math.round(c?.blue?._value ?? c?.blue ?? 0);
         return {
           color: `${r}, ${g}, ${b}`,
@@ -2638,6 +2744,51 @@ function readLayerEffects(desc) {
         opacity: ig.opacity?._value ?? ig.opacity,
         size: ig.blur?._value ?? ig.blur
       };
+    }
+    // Gradient Overlay
+    if (fx.gradientFill) {
+      const gf = fx.gradientFill;
+      result.gradientOverlay = {
+        enabled: gf.enabled !== false,
+        opacity: gf.opacity?._value ?? gf.opacity,
+        angle: gf.angle?._value ?? gf.angle,
+        type: gf.type?._value ?? gf.type,
+        reverse: gf.reverse ?? false,
+        scale: gf.scale?._value ?? gf.scale
+      };
+      const grad = gf.gradient;
+      if (grad) {
+        if (grad.name) result.gradientOverlay.name = grad.name;
+        const colors = grad.colors;
+        if (colors && colors.length) {
+          result.gradientOverlay.stops = colors.map(stop => {
+            const c = stop.color;
+            const r = Math.round(c?.red?._value ?? c?.red ?? 0);
+            const g = Math.round(c?.grain?._value ?? c?.grain ?? c?.green?._value ?? c?.green ?? 0);
+            const b = Math.round(c?.blue?._value ?? c?.blue ?? 0);
+            return {
+              color: `${r}, ${g}, ${b}`,
+              location: stop.location ?? 0
+            };
+          });
+        }
+      }
+    }
+    // Color Overlay
+    if (fx.solidFill) {
+      const sf = fx.solidFill;
+      result.colorOverlay = {
+        enabled: sf.enabled !== false,
+        opacity: sf.opacity?._value ?? sf.opacity,
+        blendMode: sf.mode?._value ?? sf.mode
+      };
+      const c = sf.color;
+      if (c) {
+        const r = Math.round(c.red?._value ?? c.red ?? 0);
+        const g = Math.round(c.green?._value ?? c.green ?? 0);
+        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+        result.colorOverlay.color = `${r}, ${g}, ${b}`;
+      }
     }
     return Object.keys(result).length > 0 ? result : null;
   } catch (e) { return null; }
@@ -2761,30 +2912,41 @@ async function collectLayerInfo(layer, artLeft, artTop) {
 
 async function exportLayerJson() {
   try {
-    const source = await resolveSelectedArtboard();
-    log(`[EXPORT JSON] Reading artboard: ${source.name} (${source.size.width}x${source.size.height})`);
+    const doc = app.activeDocument;
+    if (!doc) { log("[EXPORT JSON] No document open."); return; }
 
-    const artLeft = source.size.left;
-    const artTop = source.size.top;
+    const artboards = await resolveSelectedArtboards();
+    log(`[EXPORT JSON] Exporting ${artboards.length} artboard(s)`);
 
-    const layers = [];
-    for (const child of source.layer.layers) {
-      layers.push(await collectLayerInfo(child, artLeft, artTop));
+    const allArtboards = [];
+    for (let i = 0; i < artboards.length; i++) {
+      const ab = artboards[i];
+      log(`[EXPORT JSON] Reading ${i + 1}/${artboards.length}: ${ab.name} (${ab.size.width}x${ab.size.height})`);
+
+      const layers = [];
+      for (const child of ab.layer.layers) {
+        layers.push(await collectLayerInfo(child, ab.size.left, ab.size.top));
+      }
+
+      allArtboards.push({
+        artboard: ab.name,
+        width: ab.size.width,
+        height: ab.size.height,
+        layers: layers
+      });
     }
 
-    const json = {
-      artboard: source.name,
-      width: source.size.width,
-      height: source.size.height,
-      layers: layers
-    };
+    const json = allArtboards.length === 1 ? allArtboards[0] : allArtboards;
+    const fileName = allArtboards.length === 1
+      ? allArtboards[0].artboard + "_layers.json"
+      : doc.name.replace(/\.[^.]+$/, "") + "_layers.json";
 
     // Save to file
-    const file = await fs.getFileForSaving(source.name + "_layers.json", { types: ["json"] });
+    const file = await fs.getFileForSaving(fileName, { types: ["json"] });
     if (!file) { log("[EXPORT JSON] Cancelled."); return; }
 
     await file.write(JSON.stringify(json, null, 2));
-    log(`[EXPORT JSON] Saved: ${file.name}`);
+    log(`[EXPORT JSON] Saved ${allArtboards.length} artboard(s) to: ${file.name}`);
   } catch (e) {
     log(`[EXPORT JSON] Error: ${e.message}`);
   }
@@ -2813,58 +2975,101 @@ function isIgnoredLayer(name, keywords) {
   return keywords.some(kw => lower.includes(kw));
 }
 
+async function resolveSelectedArtboards() {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No document open.");
+  const selectedLayers = doc.activeLayers;
+  if (!selectedLayers || !selectedLayers.length) throw new Error("Please select at least one artboard.");
+
+  const seen = new Set();
+  const artboards = [];
+  for (const sel of selectedLayers) {
+    let current = sel;
+    while (current && current.parent && current.parent !== doc) {
+      current = current.parent;
+    }
+    if (seen.has(current.id)) continue;
+    seen.add(current.id);
+    const desc = await getLayerDescriptor(current.id);
+    if (!desc.artboardEnabled && !desc.artboard) continue;
+    const rect = desc.artboard?.artboardRect || desc.bounds;
+    artboards.push({ id: current.id, name: current.name, layer: current, rect, size: rectSize(rect) });
+  }
+  if (!artboards.length) throw new Error("No artboards in selection.");
+  return artboards;
+}
+
 async function scanArtboardImages() {
   try {
-    const source = await resolveSelectedArtboard();
-    log(`[ASSETS] Scanning: ${source.name} (${source.size.width}x${source.size.height})`);
+    const artboards = await resolveSelectedArtboards();
+    scannedArtboards = artboards;
+    log(`[ASSETS] Scanning ${artboards.length} artboard(s)`);
 
     const ignoreKws = getIgnoreKeywords();
     if (ignoreKws.length) log(`[ASSETS] Ignoring: ${ignoreKws.join(", ")}`);
 
-    const images = [];
-    function walk(layer) {
-      // Skip entire group/layer if name matches ignore keywords
-      if (isIgnoredLayer(layer.name, ignoreKws)) {
-        log(`[ASSETS] Ignored: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
-        return;
-      }
-      if (layer.layers && layer.layers.length > 0) {
-        for (const child of layer.layers) walk(child);
-      } else if (isImageLayerForAssets(layer)) {
-        images.push(layer);
-      }
-    }
-    for (const child of source.layer.layers) walk(child);
-
     scannedAssets = [];
-    for (const img of images) {
-      const bounds = await getLayerBounds(img.id);
-      if (bounds.width === 0 || bounds.height === 0) continue;
+    for (const source of artboards) {
+      log(`[ASSETS] Scanning: ${source.name} (${source.size.width}x${source.size.height})`);
 
-      // Detect default type from smartObject file reference
-      let defaultType = "PNG";
-      try {
-        if (img.kind === "smartObject") {
-          const desc = await getLayerDescriptor(img.id);
-          const fileRef = desc.smartObjectMore?.fileReference;
-          if (fileRef && /\.jpe?g$/i.test(fileRef)) defaultType = "JPG";
+      const images = [];
+      function walk(layer) {
+        if (isIgnoredLayer(layer.name, ignoreKws)) {
+          log(`[ASSETS] Ignored: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
+          return;
         }
-      } catch (e) {}
+        if (layer.layers && layer.layers.length > 0) {
+          for (const child of layer.layers) walk(child);
+        } else if (isImageLayerForAssets(layer)) {
+          images.push(layer);
+        }
+      }
+      for (const child of source.layer.layers) walk(child);
 
-      scannedAssets.push({
-        layerId: img.id,
-        layerName: img.name,
-        exportName: img.name,
-        kind: img.kind,
-        sizeMode: "A",
-        scale: 2,
-        type: defaultType,
-        bounds: bounds,
-        artboardRect: source.size
-      });
+      for (const img of images) {
+        const bounds = await getLayerBounds(img.id);
+        if (bounds.width === 0 || bounds.height === 0) continue;
+
+        let defaultType = "PNG";
+        try {
+          if (img.kind === "smartObject") {
+            const desc = await getLayerDescriptor(img.id);
+            const fileRef = desc.smartObjectMore?.fileReference;
+            if (fileRef && /\.jpe?g$/i.test(fileRef)) defaultType = "JPG";
+          }
+        } catch (e) {}
+
+        scannedAssets.push({
+          layerId: img.id,
+          layerName: img.name,
+          exportName: img.name,
+          kind: img.kind,
+          sizeMode: "A",
+          scale: 2,
+          type: defaultType,
+          bounds: bounds,
+          artboardRect: source.size
+        });
+      }
     }
 
-    log(`[ASSETS] Found ${scannedAssets.length} image layer(s)`);
+    // Deduplicate by name — keep largest bounds
+    const nameMap = new Map();
+    for (const asset of scannedAssets) {
+      const key = asset.exportName;
+      const area = asset.bounds.width * asset.bounds.height;
+      const existing = nameMap.get(key);
+      if (!existing || area > existing.area) {
+        nameMap.set(key, { asset, area });
+      }
+    }
+    const before = scannedAssets.length;
+    scannedAssets = [...nameMap.values()].map(v => v.asset);
+    if (before > scannedAssets.length) {
+      log(`[ASSETS] Deduplicated: ${before} → ${scannedAssets.length} (kept largest)`);
+    }
+
+    log(`[ASSETS] Found ${scannedAssets.length} image layer(s) across ${artboards.length} artboard(s)`);
     renderAssetList();
   } catch (e) {
     log(`[ASSETS] Error: ${e.message}`);
@@ -3357,6 +3562,13 @@ async function runExportAssetsFlow(folder) {
           }
         } catch (e) {}
 
+        // Merge group layers into one
+        if (asset.isGroup) {
+          try {
+            await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]);
+          } catch (e) {}
+        }
+
         // Mode C: trim transparent edges to remove padding inside the layer bounds
         if (asset.sizeMode === "C") {
           try {
@@ -3420,22 +3632,23 @@ async function runExportAssetsFlow(folder) {
 
     // Save layers.json to the same folder
     try {
-      const source = await resolveSelectedArtboard();
-      const artLeft = source.size.left;
-      const artTop = source.size.top;
-      const layersInfo = [];
-      for (const child of source.layer.layers) {
-        layersInfo.push(await collectLayerInfo(child, artLeft, artTop));
+      const allArtboards = [];
+      for (const source of scannedArtboards) {
+        const layersInfo = [];
+        for (const child of source.layer.layers) {
+          layersInfo.push(await collectLayerInfo(child, source.size.left, source.size.top));
+        }
+        allArtboards.push({
+          artboard: source.name,
+          width: source.size.width,
+          height: source.size.height,
+          layers: layersInfo
+        });
       }
-      const json = {
-        artboard: source.name,
-        width: source.size.width,
-        height: source.size.height,
-        layers: layersInfo
-      };
+      const json = allArtboards.length === 1 ? allArtboards[0] : allArtboards;
       const jsonFile = await folder.createFile("layers.json", { overwrite: true });
       await jsonFile.write(JSON.stringify(json, null, 2));
-      log(`[ASSETS] Saved: layers.json`);
+      log(`[ASSETS] Saved: layers.json (${allArtboards.length} artboard(s))`);
     } catch (e) {
       log(`[ASSETS] layers.json skipped: ${e.message}`);
     }
@@ -3445,7 +3658,59 @@ async function runExportAssetsFlow(folder) {
   }, { commandName: "Banner Cloner - Export Assets" });
 }
 
+async function addGroupToAssets() {
+  try {
+    const doc = app.activeDocument;
+    if (!doc) { log("[ASSETS] No document open."); return; }
+    const sel = doc.activeLayers?.[0];
+    if (!sel) { log("[ASSETS] Please select a group in Layers panel."); return; }
+    if (!sel.layers || !sel.layers.length) {
+      log("[ASSETS] Selected layer is not a group."); return;
+    }
+
+    // Find parent artboard for bounds reference
+    let artboard = sel.parent;
+    while (artboard && artboard.parent && artboard.parent !== doc) {
+      artboard = artboard.parent;
+    }
+    let artboardRect = { left: 0, top: 0, width: doc.width, height: doc.height };
+    if (artboard) {
+      try {
+        const desc = await getLayerDescriptor(artboard.id);
+        if (desc.artboardEnabled || desc.artboard) {
+          const rect = desc.artboard?.artboardRect || desc.bounds;
+          artboardRect = rectSize(rect);
+        }
+      } catch (e) {}
+    }
+
+    const bounds = await getGroupBounds(sel);
+    if (bounds.width === 0 || bounds.height === 0) {
+      log("[ASSETS] Group has empty bounds."); return;
+    }
+
+    scannedAssets.push({
+      layerId: sel.id,
+      layerName: sel.name,
+      exportName: sel.name,
+      kind: "group",
+      isGroup: true,
+      sizeMode: "A",
+      scale: 2,
+      type: "PNG",
+      bounds: bounds,
+      artboardRect: artboardRect
+    });
+
+    log(`[ASSETS] Added group: ${sel.name} (${bounds.width}x${bounds.height})`);
+    renderAssetList();
+  } catch (e) {
+    log(`[ASSETS] Error: ${e.message}`);
+  }
+}
+
 getImagesBtn.addEventListener("click", scanArtboardImages);
+addGroupBtn.addEventListener("click", addGroupToAssets);
 exportAssetsBtn.addEventListener("click", exportAssets);
 ignoreLayerInput.addEventListener("input", () => {
   try { localStorage.setItem(IGNORE_KEY, ignoreLayerInput.value); } catch (e) {}
