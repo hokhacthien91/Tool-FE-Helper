@@ -13,15 +13,15 @@ uxp.entrypoints.setup({
 
 // ─── State ─────────────────────────────────────────────
 const state = {
-  docs: [],            // [{ id, name, artboardCount }]
+  docs: [],
   totalTargets: 0,
-  textEntries: [],     // [{ name, occurrences: [...], newContent, linkId, _locateIdx }]
-  imageEntries: [],    // [{ name, occurrences: [...], file, token, linkId, _locateIdx }]
+  allEntries: [],      // [{ name, displayPath, occurrences, kind, newContent, file, token, newName, linkId, _locateIdx }]
   idCounter: 0,
   modifiedDocIds: new Set(),
   hasScanned: false,
-  scanMode: "current", // "current" | "all"
+  scanMode: "current",
   matchByNameOnly: false,
+  activeFilter: "all", // "all" | "text" | "image" | "other"
 };
 
 function nextLinkId() { return `#${++state.idCounter}`; }
@@ -52,14 +52,10 @@ const targetCountEl    = document.getElementById("targetCount");
 const targetBreakdown  = document.getElementById("targetBreakdown");
 const scanStatus  = document.getElementById("scanStatus");
 const dirtyStatus = document.getElementById("dirtyStatus");
+const layerSection    = document.getElementById("layerSection");
+const layerList       = document.getElementById("layerList");
 const emptyState      = document.getElementById("emptyState");
 const noResultsState  = document.getElementById("noResultsState");
-const textSection = document.getElementById("textSection");
-const textList    = document.getElementById("textList");
-const textCount   = document.getElementById("textCount");
-const imageSection= document.getElementById("imageSection");
-const imageList   = document.getElementById("imageList");
-const imageCount  = document.getElementById("imageCount");
 const progressSection = document.getElementById("progressSection");
 const progressFill    = document.getElementById("progressFill");
 const progressText    = document.getElementById("progressText");
@@ -227,18 +223,19 @@ function walkLeavesInContainer(container, onLeaf, parentPath) {
 }
 
 // ─── Scan ──────────────────────────────────────────────
-function collectLeaf(leaf, layerPath, docInfo, targetName, textMap, imageMap) {
-  // matchByNameOnly: key = leaf name (ignores parent path → merges all paths)
-  // default: key = full path (case-insensitive)
+function getLayerKind(layer) {
+  if (isTextLayer(layer))  return "text";
+  if (isImageLayer(layer)) return "image";
+  return "other";
+}
+
+function collectLeaf(leaf, layerPath, docInfo, targetName, layerMap) {
   const key = state.matchByNameOnly ? leaf.name.toLowerCase() : layerPath.toLowerCase();
   const occ = { docId: docInfo.id, docName: docInfo.name, layerId: leaf.id, target: targetName, layerPath };
-  if (isTextLayer(leaf)) {
-    if (!textMap.has(key)) textMap.set(key, { name: leaf.name, displayPath: layerPath, occurrences: [] });
-    textMap.get(key).occurrences.push(occ);
-  } else if (isImageLayer(leaf)) {
-    if (!imageMap.has(key)) imageMap.set(key, { name: leaf.name, displayPath: layerPath, occurrences: [] });
-    imageMap.get(key).occurrences.push(occ);
+  if (!layerMap.has(key)) {
+    layerMap.set(key, { name: leaf.name, displayPath: layerPath, kind: getLayerKind(leaf), occurrences: [] });
   }
+  layerMap.get(key).occurrences.push(occ);
 }
 
 async function scanDocuments() {
@@ -254,8 +251,7 @@ async function scanDocuments() {
 
   state.docs = [];
   state.modifiedDocIds.clear();
-  const textMap = new Map();
-  const imageMap = new Map();
+  const layerMap = new Map();
   let totalTargets = 0;
   let abBasedDocs = 0;
   let flatDocs = 0;
@@ -274,20 +270,22 @@ async function scanDocuments() {
       totalTargets += artboards.length;
       abBasedDocs++;
       for (const ab of artboards) {
-        walkLeavesInContainer(ab.layer, (leaf, path) => collectLeaf(leaf, path, docInfo, `${doc.name} / ${ab.name}`, textMap, imageMap));
+        walkLeavesInContainer(ab.layer, (leaf, path) => collectLeaf(leaf, path, docInfo, `${doc.name} / ${ab.name}`, layerMap));
       }
     } else {
       totalTargets += 1;
       flatDocs++;
-      walkLeavesInContainer(doc, (leaf, path) => collectLeaf(leaf, path, docInfo, doc.name, textMap, imageMap));
+      walkLeavesInContainer(doc, (leaf, path) => collectLeaf(leaf, path, docInfo, doc.name, layerMap));
     }
     state.docs.push(docInfo);
   }
 
   state.totalTargets = totalTargets;
   const sortByPath = (a, b) => (a.displayPath || a.name).localeCompare(b.displayPath || b.name, undefined, { numeric: true, sensitivity: "base" });
-  state.textEntries  = [...textMap.values()].map(e => ({ ...e, newContent: "", linkId: "" })).sort(sortByPath);
-  state.imageEntries = [...imageMap.values()].map(e => ({ ...e, file: null, token: null, linkId: "" })).sort(sortByPath);
+  state.allEntries = [...layerMap.values()].map(e => ({
+    ...e, newContent: "", file: null, token: null, newName: "", linkId: "",
+  })).sort(sortByPath);
+
   state.hasScanned = true;
   state.idCounter = 0;
 
@@ -297,9 +295,12 @@ async function scanDocuments() {
   if (abBasedDocs) parts.push(`${abBasedDocs} multi-artboard`);
   if (flatDocs)    parts.push(`${flatDocs} single`);
   targetBreakdown.textContent = parts.length ? `(${parts.join(" + ")})` : "";
-  scanStatus.textContent = `Found ${state.textEntries.length} text, ${state.imageEntries.length} image layer names`;
+  const tCount = state.allEntries.filter(e => e.kind === "text").length;
+  const iCount = state.allEntries.filter(e => e.kind === "image").length;
+  const oCount = state.allEntries.filter(e => e.kind === "other").length;
+  scanStatus.textContent = `Found ${tCount} text, ${iCount} image, ${oCount} other layers`;
   scanStatus.className = "json-status loaded";
-  log(`Scan (${state.scanMode}): ${openDocs.length} doc(s), ${totalTargets} target(s) → ${state.textEntries.length} text + ${state.imageEntries.length} image unique name(s)`);
+  log(`Scan (${state.scanMode}): ${openDocs.length} doc(s), ${totalTargets} target(s) → ${tCount} text + ${iCount} image + ${oCount} other`);
 }
 
 // ─── Locate layer (Show button) ────────────────────────
@@ -365,138 +366,155 @@ function createGroupWrapper(name, count, container) {
   return body;
 }
 
-function buildTextRow(entry, idx) {
+
+
+// ─── Unified render ────────────────────────────────────
+function buildUnifiedRow(entry, idx) {
   const row = document.createElement("div");
   row.className = "replace-row";
+  row.setAttribute("data-kind", entry.kind);
+
+  let contentHTML = "";
+  if (entry.kind === "text") {
+    contentHTML = `<textarea class="replace-row-input" rows="2" placeholder="Leave empty to skip"></textarea>`;
+  } else if (entry.kind === "image") {
+    contentHTML = `
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>`;
+  }
+
   row.innerHTML = `
     <div class="replace-row-head">
       <span class="replace-row-name"></span>
+      <span class="replace-row-kind">${entry.kind}</span>
       <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
       <button class="locate-btn">Show</button>
     </div>
-    <div class="replace-row-id">
+    <div class="replace-row-meta">
       <input type="text" class="link-id-input" placeholder="Link ID" />
+      <input type="text" class="new-name-input" placeholder="New name" />
+      <button class="update-now-btn">Update</button>
     </div>
-    <textarea class="replace-row-input" rows="2" placeholder="Leave empty to skip"></textarea>
+    ${contentHTML}
   `;
-  row.querySelector(".replace-row-name").textContent = entryDisplayName(entry);
-  const idInput = row.querySelector(".link-id-input");
-  idInput.value = entry.linkId || "";
-  idInput.addEventListener("input", () => { state.textEntries[idx].linkId = idInput.value; });
 
-  const input = row.querySelector("textarea");
-  input.value = entry.newContent || "";
-  input.addEventListener("input", () => {
-    state.textEntries[idx].newContent = input.value;
-    input.rows = Math.max(2, input.value.split("\n").length);
-    // Auto-generate linkId when content is entered
-    if (input.value.length > 0 && !idInput.value) {
-      const newId = nextLinkId();
-      idInput.value = newId;
-      state.textEntries[idx].linkId = newId;
-    }
+  // Name label — click to copy to New name
+  const nameLabel = row.querySelector(".replace-row-name");
+  nameLabel.textContent = entryDisplayName(entry);
+  nameLabel.style.cursor = "pointer";
+  nameLabel.title = "Click to copy to New name";
+  const nameInput = row.querySelector(".new-name-input");
+  nameLabel.addEventListener("click", () => {
+    nameInput.value = entry.name;
+    state.allEntries[idx].newName = entry.name;
+    nameInput.focus();
     refreshApplyEnabled();
   });
-  const showBtn = row.querySelector(".locate-btn");
-  showBtn.addEventListener("click", () => locateLayer(state.textEntries[idx], showBtn));
-  return row;
-}
 
-function buildImageRow(entry, idx) {
-  const row = document.createElement("div");
-  row.className = "replace-row";
-  row.innerHTML = `
-    <div class="replace-row-head">
-      <span class="replace-row-name"></span>
-      <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
-      <button class="locate-btn">Show</button>
-    </div>
-    <div class="replace-row-id">
-      <input type="text" class="link-id-input" placeholder="Link ID" />
-    </div>
-    <div class="replace-row-file">
-      <button class="file-pick-btn">Browse…</button>
-      <span class="file-name">No file picked</span>
-      <button class="file-clear-btn" style="display:none;">Clear</button>
-    </div>
-  `;
-  row.querySelector(".replace-row-name").textContent = entryDisplayName(entry);
+  // Show button
+  const showBtn = row.querySelector(".locate-btn");
+  showBtn.addEventListener("click", () => locateLayer(state.allEntries[idx], showBtn));
+
+  // Link ID
   const idInput = row.querySelector(".link-id-input");
   idInput.value = entry.linkId || "";
-  idInput.addEventListener("input", () => { state.imageEntries[idx].linkId = idInput.value; });
-  const showBtn = row.querySelector(".locate-btn");
-  showBtn.addEventListener("click", () => locateLayer(state.imageEntries[idx], showBtn));
-  const pickBtn    = row.querySelector(".file-pick-btn");
-  const clearBtn   = row.querySelector(".file-clear-btn");
-  const fileNameEl = row.querySelector(".file-name");
+  idInput.addEventListener("input", () => { state.allEntries[idx].linkId = idInput.value; });
 
-  const updateFileDisplay = () => {
-    const cur = state.imageEntries[idx];
-    if (cur.file) {
-      fileNameEl.textContent = cur.file.name;
-      fileNameEl.classList.add("has-file");
-      clearBtn.style.display = "inline-block";
-    } else {
-      fileNameEl.textContent = "No file picked";
-      fileNameEl.classList.remove("has-file");
-      clearBtn.style.display = "none";
-    }
-    refreshApplyEnabled();
-  };
+  // New name + Update
+  nameInput.value = entry.newName || "";
+  nameInput.addEventListener("input", () => { state.allEntries[idx].newName = nameInput.value; refreshApplyEnabled(); });
+  const updateBtn = row.querySelector(".update-now-btn");
+  updateBtn.addEventListener("click", () => renameNow(state.allEntries[idx], updateBtn, nameLabel, nameInput));
 
-  pickBtn.addEventListener("click", async () => {
-    try {
-      const file = await fs.getFileForOpening({ types: ["png", "jpg", "jpeg", "gif", "psd", "tif", "tiff", "bmp", "eps", "ai", "svg", "pdf"] });
-      if (!file) return;
-      const token = fs.createSessionToken(file);
-      state.imageEntries[idx].file = file;
-      state.imageEntries[idx].token = token;
-      // Auto-generate linkId when file is picked
-      if (!idInput.value) {
+  // Text content
+  if (entry.kind === "text") {
+    const input = row.querySelector("textarea");
+    input.value = entry.newContent || "";
+    input.addEventListener("input", () => {
+      state.allEntries[idx].newContent = input.value;
+      input.rows = Math.max(2, input.value.split("\n").length);
+      if (input.value.length > 0 && !idInput.value) {
         const newId = nextLinkId();
         idInput.value = newId;
-        state.imageEntries[idx].linkId = newId;
+        state.allEntries[idx].linkId = newId;
       }
+      refreshApplyEnabled();
+    });
+  }
+
+  // Image file picker
+  if (entry.kind === "image") {
+    const pickBtn    = row.querySelector(".file-pick-btn");
+    const clearBtn   = row.querySelector(".file-clear-btn");
+    const fileNameEl = row.querySelector(".file-name");
+    const updateFileDisplay = () => {
+      const cur = state.allEntries[idx];
+      if (cur.file) {
+        fileNameEl.textContent = cur.file.name;
+        fileNameEl.classList.add("has-file");
+        clearBtn.style.display = "inline-block";
+      } else {
+        fileNameEl.textContent = "No file picked";
+        fileNameEl.classList.remove("has-file");
+        clearBtn.style.display = "none";
+      }
+      refreshApplyEnabled();
+    };
+    pickBtn.addEventListener("click", async () => {
+      try {
+        const file = await fs.getFileForOpening({ types: ["png", "jpg", "jpeg", "gif", "psd", "tif", "tiff", "bmp", "eps", "ai", "svg", "pdf"] });
+        if (!file) return;
+        const token = fs.createSessionToken(file);
+        state.allEntries[idx].file = file;
+        state.allEntries[idx].token = token;
+        if (!idInput.value) {
+          const newId = nextLinkId();
+          idInput.value = newId;
+          state.allEntries[idx].linkId = newId;
+        }
+        updateFileDisplay();
+      } catch (e) { log(`File picker error: ${e.message || e}`); }
+    });
+    clearBtn.addEventListener("click", () => {
+      state.allEntries[idx].file = null;
+      state.allEntries[idx].token = null;
       updateFileDisplay();
-    } catch (e) {
-      log(`File picker error: ${e.message || e}`);
-    }
-  });
-  clearBtn.addEventListener("click", () => {
-    state.imageEntries[idx].file = null;
-    state.imageEntries[idx].token = null;
-    updateFileDisplay();
-  });
+    });
+  }
+
   return row;
 }
 
-// ─── Render lists ──────────────────────────────────────
-function renderTextList() {
-  textList.innerHTML = "";
-  textCount.textContent = state.textEntries.length ? `(${state.textEntries.length})` : "";
-  if (!state.textEntries.length) { textSection.style.display = "none"; return; }
-  textSection.style.display = "block";
-
-  const groups = groupEntriesByName(state.textEntries);
-  for (const [name, items] of groups) {
-    const target = createGroupWrapper(name, items.length, textList);
-    for (const { entry, idx } of items) {
-      target.appendChild(buildTextRow(entry, idx));
-    }
+function renderLayerList() {
+  layerList.innerHTML = "";
+  const filtered = state.allEntries.filter(e =>
+    state.activeFilter === "all" || e.kind === state.activeFilter
+  );
+  if (!filtered.length && state.allEntries.length) {
+    layerList.innerHTML = '<div class="hint" style="text-align:center;">No layers match this filter.</div>';
+    return;
   }
-}
 
-function renderImageList() {
-  imageList.innerHTML = "";
-  imageCount.textContent = state.imageEntries.length ? `(${state.imageEntries.length})` : "";
-  if (!state.imageEntries.length) { imageSection.style.display = "none"; return; }
-  imageSection.style.display = "block";
+  // Update filter counts
+  const cAll   = document.getElementById("countAll");
+  const cText  = document.getElementById("countText");
+  const cImage = document.getElementById("countImage");
+  const cOther = document.getElementById("countOther");
+  if (cAll)   cAll.textContent   = `(${state.allEntries.length})`;
+  if (cText)  cText.textContent  = `(${state.allEntries.filter(e => e.kind === "text").length})`;
+  if (cImage) cImage.textContent = `(${state.allEntries.filter(e => e.kind === "image").length})`;
+  if (cOther) cOther.textContent = `(${state.allEntries.filter(e => e.kind === "other").length})`;
 
-  const groups = groupEntriesByName(state.imageEntries);
+  const groups = groupEntriesByName(filtered);
   for (const [name, items] of groups) {
-    const target = createGroupWrapper(name, items.length, imageList);
+    const target = createGroupWrapper(name, items.length, layerList);
     for (const { entry, idx } of items) {
-      target.appendChild(buildImageRow(entry, idx));
+      // idx is relative to filtered — we need global idx in state.allEntries
+      const globalIdx = state.allEntries.indexOf(entry);
+      target.appendChild(buildUnifiedRow(entry, globalIdx));
     }
   }
 }
@@ -508,31 +526,36 @@ function renderEmptyStates() {
     return;
   }
   emptyState.style.display = "none";
-  const hasAny = state.textEntries.length + state.imageEntries.length > 0;
+  const hasAny = state.allEntries.length > 0;
+  layerSection.style.display = hasAny ? "block" : "none";
   noResultsState.style.display = hasAny ? "none" : "block";
 }
 
 function countPendingOps() {
-  const texts  = state.textEntries.filter(e => (e.newContent || "").length > 0);
-  const images = state.imageEntries.filter(e => !!e.token);
-  const textTargets  = texts.reduce((s, e) => s + e.occurrences.length, 0);
-  const imageTargets = images.reduce((s, e) => s + e.occurrences.length, 0);
+  const texts   = state.allEntries.filter(e => e.kind === "text"  && (e.newContent || "").length > 0);
+  const images  = state.allEntries.filter(e => e.kind === "image" && !!e.token);
+  const renames = state.allEntries.filter(e => (e.newName || "").length > 0);
+  const textTargets   = texts.reduce((s, e) => s + e.occurrences.length, 0);
+  const imageTargets  = images.reduce((s, e) => s + e.occurrences.length, 0);
+  const renameTargets = renames.reduce((s, e) => s + e.occurrences.length, 0);
   return {
     textCount: texts.length,
     imageCount: images.length,
-    totalLayerOps: textTargets + imageTargets,
+    renameCount: renames.length,
+    totalLayerOps: textTargets + imageTargets + renameTargets,
   };
 }
 
 function refreshApplyEnabled() {
-  const { textCount, imageCount, totalLayerOps } = countPendingOps();
-  const hasAny = textCount + imageCount > 0;
+  const { textCount, imageCount, renameCount, totalLayerOps } = countPendingOps();
+  const hasAny = textCount + imageCount + renameCount > 0;
   setDisabled(applyBtn, !hasAny);
   applyBtn.textContent = hasAny ? `Apply (${totalLayerOps})` : "Apply";
 
   const parts = [];
-  if (textCount)  parts.push(`${textCount} text`);
-  if (imageCount) parts.push(`${imageCount} image`);
+  if (textCount)   parts.push(`${textCount} text`);
+  if (imageCount)  parts.push(`${imageCount} image`);
+  if (renameCount) parts.push(`${renameCount} rename`);
   summaryBar.innerHTML = hasAny
     ? `<span class="pending">${parts.join(" + ")}</span> ready across ${totalLayerOps} layer${totalLayerOps === 1 ? "" : "s"}`
     : (state.hasScanned ? "Enter new content below to enable Apply." : "");
@@ -555,6 +578,56 @@ async function hideTargetLayer() {
   }]);
 }
 
+// ─── Rename helpers ────────────────────────────────────
+async function renameNow(entry, btnEl, nameLabel, nameInput) {
+  const name = entry.newName;
+  if (!name) return;
+
+  // Show updating state
+  if (btnEl) { btnEl.textContent = "Updating..."; setDisabled(btnEl, true); }
+
+  try {
+    await core.executeAsModal(async () => {
+      for (const occ of entry.occurrences) {
+        await switchActiveDoc(occ.docId);
+        await selectLayerById(occ.layerId);
+        await renameTargetLayer(name);
+        state.modifiedDocIds.add(occ.docId);
+      }
+    }, { commandName: "Content Replacer: Rename" });
+
+    // Success: update label, clear input
+    entry.name = name;
+    if (nameLabel) nameLabel.textContent = entryDisplayName(entry);
+    if (nameInput) { nameInput.value = ""; entry.newName = ""; }
+    if (btnEl) {
+      btnEl.textContent = "Done ✓";
+      btnEl.classList.add("update-success");
+      setTimeout(() => { btnEl.textContent = "Update"; btnEl.classList.remove("update-success"); setDisabled(btnEl, false); }, 1500);
+    }
+    log(`[RENAME] ${entry.occurrences.length} layer(s) → "${name}"`);
+    refreshSaveEnabled();
+    refreshApplyEnabled();
+  } catch (e) {
+    // Fail: keep input, show error
+    if (btnEl) {
+      btnEl.textContent = "Failed";
+      btnEl.classList.add("update-fail");
+      setTimeout(() => { btnEl.textContent = "Update"; btnEl.classList.remove("update-fail"); setDisabled(btnEl, false); }, 1500);
+    }
+    log(`Rename error: ${e.message || e}`);
+  }
+}
+
+async function renameTargetLayer(newName) {
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "layer", name: newName },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
 // ─── Replace operations ────────────────────────────────
 async function replaceTextOnLayer(occ, newContent) {
   await selectLayerById(occ.layerId);
@@ -564,21 +637,38 @@ async function replaceTextOnLayer(occ, newContent) {
   }
   const wasVisible = preDesc.visible !== false;
   const psContent = newContent.replace(/\r?\n/g, "\r");
-
-  // Read textKey descriptor to preserve font-size, color, weight, leading, anti-alias, text box, etc.
-  // Only pass clean, writable properties (full textKey object causes "program error").
   const tk = preDesc.textKey;
-  // textShape can be at textKey.textShape OR preDesc.textShape (varies by PS version)
-  if (tk && !tk.textShape && preDesc.textShape) {
-    tk.textShape = preDesc.textShape;
+  if (tk && !tk.textShape && preDesc.textShape) tk.textShape = preDesc.textShape;
+
+  const isPointText = !tk?.textShape?.length || tk.textShape[0]?.char?._value !== "box";
+  const oldBounds = rectSize(preDesc.bounds);
+  log(`  [TXT] type=${isPointText ? "point" : "box"} before=${Math.round(oldBounds.width)}×${Math.round(oldBounds.height)} @ ${Math.round(oldBounds.left)},${Math.round(oldBounds.top)}`);
+
+  // Convert point→paragraph BEFORE reading fresh descriptor and setting content
+  if (isPointText && oldBounds.width > 0) {
+    try {
+      const layer = app.activeDocument.activeLayers[0];
+      layer.textItem.convertToParagraphText();
+      log(`  [TXT] point→paragraph (old w=${Math.round(oldBounds.width)})`);
+    } catch (e) {
+      log(`  [TXT] convert failed: ${e.message}`);
+    }
   }
+
+  // Re-read descriptor (now has textShape with box after conversion)
+  await selectLayerById(occ.layerId);
+  const freshDesc = await getTargetLayerDescriptor();
+  const freshTK = freshDesc.textKey;
+  if (freshTK && !freshTK.textShape && freshDesc.textShape) freshTK.textShape = freshDesc.textShape;
+  const hasBox = freshTK?.textShape?.[0]?.char?._value === "box";
+  const boxRight = freshTK?.textShape?.[0]?.bounds?.right ?? "none";
+  log(`  [TXT] freshDesc: hasBox=${hasBox} right=${boxRight}`);
   const toObj = { _obj: "textLayer", textKey: psContent };
 
-  if (tk) {
+  if (freshTK) {
     const newLen = psContent.length;
-
-    if (tk.textStyleRange && tk.textStyleRange.length) {
-      const ranges = tk.textStyleRange.map((r, i, arr) => {
+    if (freshTK.textStyleRange && freshTK.textStyleRange.length) {
+      const ranges = freshTK.textStyleRange.map((r, i, arr) => {
         const clone = { _obj: "textStyleRange", from: r.from, to: r.to, textStyle: r.textStyle };
         if (i === arr.length - 1) clone.to = newLen;
         return clone;
@@ -586,9 +676,8 @@ async function replaceTextOnLayer(occ, newContent) {
       if (ranges.length === 1) ranges[0].from = 0;
       toObj.textStyleRange = ranges;
     }
-
-    if (tk.paragraphStyleRange && tk.paragraphStyleRange.length) {
-      const paras = tk.paragraphStyleRange.map((p, i, arr) => {
+    if (freshTK.paragraphStyleRange && freshTK.paragraphStyleRange.length) {
+      const paras = freshTK.paragraphStyleRange.map((p, i, arr) => {
         const clone = { _obj: "paragraphStyleRange", from: p.from, to: p.to, paragraphStyle: p.paragraphStyle };
         if (i === arr.length - 1) clone.to = newLen;
         return clone;
@@ -596,18 +685,13 @@ async function replaceTextOnLayer(occ, newContent) {
       if (paras.length === 1) paras[0].from = 0;
       toObj.paragraphStyleRange = paras;
     }
-
-    // Preserve anti-aliasing (Sharp, Crisp, Smooth, etc.)
-    if (tk.antiAlias) toObj.antiAlias = tk.antiAlias;
-
-    // Preserve text orientation (horizontal/vertical)
-    if (tk.orientation) toObj.orientation = tk.orientation;
-
-    // Preserve paragraph text box if present (auto, no toggle needed)
-    if (tk.textShape && tk.textShape.length) {
-      const origShape = tk.textShape[0];
-      if (origShape && origShape.char?._value === "box" && origShape.bounds) {
-        const ob = origShape.bounds;
+    if (freshTK.antiAlias) toObj.antiAlias = freshTK.antiAlias;
+    if (freshTK.orientation) toObj.orientation = freshTK.orientation;
+    // Preserve box (now paragraph text after conversion)
+    if (freshTK.textShape && freshTK.textShape.length) {
+      const s = freshTK.textShape[0];
+      if (s?.char?._value === "box" && s.bounds) {
+        const ob = s.bounds;
         const cleanShape = {
           _obj: "textShape",
           char: { _enum: "char", _value: "box" },
@@ -619,22 +703,28 @@ async function replaceTextOnLayer(occ, newContent) {
             right:  Number(ob.right?._value  ?? ob.right  ?? 0),
           },
         };
-        if (origShape.orientation) cleanShape.orientation = origShape.orientation;
-        if (origShape.transform) cleanShape.transform = origShape.transform;
-        if (origShape.rowCount != null) cleanShape.rowCount = origShape.rowCount;
-        if (origShape.columnCount != null) cleanShape.columnCount = origShape.columnCount;
+        if (s.orientation) cleanShape.orientation = s.orientation;
+        if (s.transform) cleanShape.transform = s.transform;
         toObj.textShape = [cleanShape];
       }
     }
   }
 
-  // Set content + styles
   await bp([{
     _obj: "set",
     _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
     to: toObj,
     _options: { dialogOptions: "dontDisplay" }
   }]);
+
+
+  // Log final state
+  if (isPointText) {
+    const endDesc = await getTargetLayerDescriptor();
+    const endBounds = rectSize(endDesc.bounds);
+    const endChar = endDesc.textKey?.textShape?.[0]?.char?._value ?? "?";
+    log(`  [TXT] final: ${Math.round(endBounds.width)}×${Math.round(endBounds.height)} @ ${Math.round(endBounds.left)},${Math.round(endBounds.top)} char=${endChar} (target w=${Math.round(oldBounds.width)})`);
+  }
 
   if (!wasVisible) await hideTargetLayer();
 }
@@ -710,38 +800,32 @@ async function replaceImageOnLayer(occ, token) {
   return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible };
 }
 
-// Resolve link IDs: rows with same linkId inherit value from first row that has content
+// Resolve link IDs: rows with same linkId inherit values from first row that has content
 function resolveLinkedEntries() {
-  // Text: group by linkId, fill empty rows from first row with content
-  const textById = new Map();
-  for (const e of state.textEntries) {
+  const byId = new Map();
+  for (const e of state.allEntries) {
     if (!e.linkId) continue;
-    if (!textById.has(e.linkId)) textById.set(e.linkId, []);
-    textById.get(e.linkId).push(e);
+    if (!byId.has(e.linkId)) byId.set(e.linkId, []);
+    byId.get(e.linkId).push(e);
   }
-  for (const [, group] of textById) {
-    const source = group.find(e => (e.newContent || "").length > 0);
-    if (!source) continue;
+  for (const [, group] of byId) {
+    // Text content
+    const textSource = group.find(e => e.kind === "text" && (e.newContent || "").length > 0);
+    // Image file
+    const imgSource = group.find(e => e.kind === "image" && !!e.token);
+    // Name
+    const nameSource = group.find(e => (e.newName || "").length > 0);
+
     for (const e of group) {
-      if (e !== source && !(e.newContent || "").length) {
-        e.newContent = source.newContent;
+      if (textSource && e.kind === "text" && e !== textSource && !(e.newContent || "").length) {
+        e.newContent = textSource.newContent;
       }
-    }
-  }
-  // Image: group by linkId, fill empty rows from first row with file
-  const imgById = new Map();
-  for (const e of state.imageEntries) {
-    if (!e.linkId) continue;
-    if (!imgById.has(e.linkId)) imgById.set(e.linkId, []);
-    imgById.get(e.linkId).push(e);
-  }
-  for (const [, group] of imgById) {
-    const source = group.find(e => !!e.token);
-    if (!source) continue;
-    for (const e of group) {
-      if (e !== source && !e.token) {
-        e.file = source.file;
-        e.token = source.token;
+      if (imgSource && e.kind === "image" && e !== imgSource && !e.token) {
+        e.file = imgSource.file;
+        e.token = imgSource.token;
+      }
+      if (nameSource && e !== nameSource && !(e.newName || "").length) {
+        e.newName = nameSource.newName;
       }
     }
   }
@@ -749,12 +833,14 @@ function resolveLinkedEntries() {
 
 async function applyReplacements() {
   resolveLinkedEntries();
-  const textOps  = state.textEntries.filter(e => (e.newContent || "").length > 0);
-  const imageOps = state.imageEntries.filter(e => !!e.token);
+  const textOps   = state.allEntries.filter(e => e.kind === "text"  && (e.newContent || "").length > 0);
+  const imageOps  = state.allEntries.filter(e => e.kind === "image" && !!e.token);
+  const renameOps = state.allEntries.filter(e => (e.newName || "").length > 0);
 
   const totalSteps =
     textOps.reduce((s, e) => s + e.occurrences.length, 0) +
-    imageOps.reduce((s, e) => s + e.occurrences.length, 0);
+    imageOps.reduce((s, e) => s + e.occurrences.length, 0) +
+    renameOps.reduce((s, e) => s + e.occurrences.length, 0);
 
   if (!totalSteps) { log("Nothing to apply."); return; }
 
@@ -765,6 +851,7 @@ async function applyReplacements() {
     await core.executeAsModal(async () => {
       step = await runTextOps(textOps, step, totalSteps);
       step = await runImageOps(imageOps, step, totalSteps);
+      step = await runRenameOps(renameOps, step, totalSteps);
     }, { commandName: "Content Replacer: Apply" });
     log(`Apply done. ${state.modifiedDocIds.size} document(s) have unsaved changes.`);
   } catch (e) {
@@ -817,6 +904,24 @@ async function runOneImageOp(entry, occ) {
   }
 }
 
+async function runRenameOps(renameOps, step, totalSteps) {
+  for (const entry of renameOps) {
+    for (const occ of entry.occurrences) {
+      try {
+        await switchActiveDoc(occ.docId);
+        await selectLayerById(occ.layerId);
+        await renameTargetLayer(entry.newName);
+        state.modifiedDocIds.add(occ.docId);
+        log(`[RENAME] ${entry.name} → "${entry.newName}"  (${occ.target})`);
+      } catch (e) {
+        log(`[RENAME] ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
+      }
+      step++; setProgress(step, totalSteps, "Renaming");
+    }
+  }
+  return step;
+}
+
 function formatImageInfo(result) {
   if (!result) return "";
   const hiddenNote = result.wasHidden ? ", hidden" : "";
@@ -863,8 +968,7 @@ scanBtn.addEventListener("click", async () => {
     await core.executeAsModal(async () => {
       await scanDocuments();
     }, { commandName: "Content Replacer: Scan" });
-    renderTextList();
-    renderImageList();
+    renderLayerList();
     renderEmptyStates();
     refreshApplyEnabled();
     refreshSaveEnabled();
@@ -896,7 +1000,7 @@ if (matchByNameEl) {
   matchByNameEl.checked = state.matchByNameOnly;
   matchByNameEl.addEventListener("change", () => {
     state.matchByNameOnly = matchByNameEl.checked;
-    if (state.hasScanned) scanBtn.click();
+    if (state.hasScanned) { scanBtn.click(); }
   });
 }
 
@@ -916,6 +1020,16 @@ saveBtn.addEventListener("click", async () => {
   } finally {
     refreshSaveEnabled();
   }
+});
+
+// Filter buttons
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.activeFilter = btn.getAttribute("data-filter");
+    renderLayerList();
+  });
 });
 
 // Initial state

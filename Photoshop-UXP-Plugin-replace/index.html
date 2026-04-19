@@ -48,28 +48,21 @@
       <strong>Get started</strong>
       Open your PSD in Photoshop, then click <b>Scan</b>.<br/>
       Switch to <b>All open documents</b> if each size is a separate PSD.
-      Layers with the same name across artboards or files are grouped into one row.
     </div>
 
-    <div id="textSection" class="section" style="display:none;">
-      <div class="section-heading">
-        <div class="label">Text layers <span id="textCount" class="sizes-count"></span></div>
+    <div id="layerSection" class="section" style="display:none;">
+      <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">All <span id="countAll" class="sizes-count"></span></button>
+        <button class="filter-btn" data-filter="text">Text <span id="countText" class="sizes-count"></span></button>
+        <button class="filter-btn" data-filter="image">Image <span id="countImage" class="sizes-count"></span></button>
+        <button class="filter-btn" data-filter="other">Other <span id="countOther" class="sizes-count"></span></button>
       </div>
-      <div class="hint">Type new content — applied to every target that has a layer with this name. Leave blank to skip.</div>
-      <div id="textList"></div>
-    </div>
-
-    <div id="imageSection" class="section" style="display:none;">
-      <div class="section-heading">
-        <div class="label">Image / Logo layers <span id="imageCount" class="sizes-count"></span></div>
-      </div>
-      <div class="hint">Pick a replacement file — raster layers are auto-converted to Smart Objects so position &amp; size are preserved.</div>
-      <div id="imageList"></div>
+      <div id="layerList"></div>
     </div>
 
     <div id="noResultsState" class="section empty-state" style="display:none;">
-      <strong>No replaceable layers found</strong>
-      Scan found no text or image leaf layers in the open documents.
+      <strong>No layers found</strong>
+      Scan found no layers in the open documents.
     </div>
 
     <div class="section" id="logsSection">
