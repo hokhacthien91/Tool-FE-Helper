@@ -488,6 +488,26 @@ button.full { width: 100%; }
   font-size: 10px;
   font-weight: 700;
 }
+.asset-row-duplicate {
+  border-color: #e8a93a !important;
+  background: rgba(232, 169, 58, 0.08);
+}
+.asset-row-duplicate:hover {
+  border-color: #e8a93a !important;
+}
+.asset-dupe-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  background: #b87d1a;
+  border: 1px solid #e8a93a;
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: help;
+}
 .asset-row-fields {
   display: flex;
   flex-wrap: wrap;

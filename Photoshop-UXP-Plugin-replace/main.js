@@ -239,10 +239,12 @@ function getLayerKind(layer) {
 }
 
 function collectNode(node, layerPath, docInfo, targetName, layerMap) {
-  const key = state.matchByNameOnly ? node.name.toLowerCase() : layerPath.toLowerCase();
+  const kind = getLayerKind(node);
+  const base = state.matchByNameOnly ? node.name.toLowerCase() : layerPath.toLowerCase();
+  const key = `${base}::${kind}`;
   const occ = { docId: docInfo.id, docName: docInfo.name, layerId: node.id, target: targetName, layerPath };
   if (!layerMap.has(key)) {
-    layerMap.set(key, { name: node.name, displayPath: layerPath, kind: getLayerKind(node), occurrences: [] });
+    layerMap.set(key, { name: node.name, displayPath: layerPath, kind, occurrences: [] });
   }
   layerMap.get(key).occurrences.push(occ);
 }

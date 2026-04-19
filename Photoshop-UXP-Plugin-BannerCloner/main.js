@@ -41,6 +41,7 @@ const exportAssetsBtn = document.getElementById("exportAssetsBtn");
 const exportAssetsAction = document.getElementById("exportAssetsAction");
 const exportAssetsPanel = document.getElementById("exportAssetsPanel");
 const ignoreLayerInput = document.getElementById("ignoreLayerInput");
+const scanAllArtboardsCheckbox = document.getElementById("scanAllArtboards");
 let scannedAssets = [];
 let scannedArtboards = [];
 const IGNORE_KEY = "bannerCloner.ignoreAssets";
@@ -2978,11 +2979,25 @@ function isIgnoredLayer(name, keywords) {
 async function resolveSelectedArtboards() {
   const doc = app.activeDocument;
   if (!doc) throw new Error("No document open.");
+
+  const scanAll = !!scanAllArtboardsCheckbox?.checked;
+  const artboards = [];
+
+  if (scanAll) {
+    for (const layer of doc.layers) {
+      const desc = await getLayerDescriptor(layer.id);
+      if (!desc.artboardEnabled && !desc.artboard) continue;
+      const rect = desc.artboard?.artboardRect || desc.bounds;
+      artboards.push({ id: layer.id, name: layer.name, layer, rect, size: rectSize(rect) });
+    }
+    if (!artboards.length) throw new Error("No artboards in document.");
+    return artboards;
+  }
+
   const selectedLayers = doc.activeLayers;
   if (!selectedLayers || !selectedLayers.length) throw new Error("Please select at least one artboard.");
 
   const seen = new Set();
-  const artboards = [];
   for (const sel of selectedLayers) {
     let current = sel;
     while (current && current.parent && current.parent !== doc) {
@@ -3156,6 +3171,23 @@ function hideCustomTooltip() {
   if (_tooltipEl) _tooltipEl.style.display = "none";
 }
 
+function getAssetFilenameKey(asset) {
+  const safeName = (asset.exportName || "").replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
+  const ext = asset.type === "JPG" ? "jpg" : "png";
+  return `${safeName}.${ext}`;
+}
+
+function computeAssetCollisions() {
+  const counts = new Map();
+  for (const a of scannedAssets) {
+    const k = getAssetFilenameKey(a);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const dupes = new Set();
+  for (const [k, n] of counts) if (n > 1) dupes.add(k);
+  return dupes;
+}
+
 function renderAssetList() {
   while (imageListContainer.firstChild) imageListContainer.removeChild(imageListContainer.firstChild);
 
@@ -3170,16 +3202,23 @@ function renderAssetList() {
 
   exportAssetsAction.style.display = "";
 
+  const collisions = computeAssetCollisions();
+
   scannedAssets.forEach((asset) => {
     const card = document.createElement("div");
     card.className = "asset-row";
+    const isDupe = collisions.has(getAssetFilenameKey(asset));
+    if (isDupe) card.classList.add("asset-row-duplicate");
 
     // Name input + kind badge + remove button
     const nameRow = document.createElement("div");
     nameRow.className = "asset-row-header";
     const nameInput = document.createElement("sp-textfield");
     nameInput.value = asset.exportName;
-    nameInput.addEventListener("change", () => { asset.exportName = String(nameInput.value || "").trim() || asset.layerName; });
+    nameInput.addEventListener("change", () => {
+      asset.exportName = String(nameInput.value || "").trim() || asset.layerName;
+      renderAssetList();
+    });
     const kindBadge = document.createElement("span");
     kindBadge.className = "asset-kind-badge";
     kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : "Pixel";
@@ -3192,6 +3231,13 @@ function renderAssetList() {
     });
     nameRow.appendChild(nameInput);
     nameRow.appendChild(kindBadge);
+    if (isDupe) {
+      const dupBadge = document.createElement("span");
+      dupBadge.className = "asset-dupe-badge";
+      dupBadge.textContent = "DUPLICATE";
+      dupBadge.title = `File name "${getAssetFilenameKey(asset)}" trùng với asset khác — sẽ ghi đè khi export`;
+      nameRow.appendChild(dupBadge);
+    }
     nameRow.appendChild(removeBtn);
     card.appendChild(nameRow);
 
@@ -3218,7 +3264,7 @@ function renderAssetList() {
     fieldsRow.appendChild(createAssetCycleBtn("Type", [
       { value: "PNG", label: "PNG" },
       { value: "JPG", label: "JPG" }
-    ], asset.type, (v) => { asset.type = v; }));
+    ], asset.type, (v) => { asset.type = v; renderAssetList(); }));
 
     // Per-asset export button (same row, last position)
     const exportWrap = document.createElement("div");
@@ -3716,6 +3762,15 @@ ignoreLayerInput.addEventListener("input", () => {
   try { localStorage.setItem(IGNORE_KEY, ignoreLayerInput.value); } catch (e) {}
 });
 try { const saved = localStorage.getItem(IGNORE_KEY); if (saved) ignoreLayerInput.value = saved; } catch (e) {}
+
+const SCAN_ALL_KEY = "bannerCloner.scanAllArtboards";
+try {
+  const saved = localStorage.getItem(SCAN_ALL_KEY);
+  if (saved !== null) scanAllArtboardsCheckbox.checked = saved === "1";
+} catch (e) {}
+scanAllArtboardsCheckbox.addEventListener("change", () => {
+  try { localStorage.setItem(SCAN_ALL_KEY, scanAllArtboardsCheckbox.checked ? "1" : "0"); } catch (e) {}
+});
 
 // ─── Tab switching (updated) ───
 
