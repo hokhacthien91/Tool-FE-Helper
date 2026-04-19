@@ -716,3 +716,27 @@ button.full { width: 100%; }
   min-width: 100px;
 }
 
+/* ─── Footer ─── */
+.app-footer {
+  display: block;
+  border-top: 1px solid var(--border);
+  padding: 10px 8px 6px;
+  margin-top: 14px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.footer-title,
+.footer-credit { display: block; width: 100%; }
+.footer-title {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.footer-version { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.footer-sep { color: var(--border); margin: 0 2px; }
+.footer-credit { font-size: 10px; }
+.footer-author { color: var(--green2); font-weight: 600; }
+.footer-copyright { color: var(--muted); font-weight: 400; }

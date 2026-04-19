@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banner Cloner</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-mode="clone">Clone</button>
+      <button class="tab-btn" data-mode="settings">Settings</button>
+    </div>
+
+    <!-- ─── CLONE MODE ─── -->
+    <div id="clonePanel" class="mode-panel">
+      <div class="section">
+        <label class="label" for="sizesInput">
+          Target Sizes <span id="sizesCountLabel" class="sizes-count"></span>
+        </label>
+        <input id="sizesInput" type="text" value="300x250" />
+        <div class="hint">Enter sizes separated by spaces or commas (e.g. 300x250 728x90)</div>
+        <div id="presetWrap" class="preset-wrap"></div>
+      </div>
+
+      <div class="section btn-row">
+        <button id="cloneBtn" class="primary">Clone Artboards</button>
+        <button id="exportBtn" class="primary export-all-btn">Export</button>
+        <button id="splitBtn" class="primary split-btn" style="display:none;">Split to Files</button>
+      </div>
+
+      <div id="cloneProgress" class="section clone-progress" style="display:none;">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressText" class="progress-text">Working...</div>
+      </div>
+
+      <div class="section info-card">
+        <div><strong>Source:</strong> <span id="sourceName">—</span></div>
+        <div><strong>Size:</strong> <span id="sourceSize">—</span></div>
+        <div id="jsonStatus" class="json-status">No JSON imported</div>
+        <button id="refreshBtn" class="link-btn">Refresh Source</button>
+      </div>
+    </div>
+
+    <!-- ─── SETTINGS MODE ─── -->
+    <div id="settingsPanel" class="mode-panel" style="display:none;">
+      <div class="section checkboxes">
+        <label class="checkbox-row">
+          <input id="smartMatchEnabled" type="checkbox" checked />
+          <span>Smart match (auto resize/move/bg-cover when no JSON rule)</span>
+        </label>
+        <label class="checkbox-row">
+          <input id="suffixName" type="checkbox" checked />
+          <span>Append size suffix to artboard name</span>
+        </label>
+      </div>
+
+      <div class="section">
+        <label class="label" for="ggPrefixInput">Element name prefix (optional)</label>
+        <input id="ggPrefixInput" type="text" value="" placeholder="e.g. gg-  (leave empty = no filter)" />
+        <div class="hint">Only items whose name starts with this prefix are smart-laid-out. Empty = process all.</div>
+      </div>
+
+      <div class="section">
+        <label class="label" for="bgLayerInput">Background Layer/Group</label>
+        <input id="bgLayerInput" type="text" value="gg-background" />
+        <div class="hint">This layer/group will be scaled cover instead of repositioned.</div>
+      </div>
+
+      <div class="section">
+        <label class="label">Layer Rules JSON</label>
+        <div class="hint">Reuses the banner-html-v1-sizes-gg.json format from Photoshop plugin.</div>
+      </div>
+      <div class="section btn-row">
+        <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
+        <button id="clearJsonBtn" class="link-btn">Clear</button>
+      </div>
+      <div id="importInfoCard" class="section info-card" style="display:none;">
+        <div><strong>Module:</strong> <span id="importModuleName">—</span></div>
+        <div><strong>Sizes in JSON:</strong> <span id="importSizeCount">—</span></div>
+        <div><strong>Total rules:</strong> <span id="importRuleCount">—</span></div>
+      </div>
+    </div>
+
+    <!-- ─── LOGS (always visible) ─── -->
+    <div class="section shared-section" id="logsSection">
+      <div class="collapsible-header" id="logsToggle">
+        <span class="toggle-icon">&#9654;</span>
+        <label class="label">Logs</label>
+        <button id="clearLogBtn" class="small-btn" style="margin-left:auto;font-size:10px;padding:3px 8px;">Clear</button>
+      </div>
+      <pre id="logBox" class="log-box" style="display:none;">Ready.</pre>
+    </div>
+
+    <footer class="app-footer">
+      <div class="footer-title">Banner Cloner <span class="footer-version">v0.1.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
+      <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
+    </footer>
+  </div>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
