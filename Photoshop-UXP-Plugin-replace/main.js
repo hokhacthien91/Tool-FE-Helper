@@ -24,6 +24,9 @@ const state = {
   activeFilter: "all", // "all" | "text" | "image" | "group" | "other"
   mode: "replace",      // "replace" | "action"
   searchQuery: "",
+  artboardList: [],     // [{ id, name, docId, docName, width, height }]
+  enabledArtboards: new Set(), // Set<artboardId>
+  artboardSearch: "",
 };
 
 function nextLinkId() { return `#${++state.idCounter}`; }
@@ -238,11 +241,19 @@ function getLayerKind(layer) {
   return "other";
 }
 
-function collectNode(node, layerPath, docInfo, targetName, layerMap) {
+// Occurrence is "visible" when its artboard is enabled (or it's from a flat doc with no artboard)
+function isOccEnabled(occ) {
+  return !occ.artboardId || state.enabledArtboards.has(occ.artboardId);
+}
+function visibleOccurrences(entry) {
+  return entry.occurrences.filter(isOccEnabled);
+}
+
+function collectNode(node, layerPath, docInfo, targetName, layerMap, artboardId) {
   const kind = getLayerKind(node);
   const base = state.matchByNameOnly ? node.name.toLowerCase() : layerPath.toLowerCase();
   const key = `${base}::${kind}`;
-  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: node.id, target: targetName, layerPath };
+  const occ = { docId: docInfo.id, docName: docInfo.name, layerId: node.id, target: targetName, layerPath, artboardId };
   if (!layerMap.has(key)) {
     layerMap.set(key, { name: node.name, displayPath: layerPath, kind, occurrences: [] });
   }
@@ -267,6 +278,11 @@ async function scanDocuments() {
   let abBasedDocs = 0;
   let flatDocs = 0;
 
+  // Collect artboards across all scanned docs — preserve user uncheck state
+  const nextArtboardList = [];
+  const prevKnownIds = new Set(state.artboardList.map(a => a.id));
+  const prevEnabled  = new Set(state.enabledArtboards);
+
   for (const doc of openDocs) {
     await switchActiveDoc(doc.id);
     const docInfo = { id: doc.id, name: doc.name, artboardCount: 0 };
@@ -281,14 +297,38 @@ async function scanDocuments() {
       totalTargets += artboards.length;
       abBasedDocs++;
       for (const ab of artboards) {
-        walkNodesInContainer(ab.layer, (node, path) => collectNode(node, path, docInfo, `${doc.name} / ${ab.name}`, layerMap));
+        let w = 0, h = 0, l = 0, t = 0;
+        try {
+          const desc = await getLayerDescriptor(ab.id);
+          const rect = desc.artboard?.artboardRect || desc.bounds;
+          if (rect) {
+            l = Math.round(rect.left?._value   ?? rect.left   ?? 0);
+            t = Math.round(rect.top?._value    ?? rect.top    ?? 0);
+            const r = Math.round(rect.right?._value  ?? rect.right  ?? 0);
+            const b = Math.round(rect.bottom?._value ?? rect.bottom ?? 0);
+            w = r - l; h = b - t;
+          }
+        } catch (e) {}
+        nextArtboardList.push({
+          id: ab.id, name: ab.name, docId: doc.id, docName: doc.name,
+          width: w, height: h, left: l, top: t,
+        });
+        walkNodesInContainer(ab.layer, (node, path) => collectNode(node, path, docInfo, `${doc.name} / ${ab.name}`, layerMap, ab.id));
       }
     } else {
       totalTargets += 1;
       flatDocs++;
-      walkNodesInContainer(doc, (node, path) => collectNode(node, path, docInfo, doc.name, layerMap));
+      walkNodesInContainer(doc, (node, path) => collectNode(node, path, docInfo, doc.name, layerMap, null));
     }
     state.docs.push(docInfo);
+  }
+
+  // Rebuild enabled set: preserve unchecks for known artboards; new artboards default-enabled
+  state.artboardList = nextArtboardList;
+  state.enabledArtboards = new Set();
+  for (const ab of nextArtboardList) {
+    const isKnown = prevKnownIds.has(ab.id);
+    if (!isKnown || prevEnabled.has(ab.id)) state.enabledArtboards.add(ab.id);
   }
 
   state.totalTargets = totalTargets;
@@ -317,9 +357,10 @@ async function scanDocuments() {
 
 // ─── Locate layer (Show button) ────────────────────────
 async function locateLayer(entry, btnEl) {
-  if (!entry.occurrences.length) return;
-  entry._locateIdx = ((entry._locateIdx ?? -1) + 1) % entry.occurrences.length;
-  const occ = entry.occurrences[entry._locateIdx];
+  const occs = visibleOccurrences(entry);
+  if (!occs.length) return;
+  entry._locateIdx = ((entry._locateIdx ?? -1) + 1) % occs.length;
+  const occ = occs[entry._locateIdx];
   let hidden = false;
   try {
     await core.executeAsModal(async () => {
@@ -329,8 +370,8 @@ async function locateLayer(entry, btnEl) {
       hidden = desc.visible === false;
     }, { commandName: "Content Replacer: Locate" });
     if (btnEl) {
-      btnEl.textContent = entry.occurrences.length > 1
-        ? `Show ${entry._locateIdx + 1}/${entry.occurrences.length}`
+      btnEl.textContent = occs.length > 1
+        ? `Show ${entry._locateIdx + 1}/${occs.length}`
         : "Show";
       const pathInfo = occ.layerPath || occ.target;
       btnEl.title = hidden ? `${pathInfo} (hidden)` : pathInfo;
@@ -403,7 +444,7 @@ function buildUnifiedRow(entry, idx) {
       <input type="checkbox" class="row-checkbox" />
       <span class="replace-row-name"></span>
       <span class="replace-row-kind">${entry.kind}</span>
-      <span class="replace-row-count">${entry.occurrences.length}/${state.totalTargets}</span>
+      <span class="replace-row-count">${visibleOccurrences(entry).length}/${state.totalTargets}</span>
       <button class="locate-btn">Show</button>
     </div>
     <div class="replace-row-meta">
@@ -527,10 +568,15 @@ function renderLayerList() {
   const filtered = state.allEntries.filter(e => {
     if (state.activeFilter !== "all" && e.kind !== state.activeFilter) return false;
     if (q && !(e.name || "").toLowerCase().includes(q) && !(e.displayPath || "").toLowerCase().includes(q)) return false;
+    if (visibleOccurrences(e).length === 0) return false; // all occurrences on unchecked artboards
     return true;
   });
   if (!filtered.length && state.allEntries.length) {
-    const msg = q ? `No layers match "${state.searchQuery}".` : "No layers match this filter.";
+    const hasEnabledAb = state.artboardList.length === 0 || state.enabledArtboards.size > 0;
+    const msg = !hasEnabledAb
+      ? "All artboards are unchecked. Enable at least one in the Artboards panel."
+      : q ? `No layers match "${state.searchQuery}".`
+      : "No layers match this filter.";
     layerList.innerHTML = `<div class="hint" style="text-align:center;">${msg}</div>`;
     return;
   }
@@ -558,6 +604,522 @@ function renderLayerList() {
   }
 }
 
+// ─── Artboards selection UI ────────────────────────────
+const artboardsSection   = document.getElementById("artboardsSection");
+const artboardsToggle    = document.getElementById("artboardsToggle");
+const artboardsBody      = document.getElementById("artboardsBody");
+const artboardsList      = document.getElementById("artboardsList");
+const artboardsCountEl   = document.getElementById("artboardsCount");
+const artboardsAllBtn    = document.getElementById("artboardsAllBtn");
+const artboardsNoneBtn   = document.getElementById("artboardsNoneBtn");
+const artboardsSearchBar = document.getElementById("artboardsSearchBar");
+const artboardsSearchInput = document.getElementById("artboardsSearchInput");
+const artboardsSearchClear = document.getElementById("artboardsSearchClear");
+
+const ARTBOARD_SEARCH_MIN = 5; // only show search input when > this many artboards
+
+function filteredArtboards() {
+  const q = state.artboardSearch.trim().toLowerCase();
+  if (!q) return state.artboardList;
+  return state.artboardList.filter(a =>
+    (a.name || "").toLowerCase().includes(q) ||
+    (a.docName || "").toLowerCase().includes(q)
+  );
+}
+
+function updateArtboardsCountLabel() {
+  const total = state.artboardList.length;
+  const enabled = state.artboardList.filter(a => state.enabledArtboards.has(a.id)).length;
+  artboardsCountEl.textContent = `(${enabled}/${total})`;
+}
+
+function renderArtboardsList() {
+  updateArtboardsCountLabel();
+  const hasAny = state.artboardList.length > 0;
+  artboardsSection.style.display = hasAny ? "block" : "none";
+  if (!hasAny) return;
+
+  updateArtboardRenamePreview();
+
+  // Toggle search bar visibility by count
+  artboardsSearchBar.style.display = state.artboardList.length > ARTBOARD_SEARCH_MIN ? "flex" : "none";
+
+  const visible = filteredArtboards();
+  artboardsList.innerHTML = "";
+
+  if (!visible.length) {
+    artboardsList.innerHTML = `<div class="hint" style="text-align:center;">No artboard matches "${state.artboardSearch}".</div>`;
+    return;
+  }
+
+  const uniqueDocs = new Set(state.artboardList.map(a => a.docId));
+  const showDocName = uniqueDocs.size > 1;
+  for (const ab of visible) {
+    const row = document.createElement("label");
+    row.className = "artboard-row";
+    const checked = state.enabledArtboards.has(ab.id);
+    row.innerHTML = `
+      <input type="checkbox" ${checked ? "checked" : ""} />
+      <span class="ab-name"></span>
+      <span class="ab-meta">${ab.width}×${ab.height}</span>
+    `;
+    row.querySelector(".ab-name").textContent = ab.name + (showDocName && ab.docName ? `  · ${ab.docName}` : "");
+    row.querySelector("input").addEventListener("change", e => {
+      if (e.target.checked) state.enabledArtboards.add(ab.id);
+      else state.enabledArtboards.delete(ab.id);
+      updateArtboardsCountLabel();
+      updateArtboardRenamePreview();
+      refreshAppendTextUI();
+      renderLayerList();
+      refreshApplyEnabled();
+      refreshRunBtn();
+    });
+    artboardsList.appendChild(row);
+  }
+}
+
+// ─── Append Text Layer ───────────────────────────────
+const appendTextSection  = document.getElementById("appendTextSection");
+const appendTextToggle   = document.getElementById("appendTextToggle");
+const appendTextBody     = document.getElementById("appendTextBody");
+const appendTextCountEl  = document.getElementById("appendTextCount");
+const appendTextAutoSync = document.getElementById("appendTextAutoSync");
+const appendTextSampleBtn = document.getElementById("appendTextSampleBtn");
+const appendTextContent  = document.getElementById("appendTextContent");
+const appendTextFont     = document.getElementById("appendTextFont");
+const appendTextSize     = document.getElementById("appendTextSize");
+const appendTextLeading  = document.getElementById("appendTextLeading");
+const appendTextColor    = document.getElementById("appendTextColor");
+const appendTextWidth    = document.getElementById("appendTextWidth");
+const appendTextXAnchor  = document.getElementById("appendTextXAnchor");
+const appendTextXOffset  = document.getElementById("appendTextXOffset");
+const appendTextYAnchor  = document.getElementById("appendTextYAnchor");
+const appendTextYOffset  = document.getElementById("appendTextYOffset");
+const appendTextApplyBtn = document.getElementById("appendTextApplyBtn");
+const appendTextAlignRadios = document.querySelectorAll('input[name="appendTextAlign"]');
+
+state.appendTextAlign = "left";
+state.appendTextFontPS = "ArialMT"; // PostScript name, separate from display name
+
+function appendTextEnabledCount() {
+  return state.artboardList.filter(a => state.enabledArtboards.has(a.id)).length;
+}
+
+let _appendTextShown = false;
+function forceReflowAppendText() {
+  // UXP bug: form controls render with default styles until first interaction.
+  // Reading offsetHeight forces a layout recalc that picks up our CSS.
+  appendTextBody.querySelectorAll("input, select, textarea, button").forEach(el => {
+    void el.offsetHeight;
+  });
+}
+
+function refreshAppendTextUI() {
+  const hasAny = state.artboardList.length > 0;
+  appendTextSection.style.display = hasAny ? "block" : "none";
+  const n = appendTextEnabledCount();
+  appendTextCountEl.textContent = `(${n})`;
+  // Button stays clickable — apply handler logs specific reason if blocked
+  setDisabled(appendTextApplyBtn, false);
+  appendTextApplyBtn.textContent = `Append to ${n} artboard(s)`;
+
+  // First time the section appears AND body is open, kick UXP to re-render
+  if (hasAny && !_appendTextShown && appendTextBody.style.display !== "none") {
+    _appendTextShown = true;
+    setTimeout(forceReflowAppendText, 0);
+  }
+}
+
+appendTextToggle.addEventListener("click", () => {
+  const open = appendTextBody.style.display !== "none";
+  appendTextBody.style.display = open ? "none" : "block";
+  const icon = appendTextToggle.querySelector(".toggle-icon");
+  if (icon) icon.textContent = open ? "▶" : "▼";
+  // First time the body opens, force UXP re-render of form controls
+  if (!open && !_appendTextShown) {
+    _appendTextShown = true;
+    setTimeout(forceReflowAppendText, 0);
+  }
+});
+
+// Align radios — native radio handles selection state, no CSS fights
+function setAlignSelection(align) {
+  state.appendTextAlign = align;
+  appendTextAlignRadios.forEach(r => { r.checked = r.value === align; });
+}
+appendTextAlignRadios.forEach(r => {
+  r.addEventListener("change", () => {
+    if (r.checked) state.appendTextAlign = r.value;
+  });
+});
+
+// Content input — gate the apply button
+["input", "keyup", "change", "paste", "cut"].forEach(ev => {
+  appendTextContent.addEventListener(ev, () => setTimeout(refreshAppendTextUI, 0));
+});
+
+// Color helper: hex "#rrggbb" or "rrggbb" → {r,g,b}
+function parseHexColor(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? "").trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+function rgbToHex(r, g, b) {
+  const to2 = v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+// Read the currently selected text layer and fill the form
+async function sampleFromSelectedTextLayer(silent) {
+  try {
+    const doc = app.activeDocument;
+    if (!doc) { if (!silent) log("Sample: no active document"); return false; }
+    const layer = doc.activeLayers?.[0];
+    if (!layer) { if (!silent) log("Sample: no layer selected"); return false; }
+    if (!isTextLayer(layer)) { if (!silent) log(`Sample: "${layer.name}" is not a text layer`); return false; }
+
+    const desc = await getLayerDescriptor(layer.id);
+    const tk = desc.textKey;
+    if (!tk) { if (!silent) log("Sample: layer has no textKey"); return false; }
+
+    const tsr = tk.textStyleRange?.[0]?.textStyle;
+    const psr = tk.paragraphStyleRange?.[0]?.paragraphStyle;
+
+    // Skip fields that are currently focused by the user
+    const active = document.activeElement;
+    const canSet = el => el !== active;
+
+    if (tsr) {
+      // Font: prefer fontPostScriptName (carries weight info, e.g. "DINPro-Bold")
+      const fontStr = tsr.fontPostScriptName || tsr.fontName;
+      if (fontStr && canSet(appendTextFont)) appendTextFont.value = fontStr;
+
+      // Size: prefer impliedFontSize (effective after layer transforms)
+      const sizeVal = tsr.impliedFontSize?._value ?? tsr.size?._value ?? tsr.size;
+      if (sizeVal != null && canSet(appendTextSize)) {
+        const sz = Number(sizeVal);
+        if (!isNaN(sz)) appendTextSize.value = Math.round(sz * 100) / 100;
+      }
+
+      // Leading (line height): empty when auto-leading
+      if (canSet(appendTextLeading)) {
+        if (tsr.autoLeading === true) {
+          appendTextLeading.value = "";
+        } else {
+          const lead = tsr.impliedLeading?._value ?? tsr.leading?._value ?? tsr.leading;
+          if (lead != null) {
+            const lv = Number(lead);
+            appendTextLeading.value = isNaN(lv) ? "" : Math.round(lv * 100) / 100;
+          } else appendTextLeading.value = "";
+        }
+      }
+
+      const c = tsr.color;
+      if (c && canSet(appendTextColor)) {
+        const r = Number(c.red   ?? 0);
+        const g = Number(c.grain ?? c.green ?? 0);
+        const b = Number(c.blue  ?? 0);
+        appendTextColor.value = rgbToHex(r, g, b);
+      }
+    }
+    if (psr?.align?._value) {
+      const a = psr.align._value.replace(/^justify/i, "").toLowerCase() || "left";
+      if (["left", "center", "right"].includes(a)) setAlignSelection(a);
+    }
+    // Box width: use the layer's rendered bounds (post-transform) on canvas,
+    // NOT textShape.bounds which is pre-transform and can be huge on scaled layers.
+    if (canSet(appendTextWidth)) {
+      const rb = rectSize(desc.bounds);
+      if (rb.width > 0) appendTextWidth.value = Math.round(rb.width);
+    }
+
+    // Brief visual feedback
+    appendTextBody.classList.add("synced");
+    setTimeout(() => appendTextBody.classList.remove("synced"), 500);
+    if (!silent) log(`[SAMPLE] ${layer.name} → ${appendTextFont.value} ${appendTextSize.value}px ${appendTextColor.value}`);
+    return true;
+  } catch (e) {
+    if (!silent) log(`Sample error: ${e.message || e}`);
+    return false;
+  }
+}
+
+appendTextSampleBtn.addEventListener("click", async () => {
+  try {
+    await core.executeAsModal(async () => { await sampleFromSelectedTextLayer(false); },
+      { commandName: "Content Replacer: Sample Style" });
+  } catch (e) { log(`Sample error: ${e.message || e}`); }
+});
+
+// Auto-sync: listen to "select" events
+let selectListenerRegistered = false;
+async function onSelectEvent(event, descriptor) {
+  if (!appendTextAutoSync.checked) return;
+  // Skip if the user is typing in any of the append-text inputs
+  const active = document.activeElement;
+  if (active && appendTextBody.contains(active)) return;
+  try {
+    await core.executeAsModal(async () => { await sampleFromSelectedTextLayer(true); },
+      { commandName: "Content Replacer: Auto-sync" });
+  } catch (e) {}
+}
+async function ensureSelectListener() {
+  if (selectListenerRegistered) return;
+  try {
+    await action.addNotificationListener(["select"], onSelectEvent);
+    selectListenerRegistered = true;
+  } catch (e) { log(`Auto-sync setup failed: ${e.message || e}`); }
+}
+ensureSelectListener();
+
+// Build a make-textLayer batchPlay command
+function buildMakeTextLayerCmd(ab, opts) {
+  const { content, fontPS, fontName, size, leading, color, boxWidth, align,
+          xAnchor, xOffset, yAnchor, yOffset } = opts;
+  const lines = content.split(/\r?\n/).length;
+  const lineH = leading || (size * 1.5);
+  const boxHeight = Math.max(100, Math.round(lineH * lines + size));
+
+  // Horizontal placement
+  let boxLeft;
+  if (xAnchor === "center")   boxLeft = ab.left + (ab.width  - boxWidth)  / 2 + xOffset;
+  else if (xAnchor === "right") boxLeft = ab.left + ab.width - boxWidth - xOffset;
+  else                          boxLeft = ab.left + xOffset;
+
+  let boxTop;
+  if (yAnchor === "center")    boxTop = ab.top + (ab.height - boxHeight) / 2 + yOffset;
+  else if (yAnchor === "bottom") boxTop = ab.top + ab.height - boxHeight - yOffset;
+  else                           boxTop = ab.top + yOffset;
+
+  const boxRight  = boxLeft + boxWidth;
+  const boxBottom = boxTop  + boxHeight;
+  const psContent = content.replace(/\r?\n/g, "\r");
+  const len = psContent.length;
+
+  const textStyleObj = {
+    _obj: "textStyle",
+    fontName: fontName,
+    fontPostScriptName: fontPS || fontName,
+    size: { _unit: "pointsUnit", _value: size },
+    color: { _obj: "RGBColor", red: color.r, grain: color.g, blue: color.b },
+  };
+  if (leading && !isNaN(leading) && leading > 0) {
+    textStyleObj.leading = { _unit: "pointsUnit", _value: leading };
+    textStyleObj.autoLeading = false;
+  } else {
+    textStyleObj.autoLeading = true;
+  }
+
+  return {
+    _obj: "make",
+    _target: [{ _ref: "textLayer" }],
+    using: {
+      _obj: "textLayer",
+      textKey: psContent,
+      textStyleRange: [{
+        _obj: "textStyleRange", from: 0, to: len,
+        textStyle: textStyleObj,
+      }],
+      paragraphStyleRange: [{
+        _obj: "paragraphStyleRange", from: 0, to: len,
+        paragraphStyle: {
+          _obj: "paragraphStyle",
+          align: { _enum: "alignmentType", _value: align },
+        },
+      }],
+      textShape: [{
+        _obj: "textShape",
+        char: { _enum: "char", _value: "box" },
+        orientation: { _enum: "orientation", _value: "horizontal" },
+        bounds: {
+          _obj: "rectangle",
+          top: boxTop, left: boxLeft, bottom: boxBottom, right: boxRight,
+        },
+      }],
+    },
+    _options: { dialogOptions: "dontDisplay" },
+  };
+}
+
+appendTextApplyBtn.addEventListener("click", async () => {
+  log("[APPEND] Apply clicked");
+  log(`[APPEND] refs: content=${!!appendTextContent}, font=${!!appendTextFont}, size=${!!appendTextSize}, leading=${!!appendTextLeading}, color=${!!appendTextColor}, width=${!!appendTextWidth}, xA=${!!appendTextXAnchor}, xO=${!!appendTextXOffset}, yA=${!!appendTextYAnchor}, yO=${!!appendTextYOffset}`);
+  try {
+    log(`[APPEND] content.len=${appendTextContent?.value?.length ?? "?"}, abList.len=${state.artboardList?.length ?? "?"}, enabled=${state.enabledArtboards?.size ?? "?"}, color="${appendTextColor?.value ?? "?"}"`);
+  } catch (e) { log(`[APPEND] state read error: ${e.message || e}`); return; }
+
+  try {
+  const content = String(appendTextContent.value ?? "");
+  if (!content.trim()) { log("[APPEND] abort: content is empty"); return; }
+  const targets = state.artboardList.filter(a => state.enabledArtboards.has(a.id));
+  if (!targets.length) { log("[APPEND] abort: no artboards enabled"); return; }
+
+  const color = parseHexColor(appendTextColor.value);
+  if (!color) { log(`[APPEND] abort: invalid color "${appendTextColor.value}"`); return; }
+
+  const fontStr = String(appendTextFont.value || "Arial").trim();
+  const leadingRaw = String(appendTextLeading.value ?? "").trim();
+  const opts = {
+    content,
+    fontName: fontStr,
+    fontPS:   fontStr, // PS name carries weight; use single field as both
+    size:     Number(appendTextSize.value) || 12,
+    leading:  leadingRaw ? Number(leadingRaw) : null,
+    color,
+    boxWidth: Math.max(10, Number(appendTextWidth.value) || 300),
+    align:    state.appendTextAlign || "left",
+    xAnchor:  appendTextXAnchor.value,
+    xOffset:  Number(appendTextXOffset.value) || 0,
+    yAnchor:  appendTextYAnchor.value,
+    yOffset:  Number(appendTextYOffset.value) || 0,
+  };
+
+  log(`[APPEND] preparing: ${targets.length} targets, font="${fontStr}" size=${opts.size} leading=${opts.leading} boxW=${opts.boxWidth}`);
+  setDisabled(appendTextApplyBtn, true);
+  let step = 0, ok = 0, fail = 0;
+  await setProgress(0, targets.length, "Appending text");
+  try {
+    await core.executeAsModal(async () => {
+      log(`[APPEND] inside modal, looping ${targets.length} artboards`);
+      for (const ab of targets) {
+        try {
+          log(`[APPEND] → "${ab.name}" rect=${ab.left},${ab.top} ${ab.width}×${ab.height}`);
+          await switchActiveDoc(ab.docId);
+          await selectLayerById(ab.id);
+          const cmd = buildMakeTextLayerCmd(ab, opts);
+          await bp([cmd]);
+          state.modifiedDocIds.add(ab.docId);
+          log(`[ADD-TEXT] "${ab.name}" ← "${content.length > 40 ? content.slice(0, 40) + "…" : content}"`);
+          ok++;
+        } catch (e) {
+          log(`[ADD-TEXT] ERROR "${ab.name}": ${e.message || e}`);
+          fail++;
+        }
+        step++; await setProgress(step, targets.length, "Appending text");
+      }
+    }, { commandName: "Content Replacer: Append Text" });
+    log(`Append done. ${ok} added, ${fail} failed.`);
+  } catch (e) {
+    log(`Append error: ${e.message || e}`);
+  } finally {
+    hideProgress();
+    refreshSaveEnabled();
+    refreshAppendTextUI();
+  }
+  } catch (outerE) {
+    log(`[APPEND] OUTER error: ${outerE.message || outerE} (${outerE.stack ? outerE.stack.split("\n")[0] : "?"})`);
+  }
+});
+
+// ─── Artboard rename ─────────────────────────────────
+const artboardRenameCurrent = document.getElementById("artboardRenameCurrent");
+const artboardRenameNew     = document.getElementById("artboardRenameNew");
+const artboardRenameBtn     = document.getElementById("artboardRenameBtn");
+
+function updateArtboardRenamePreview() {
+  const first = state.artboardList.find(a => state.enabledArtboards.has(a.id))
+             || state.artboardList[0];
+  artboardRenameCurrent.value = first ? first.name : "";
+}
+
+function buildNewArtboardName(userInput, width, height) {
+  // Strip trailing size digits so user can paste a full name like "foo_970x250"
+  const cleaned = (userInput || "").replace(/\s*\d+x\d+\s*$/i, "");
+  return `${cleaned}${width}x${height}`;
+}
+
+artboardRenameBtn.addEventListener("click", async () => {
+  const newInput = artboardRenameNew.value || "";
+  if (!newInput.trim()) { log("Rename: enter a new name first"); return; }
+
+  const targets = state.artboardList.filter(a => state.enabledArtboards.has(a.id));
+  if (!targets.length) { log("Rename: no artboards enabled"); return; }
+
+  setDisabled(artboardRenameBtn, true);
+  const origText = artboardRenameBtn.textContent;
+  artboardRenameBtn.textContent = "Renaming…";
+  let ok = 0, fail = 0, skipped = 0;
+  try {
+    await core.executeAsModal(async () => {
+      for (const ab of targets) {
+        const newName = buildNewArtboardName(newInput, ab.width, ab.height);
+        if (newName === ab.name) { skipped++; continue; }
+        try {
+          await switchActiveDoc(ab.docId);
+          await selectLayerById(ab.id);
+          await renameTargetLayer(newName);
+          log(`[AB-RENAME] "${ab.name}" → "${newName}"`);
+          ab.name = newName;
+          state.modifiedDocIds.add(ab.docId);
+          ok++;
+        } catch (e) {
+          log(`[AB-RENAME] ERROR "${ab.name}": ${e.message || e}`);
+          fail++;
+        }
+      }
+    }, { commandName: "Content Replacer: Rename Artboards" });
+
+    renderArtboardsList();
+    refreshSaveEnabled();
+    const msg = fail ? `${ok} ok / ${fail} fail` : (ok ? "Done ✓" : "No change");
+    artboardRenameBtn.textContent = msg;
+    artboardRenameBtn.classList.add(fail ? "is-fail" : "is-success");
+    if (skipped) log(`[AB-RENAME] ${skipped} artboard(s) already had the target name`);
+  } catch (e) {
+    log(`Rename artboards error: ${e.message || e}`);
+    artboardRenameBtn.textContent = "Error";
+    artboardRenameBtn.classList.add("is-fail");
+  } finally {
+    setTimeout(() => {
+      artboardRenameBtn.textContent = origText;
+      artboardRenameBtn.classList.remove("is-success", "is-fail");
+      setDisabled(artboardRenameBtn, false);
+    }, 1800);
+  }
+});
+
+artboardsToggle.addEventListener("click", () => {
+  const open = artboardsBody.style.display !== "none";
+  artboardsBody.style.display = open ? "none" : "block";
+  const icon = artboardsToggle.querySelector(".toggle-icon");
+  if (icon) icon.textContent = open ? "▶" : "▼";
+});
+artboardsAllBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  filteredArtboards().forEach(a => state.enabledArtboards.add(a.id));
+  renderArtboardsList();
+  refreshAppendTextUI();
+  renderLayerList();
+  refreshApplyEnabled();
+  refreshRunBtn();
+});
+artboardsNoneBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  filteredArtboards().forEach(a => state.enabledArtboards.delete(a.id));
+  renderArtboardsList();
+  refreshAppendTextUI();
+  renderLayerList();
+  refreshApplyEnabled();
+  refreshRunBtn();
+});
+
+// Search input — UXP input events unreliable, listen to multiple
+function applyArtboardSearch() {
+  const val = artboardsSearchInput.value || "";
+  if (val === state.artboardSearch) return;
+  state.artboardSearch = val;
+  renderArtboardsList();
+}
+["input", "keyup", "change", "paste", "cut"].forEach(ev => {
+  artboardsSearchInput.addEventListener(ev, () => setTimeout(applyArtboardSearch, 0));
+});
+artboardsSearchClear.addEventListener("click", () => {
+  artboardsSearchInput.value = "";
+  applyArtboardSearch();
+  artboardsSearchInput.focus();
+});
+
 function renderEmptyStates() {
   if (!state.hasScanned) {
     emptyState.style.display = "block";
@@ -574,9 +1136,9 @@ function countPendingOps() {
   const texts   = state.allEntries.filter(e => e.kind === "text"  && (e.newContent || "").length > 0);
   const images  = state.allEntries.filter(e => e.kind === "image" && !!e.token);
   const renames = state.allEntries.filter(e => (e.newName || "").length > 0);
-  const textTargets   = texts.reduce((s, e) => s + e.occurrences.length, 0);
-  const imageTargets  = images.reduce((s, e) => s + e.occurrences.length, 0);
-  const renameTargets = renames.reduce((s, e) => s + e.occurrences.length, 0);
+  const textTargets   = texts.reduce((s, e) => s + visibleOccurrences(e).length, 0);
+  const imageTargets  = images.reduce((s, e) => s + visibleOccurrences(e).length, 0);
+  const renameTargets = renames.reduce((s, e) => s + visibleOccurrences(e).length, 0);
   return {
     textCount: texts.length,
     imageCount: images.length,
@@ -877,9 +1439,9 @@ async function applyReplacements() {
   const renameOps = state.allEntries.filter(e => (e.newName || "").length > 0);
 
   const totalSteps =
-    textOps.reduce((s, e) => s + e.occurrences.length, 0) +
-    imageOps.reduce((s, e) => s + e.occurrences.length, 0) +
-    renameOps.reduce((s, e) => s + e.occurrences.length, 0);
+    textOps.reduce((s, e) => s + visibleOccurrences(e).length, 0) +
+    imageOps.reduce((s, e) => s + visibleOccurrences(e).length, 0) +
+    renameOps.reduce((s, e) => s + visibleOccurrences(e).length, 0);
 
   if (!totalSteps) { log("Nothing to apply."); return; }
 
@@ -903,7 +1465,7 @@ async function applyReplacements() {
 
 async function runTextOps(textOps, step, totalSteps) {
   for (const entry of textOps) {
-    for (const occ of entry.occurrences) {
+    for (const occ of visibleOccurrences(entry)) {
       await runOneTextOp(entry, occ);
       step++; await setProgress(step, totalSteps, "Replacing text");
     }
@@ -924,7 +1486,7 @@ async function runOneTextOp(entry, occ) {
 
 async function runImageOps(imageOps, step, totalSteps) {
   for (const entry of imageOps) {
-    for (const occ of entry.occurrences) {
+    for (const occ of visibleOccurrences(entry)) {
       await runOneImageOp(entry, occ);
       step++; await setProgress(step, totalSteps, "Replacing images");
     }
@@ -945,7 +1507,7 @@ async function runOneImageOp(entry, occ) {
 
 async function runRenameOps(renameOps, step, totalSteps) {
   for (const entry of renameOps) {
-    for (const occ of entry.occurrences) {
+    for (const occ of visibleOccurrences(entry)) {
       try {
         await switchActiveDoc(occ.docId);
         await selectLayerById(occ.layerId);
@@ -1007,6 +1569,8 @@ scanBtn.addEventListener("click", async () => {
     await core.executeAsModal(async () => {
       await scanDocuments();
     }, { commandName: "Content Replacer: Scan" });
+    renderArtboardsList();
+    refreshAppendTextUI();
     renderLayerList();
     renderEmptyStates();
     refreshApplyEnabled();
@@ -1062,10 +1626,10 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-// Filter buttons
-document.querySelectorAll(".filter-btn").forEach(btn => {
+// Filter buttons (only those with data-filter — exclude select/deselect/refresh)
+document.querySelectorAll(".filter-btn[data-filter]").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".filter-btn[data-filter]").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     state.activeFilter = btn.getAttribute("data-filter");
     renderLayerList();
@@ -1193,7 +1757,7 @@ actionSelect.addEventListener("change", () => {
 
 function getSelectedCount() {
   const selected = state.allEntries.filter(e => e.selected);
-  const totalOcc = selected.reduce((s, e) => s + e.occurrences.length, 0);
+  const totalOcc = selected.reduce((s, e) => s + visibleOccurrences(e).length, 0);
   return { rows: selected.length, layers: totalOcc };
 }
 
@@ -1221,7 +1785,7 @@ runActionBtn.addEventListener("click", async () => {
   if (!setName || !actName) return;
 
   const selected = state.allEntries.filter(e => e.selected);
-  const totalOcc = selected.reduce((s, e) => s + e.occurrences.length, 0);
+  const totalOcc = selected.reduce((s, e) => s + visibleOccurrences(e).length, 0);
   if (!totalOcc) return;
 
   setDisabled(runActionBtn, true);
@@ -1231,7 +1795,7 @@ runActionBtn.addEventListener("click", async () => {
   try {
     await core.executeAsModal(async () => {
       for (const entry of selected) {
-        for (const occ of entry.occurrences) {
+        for (const occ of visibleOccurrences(entry)) {
           try {
             await switchActiveDoc(occ.docId);
             await selectLayerById(occ.layerId);

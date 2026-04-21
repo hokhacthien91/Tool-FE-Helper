@@ -728,7 +728,7 @@ function bcExportArtboards(opts) {
 }
 
 function sanitizeFilename(s) {
-    return String(s || "untitled").replace(/[\\/:*?"<>|]/g, "_");
+    return String(s || "untitled").replace(/[\\\/:*?"<>|]/g, "_");
 }
 function stripExt(n) {
     return String(n || "").replace(/\.[a-z0-9]+$/i, "");
@@ -785,3 +785,17 @@ function bcPing() {
         });
     } catch (e) { return err(e); }
 }
+
+// ─── Export public API to $.global ───
+// When this file is loaded via eval() inside CEP's evalScript wrapper, functions
+// would otherwise be scoped locally. Explicitly binding to $.global makes them
+// reachable from subsequent evalScript calls regardless of load method.
+$.global.bcPing = bcPing;
+$.global.bcDetectSource = bcDetectSource;
+$.global.bcCloneSizes = bcCloneSizes;
+$.global.bcExportArtboards = bcExportArtboards;
+$.global.bcPickFolder = bcPickFolder;
+$.global.bcPickFile = bcPickFile;
+$.global.bcReadFile = bcReadFile;
+$.global.bcWriteFile = bcWriteFile;
+$.global.bcGetLog = bcGetLog;

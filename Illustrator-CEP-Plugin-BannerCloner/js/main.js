@@ -234,6 +234,16 @@ function doClone() {
   const sizes = parseSizes(sizesInput.value);
   if (!sizes.length) { log("No valid sizes parsed.", "error"); return; }
 
+  // Guard: ensure host is loaded. If not, try to load and show diagnostic.
+  if (!hostLoaded) {
+    log("Host not loaded — reloading host.jsx before cloning...", "meta");
+    loadHostScript(() => {
+      if (hostLoaded) doClone();
+      else log("Cannot clone: host.jsx failed to load. See 'Load result' above for line number.", "error");
+    });
+    return;
+  }
+
   cloneBtn.disabled = true;
   cloneBtn.textContent = "Cloning...";
   cloneProgress.style.display = "";

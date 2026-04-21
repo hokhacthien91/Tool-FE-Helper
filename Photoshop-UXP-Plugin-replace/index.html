@@ -44,6 +44,113 @@
       <div id="progressText" class="progress-text">Working…</div>
     </div>
 
+    <div id="artboardsSection" class="section collapsible-section" style="display:none;">
+      <div class="log-header" id="artboardsToggle">
+        <div class="label">Artboards <span id="artboardsCount" class="sizes-count"></span> <span class="toggle-icon">▶</span></div>
+        <div class="log-btn-group">
+          <button id="artboardsAllBtn" class="log-clear-btn" title="Enable all (or all matching search)">All</button>
+          <button id="artboardsNoneBtn" class="log-clear-btn" title="Disable all (or all matching search)">None</button>
+        </div>
+      </div>
+      <div id="artboardsBody" style="display:none;">
+        <div class="search-bar artboards-search" id="artboardsSearchBar" style="display:none;">
+          <input id="artboardsSearchInput" type="text" placeholder="Search artboards…" />
+          <button id="artboardsSearchClear" class="search-clear" title="Clear">×</button>
+        </div>
+        <div class="artboard-rename" id="artboardRenameBox">
+          <div class="artboard-rename-label">Rename (keeps <code>_WxH</code> suffix)</div>
+          <input id="artboardRenameCurrent" type="text" class="artboard-rename-input" placeholder="Current name" readonly />
+          <div class="artboard-rename-row">
+            <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="New name (e.g. P001_honda_)" />
+            <button id="artboardRenameBtn" class="artboard-rename-btn">Rename</button>
+          </div>
+        </div>
+        <div id="artboardsList" class="artboards-list"></div>
+      </div>
+    </div>
+
+    <div id="appendTextSection" class="section collapsible-section" style="display:none;">
+      <div class="log-header" id="appendTextToggle">
+        <div class="label">Append Text Layer <span id="appendTextCount" class="sizes-count"></span> <span class="toggle-icon">▶</span></div>
+      </div>
+      <div id="appendTextBody" class="append-text-body" style="display:none;">
+        <div class="at-top" style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;">
+          <label class="at-sync" style="display:flex;align-items:center;">
+            <input type="checkbox" id="appendTextAutoSync" checked />
+            <span>Auto-sync with selection</span>
+          </label>
+          <button id="appendTextSampleBtn" class="at-sample-btn">Sample</button>
+        </div>
+
+        <div class="at-label">Content</div>
+        <textarea id="appendTextContent" class="at-input at-textarea" rows="2" placeholder="Text content (multi-line ok)"></textarea>
+
+        <div class="at-label">Font</div>
+        <input id="appendTextFont" class="at-input" type="text" value="Arial" />
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell">
+            <div class="at-label">Size (pt)</div>
+            <input id="appendTextSize" class="at-input" type="text" inputmode="numeric" value="12" />
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Line height (pt)</div>
+            <input id="appendTextLeading" class="at-input" type="text" inputmode="numeric" value="" placeholder="auto" />
+          </div>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell">
+            <div class="at-label">Color</div>
+            <input id="appendTextColor" class="at-input" type="text" value="#000000" />
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Box width (px)</div>
+            <input id="appendTextWidth" class="at-input" type="text" inputmode="numeric" value="300" />
+          </div>
+        </div>
+
+        <div class="at-label">Text align</div>
+        <div class="at-align-radios" style="display:flex;flex-direction:row;align-items:center;height:28px;margin-bottom:8px;">
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="left" checked /><span>Left</span></label>
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="center" /><span>Center</span></label>
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="right" /><span>Right</span></label>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell at-cell-2x">
+            <div class="at-label">X anchor</div>
+            <select id="appendTextXAnchor" class="at-input">
+              <option value="left" selected>From left</option>
+              <option value="center">From center</option>
+              <option value="right">From right</option>
+            </select>
+          </div>
+          <div class="at-cell">
+            <div class="at-label">X offset (px)</div>
+            <input id="appendTextXOffset" class="at-input" type="text" inputmode="numeric" value="10" />
+          </div>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell at-cell-2x">
+            <div class="at-label">Y anchor</div>
+            <select id="appendTextYAnchor" class="at-input">
+              <option value="top" selected>From top</option>
+              <option value="center">From center</option>
+              <option value="bottom">From bottom</option>
+            </select>
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Y offset (px)</div>
+            <input id="appendTextYOffset" class="at-input" type="text" inputmode="numeric" value="10" />
+          </div>
+        </div>
+
+        <button id="appendTextApplyBtn" class="primary at-apply-btn is-disabled" disabled>Append to 0 artboard(s)</button>
+      </div>
+    </div>
+
     <div id="emptyState" class="section empty-state">
       <strong>Get started</strong>
       Open your PSD in Photoshop, then click <b>Scan</b>.<br/>

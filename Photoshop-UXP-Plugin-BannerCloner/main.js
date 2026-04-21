@@ -20,6 +20,16 @@ function hasGGPrefix(name) {
   return !!(name && name.toLowerCase().startsWith(GG_PREFIX.toLowerCase()));
 }
 
+// Toggle perf timing logs (and extra verification round-trips in setTextFontSize).
+// Leave true while tuning clone speed; set to false once happy to cut a few round-trips.
+const DEBUG_PERF = true;
+function perfNow() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function perfLog(label, startMs) {
+  if (!DEBUG_PERF) return;
+  const ms = Math.round(perfNow() - startMs);
+  log(`[PERF] ${label}: ${ms}ms`);
+}
+
 const sizesInput = document.getElementById("sizesInput");
 const presetWrap = document.getElementById("presetWrap");
 const cloneBtn = document.getElementById("cloneBtn");
@@ -41,7 +51,21 @@ const exportAssetsBtn = document.getElementById("exportAssetsBtn");
 const exportAssetsAction = document.getElementById("exportAssetsAction");
 const exportAssetsPanel = document.getElementById("exportAssetsPanel");
 const ignoreLayerInput = document.getElementById("ignoreLayerInput");
-const scanAllArtboardsCheckbox = document.getElementById("scanAllArtboards");
+
+// Artboard picker elements
+const artboardPickerToggle = document.getElementById("artboardPickerToggle");
+const artboardPickerArrow = document.getElementById("artboardPickerArrow");
+const artboardPickerCount = document.getElementById("artboardPickerCount");
+const artboardPickerBody = document.getElementById("artboardPickerBody");
+const artboardPickerSearch = document.getElementById("artboardPickerSearch");
+const artboardPickerList = document.getElementById("artboardPickerList");
+const artboardPickerRefresh = document.getElementById("artboardPickerRefresh");
+const artboardPickerAll = document.getElementById("artboardPickerAll");
+const artboardPickerNone = document.getElementById("artboardPickerNone");
+
+// Asset search elements
+const assetSearchRow = document.getElementById("assetSearchRow");
+const assetSearchInput = document.getElementById("assetSearch");
 let scannedAssets = [];
 let scannedArtboards = [];
 const IGNORE_KEY = "bannerCloner.ignoreAssets";
@@ -327,6 +351,7 @@ function collectLeavesByKind(parent) {
 // Strategy: read textKey → compute scale ratio from current pt → transform the text layer
 // Transform on a text layer rescales fontSize while preserving all style properties
 async function setTextFontSize(layerId, targetPx) {
+  const t0 = perfNow();
   const desc = await getLayerDescriptor(layerId);
   const textKey = desc.textKey;
   if (!textKey || !textKey.textStyleRange || !textKey.textStyleRange.length) {
@@ -351,53 +376,56 @@ async function setTextFontSize(layerId, targetPx) {
 
   if (Math.abs(visualPx - targetPx) < 0.5) {
     log(`[TEXT]   already at target size, skip`);
+    perfLog(`setTextFontSize skip (id=${layerId})`, t0);
     return;
   }
 
-  // Calculate new raw pt to achieve target visual size: newRawPt = targetPx / scale
-  const newRawPt = scale > 0.001 ? targetPx / scale : targetPx;
-  log(`[TEXT]   newRawPt: ${newRawPt.toFixed(2)}pt (targetPx / scale)`);
+  // Strategy:
+  //   - If text layer has no transform (scale ≈ 1): set textStyleRange (approach1) — cheap, reliable.
+  //   - If text layer HAS transform (scale ≠ 1): PS rejects raw-size write, jump straight to transform (approach2).
+  // Skip verify round-trips in normal runs (enable DEBUG_PERF to re-check).
+  const hasTransform = Math.abs(scale - 1) > 0.001;
 
-  // Approach 1: Set font size directly via textStyleRange
-  try {
-    const newRanges = textKey.textStyleRange.map(r => ({
-      _obj: "textStyleRange",
-      from: r.from,
-      to: r.to,
-      textStyle: {
-        ...r.textStyle,
-        _obj: "textStyle",
-        size: { _unit: "pointsUnit", _value: newRawPt }
+  if (!hasTransform) {
+    // Approach 1: Set font size directly via textStyleRange
+    const newRawPt = targetPx;
+    log(`[TEXT]   approach1: set raw → ${newRawPt.toFixed(2)}pt`);
+    try {
+      const newRanges = textKey.textStyleRange.map(r => ({
+        _obj: "textStyleRange",
+        from: r.from,
+        to: r.to,
+        textStyle: {
+          ...r.textStyle,
+          _obj: "textStyle",
+          size: { _unit: "pointsUnit", _value: newRawPt }
+        }
+      }));
+
+      await selectLayerById(layerId);
+      await bp([{
+        _obj: "set",
+        _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+        to: {
+          _obj: "textLayer",
+          textStyleRange: newRanges
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+
+      if (DEBUG_PERF) {
+        const descAfter = await getLayerDescriptor(layerId);
+        const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+        if (afterPt) log(`[TEXT]   approach1 verify: raw=${afterPt.toFixed(2)}pt`);
       }
-    }));
-
-    await selectLayerById(layerId);
-    await bp([{
-      _obj: "set",
-      _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
-      to: {
-        _obj: "textLayer",
-        textStyleRange: newRanges
-      },
-      _options: { dialogOptions: "dontDisplay" }
-    }]);
-
-    // Verify
-    const descAfter = await getLayerDescriptor(layerId);
-    const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    if (afterPt) {
-      let afterScale = 1;
-      const afterTx = descAfter.textKey?.transform;
-      if (afterTx) afterScale = Math.abs(afterTx.yy?._value ?? afterTx.yy ?? 1);
-      const afterVisual = afterPt * afterScale;
-      log(`[TEXT]   approach1 result: ${afterVisual.toFixed(2)}px (raw=${afterPt.toFixed(2)}pt)`);
-      if (Math.abs(afterVisual - targetPx) < 1) return;
+      perfLog(`setTextFontSize approach1 (id=${layerId})`, t0);
+      return;
+    } catch (e) {
+      log(`[TEXT]   approach1 ERROR: ${e.message} — falling through to approach2`);
     }
-  } catch (e) {
-    log(`[TEXT]   approach1 ERROR: ${e.message}`);
   }
 
-  // Approach 2 (fallback): transform-scale by visual ratio
+  // Approach 2: transform-scale by visual ratio (used when transform exists OR approach1 threw)
   try {
     const ratio = targetPx / visualPx;
     log(`[TEXT]   approach2: transform scale ${(ratio * 100).toFixed(1)}%`);
@@ -411,14 +439,18 @@ async function setTextFontSize(layerId, targetPx) {
       interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
       _options: { dialogOptions: "dontDisplay" }
     }]);
-    const descAfter = await getLayerDescriptor(layerId);
-    const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-    if (afterPt) {
-      let afterScale = 1;
-      const afterTx = descAfter.textKey?.transform;
-      if (afterTx) afterScale = Math.abs(afterTx.yy?._value ?? afterTx.yy ?? 1);
-      log(`[TEXT]   approach2 result: ${(afterPt * afterScale).toFixed(2)}px`);
+
+    if (DEBUG_PERF) {
+      const descAfter = await getLayerDescriptor(layerId);
+      const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+      if (afterPt) {
+        let afterScale = 1;
+        const afterTx = descAfter.textKey?.transform;
+        if (afterTx) afterScale = Math.abs(afterTx.yy?._value ?? afterTx.yy ?? 1);
+        log(`[TEXT]   approach2 verify: ${(afterPt * afterScale).toFixed(2)}px`);
+      }
     }
+    perfLog(`setTextFontSize approach2 (id=${layerId})`, t0);
   } catch (e) {
     log(`[TEXT]   approach2 ERROR: ${e.message}`);
   }
@@ -1340,6 +1372,7 @@ async function cloneAsArtboards() {
 
   cloneBtn.disabled = true;
   cloneBtn.textContent = "Cloning...";
+  const tTotal = perfNow();
   try {
     await core.executeAsModal(async () => {
       const source = await resolveSelectedArtboard();
@@ -1440,10 +1473,23 @@ async function cloneAsArtboards() {
       }
       log(`Template doc created`);
 
+      // Capture original bounds ONCE on the template — every tempDoc is a copy with
+      // the same layer names, so we can reuse this map across all target sizes.
+      // Keyed by layer name (lowercase), so layer IDs do not need to match.
+      const anyRules = targets.some(t => layerRules[t.raw] && layerRules[t.raw].length > 0);
+      let templateOrigBounds = null;
+      if (anyRules) {
+        const tCap = perfNow();
+        templateOrigBounds = await captureOriginalBounds(templateDoc);
+        const keyCount = Object.keys(templateOrigBounds).length;
+        log(`[PERF] captureOriginalBounds (template, once): ${Math.round(perfNow() - tCap)}ms, ${keyCount} entries`);
+      }
+
       for (let ti = 0; ti < targets.length; ti++) {
         const target = targets[ti];
         setProgress(ti + 1, targets.length, target.raw);
         log(`--- Clone ${target.raw} ---`);
+        const tTarget = perfNow();
         const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}` : target.raw;
 
         // 1. Switch to template doc and duplicate it → temp doc
@@ -1496,21 +1542,25 @@ async function cloneAsArtboards() {
           }
         }
 
-        // 5b. Capture original layer bounds before smart layout (needed by applyLayerRules)
-        const origBounds = hasRules ? await captureOriginalBounds(tempDoc) : null;
+        // 5b. Reuse bounds captured once on the template (name-keyed, stable across tempDocs)
+        const origBounds = hasRules ? templateOrigBounds : null;
 
         // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
         if (smartEnabled) {
+          const tSmart = perfNow();
           try {
             await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout, target.raw);
           } catch (e) { log(`Fit content skipped: ${e.message}`); }
+          perfLog(`smartLayoutContent ${target.raw}`, tSmart);
         }
 
         // 6b. Apply layer rules from JSON (highest priority)
         if (hasRules) {
+          const tRules = perfNow();
           try {
             await applyLayerRules(tempDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcRect.width, srcRect.height);
           } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+          perfLog(`applyLayerRules ${target.raw}`, tRules);
         }
 
         // 7. Wrap all layers into an artboard
@@ -1601,6 +1651,7 @@ async function cloneAsArtboards() {
 
         nextX += target.width + 80;
         log(`Created: ${newName}`);
+        perfLog(`target ${target.raw} total`, tTarget);
       }
 
       // Close template doc
@@ -1645,6 +1696,7 @@ async function cloneAsArtboards() {
       log("=== Clone complete ===");
       log(`${targets.length} artboard(s) created in same document.`);
     }, { commandName: "Banner Cloner - Clone Artboards" });
+    log(`[PERF] cloneAsArtboards total: ${Math.round(perfNow() - tTotal)}ms for ${targets.length} target(s)`);
   } catch (e) {
     log("Clone error: " + e.message);
   } finally {
@@ -1758,6 +1810,16 @@ async function cloneAll() {
       }
       log(`Template doc created`);
 
+      // Capture original bounds ONCE on the template (name-keyed, stable across duplicates)
+      const anyRules = targets.some(t => layerRules[t.raw] && layerRules[t.raw].length > 0);
+      let templateOrigBounds = null;
+      if (anyRules) {
+        const tCap = perfNow();
+        templateOrigBounds = await captureOriginalBounds(templateDoc);
+        const keyCount = Object.keys(templateOrigBounds).length;
+        log(`[PERF] captureOriginalBounds (template, once): ${Math.round(perfNow() - tCap)}ms, ${keyCount} entries`);
+      }
+
       for (let ti = 0; ti < targets.length; ti++) {
         const target = targets[ti];
         setProgress(ti + 1, targets.length, target.raw);
@@ -1809,23 +1871,27 @@ async function cloneAll() {
           }
         }
 
-        // 5b. Capture original layer bounds before smart layout (needed by applyLayerRules)
-        const origBounds = hasRules ? await captureOriginalBounds(newDoc) : null;
+        // 5b. Reuse bounds captured once on the template (name-keyed, stable across newDocs)
+        const origBounds = hasRules ? templateOrigBounds : null;
 
         // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
         if (smartEnabled) {
+          const tSmart = perfNow();
           try {
             await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout, target.raw);
           } catch (e) {
             log(`Fit content skipped: ${e.message}`);
           }
+          perfLog(`smartLayoutContent ${target.raw}`, tSmart);
         }
 
         // 6b. Apply layer rules from JSON (highest priority)
         if (hasRules) {
+          const tRules = perfNow();
           try {
             await applyLayerRules(newDoc, target.raw, target.width, target.height, 0, 0, origBounds, srcW, srcH);
           } catch (e) { log(`Layer rules skipped: ${e.message}`); }
+          perfLog(`applyLayerRules ${target.raw}`, tRules);
         }
 
         // 7. Wrap all layers into an Artboard
@@ -2980,37 +3046,20 @@ async function resolveSelectedArtboards() {
   const doc = app.activeDocument;
   if (!doc) throw new Error("No document open.");
 
-  const scanAll = !!scanAllArtboardsCheckbox?.checked;
+  await ensureArtboardPickerLoaded();
+
+  const selectedIds = artboardPickerSelected;
+  if (!selectedIds.size) throw new Error("No artboards selected. Tick at least one in the Artboards picker.");
+
   const artboards = [];
-
-  if (scanAll) {
-    for (const layer of doc.layers) {
-      const desc = await getLayerDescriptor(layer.id);
-      if (!desc.artboardEnabled && !desc.artboard) continue;
-      const rect = desc.artboard?.artboardRect || desc.bounds;
-      artboards.push({ id: layer.id, name: layer.name, layer, rect, size: rectSize(rect) });
-    }
-    if (!artboards.length) throw new Error("No artboards in document.");
-    return artboards;
-  }
-
-  const selectedLayers = doc.activeLayers;
-  if (!selectedLayers || !selectedLayers.length) throw new Error("Please select at least one artboard.");
-
-  const seen = new Set();
-  for (const sel of selectedLayers) {
-    let current = sel;
-    while (current && current.parent && current.parent !== doc) {
-      current = current.parent;
-    }
-    if (seen.has(current.id)) continue;
-    seen.add(current.id);
-    const desc = await getLayerDescriptor(current.id);
+  for (const layer of doc.layers) {
+    if (!selectedIds.has(layer.id)) continue;
+    const desc = await getLayerDescriptor(layer.id);
     if (!desc.artboardEnabled && !desc.artboard) continue;
     const rect = desc.artboard?.artboardRect || desc.bounds;
-    artboards.push({ id: current.id, name: current.name, layer: current, rect, size: rectSize(rect) });
+    artboards.push({ id: layer.id, name: layer.name, layer, rect, size: rectSize(rect) });
   }
-  if (!artboards.length) throw new Error("No artboards in selection.");
+  if (!artboards.length) throw new Error("Selected artboards not found in document — click Refresh in Artboards picker.");
   return artboards;
 }
 
@@ -3046,20 +3095,24 @@ async function scanArtboardImages() {
         if (bounds.width === 0 || bounds.height === 0) continue;
 
         let defaultType = "PNG";
+        let isVector = false;
         try {
           if (img.kind === "smartObject") {
             const desc = await getLayerDescriptor(img.id);
             const fileRef = desc.smartObjectMore?.fileReference;
             if (fileRef && /\.jpe?g$/i.test(fileRef)) defaultType = "JPG";
+            isVector = await isVectorSmartObject(img.id);
           }
         } catch (e) {}
 
+        const defaultSizeMode = (img.kind === "smartObject" && !isVector) ? "D" : "A";
         scannedAssets.push({
           layerId: img.id,
           layerName: img.name,
           exportName: img.name,
           kind: img.kind,
-          sizeMode: "A",
+          isVector,
+          sizeMode: defaultSizeMode,
           scale: 2,
           type: defaultType,
           bounds: bounds,
@@ -3197,14 +3250,28 @@ function renderAssetList() {
     hint.textContent = "No image layers found.";
     imageListContainer.appendChild(hint);
     exportAssetsAction.style.display = "none";
+    assetSearchRow.style.display = "none";
     return;
   }
 
   exportAssetsAction.style.display = "";
+  assetSearchRow.style.display = "";
 
   const collisions = computeAssetCollisions();
+  const q = assetSearchQ.trim().toLowerCase();
+  const filtered = q
+    ? scannedAssets.filter(a => (a.exportName || "").toLowerCase().includes(q) || (a.layerName || "").toLowerCase().includes(q))
+    : scannedAssets;
 
-  scannedAssets.forEach((asset) => {
+  if (q && !filtered.length) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = `No assets match "${q}". (Export vẫn áp dụng cho toàn bộ ${scannedAssets.length} asset.)`;
+    imageListContainer.appendChild(hint);
+    return;
+  }
+
+  filtered.forEach((asset) => {
     const card = document.createElement("div");
     card.className = "asset-row";
     const isDupe = collisions.has(getAssetFilenameKey(asset));
@@ -3250,8 +3317,12 @@ function renderAssetList() {
       { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
       { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
     ];
-    if (asset.kind === "smartObject") {
+    if (asset.kind === "smartObject" && !asset.isVector) {
       sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
+    }
+    // If asset was previously set to D but is now vector, fall back to A
+    if (asset.sizeMode === "D" && !sizeOptions.some(o => o.value === "D")) {
+      asset.sizeMode = "A";
     }
     fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
 
@@ -3355,8 +3426,10 @@ async function saveActiveDocAs(folder, filename, type) {
 
 // Crop active document canvas to a rect (in current doc coords)
 async function cropCanvasTo(left, top, right, bottom) {
+  // Make a rectangular selection, then crop to it
   await bp([{
-    _obj: "crop",
+    _obj: "set",
+    _target: [{ _ref: "channel", _property: "selection" }],
     to: {
       _obj: "rectangle",
       top: { _unit: "pixelsUnit", _value: top },
@@ -3364,9 +3437,22 @@ async function cropCanvasTo(left, top, right, bottom) {
       bottom: { _unit: "pixelsUnit", _value: bottom },
       right: { _unit: "pixelsUnit", _value: right }
     },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  await bp([{
+    _obj: "crop",
     delete: true,
     _options: { dialogOptions: "dontDisplay" }
   }]);
+  // Deselect
+  try {
+    await bp([{
+      _obj: "set",
+      _target: [{ _ref: "channel", _property: "selection" }],
+      to: { _enum: "ordinal", _value: "none" },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) {}
 }
 
 // Resize active document image
@@ -3405,9 +3491,19 @@ function findLayerByName(layers, name) {
 async function isVectorSmartObject(layerId) {
   try {
     const desc = await getLayerDescriptor(layerId);
-    const fileRef = desc.smartObjectMore?.fileReference || "";
-    const placedType = desc.smartObjectMore?.placed?._value || "";
-    return /\.(ai|eps|pdf|svg)$/i.test(fileRef) || placedType === "vectorData";
+    const fileRefs = [
+      desc.smartObjectMore?.fileReference || "",
+      desc.smartObject?.fileReference || "",
+      desc.smartObject?.link?.fileReference || ""
+    ];
+    const placedVals = [
+      desc.smartObjectMore?.placed?._value || "",
+      desc.smartObject?.placed?._value || ""
+    ];
+    const vectorExt = /\.(ai|eps|pdf|svg)$/i;
+    if (fileRefs.some(f => vectorExt.test(f))) return true;
+    if (placedVals.some(v => /vector/i.test(v))) return true;
+    return false;
   } catch (e) {
     return false;
   }
@@ -3500,24 +3596,21 @@ async function runExportAssetsFlow(folder) {
 
         // ── Mode A/B/C: Create new doc → duplicate layer into it → save ──
 
-        // Determine target rect based on mode
-        let targetRect;
+        // Mode B: early bail if no overlap with artboard
         if (asset.sizeMode === "B") {
           const inter = computeIntersection(asset.bounds, asset.artboardRect);
           if (inter.width <= 0 || inter.height <= 0) {
             log(`[ASSETS] Skipped "${asset.exportName}" — empty intersection`);
             continue;
           }
-          targetRect = { left: inter.left, top: inter.top, width: inter.width, height: inter.height };
-        } else {
-          // Mode A and Mode C: layer bounds
-          targetRect = {
-            left: asset.bounds.left,
-            top: asset.bounds.top,
-            width: asset.bounds.width,
-            height: asset.bounds.height
-          };
         }
+
+        // Temp doc dimensions:
+        //  - Mode B: artboard size (PS preserves artboard-relative position when duplicating → layer lands correctly)
+        //  - Mode A/C: layer bounds size (legacy behavior)
+        const targetRect = (asset.sizeMode === "B")
+          ? { left: 0, top: 0, width: asset.artboardRect.width, height: asset.artboardRect.height }
+          : { left: asset.bounds.left, top: asset.bounds.top, width: asset.bounds.width, height: asset.bounds.height };
 
         log(`[DEBUG] targetRect: left=${targetRect.left} top=${targetRect.top} w=${targetRect.width} h=${targetRect.height}`);
         log(`[DEBUG] asset.bounds: left=${asset.bounds.left} top=${asset.bounds.top} w=${asset.bounds.width} h=${asset.bounds.height}`);
@@ -3613,6 +3706,27 @@ async function runExportAssetsFlow(folder) {
           try {
             await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]);
           } catch (e) {}
+        }
+
+        // Mode B: temp doc is artboard-sized, duplicated layer lands at its artboard-relative coords.
+        // Crop canvas to the overlap between layer and artboard (both in artboard-relative coords).
+        if (asset.sizeMode === "B") {
+          const relX = Math.round(asset.bounds.left - asset.artboardRect.left);
+          const relY = Math.round(asset.bounds.top - asset.artboardRect.top);
+          const lw = asset.bounds.width;
+          const lh = asset.bounds.height;
+          const aw = asset.artboardRect.width;
+          const ah = asset.artboardRect.height;
+          const cropLeft = Math.max(0, relX);
+          const cropTop = Math.max(0, relY);
+          const cropRight = Math.min(aw, relX + lw);
+          const cropBottom = Math.min(ah, relY + lh);
+          log(`[DEBUG] Mode B crop: L${cropLeft},T${cropTop} → R${cropRight},B${cropBottom} (tempDoc=${aw}x${ah}, layer@${relX},${relY} ${lw}x${lh})`);
+          if (cropRight > cropLeft && cropBottom > cropTop) {
+            try {
+              await cropCanvasTo(cropLeft, cropTop, cropRight, cropBottom);
+            } catch (e) { log(`[ASSETS] Mode B crop failed: ${e.message}`); }
+          }
         }
 
         // Mode C: trim transparent edges to remove padding inside the layer bounds
@@ -3763,13 +3877,182 @@ ignoreLayerInput.addEventListener("input", () => {
 });
 try { const saved = localStorage.getItem(IGNORE_KEY); if (saved) ignoreLayerInput.value = saved; } catch (e) {}
 
-const SCAN_ALL_KEY = "bannerCloner.scanAllArtboards";
+// ─── Artboard picker ───
+
+let artboardPickerItems = []; // [{id, name, width, height}]
+let artboardPickerSelected = new Set(); // layer ids
+let artboardPickerSearchQ = "";
+let artboardPickerCollapsed = false;
+let artboardPickerLoadedFor = null; // doc.id it was loaded for
+
+const ARTBOARD_PICK_KEY_PREFIX = "bannerCloner.artboardPick.";
+const ARTBOARD_PICK_COLLAPSED_KEY = "bannerCloner.artboardPickerCollapsed";
+
+function artboardPickStorageKey() {
+  const doc = app.activeDocument;
+  if (!doc) return null;
+  return ARTBOARD_PICK_KEY_PREFIX + doc.name;
+}
+
+function loadArtboardPickSelection(availableIds) {
+  const key = artboardPickStorageKey();
+  if (!key) return new Set(availableIds);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set(availableIds);
+    const saved = JSON.parse(raw);
+    if (!Array.isArray(saved)) return new Set(availableIds);
+    // Intersect saved with currently available
+    const avail = new Set(availableIds);
+    const picked = new Set();
+    for (const id of saved) if (avail.has(id)) picked.add(id);
+    // If nothing intersects (doc changed), default to all
+    if (!picked.size) return new Set(availableIds);
+    return picked;
+  } catch (e) {
+    return new Set(availableIds);
+  }
+}
+
+function saveArtboardPickSelection() {
+  const key = artboardPickStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...artboardPickerSelected]));
+  } catch (e) {}
+}
+
+async function loadArtboardPicker() {
+  const doc = app.activeDocument;
+  if (!doc) {
+    artboardPickerItems = [];
+    artboardPickerSelected = new Set();
+    artboardPickerLoadedFor = null;
+    renderArtboardPicker();
+    return;
+  }
+
+  const items = [];
+  for (const layer of doc.layers) {
+    try {
+      const desc = await getLayerDescriptor(layer.id);
+      if (!desc.artboardEnabled && !desc.artboard) continue;
+      const rect = desc.artboard?.artboardRect || desc.bounds;
+      const size = rectSize(rect);
+      items.push({ id: layer.id, name: layer.name, width: size.width, height: size.height });
+    } catch (e) {}
+  }
+
+  artboardPickerItems = items;
+  artboardPickerSelected = loadArtboardPickSelection(items.map(i => i.id));
+  artboardPickerLoadedFor = doc.id;
+  renderArtboardPicker();
+}
+
+async function ensureArtboardPickerLoaded() {
+  const doc = app.activeDocument;
+  if (!doc) return;
+  if (artboardPickerLoadedFor !== doc.id) {
+    await loadArtboardPicker();
+  }
+}
+
+function renderArtboardPicker() {
+  while (artboardPickerList.firstChild) artboardPickerList.removeChild(artboardPickerList.firstChild);
+
+  const q = artboardPickerSearchQ.trim().toLowerCase();
+  const visible = q
+    ? artboardPickerItems.filter(it => it.name.toLowerCase().includes(q))
+    : artboardPickerItems;
+
+  artboardPickerCount.textContent = `${artboardPickerSelected.size}/${artboardPickerItems.length}`;
+  artboardPickerArrow.textContent = artboardPickerCollapsed ? "▶" : "▼";
+  artboardPickerBody.style.display = artboardPickerCollapsed ? "none" : "";
+
+  if (!artboardPickerItems.length) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "No artboards found. Click Refresh after opening a document.";
+    artboardPickerList.appendChild(hint);
+    return;
+  }
+
+  if (!visible.length) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "No artboards match search.";
+    artboardPickerList.appendChild(hint);
+    return;
+  }
+
+  for (const item of visible) {
+    const row = document.createElement("label");
+    row.className = "artboard-picker-row";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = artboardPickerSelected.has(item.id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) artboardPickerSelected.add(item.id);
+      else artboardPickerSelected.delete(item.id);
+      saveArtboardPickSelection();
+      artboardPickerCount.textContent = `${artboardPickerSelected.size}/${artboardPickerItems.length}`;
+    });
+
+    const info = document.createElement("div");
+    info.className = "artboard-picker-row-info";
+    const nameEl = document.createElement("div");
+    nameEl.className = "artboard-picker-row-name";
+    nameEl.textContent = item.name;
+    const sizeEl = document.createElement("div");
+    sizeEl.className = "artboard-picker-row-size";
+    sizeEl.textContent = `${item.width}×${item.height}`;
+    info.appendChild(nameEl);
+    info.appendChild(sizeEl);
+
+    row.appendChild(cb);
+    row.appendChild(info);
+    artboardPickerList.appendChild(row);
+  }
+}
+
+artboardPickerToggle.addEventListener("click", () => {
+  artboardPickerCollapsed = !artboardPickerCollapsed;
+  try { localStorage.setItem(ARTBOARD_PICK_COLLAPSED_KEY, artboardPickerCollapsed ? "1" : "0"); } catch (e) {}
+  renderArtboardPicker();
+});
+artboardPickerRefresh.addEventListener("click", async () => {
+  await loadArtboardPicker();
+  log("[PICKER] Artboard list refreshed.");
+});
+artboardPickerAll.addEventListener("click", () => {
+  const q = artboardPickerSearchQ.trim().toLowerCase();
+  const targets = q ? artboardPickerItems.filter(it => it.name.toLowerCase().includes(q)) : artboardPickerItems;
+  for (const it of targets) artboardPickerSelected.add(it.id);
+  saveArtboardPickSelection();
+  renderArtboardPicker();
+});
+artboardPickerNone.addEventListener("click", () => {
+  const q = artboardPickerSearchQ.trim().toLowerCase();
+  const targets = q ? artboardPickerItems.filter(it => it.name.toLowerCase().includes(q)) : artboardPickerItems;
+  for (const it of targets) artboardPickerSelected.delete(it.id);
+  saveArtboardPickSelection();
+  renderArtboardPicker();
+});
+artboardPickerSearch.addEventListener("input", () => {
+  artboardPickerSearchQ = String(artboardPickerSearch.value || "");
+  renderArtboardPicker();
+});
 try {
-  const saved = localStorage.getItem(SCAN_ALL_KEY);
-  if (saved !== null) scanAllArtboardsCheckbox.checked = saved === "1";
+  if (localStorage.getItem(ARTBOARD_PICK_COLLAPSED_KEY) === "1") artboardPickerCollapsed = true;
 } catch (e) {}
-scanAllArtboardsCheckbox.addEventListener("change", () => {
-  try { localStorage.setItem(SCAN_ALL_KEY, scanAllArtboardsCheckbox.checked ? "1" : "0"); } catch (e) {}
+
+// ─── Asset search (filter scanned asset list) ───
+
+let assetSearchQ = "";
+assetSearchInput.addEventListener("input", () => {
+  assetSearchQ = String(assetSearchInput.value || "");
+  renderAssetList();
 });
 
 // ─── Tab switching (updated) ───
@@ -3793,6 +4076,7 @@ function switchMode(mode) {
     settingsPanel.style.display = "none";
     exportAssetsPanel.style.display = "block";
     if (targetSizesSection) targetSizesSection.style.display = "none";
+    ensureArtboardPickerLoaded().catch(e => log(`[PICKER] ${e.message}`));
   } else {
     mainContent.forEach(el => el.style.display = "");
     settingsPanel.style.display = "none";
@@ -3808,6 +4092,21 @@ function switchMode(mode) {
 // ─── Log toggle/clear ───
 const logToggle = document.getElementById("logToggle");
 const logClearBtn = document.getElementById("logClearBtn");
+const logCopyBtn = document.getElementById("logCopyBtn");
+
+logCopyBtn.addEventListener("click", async () => {
+  const text = logBox.innerText || logBox.textContent || "";
+  let ok = false;
+  let errMsg = "";
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) { errMsg = e && e.message ? e.message : String(e); }
+  const orig = logCopyBtn.textContent;
+  logCopyBtn.textContent = ok ? "Copied!" : "Failed";
+  if (!ok && errMsg) log(`[COPY] ${errMsg}`);
+  setTimeout(() => { logCopyBtn.textContent = orig; }, 1200);
+});
 
 logToggle.addEventListener("click", () => {
   logBox.classList.toggle("collapsed");

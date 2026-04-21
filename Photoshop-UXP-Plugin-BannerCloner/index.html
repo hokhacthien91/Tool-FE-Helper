@@ -46,8 +46,22 @@
 
     <!-- Export Assets Panel (hidden by default) -->
     <div id="exportAssetsPanel" style="display:none;">
-      <div class="section checkboxes">
-        <label class="checkbox-row"><input id="scanAllArtboards" type="checkbox" checked /> <span>Scan all artboards (bỏ check để chỉ scan artboard đang select)</span></label>
+      <div class="section artboard-picker-section">
+        <div class="artboard-picker-header">
+          <button id="artboardPickerToggle" class="artboard-picker-title" type="button">
+            <span id="artboardPickerArrow" class="artboard-picker-arrow">▼</span>
+            <span>Artboards (<span id="artboardPickerCount">0/0</span>)</span>
+          </button>
+          <div class="artboard-picker-actions">
+            <button id="artboardPickerRefresh" class="link-btn" type="button">Refresh</button>
+            <button id="artboardPickerAll" class="link-btn" type="button">All</button>
+            <button id="artboardPickerNone" class="link-btn" type="button">None</button>
+          </div>
+        </div>
+        <div id="artboardPickerBody" class="artboard-picker-body">
+          <sp-textfield id="artboardPickerSearch" placeholder="Search artboards..."></sp-textfield>
+          <div id="artboardPickerList" class="artboard-picker-list"></div>
+        </div>
       </div>
       <div class="section">
         <label class="label" for="ignoreLayerInput">Ignore layers</label>
@@ -57,6 +71,9 @@
       <div class="section btn-row">
         <button id="getImagesBtn" class="primary">Get Images</button>
         <button id="addGroupBtn" class="primary">+ Add Group</button>
+      </div>
+      <div id="assetSearchRow" class="section" style="display:none;">
+        <sp-textfield id="assetSearch" placeholder="Search assets..."></sp-textfield>
       </div>
       <div id="imageListContainer"></div>
       <div class="section" id="exportAssetsAction" style="display:none;">
@@ -103,6 +120,7 @@
     <div class="section shared-section" id="logsSection">
       <div class="log-header">
         <label class="label" id="logToggle">Logs</label>
+        <button id="logCopyBtn" class="log-clear-btn">Copy</button>
         <button id="logClearBtn" class="log-clear-btn">Clear</button>
       </div>
       <pre id="logBox" class="log-box"><div>Ready.</div></pre>
