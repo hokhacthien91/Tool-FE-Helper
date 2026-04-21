@@ -429,7 +429,7 @@ function buildUnifiedRow(entry, idx) {
 
   let contentHTML = "";
   if (entry.kind === "text") {
-    contentHTML = `<textarea class="replace-row-input" rows="2" placeholder="Leave empty to skip"></textarea>`;
+    contentHTML = `<textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip"></textarea>`;
   } else if (entry.kind === "image") {
     contentHTML = `
       <div class="replace-row-file">
@@ -509,7 +509,7 @@ function buildUnifiedRow(entry, idx) {
     input.value = entry.newContent || "";
     input.addEventListener("input", () => {
       state.allEntries[idx].newContent = input.value;
-      input.rows = Math.max(2, input.value.split("\n").length);
+      input.rows = Math.max(4, input.value.split("\n").length);
       if (input.value.length > 0 && !idInput.value) {
         const newId = nextLinkId();
         idInput.value = newId;
@@ -571,6 +571,7 @@ function renderLayerList() {
     if (visibleOccurrences(e).length === 0) return false; // all occurrences on unchecked artboards
     return true;
   });
+  if (layersToggleCount) layersToggleCount.textContent = `(${filtered.length})`;
   if (!filtered.length && state.allEntries.length) {
     const hasEnabledAb = state.artboardList.length === 0 || state.enabledArtboards.size > 0;
     const msg = !hasEnabledAb
@@ -1037,7 +1038,7 @@ artboardRenameBtn.addEventListener("click", async () => {
   if (!targets.length) { log("Rename: no artboards enabled"); return; }
 
   setDisabled(artboardRenameBtn, true);
-  const origText = artboardRenameBtn.textContent;
+  const origHtml = artboardRenameBtn.innerHTML;
   artboardRenameBtn.textContent = "Renaming…";
   let ok = 0, fail = 0, skipped = 0;
   try {
@@ -1072,7 +1073,7 @@ artboardRenameBtn.addEventListener("click", async () => {
     artboardRenameBtn.classList.add("is-fail");
   } finally {
     setTimeout(() => {
-      artboardRenameBtn.textContent = origText;
+      artboardRenameBtn.innerHTML = origHtml;
       artboardRenameBtn.classList.remove("is-success", "is-fail");
       setDisabled(artboardRenameBtn, false);
     }, 1800);
@@ -1147,11 +1148,20 @@ function countPendingOps() {
   };
 }
 
+const stickyCta = document.getElementById("stickyCta");
+function refreshStickyCta() {
+  const applyVisible = state.mode === "replace" && !applyBtn.disabled;
+  const saveVisible  = !saveBtn.disabled;
+  applyBtn.style.display = applyVisible ? "" : "none";
+  saveBtn.style.display  = saveVisible  ? "" : "none";
+  stickyCta.style.display = (applyVisible || saveVisible) ? "" : "none";
+}
+
 function refreshApplyEnabled() {
   const { textCount, imageCount, renameCount, totalLayerOps } = countPendingOps();
   const hasAny = textCount + imageCount + renameCount > 0;
   setDisabled(applyBtn, !hasAny);
-  applyBtn.textContent = hasAny ? `Apply (${totalLayerOps})` : "Apply";
+  applyBtn.textContent = hasAny ? `Apply edits (${totalLayerOps})` : "Apply edits";
 
   const parts = [];
   if (textCount)   parts.push(`${textCount} text`);
@@ -1159,15 +1169,17 @@ function refreshApplyEnabled() {
   if (renameCount) parts.push(`${renameCount} rename`);
   summaryBar.innerHTML = hasAny
     ? `<span class="pending">${parts.join(" + ")}</span> ready across ${totalLayerOps} layer${totalLayerOps === 1 ? "" : "s"}`
-    : (state.hasScanned ? "Enter new content below to enable Apply." : "");
+    : "";
+  refreshStickyCta();
 }
 
 function refreshSaveEnabled() {
   const n = state.modifiedDocIds.size;
   setDisabled(saveBtn, n === 0);
-  saveBtn.textContent = n > 0 ? `Save (${n})` : "Save";
+  saveBtn.textContent = n > 0 ? `Save ${n} doc${n === 1 ? "" : "s"}` : "Save";
   dirtyStatus.textContent = n > 0 ? `Unsaved changes in ${n} document${n === 1 ? "" : "s"}` : "";
   dirtyStatus.className   = n > 0 ? "json-status" : "json-status loaded";
+  refreshStickyCta();
 }
 
 // ─── Visibility helpers ────────────────────────────────
@@ -1668,6 +1680,17 @@ deselectAllBtn.addEventListener("click", () => {
   refreshActionBar();
 });
 
+// Layers list collapsible header
+const layersToggle = document.getElementById("layersToggle");
+const layersToggleCount = document.getElementById("layersToggleCount");
+layersToggle.addEventListener("click", () => {
+  const list = document.getElementById("layerList");
+  const collapsed = list.style.display === "none";
+  list.style.display = collapsed ? "" : "none";
+  const icon = layersToggle.querySelector(".toggle-icon");
+  if (icon) icon.textContent = collapsed ? "▼" : "▶";
+});
+
 // Load PS Actions palette via app.actionTree (no batchPlay → no error dialogs)
 async function loadActionSets() {
   if (actionSetsCache) return actionSetsCache;
@@ -1870,6 +1893,7 @@ function setMode(mode) {
   modeTabs.forEach(t => t.classList.toggle("active", t.dataset.mode === state.mode));
   try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {}
   refreshActionBar();
+  refreshStickyCta();
 }
 
 modeTabs.forEach(tab => {
@@ -1886,3 +1910,28 @@ try {
 renderEmptyStates();
 refreshApplyEnabled();
 refreshSaveEnabled();
+
+// ─── Wheel forwarding ─────────────────────────────────
+// UXP Chromium traps wheel events on <select>, <input>, and <textarea>
+// (wrapped by Spectrum internals), so the .app scroll container never
+// sees them. Intercept in capture phase and forward when the target
+// can't (or shouldn't) consume the scroll.
+(function installWheelForward() {
+  const appEl = document.querySelector(".app");
+  if (!appEl) return;
+  appEl.addEventListener("wheel", (e) => {
+    const el = e.target;
+    if (!el || !el.tagName) return;
+    const tag = el.tagName;
+    if (tag === "TEXTAREA") {
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      // Let textarea handle its own scroll unless at an edge
+      if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return;
+    } else if (tag !== "SELECT" && tag !== "INPUT") {
+      return; // only forward for form controls that trap wheel
+    }
+    e.preventDefault();
+    appEl.scrollTop += e.deltaY;
+  }, { passive: false, capture: true });
+})();

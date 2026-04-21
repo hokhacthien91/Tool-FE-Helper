@@ -477,6 +477,49 @@ button.full { width: 100%; }
 }
 .asset-row-header input,
 .asset-row-header sp-textfield { flex: 1; }
+.asset-row-collapsed .asset-row-header { margin-bottom: 0; }
+.asset-collapse-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-right: 6px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #bbb;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.asset-collapse-btn:hover {
+  background: rgba(89, 161, 57, 0.15);
+  border-color: var(--gg-green-dark);
+  color: var(--gg-green);
+}
+.asset-toggle-all-btn {
+  margin-left: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #bbb;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: auto;
+}
+.asset-toggle-all-btn:hover {
+  background: rgba(89, 161, 57, 0.15);
+  border-color: var(--gg-green-dark);
+  color: var(--gg-green);
+}
+#assetSearchRow { display: flex; align-items: center; }
+#assetSearchRow sp-textfield { flex: 1; }
 .asset-kind-badge {
   flex-shrink: 0;
   margin-left: 8px;
@@ -507,6 +550,27 @@ button.full { width: 100%; }
   font-weight: 700;
   letter-spacing: 0.3px;
   cursor: help;
+}
+.asset-show-btn {
+  flex-shrink: 0;
+  margin-left: 6px;
+  background: rgba(89, 161, 57, 0.15);
+  border: 1px solid var(--gg-green-dark);
+  color: var(--gg-green);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: auto;
+  width: auto;
+}
+.asset-show-btn:hover {
+  background: rgba(89, 161, 57, 0.3);
+}
+.asset-show-btn:active {
+  background: var(--gg-green-dark);
+  color: #fff;
 }
 .asset-row-fields {
   display: flex;

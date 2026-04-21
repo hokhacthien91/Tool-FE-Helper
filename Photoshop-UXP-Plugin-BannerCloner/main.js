@@ -3082,6 +3082,11 @@ async function scanArtboardImages() {
           log(`[ASSETS] Ignored: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
           return;
         }
+        // Skip hidden layer/group — subtree không render ra canvas, không cần export
+        if (layer.visible === false) {
+          log(`[ASSETS] Skipped hidden: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
+          return;
+        }
         if (layer.layers && layer.layers.length > 0) {
           for (const child of layer.layers) walk(child);
         } else if (isImageLayerForAssets(layer)) {
@@ -3274,12 +3279,25 @@ function renderAssetList() {
   filtered.forEach((asset) => {
     const card = document.createElement("div");
     card.className = "asset-row";
+    if (asset.collapsed) card.classList.add("asset-row-collapsed");
     const isDupe = collisions.has(getAssetFilenameKey(asset));
     if (isDupe) card.classList.add("asset-row-duplicate");
 
     // Name input + kind badge + remove button
     const nameRow = document.createElement("div");
     nameRow.className = "asset-row-header";
+
+    // Collapse toggle (chevron)
+    const collapseBtn = document.createElement("button");
+    collapseBtn.className = "asset-collapse-btn";
+    collapseBtn.textContent = asset.collapsed ? "▸" : "▾";
+    collapseBtn.title = asset.collapsed ? "Expand" : "Collapse";
+    collapseBtn.addEventListener("click", () => {
+      asset.collapsed = !asset.collapsed;
+      renderAssetList();
+    });
+    nameRow.appendChild(collapseBtn);
+
     const nameInput = document.createElement("sp-textfield");
     nameInput.value = asset.exportName;
     nameInput.addEventListener("change", () => {
@@ -3289,6 +3307,22 @@ function renderAssetList() {
     const kindBadge = document.createElement("span");
     kindBadge.className = "asset-kind-badge";
     kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : "Pixel";
+
+    // Show button — select layer in PS Layers panel để user biết đang nói layer nào
+    const showBtn = document.createElement("button");
+    showBtn.className = "asset-show-btn";
+    showBtn.textContent = "Show";
+    showBtn.title = `Select "${asset.layerName}" in Photoshop Layers panel`;
+    showBtn.addEventListener("click", async () => {
+      try {
+        await core.executeAsModal(async () => {
+          await selectLayerById(asset.layerId);
+        }, { commandName: "Show layer" });
+      } catch (e) {
+        log(`[ASSETS] Show failed: ${e.message}`);
+      }
+    });
+
     const removeBtn = document.createElement("button");
     removeBtn.className = "remove-rule-btn";
     removeBtn.textContent = "✕";
@@ -3298,6 +3332,7 @@ function renderAssetList() {
     });
     nameRow.appendChild(nameInput);
     nameRow.appendChild(kindBadge);
+    nameRow.appendChild(showBtn);
     if (isDupe) {
       const dupBadge = document.createElement("span");
       dupBadge.className = "asset-dupe-badge";
@@ -3350,9 +3385,14 @@ function renderAssetList() {
     exportWrap.appendChild(exportOneBtn);
     fieldsRow.appendChild(exportWrap);
 
-    card.appendChild(fieldsRow);
+    if (!asset.collapsed) card.appendChild(fieldsRow);
     imageListContainer.appendChild(card);
   });
+}
+
+function toggleAllAssetsCollapsed(collapsed) {
+  for (const a of scannedAssets) a.collapsed = collapsed;
+  renderAssetList();
 }
 
 // Create a timestamped subfolder inside a picked folder
@@ -3374,7 +3414,7 @@ async function exportSingleAsset(asset) {
   const backup = scannedAssets;
   scannedAssets = [asset];
   try {
-    await runExportAssetsFlow(subfolder);
+    await runExportAssetsFlow(subfolder, { writeLayersJson: false });
   } finally {
     scannedAssets = backup;
   }
@@ -3417,11 +3457,19 @@ async function saveActiveDocAs(folder, filename, type) {
 
   const file = await folder.createFile(filename, { overwrite: true });
   const doc = app.activeDocument;
+  const finalW = doc.width;
+  const finalH = doc.height;
   if (type === "JPG") {
     await doc.saveAs.jpg(file, { quality: 8 }, true);
   } else {
     await doc.saveAs.png(file, { compression: 6 }, true);
   }
+  let bytes = 0;
+  try {
+    const meta = await file.getMetadata();
+    bytes = meta?.size || 0;
+  } catch (e) { /* size optional */ }
+  return { file, filename, width: finalW, height: finalH, bytes };
 }
 
 // Crop active document canvas to a rect (in current doc coords)
@@ -3528,7 +3576,8 @@ async function exportAssets() {
   await runExportAssetsFlow(subfolder);
 }
 
-async function runExportAssetsFlow(folder) {
+async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
+  const exportedAssets = [];
   await core.executeAsModal(async () => {
     const sourceDoc = app.activeDocument;
     const sourceDocId = sourceDoc.id;
@@ -3581,7 +3630,8 @@ async function runExportAssetsFlow(folder) {
             try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]); } catch (e) {}
           }
 
-          await saveActiveDocAs(folder, filename, asset.type);
+          const savedD = await saveActiveDocAs(folder, filename, asset.type);
+          if (savedD) exportedAssets.push({ ...savedD, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
 
           // Close temp doc by ID
           await bp([{
@@ -3682,7 +3732,6 @@ async function runExportAssetsFlow(folder) {
           }
         }
 
-        // Note: PS auto-places duplicated layers at (0,0) of the new doc — no move needed
         // Delete the empty default "Layer 1" if it exists
         try {
           const layers = [...app.activeDocument.layers];
@@ -3700,6 +3749,54 @@ async function runExportAssetsFlow(folder) {
             }
           }
         } catch (e) {}
+
+        // Mode A/C: PS positioning after duplicate varies by layer kind:
+        //  - Pixel layers preserve artboard-relative coords (e.g. top=-641)
+        //  - Smart Objects / some types re-origin to (0,0)
+        // → Read the actual bounds of the duplicated layer in the temp doc and snap it to (0,0).
+        // Mode B relies on artboard-relative landing → skip.
+        if (asset.sizeMode === "A" || asset.sizeMode === "C") {
+          try {
+            // Find the real layer (skip empty default "Layer 1")
+            let target = null;
+            for (const l of app.activeDocument.layers) {
+              try {
+                const b = await getLayerBounds(l.id);
+                if (b.width > 0 && b.height > 0) { target = { layer: l, bounds: b }; break; }
+              } catch (e) {}
+            }
+            if (target) {
+              const dx = -Math.round(target.bounds.left);
+              const dy = -Math.round(target.bounds.top);
+              if (dx !== 0 || dy !== 0) {
+                // Unlock background layer if needed (locked bg cannot be moved)
+                if (target.layer.isBackgroundLayer) {
+                  await selectLayerById(target.layer.id);
+                  await bp([{
+                    _obj: "set",
+                    _target: [{ _ref: "layer", _property: "background" }],
+                    to: { _obj: "layer", opacity: { _unit: "percentUnit", _value: 100 }, mode: { _enum: "blendMode", _value: "normal" } },
+                    _options: { dialogOptions: "dontDisplay" }
+                  }]);
+                }
+                await selectLayerById(target.layer.id);
+                await bp([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  to: { _obj: "offset",
+                        horizontal: { _unit: "pixelsUnit", _value: dx },
+                        vertical:   { _unit: "pixelsUnit", _value: dy } },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                log(`[DEBUG] Translated "${target.layer.name}" by (${dx}, ${dy}) from (${target.bounds.left},${target.bounds.top}) → (0,0)`);
+              } else {
+                log(`[DEBUG] Layer "${target.layer.name}" already at (0,0) — no translate needed`);
+              }
+            }
+          } catch (e) {
+            log(`[ASSETS] Translate failed: ${e.message}`);
+          }
+        }
 
         // Merge group layers into one
         if (asset.isGroup) {
@@ -3754,7 +3851,8 @@ async function runExportAssetsFlow(folder) {
         }
 
         // Save
-        await saveActiveDocAs(folder, filename, asset.type);
+        const saved = await saveActiveDocAs(folder, filename, asset.type);
+        if (saved) exportedAssets.push({ ...saved, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
 
         // Close temp doc by ID
         await bp([{
@@ -3790,32 +3888,120 @@ async function runExportAssetsFlow(folder) {
       }]);
     } catch (e) {}
 
-    // Save layers.json to the same folder
-    try {
-      const allArtboards = [];
-      for (const source of scannedArtboards) {
-        const layersInfo = [];
-        for (const child of source.layer.layers) {
-          layersInfo.push(await collectLayerInfo(child, source.size.left, source.size.top));
+    // Save layers.json to the same folder (skip for per-row single exports)
+    if (writeLayersJson) {
+      try {
+        const allArtboards = [];
+        for (const source of scannedArtboards) {
+          const layersInfo = [];
+          for (const child of source.layer.layers) {
+            layersInfo.push(await collectLayerInfo(child, source.size.left, source.size.top));
+          }
+          allArtboards.push({
+            artboard: source.name,
+            width: source.size.width,
+            height: source.size.height,
+            layers: layersInfo
+          });
         }
-        allArtboards.push({
-          artboard: source.name,
-          width: source.size.width,
-          height: source.size.height,
-          layers: layersInfo
-        });
+        const json = allArtboards.length === 1 ? allArtboards[0] : allArtboards;
+        const jsonFile = await folder.createFile("layers.json", { overwrite: true });
+        await jsonFile.write(JSON.stringify(json, null, 2));
+        log(`[ASSETS] Saved: layers.json (${allArtboards.length} artboard(s))`);
+      } catch (e) {
+        log(`[ASSETS] layers.json skipped: ${e.message}`);
       }
-      const json = allArtboards.length === 1 ? allArtboards[0] : allArtboards;
-      const jsonFile = await folder.createFile("layers.json", { overwrite: true });
-      await jsonFile.write(JSON.stringify(json, null, 2));
-      log(`[ASSETS] Saved: layers.json (${allArtboards.length} artboard(s))`);
-    } catch (e) {
-      log(`[ASSETS] layers.json skipped: ${e.message}`);
+
+      // Generate index.html gallery (full export only)
+      if (exportedAssets.length) {
+        try {
+          const html = buildAssetsIndexHtml(exportedAssets);
+          const htmlFile = await folder.createFile("index.html", { overwrite: true });
+          await htmlFile.write(html);
+          log(`[ASSETS] Saved: index.html (${exportedAssets.length} item(s))`);
+        } catch (e) {
+          log(`[ASSETS] index.html skipped: ${e.message}`);
+        }
+      }
     }
 
     log(`[ASSETS] === Export complete: ${scannedAssets.length} asset(s) ===`);
 
   }, { commandName: "Banner Cloner - Export Assets" });
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "—";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function buildAssetsIndexHtml(items) {
+  const rows = items.map(it => {
+    const name = escapeHtml(it.exportName || it.filename);
+    const fname = encodeURIComponent(it.filename);
+    const kind = escapeHtml(it.kind === "smartObject" ? "Smart" : "Pixel");
+    const dims = `${it.width} × ${it.height}`;
+    const size = formatFileSize(it.bytes);
+    return `
+    <figure class="card">
+      <a href="./${fname}" target="_blank" rel="noopener">
+        <img src="./${fname}" alt="${name}" loading="lazy">
+      </a>
+      <figcaption>
+        <div class="name" title="${name}">${name}</div>
+        <div class="meta">
+          <span class="badge">${kind}</span>
+          <span class="badge mode">Mode ${escapeHtml(it.sizeMode)}</span>
+          <span>${dims}</span>
+          <span>${size}</span>
+        </div>
+      </figcaption>
+    </figure>`;
+  }).join("\n");
+
+  const totalBytes = items.reduce((s, i) => s + (i.bytes || 0), 0);
+  const summary = `${items.length} asset(s) · ${formatFileSize(totalBytes)}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Exported Assets (${items.length})</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a1a; color: #e8e8e8; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 12px; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .summary { font-size: 13px; color: #888; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+  .card { margin: 0; background: #242424; border: 1px solid #333; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .card img { display: block; width: 100%; max-width: 400px; height: auto; margin: 0 auto; background: repeating-conic-gradient(#2a2a2a 0% 25%, #1e1e1e 0% 50%) 50% / 20px 20px; cursor: zoom-in; }
+  figcaption { padding: 10px 12px; border-top: 1px solid #333; }
+  .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: #aaa; align-items: center; }
+  .badge { background: rgba(89, 161, 57, 0.18); color: #8bc34a; border: 1px solid #3e6a24; padding: 1px 7px; border-radius: 3px; font-weight: 600; }
+  .badge.mode { background: rgba(100, 150, 200, 0.15); color: #7cb3e8; border-color: #3a5b77; }
+  a { text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Exported Assets</h1>
+  <div class="summary">${summary}</div>
+</header>
+<section class="grid">
+${rows}
+</section>
+</body>
+</html>`;
 }
 
 async function addGroupToAssets() {
@@ -4054,6 +4240,15 @@ assetSearchInput.addEventListener("input", () => {
   assetSearchQ = String(assetSearchInput.value || "");
   renderAssetList();
 });
+
+const assetToggleAllBtn = document.getElementById("assetToggleAllBtn");
+if (assetToggleAllBtn) {
+  assetToggleAllBtn.addEventListener("click", () => {
+    const allCollapsed = scannedAssets.length > 0 && scannedAssets.every(a => a.collapsed);
+    toggleAllAssetsCollapsed(!allCollapsed);
+    assetToggleAllBtn.textContent = allCollapsed ? "Collapse all" : "Expand all";
+  });
+}
 
 // ─── Tab switching (updated) ───
 

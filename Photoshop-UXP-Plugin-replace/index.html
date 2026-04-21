@@ -25,10 +25,8 @@
       </label>
     </div>
 
-    <div class="section btn-row">
-      <button id="scanBtn" class="primary">Scan</button>
-      <button id="applyBtn" class="primary is-disabled replace-only" disabled>Apply</button>
-      <button id="saveBtn" class="primary export-all-btn is-disabled" disabled>Save</button>
+    <div class="section">
+      <button id="scanBtn" class="btn btn-primary btn-full">Scan document</button>
     </div>
     <div id="summaryBar" class="summary-bar"></div>
 
@@ -48,8 +46,8 @@
       <div class="log-header" id="artboardsToggle">
         <div class="label">Artboards <span id="artboardsCount" class="sizes-count"></span> <span class="toggle-icon">▶</span></div>
         <div class="log-btn-group">
-          <button id="artboardsAllBtn" class="log-clear-btn" title="Enable all (or all matching search)">All</button>
-          <button id="artboardsNoneBtn" class="log-clear-btn" title="Disable all (or all matching search)">None</button>
+          <button id="artboardsAllBtn" class="btn btn-tertiary" title="Enable all (or all matching search)">All</button>
+          <button id="artboardsNoneBtn" class="btn btn-tertiary" title="Disable all (or all matching search)">None</button>
         </div>
       </div>
       <div id="artboardsBody" style="display:none;">
@@ -60,10 +58,8 @@
         <div class="artboard-rename" id="artboardRenameBox">
           <div class="artboard-rename-label">Rename (keeps <code>_WxH</code> suffix)</div>
           <input id="artboardRenameCurrent" type="text" class="artboard-rename-input" placeholder="Current name" readonly />
-          <div class="artboard-rename-row">
-            <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="New name (e.g. P001_honda_)" />
-            <button id="artboardRenameBtn" class="artboard-rename-btn">Rename</button>
-          </div>
+          <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="New name (e.g. P001_honda_)" />
+          <button id="artboardRenameBtn" class="btn btn-secondary btn-full">Rename artboards</button>
         </div>
         <div id="artboardsList" class="artboards-list"></div>
       </div>
@@ -79,7 +75,7 @@
             <input type="checkbox" id="appendTextAutoSync" checked />
             <span>Auto-sync with selection</span>
           </label>
-          <button id="appendTextSampleBtn" class="at-sample-btn">Sample</button>
+          <button id="appendTextSampleBtn" class="btn btn-accent">Sample from selection</button>
         </div>
 
         <div class="at-label">Content</div>
@@ -147,7 +143,7 @@
           </div>
         </div>
 
-        <button id="appendTextApplyBtn" class="primary at-apply-btn is-disabled" disabled>Append to 0 artboard(s)</button>
+        <button id="appendTextApplyBtn" class="btn btn-primary btn-full at-apply-btn is-disabled" disabled>Append to 0 artboard(s)</button>
       </div>
     </div>
 
@@ -158,9 +154,10 @@
     </div>
 
     <div id="layerSection" class="section" style="display:none;">
+      <div class="label">What to do</div>
       <div class="mode-tabs">
-        <button class="mode-tab active" data-mode="replace">✏ Replace</button>
-        <button class="mode-tab" data-mode="action">▶ Run Action</button>
+        <button class="mode-tab active" data-mode="replace">Edit content</button>
+        <button class="mode-tab" data-mode="action">Run Photoshop Action</button>
       </div>
       <div class="search-bar">
         <input id="searchInput" type="text" placeholder="Search layer name…" />
@@ -181,7 +178,12 @@
           <select id="actionSelect" class="action-select"><option value="">Select action</option></select>
           <button id="refreshActionsBtn" class="filter-btn action-refresh-btn" title="Reload Actions from Photoshop">↻</button>
         </div>
-        <button id="runActionBtn" class="primary action-run-btn is-disabled" disabled>Run Action</button>
+        <button id="runActionBtn" class="btn btn-primary btn-full action-run-btn is-disabled" disabled>Run Action</button>
+      </div>
+      <div class="layers-toggle" id="layersToggle">
+        <span>Layers</span>
+        <span id="layersToggleCount" class="sizes-count"></span>
+        <span class="toggle-icon">▼</span>
       </div>
       <div id="layerList"></div>
     </div>
@@ -195,8 +197,8 @@
       <div class="log-header">
         <div class="label" id="logToggle">Logs <span class="toggle-icon">▼</span></div>
         <div class="log-btn-group">
-          <button id="logCopyBtn" class="log-clear-btn">Copy</button>
-          <button id="logClearBtn" class="log-clear-btn">Clear</button>
+          <button id="logCopyBtn" class="btn btn-tertiary">Copy</button>
+          <button id="logClearBtn" class="btn btn-tertiary">Clear</button>
         </div>
       </div>
       <pre id="logBox" class="log-box"><div>Ready.</div></pre>
@@ -206,6 +208,11 @@
       <div class="footer-title">Content Replacer <span class="footer-version">v0.1.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
       <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
     </footer>
+
+    <div id="stickyCta" class="sticky-cta" style="display:none;">
+      <button id="applyBtn" class="btn btn-primary btn-full btn-lg replace-only is-disabled" disabled>Apply</button>
+      <button id="saveBtn" class="btn btn-primary btn-full btn-lg is-disabled" style="display:none;" disabled>Save</button>
+    </div>
   </div>
   <script src="main.js"></script>
 </body>
