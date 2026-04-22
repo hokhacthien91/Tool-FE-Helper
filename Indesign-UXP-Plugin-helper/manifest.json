@@ -1,0 +1,29 @@
+{
+    "id": "com.thienho.indesign.bannerhelper",
+    "name": "Banner Helper",
+    "version": "1.0.0",
+    "main": "index.html",
+    "host": {
+        "app": "ID",
+        "minVersion": "18.5.0",
+        "data": {
+            "apiVersion": 2
+        }
+    },
+    "manifestVersion": 5,
+    "entrypoints": [
+        {
+            "type": "panel",
+            "id": "bannerHelperPanel",
+            "minimumSize": {"width": 280, "height": 360},
+            "maximumSize": {"width": 2000, "height": 2000},
+            "preferredDockedSize": {"width": 340, "height": 520},
+            "preferredFloatingSize": {"width": 360, "height": 560},
+            "label": {"default": "Banner Helper"}
+        }
+    ],
+    "requiredPermissions": {
+        "clipboard": "readAndWrite",
+        "localFileSystem": "request"
+    }
+}

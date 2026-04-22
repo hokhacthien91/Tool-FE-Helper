@@ -2629,6 +2629,19 @@ applyRulesBtn.addEventListener("click", applyRulesToExisting);
 
 const exportLayerJsonBtn = document.getElementById("exportLayerJsonBtn");
 
+// Photoshop color descriptor quirk: green channel is stored under `grain` in
+// some contexts (textStyle.color, layer effects), as `green` in others.
+// Check both to avoid silently returning G=0 (magenta-ish artifact).
+function readRGB(c) {
+  if (!c) return null;
+  const r = Math.round(c.red?._value ?? c.red ?? 0);
+  const g = Math.round(
+    c.grain?._value ?? c.grain ?? c.green?._value ?? c.green ?? 0
+  );
+  const b = Math.round(c.blue?._value ?? c.blue ?? 0);
+  return `${r}, ${g}, ${b}`;
+}
+
 async function readTextStyle(layerId) {
   try {
     const desc = await getLayerDescriptor(layerId);
@@ -2650,7 +2663,15 @@ async function readTextStyle(layerId) {
     const result = { fontSize: Math.round(sizePt * scale * 100) / 100 + "px" };
 
     if (style.fontName) result.fontFamily = style.fontName;
-    if (style.fontStyleName) result.fontWeight = style.fontStyleName;
+    if (style.fontStyleName) {
+      const styleName = String(style.fontStyleName);
+      const isItalic = /italic|oblique/i.test(styleName) || style.syntheticItalic === true;
+      const weightName = styleName.replace(/\s*(italic|oblique)\s*/i, "").trim() || "Regular";
+      result.fontWeight = weightName;
+      if (isItalic) result.fontStyle = "italic";
+    } else if (style.syntheticItalic === true) {
+      result.fontStyle = "italic";
+    }
 
     // Leading (line-height)
     if (style.leading?._value) {
@@ -2663,13 +2684,8 @@ async function readTextStyle(layerId) {
     }
 
     // Color
-    const c = style.color;
-    if (c) {
-      const r = Math.round(c.red?._value ?? c.red ?? 0);
-      const g = Math.round(c.green?._value ?? c.green ?? 0);
-      const b = Math.round(c.blue?._value ?? c.blue ?? 0);
-      result.color = `${r}, ${g}, ${b}`;
-    }
+    const colorStr = readRGB(style.color);
+    if (colorStr) result.color = colorStr;
 
     // Font caps → textTransform
     if (style.fontCaps?._value) {
@@ -2702,12 +2718,7 @@ function readFillColor(desc) {
   try {
     const adj = desc.adjustment;
     if (!adj || !adj.length) return null;
-    const c = adj[0]?.color;
-    if (!c) return null;
-    const r = Math.round(c.red?._value ?? c.red ?? 0);
-    const g = Math.round(c.green?._value ?? c.green ?? 0);
-    const b = Math.round(c.blue?._value ?? c.blue ?? 0);
-    return `${r}, ${g}, ${b}`;
+    return readRGB(adj[0]?.color);
   } catch (e) { return null; }
 }
 
@@ -2727,16 +2738,10 @@ function readGradient(desc) {
     // Color stops
     const colors = grad.colors;
     if (colors && colors.length) {
-      result.stops = colors.map(stop => {
-        const c = stop.color;
-        const r = Math.round(c?.red?._value ?? c?.red ?? 0);
-        const g = Math.round(c?.grain?._value ?? c?.grain ?? c?.green?._value ?? c?.green ?? 0);
-        const b = Math.round(c?.blue?._value ?? c?.blue ?? 0);
-        return {
-          color: `${r}, ${g}, ${b}`,
-          location: stop.location ?? 0
-        };
-      });
+      result.stops = colors.map(stop => ({
+        color: readRGB(stop.color) || "0, 0, 0",
+        location: stop.location ?? 0
+      }));
     }
     return result;
   } catch (e) { return null; }
@@ -2758,13 +2763,8 @@ function readLayerEffects(desc) {
         spread: ds.chokeMatte?._value ?? ds.chokeMatte,
         size: ds.blur?._value ?? ds.blur
       };
-      const c = ds.color;
-      if (c) {
-        const r = Math.round(c.red?._value ?? c.red ?? 0);
-        const g = Math.round(c.green?._value ?? c.green ?? 0);
-        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
-        result.dropShadow.color = `${r}, ${g}, ${b}`;
-      }
+      const dsColor = readRGB(ds.color);
+      if (dsColor) result.dropShadow.color = dsColor;
     }
     // Inner Shadow
     if (fx.innerShadow) {
@@ -2786,13 +2786,8 @@ function readLayerEffects(desc) {
         position: st.style?._value ?? st.style,
         opacity: st.opacity?._value ?? st.opacity
       };
-      const c = st.color;
-      if (c) {
-        const r = Math.round(c.red?._value ?? c.red ?? 0);
-        const g = Math.round(c.green?._value ?? c.green ?? 0);
-        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
-        result.stroke.color = `${r}, ${g}, ${b}`;
-      }
+      const stColor = readRGB(st.color);
+      if (stColor) result.stroke.color = stColor;
     }
     // Outer Glow
     if (fx.outerGlow) {
@@ -2828,16 +2823,10 @@ function readLayerEffects(desc) {
         if (grad.name) result.gradientOverlay.name = grad.name;
         const colors = grad.colors;
         if (colors && colors.length) {
-          result.gradientOverlay.stops = colors.map(stop => {
-            const c = stop.color;
-            const r = Math.round(c?.red?._value ?? c?.red ?? 0);
-            const g = Math.round(c?.grain?._value ?? c?.grain ?? c?.green?._value ?? c?.green ?? 0);
-            const b = Math.round(c?.blue?._value ?? c?.blue ?? 0);
-            return {
-              color: `${r}, ${g}, ${b}`,
-              location: stop.location ?? 0
-            };
-          });
+          result.gradientOverlay.stops = colors.map(stop => ({
+            color: readRGB(stop.color) || "0, 0, 0",
+            location: stop.location ?? 0
+          }));
         }
       }
     }
@@ -2849,13 +2838,8 @@ function readLayerEffects(desc) {
         opacity: sf.opacity?._value ?? sf.opacity,
         blendMode: sf.mode?._value ?? sf.mode
       };
-      const c = sf.color;
-      if (c) {
-        const r = Math.round(c.red?._value ?? c.red ?? 0);
-        const g = Math.round(c.green?._value ?? c.green ?? 0);
-        const b = Math.round(c.blue?._value ?? c.blue ?? 0);
-        result.colorOverlay.color = `${r}, ${g}, ${b}`;
-      }
+      const sfColor = readRGB(sf.color);
+      if (sfColor) result.colorOverlay.color = sfColor;
     }
     return Object.keys(result).length > 0 ? result : null;
   } catch (e) { return null; }
