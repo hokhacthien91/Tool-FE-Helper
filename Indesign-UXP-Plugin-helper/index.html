@@ -57,15 +57,19 @@
       <button id="btnSetReport" class="secondary">Link selected frame</button>
       <button id="btnUnlinkReport" class="secondary">Unlink</button>
     </div>
-    <label class="field" style="margin-top:8px;">
+    <label class="field mt-sm">
       <span>Title</span>
       <input type="text" id="setReportTitle" placeholder="QSR Percentages" />
     </label>
-    <label class="field">
-      <span>Row template</span>
-      <input type="text" id="setReportRowTpl" placeholder="{label}:\t{square}\t=\t{pct}%" />
-    </label>
-    <div class="section-hint">Tokens: {label} {square} {pct} {client} {ratio} {w} {h} {unit} · Use \t for tab, \n for new line</div>
+    <div class="section-hint">Output: title + "All = …" then an auto-generated 4-col table (Label | Square | = | Pct%).</div>
+
+    <div class="section-title">Document name</div>
+    <div class="section-hint">Link a text frame — click "Insert" to stamp the current file name (without .indd). Style is preserved.</div>
+    <div id="docNameStatus" class="report-status">Not linked</div>
+    <div class="row">
+      <button id="btnInsertDocName" class="secondary">Link &amp; insert</button>
+      <button id="btnUnlinkDocName" class="secondary">Unlink</button>
+    </div>
 
     <div class="section-title">Share</div>
     <div class="section-hint">Export current logos + settings to a .json file. Import merges clients (prompts on name conflict) and replaces logos.</div>
@@ -90,12 +94,11 @@
     </label>
 
     <div class="section-title">Clients</div>
-    <div class="section-hint">Each logo is billed with its client's ratio. Rounding = decimal digits shown (e.g. 1 → 10.8, 2 → 10.77).</div>
+    <div class="section-hint">Each logo is billed with its client's ratio. Area is shown with 2 decimals, % with 1 decimal.</div>
 
     <div class="client-header">
       <span class="hdr-name">Name</span>
       <span class="hdr-ratio">Ratio</span>
-      <span class="hdr-round">Round</span>
       <span class="hdr-del"></span>
     </div>
     <div id="clientsEditor" class="clients-editor"></div>
@@ -104,7 +107,7 @@
       <button id="btnAddClient" class="secondary">+ Add client</button>
     </div>
 
-    <div class="row" style="margin-top:12px;">
+    <div class="row mt-md">
       <button id="btnSaveSettings" class="primary">Save settings</button>
       <button id="btnResetSettings" class="secondary">Reset defaults</button>
     </div>
@@ -120,15 +123,17 @@
     <div class="row">
       <button id="btnScanMissing" class="secondary">Scan missing</button>
       <button id="btnScanAll" class="secondary">Scan all</button>
+    </div>
+    <div class="row relink-action-row">
+      <label class="checkbox-row relink-sub-opt">
+        <input type="checkbox" id="optRecursive" checked />
+        <span>+ subfolders</span>
+      </label>
       <button id="btnRelinkFolder" class="primary">Pick folder &amp; relink</button>
     </div>
-    <label class="checkbox-row">
-      <input type="checkbox" id="optRecursive" checked />
-      <span>Search subfolders</span>
-    </label>
     <div id="missingList" class="relink-list"></div>
 
-    <div class="section-title" style="margin-top:14px;">Path Find &amp; Replace (regex)</div>
+    <div class="section-title mt-lg">Path Find &amp; Replace (regex)</div>
     <div class="section-hint">Rewrite link paths by regex. Useful when only the base path changed (e.g. different user folder).</div>
 
     <div class="scope-row">
@@ -150,16 +155,6 @@
       <span>Replace with</span>
       <input type="text" id="reReplace" placeholder="/Users/thien.ho/" />
     </label>
-    <div class="flags-row">
-      <label class="checkbox-row">
-        <input type="checkbox" id="flagI" checked />
-        <span>case-insensitive (i)</span>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" id="flagG" />
-        <span>global (g)</span>
-      </label>
-    </div>
 
     <label class="field">
       <span>Recent</span>
@@ -169,18 +164,16 @@
     </label>
 
     <div class="row">
-      <button id="btnPreview" class="secondary">Preview</button>
-      <button id="btnApplyRewrite" class="primary" disabled>Apply</button>
+      <button id="btnApplyRewrite" class="primary">Apply</button>
     </div>
 
     <div id="relinkStatus" class="status"></div>
-    <div id="previewList" class="preview-list"></div>
   </div>
 
   <!-- LOGS (shared across all tabs) -->
   <div class="logs-section" id="logsSection">
     <div class="log-header">
-      <span class="log-label" id="logToggle">Logs <span class="log-caret">▸</span></span>
+      <span class="log-label" id="logToggle">Logs <span class="log-caret"></span></span>
       <span class="log-actions">
         <button id="logCopyBtn" class="log-clear-btn">Copy</button>
         <button id="logClearBtn" class="log-clear-btn">Clear</button>

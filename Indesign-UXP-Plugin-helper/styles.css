@@ -1,5 +1,12 @@
 * { box-sizing: border-box; }
 
+/* Spacing utilities — inline style="margin-top:…" is fine on paper but we
+   centralize here so the plugin keeps working if UXP ever tightens inline
+   CSS handling (see feedback_uxp_css memory re: inline CSS variables). */
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 12px; }
+.mt-lg { margin-top: 14px; }
+
 :root {
   --gg-green: #b7e39b;
   --gg-green-dark: #59a139;
@@ -9,8 +16,8 @@
   --bg-input: #0a0a0a;
   --border: #2a2a2a;
   --text-primary: #f2f2f2;
-  --text-secondary: #b0b0b0;
-  --text-muted: #707070;
+  --text-secondary: #bfbfbf;
+  --text-muted: #b1b1b1;
 }
 
 html, body {
@@ -89,7 +96,12 @@ textarea {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  text-align: center;
   border-bottom: 2px solid transparent !important;
+}
+/* Vertical divider between Calculator / Relink tabs. */
+.top-tab-btn + .top-tab-btn {
+  border-left: 1px solid var(--border) !important;
 }
 .top-tab-btn:hover { color: var(--text-primary) !important; }
 .top-tab-btn.is-active {
@@ -124,16 +136,21 @@ textarea {
 /* COMMON */
 .row {
   display: flex;
+  align-items: stretch;
   margin-bottom: 8px;
 }
 .row > button {
   margin-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 .row > button:last-child { margin-right: 0; }
 
 button {
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: 8px;
+  font-size:9px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -143,9 +160,17 @@ button {
   color: var(--text-primary);
   cursor: pointer;
   flex: 1;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  line-height: 1.2;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 button:hover { border-color: var(--gg-green-dark); }
+button:focus-visible {
+  outline: 2px solid var(--gg-green);
+  outline-offset: 2px;
+}
 
 button.primary {
   background: var(--gg-green);
@@ -507,22 +532,23 @@ button[disabled] {
   background: var(--gg-green) !important;
   border-color: var(--gg-green-dark) !important;
 }
-/* Checkmark overlay — rendered above the checkbox square when active. */
+/* Checkmark overlay — rendered above the checkbox square when active.
+   UXP translateY(-50%) for vertical centering is unreliable, so we pin
+   with an explicit pixel top that matches the 14px checkbox height
+   inside the balancer's 2px vertical padding. */
 .logo-balancer.is-active::before {
-  content: "✓";
+  content: "\2713";
   position: absolute;
   left: 6px;
-  top: 50%;
+  top: 3px;
   width: 14px;
   height: 14px;
-  transform: translateY(-50%);
   text-align: center;
   line-height: 14px;
   font-size: 12px;
   font-weight: 900;
   color: #0a0a0a;
   pointer-events: none;
-  z-index: 1;
 }
 .logo-item:not(.is-compact) .logo-balancer {
   margin-top: 6px;
@@ -636,9 +662,8 @@ button[disabled] {
   letter-spacing: 0.6px;
   font-weight: 700;
 }
-.hdr-name, .client-name { flex: 1 1 40%; margin-right: 4px; }
-.hdr-ratio, .client-ratio { flex: 0 0 70px; margin-right: 4px; }
-.hdr-round, .client-round { flex: 0 0 50px; margin-right: 4px; }
+.hdr-name, .client-name { flex: 1 1 60%; margin-right: 4px; }
+.hdr-ratio, .client-ratio { flex: 0 0 90px; margin-right: 4px; }
 .hdr-del { flex: 0 0 26px; }
 
 .client-row input {
@@ -656,6 +681,10 @@ button[disabled] {
   outline: none;
   border-color: var(--gg-green);
   box-shadow: 0 0 0 3px rgba(183, 227, 155, 0.15);
+}
+.client-row input.has-error {
+  border-color: var(--gg-accent) !important;
+  background: rgba(163, 38, 0, 0.12);
 }
 .client-row button {
   flex: 0 0 26px;
@@ -690,35 +719,32 @@ button[disabled] {
   border-color: var(--gg-green-dark);
 }
 
+/* Toast: UXP doesn't run @keyframes reliably, transform translate on
+   fixed elements is flaky, and fit-content isn't guaranteed. We accept
+   a full-width banner (left/right:10px) with centered text instead. */
 .banner-toast {
   position: fixed;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-card);
-  border: 1px solid var(--gg-green-dark);
-  color: var(--text-primary);
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  z-index: 10000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
-  max-width: calc(100% - 20px);
+  bottom: 16px;
+  left: 12px;
+  right: 12px;
+  background: var(--gg-green);
+  border: 2px solid var(--gg-green);
+  color: #121212;
+  padding: 12px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.85);
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.8px;
   pointer-events: none;
-  animation: toast-in 0.2s ease-out;
-}
-@keyframes toast-in {
-  from { opacity: 0; transform: translate(-50%, 6px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  z-index: 10000;
 }
 .banner-toast.is-error {
-  background: rgba(163, 38, 0, 0.15);
-  border-color: var(--gg-accent);
-  color: #ffb8a0;
+  background: #a32600;
+  border-color: #ff6b6b;
+  color: #fff;
 }
 
 /* RELINK TAB */
@@ -743,13 +769,31 @@ button[disabled] {
   margin-right: 12px;
   margin-bottom: 0;
 }
-.flags-row {
-  display: flex;
-  margin-bottom: 8px;
+/* Relink action row — "+ subfolders" option sits directly beside the
+   "Pick folder & relink" button so the relationship is obvious. */
+.relink-action-row {
+  align-items: center;
 }
-.flags-row .checkbox-row {
-  margin-right: 12px;
-  margin-bottom: 0;
+.relink-sub-opt {
+  flex: 0 0 auto;
+  margin: 0 8px 0 0;
+  padding: 6px 8px;
+  font-size: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+}
+.relink-sub-opt:hover {
+  border-color: var(--gg-green-dark);
+  color: var(--text-secondary);
+}
+.relink-sub-opt input[type="checkbox"] {
+  margin: 0 5px 0 0;
 }
 
 .relink-list {
@@ -773,8 +817,9 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
 }
+.relink-item .rl-head > * { margin-right: 6px; }
+.relink-item .rl-head > *:last-child { margin-right: 0; }
 .relink-item .rl-name {
   font-weight: 600;
   color: var(--text-primary);
@@ -821,6 +866,34 @@ button[disabled] {
   color: var(--text-muted);
   word-break: break-all;
   margin-top: 2px;
+}
+.relink-item .rl-path[data-copy-path] {
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  padding: 2px 4px;
+  margin: 2px -4px 0;
+  border-radius: 3px;
+}
+.relink-item .rl-path[data-copy-path]:hover {
+  color: var(--text-primary);
+  background: var(--bg-input);
+}
+.rl-copy-hint {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--gg-green);
+  border: 1px solid var(--gg-green-dark);
+  border-radius: 8px;
+  vertical-align: 1px;
+}
+.relink-item .rl-path[data-copy-path]:hover .rl-copy-hint {
+  background: var(--gg-green);
+  color: #121212;
 }
 
 .preview-list {
@@ -880,6 +953,8 @@ button[disabled] {
   align-items: center;
   justify-content: space-between;
   user-select: none;
+  padding: 2px 4px;
+  border-radius: 3px;
 }
 .log-label {
   cursor: pointer;
@@ -890,23 +965,21 @@ button[disabled] {
   letter-spacing: 0.5px;
 }
 .log-label:hover { color: var(--text-primary); }
+/* UXP doesn't do transform:rotate reliably on inline text — swap the
+   glyph instead. The HTML span is empty; pseudo ::before fills it. */
 .log-caret {
   display: inline-block;
   margin-left: 2px;
-  transition: transform 0.15s;
 }
-.log-header.is-open .log-caret {
-  transform: rotate(90deg);
-}
+.log-caret::before { content: "\25B8"; }
+.log-header.is-open .log-caret::before { content: "\25BE"; }
+/* UXP @keyframes don't run — use a static flash background via class,
+   cleared by the same setTimeout in main.js (2s). */
 .log-header.log-has-error {
-  animation: log-error-flash 0.6s ease 3;
+  background: rgba(163, 38, 0, 0.15);
 }
 .log-header.log-has-error .log-label {
   color: var(--gg-accent);
-}
-@keyframes log-error-flash {
-  0%, 100% { background: transparent; }
-  50% { background: rgba(163, 38, 0, 0.15); }
 }
 .log-actions {
   display: flex;

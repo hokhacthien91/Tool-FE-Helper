@@ -10,14 +10,16 @@ const STORAGE_KEY = "bannerHelper.settings.v2";
 
 const DEFAULT_CLIENT_ID = "pilot";
 
+const AREA_DECIMALS = 2;
+const PCT_DECIMALS = 1;
+
 const DEFAULT_SETTINGS = {
   unit: "auto",
   reportTitle: "QSR Percentages",
-  reportRowTemplate: "{label}:\\t{square}\\t=\\t{pct}%",
   clients: [
-    { id: "pilot",   name: "Pilot",    ratio: 0.587, rounding: 1 },
-    { id: "flyingj", name: "Flying J", ratio: 0.556, rounding: 1 },
-    { id: "generic", name: "Generic",  ratio: 1.0,   rounding: 1 }
+    { id: "pilot",   name: "Pilot",    ratio: 0.587 },
+    { id: "flying", name: "Flying", ratio: 0.556 },
+    { id: "generic", name: "Generic",  ratio: 1.0   }
   ]
 };
 
@@ -50,7 +52,6 @@ function cloneSettings(s) {
   return {
     unit: s.unit,
     reportTitle: s.reportTitle,
-    reportRowTemplate: s.reportRowTemplate,
     clients: s.clients.map(c => ({ ...c }))
   };
 }
@@ -191,20 +192,19 @@ function formatDim(value) {
   return Number(value.toFixed(4)).toString();
 }
 
-// Given squares + per-item roundings in group order, return balanced
-// percentages so the group sums to exactly 100. balancerIdx absorbs the
-// rounding residual; if it is -1 or out-of-range, the last item absorbs it
-// (spreadsheet default). Each logo is rounded with its own client rounding.
-function balancePercents(squares, roundings, balancerIdx) {
+// Balanced percentages so the group sums to exactly 100. balancerIdx absorbs
+// the rounding residual; if -1 or out-of-range, the last item absorbs it
+// (spreadsheet default). All values rounded to PCT_DECIMALS.
+function balancePercents(squares, balancerIdx) {
   const total = squares.reduce((a, b) => a + b, 0);
   if (total <= 0) return squares.map(() => 0);
   const bi = balancerIdx >= 0 && balancerIdx < squares.length ? balancerIdx : squares.length - 1;
   const rounded = squares.map((s, i) => {
     if (i === bi) return 0;
-    return Number(((s / total) * 100).toFixed(roundings[i] | 0));
+    return Number(((s / total) * 100).toFixed(PCT_DECIMALS));
   });
   const rest = rounded.reduce((a, b, i) => (i === bi ? a : a + b), 0);
-  rounded[bi] = Number((100 - rest).toFixed(roundings[bi] | 0));
+  rounded[bi] = Number((100 - rest).toFixed(PCT_DECIMALS));
   return rounded;
 }
 
@@ -213,7 +213,7 @@ function newClientId() {
 }
 
 function clientOptionLabel(c) {
-  return `${escapeHtml(c.name)} (×${c.ratio}, round ${c.rounding})`;
+  return `${escapeHtml(c.name)} (×${c.ratio})`;
 }
 
 /* ============ PERSIST ============ */
@@ -225,13 +225,11 @@ function loadSettings() {
     settings = {
       unit: parsed.unit || DEFAULT_SETTINGS.unit,
       reportTitle: typeof parsed.reportTitle === "string" ? parsed.reportTitle : DEFAULT_SETTINGS.reportTitle,
-      reportRowTemplate: typeof parsed.reportRowTemplate === "string" ? parsed.reportRowTemplate : DEFAULT_SETTINGS.reportRowTemplate,
       clients: Array.isArray(parsed.clients) && parsed.clients.length > 0
         ? parsed.clients.map(c => ({
             id: c.id || newClientId(),
             name: c.name || "Unnamed",
-            ratio: Number(c.ratio) || 1,
-            rounding: Number.isInteger(c.rounding) ? c.rounding : 1
+            ratio: Number(c.ratio) || 1
           }))
         : DEFAULT_SETTINGS.clients.map(c => ({ ...c }))
     };
@@ -631,6 +629,7 @@ function renderLogos() {
     $("#pageFilter").innerHTML = "";
     updateTotals(doc, []);
     renderReportStatus();
+    renderDocNameStatus();
     return;
   }
 
@@ -678,9 +677,8 @@ function renderLogos() {
   });
   pageGroups.forEach(group => {
     const bIdx = group.findIndex(it => it.logo && it.logo.isBalancer);
-    const rnds = group.map(it => it.client ? it.client.rounding : 1);
-    const pctsFull = balancePercents(group.map(it => it.squareFull || 0), rnds, bIdx);
-    const pctsVis  = balancePercents(group.map(it => it.squareVis  || 0), rnds, bIdx);
+    const pctsFull = balancePercents(group.map(it => it.squareFull || 0), bIdx);
+    const pctsVis  = balancePercents(group.map(it => it.squareVis  || 0), bIdx);
     group.forEach((it, i) => {
       it.pctFull = pctsFull[i];
       it.pctVis  = pctsVis[i];
@@ -710,6 +708,7 @@ function renderLogos() {
     list.innerHTML = '<div class="empty">No logos on this page</div>';
     updateTotals(doc, items, totalFull, totalVis);
     renderReportStatus();
+    renderDocNameStatus();
     updateReport();
     return;
   }
@@ -718,6 +717,7 @@ function renderLogos() {
 
   updateTotals(doc, items, totalFull, totalVis);
   renderReportStatus();
+  renderDocNameStatus();
   updateReport();
 }
 
@@ -737,8 +737,6 @@ function renderOneLogoItem(it, list, unit) {
     }
 
     const m = it.metrics;
-    const client = it.client;
-    const rounding = client ? client.rounding : 1;
 
     // Dimensions: full precision, no rounding
     const wFullStr = formatDim(it.wFull);
@@ -746,11 +744,11 @@ function renderOneLogoItem(it, list, unit) {
     const wVisStr  = formatDim(it.wVis);
     const hVisStr  = formatDim(it.hVis);
 
-    // Squares & % use per-client rounding; % is per-page balanced to sum 100.
-    const sqFullStr = formatNumber(it.squareFull, rounding);
-    const sqVisStr  = formatNumber(it.squareVis, rounding);
-    const pctFullStr = formatNumber(it.pctFull || 0, rounding);
-    const pctVisStr  = formatNumber(it.pctVis  || 0, rounding);
+    // Squares: AREA_DECIMALS. % is per-page balanced to sum 100, PCT_DECIMALS.
+    const sqFullStr = formatNumber(it.squareFull, AREA_DECIMALS);
+    const sqVisStr  = formatNumber(it.squareVis, AREA_DECIMALS);
+    const pctFullStr = formatNumber(it.pctFull || 0, PCT_DECIMALS);
+    const pctVisStr  = formatNumber(it.pctVis  || 0, PCT_DECIMALS);
 
     const clientOptions = settings.clients.map(c =>
       `<option value="${escapeHtml(c.id)}"${c.id === it.logo.clientId ? " selected" : ""}>${clientOptionLabel(c)}</option>`
@@ -853,11 +851,10 @@ function updateTotals(doc, items, totalFull, totalVis) {
     return;
   }
   const unit = resolveDisplayUnit(doc);
-  const maxRound = Math.max(1, ...settings.clients.map(c => c.rounding | 0));
   const anyClipped = items.some(i => !i.missing && i.metrics && i.metrics.clipped);
-  const fullStr = `${formatNumber(totalFull, maxRound)} ${unit}²`;
+  const fullStr = `${formatNumber(totalFull, AREA_DECIMALS)} ${unit}²`;
   if (anyClipped) {
-    const visStr = `${formatNumber(totalVis, maxRound)} ${unit}²`;
+    const visStr = `${formatNumber(totalVis, AREA_DECIMALS)} ${unit}²`;
     $("#totalArea").innerHTML = `Full <strong>${fullStr}</strong> · Visible <strong>${visStr}</strong>`;
   } else {
     $("#totalArea").textContent = fullStr;
@@ -951,8 +948,10 @@ function setLogoLabel(idx, label) {
   console.log("[BannerHelper][dbg] setLogoLabel idx=", idx, "old=", cur.label, "new=", trimmed, "activeDoc=", app.activeDocument && app.activeDocument.name);
   cur.label = trimmed;
   saveLogos();
-  // Don't re-render; keep focus/caret. Label isn't in signature so polling
-  // won't override it either.
+  // Don't re-render the list (would steal focus from the input the user is
+  // typing in). Label isn't in buildSignature so auto-poll won't pick it up —
+  // push the rename to the linked report frame manually.
+  try { updateReport(); } catch (e) { /* ignore */ }
 }
 
 function flushLogoNameInputs() {
@@ -1073,7 +1072,7 @@ function setReportFrameFromSelection() {
   renderReportStatus();
 }
 
-function unlinkReportFrame() {
+async function unlinkReportFrame() {
   const doc = app.activeDocument;
   if (!doc) return;
   // Prefer unlinking the report frame on the active page; else any
@@ -1084,17 +1083,106 @@ function unlinkReportFrame() {
     target = all.find(r => r.info && r.info.pageIdx === activeIdx);
   }
   if (!target) target = all[0];
-  if (target) {
-    try { target.frame.label = ""; } catch (e) { /* ignore */ }
-    flashStatus("Report frame unlinked");
-  }
+  if (!target) return;
+  const ok = await confirmDialog("Unlink report frame? You'll need to re-select it to link again.");
+  if (!ok) return;
+  try { target.frame.label = ""; } catch (e) { /* ignore */ }
+  flashStatus("Report frame unlinked");
   lastReportText = {};
   renderReportStatus();
 }
 
-// Build report text. pageIdx=null → whole doc. Integer → only logos on that page.
-function buildReportText(doc, pageIdx) {
-  if (!doc || logos.length === 0) return "";
+const DOC_NAME_LABEL = "docNameFrame";
+
+function findDocNameFrame(doc) {
+  try {
+    const tfs = doc.textFrames;
+    for (let i = 0; i < tfs.length; i++) {
+      try { if (tfs[i].label === DOC_NAME_LABEL) return tfs[i]; } catch (e) {}
+    }
+  } catch (e) {}
+  try {
+    const all = doc.allPageItems;
+    for (let i = 0; i < all.length; i++) {
+      try {
+        if (/TextFrame/i.test(getItemConstructor(all[i])) && all[i].label === DOC_NAME_LABEL) return all[i];
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
+}
+
+function insertDocNameToFrame() {
+  const doc = app.activeDocument;
+  if (!doc) { flashStatus("No document open", true); return; }
+  const baseName = (doc.name || "")
+    .replace(/\.indd$/i, "")
+    .replace(/_pilot.*$/i, "");
+  if (!baseName) { flashStatus("Document has no name yet", true); return; }
+
+  let target = findDocNameFrame(doc);
+  if (!target) {
+    const sel = app.selection;
+    if (!sel || sel.length === 0 || !/TextFrame/i.test(getItemConstructor(sel[0]))) {
+      flashStatus("Select a text frame once to link it", true);
+      return;
+    }
+    target = sel[0];
+    try { target.label = DOC_NAME_LABEL; } catch (e) {}
+  }
+
+  try {
+    target.parentStory.contents = baseName;
+    flashStatus("Updated: " + baseName);
+  } catch (e) {
+    flashStatus("Update failed: " + (e.message || e), true);
+  }
+  renderDocNameStatus();
+}
+
+async function unlinkDocNameFrame() {
+  const doc = app.activeDocument;
+  if (!doc) return;
+  const target = findDocNameFrame(doc);
+  if (!target) return;
+  const ok = await confirmDialog("Unlink doc name frame? You'll need to re-select it to link again.");
+  if (!ok) return;
+  try { target.label = ""; } catch (e) {}
+  flashStatus("Doc name frame unlinked");
+  renderDocNameStatus();
+}
+
+function renderDocNameStatus() {
+  const el = $("#docNameStatus");
+  const insertBtn = $("#btnInsertDocName");
+  const unlinkBtn = $("#btnUnlinkDocName");
+  if (!el) return;
+  let doc = null;
+  try { doc = app.activeDocument; } catch (e) {}
+  if (!doc) {
+    el.textContent = "No document open";
+    if (insertBtn) insertBtn.textContent = "Link & insert";
+    if (unlinkBtn) unlinkBtn.disabled = true;
+    return;
+  }
+  const frame = findDocNameFrame(doc);
+  if (!frame) {
+    el.textContent = "Not linked";
+    if (insertBtn) insertBtn.textContent = "Link & insert";
+    if (unlinkBtn) unlinkBtn.disabled = true;
+    return;
+  }
+  let pageName = "";
+  try { pageName = frame.parentPage && frame.parentPage.name; } catch (e) {}
+  el.textContent = pageName ? ("Linked (page " + pageName + ")") : "Linked";
+  if (insertBtn) insertBtn.textContent = "Update";
+  if (unlinkBtn) unlinkBtn.disabled = false;
+}
+
+// Build structured report data. pageIdx=null → whole doc. Integer → only logos on that page.
+// Returns { header, summary, rows: [{label, square, pct}] } or null when empty.
+function buildReportData(doc, pageIdx) {
+  if (!doc || logos.length === 0) return null;
   const unit = resolveDisplayUnit(doc);
   const rows = [];
   let grandTotal = 0;
@@ -1110,22 +1198,15 @@ function buildReportText(doc, pageIdx) {
       if (!pageName && m.pageName) pageName = m.pageName;
       const client = getClientForLogo(logo);
       const ratio = client ? client.ratio : 1;
-      const rounding = client ? client.rounding : 1;
       const wFull = ptToUnit(m.frameW, unit);
       const hFull = ptToUnit(m.frameH, unit);
       const square = wFull * hFull * ratio;
-      rows.push({
-        logo, label: logo.label, square, rounding,
-        pageIndex: m.pageIndex,
-        client: client ? client.name : "",
-        ratio,
-        w: wFull, h: hFull
-      });
+      rows.push({ logo, label: logo.label, square, pageIndex: m.pageIndex });
       grandTotal += square;
     });
   });
 
-  if (rows.length === 0) return "";
+  if (rows.length === 0) return null;
 
   // Per-page balancer so logos on each page sum to exactly 100%.
   const pageMap = new Map();
@@ -1137,43 +1218,168 @@ function buildReportText(doc, pageIdx) {
   pageMap.forEach(indices => {
     const group = indices.map(i => rows[i]);
     const bIdx = group.findIndex(r => r.logo && r.logo.isBalancer);
-    const rnds = group.map(r => r.rounding);
-    const pcts = balancePercents(group.map(r => r.square), rnds, bIdx);
+    const pcts = balancePercents(group.map(r => r.square), bIdx);
     indices.forEach((ri, gi) => { pctByRow[ri] = pcts[gi]; });
   });
 
   const title = (settings.reportTitle || "").trim() || DEFAULT_SETTINGS.reportTitle;
-  const lines = [];
-  if (Number.isInteger(pageIdx)) {
-    lines.push(`${title} — Page ${pageName || (pageIdx + 1)}`);
-  } else {
-    lines.push(title);
-  }
-  lines.push(`All = ${formatNumber(grandTotal, 2)} sq ${unit}`);
+  const header = Number.isInteger(pageIdx)
+    ? `${title} — Page ${pageName || (pageIdx + 1)}`
+    : title;
+  const summary = `All = ${formatNumber(grandTotal, AREA_DECIMALS)} sq ${unit}`;
 
-  const tpl = (settings.reportRowTemplate || "").trim() || DEFAULT_SETTINGS.reportRowTemplate;
-  rows.forEach((r, i) => {
-    const vars = {
-      label:  r.label,
-      square: formatNumber(r.square, r.rounding),
-      pct:    formatNumber(pctByRow[i], r.rounding),
-      client: r.client,
-      ratio:  String(r.ratio),
-      w:      formatNumber(r.w, r.rounding),
-      h:      formatNumber(r.h, r.rounding),
-      unit
-    };
-    lines.push(resolveReportTemplate(tpl, vars));
-  });
-  return lines.join("\r");
+  return {
+    header,
+    summary,
+    rows: rows.map((r, i) => ({
+      label: r.label,
+      square: formatNumber(r.square, AREA_DECIMALS),
+      pct: formatNumber(pctByRow[i], PCT_DECIMALS)
+    }))
+  };
 }
 
-function resolveReportTemplate(tpl, vars) {
-  return String(tpl)
-    .replace(/\\t/g, "\t")
-    .replace(/\\r/g, "\r")
-    .replace(/\\n/g, "\r")
-    .replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ""));
+// Character/paragraph properties worth preserving across rebuilds so the
+// report keeps the user's font / size / colour / style choices.
+const STYLE_PROPS = [
+  "appliedParagraphStyle",
+  "appliedCharacterStyle",
+  "appliedFont",
+  "fontStyle",
+  "pointSize",
+  "leading",
+  "tracking",
+  "kerningMethod",
+  "fillColor",
+  "fillTint",
+  "strokeColor",
+  "justification",
+  "capitalization",
+  "underline",
+  "strikeThru"
+];
+
+function snapshotTextStyle(text) {
+  const snap = {};
+  if (!text) return snap;
+  for (const key of STYLE_PROPS) {
+    try { snap[key] = text[key]; } catch (e) { /* unavailable — skip */ }
+  }
+  return snap;
+}
+
+function applyTextStyle(text, snap) {
+  if (!text || !snap) return;
+  for (const key of STYLE_PROPS) {
+    if (!(key in snap)) continue;
+    try { text[key] = snap[key]; } catch (e) { /* not settable — skip */ }
+  }
+}
+
+// Snapshot every visible region of the report (title, summary, per-column cell
+// style, column widths) so we can rebuild without flattening the user's style.
+function snapshotReport(frame) {
+  const story = frame.parentStory;
+  const snap = { title: null, summary: null, cellsByCol: [null, null, null, null], columnWidths: null };
+  try {
+    const paras = story.paragraphs;
+    if (paras.length > 0) { try { snap.title   = snapshotTextStyle(paras.item(0).texts.item(0)); } catch (e) {} }
+    if (paras.length > 1) { try { snap.summary = snapshotTextStyle(paras.item(1).texts.item(0)); } catch (e) {} }
+  } catch (e) { /* ignore */ }
+  try {
+    if (story.tables.length > 0) {
+      const tbl = story.tables.item(0);
+      const colCount = Math.min(4, tbl.columnCount || 0);
+      if (colCount > 0) {
+        const widths = [];
+        for (let j = 0; j < colCount; j++) {
+          try { widths.push(tbl.columns.item(j).width); } catch (e) {}
+        }
+        if (widths.length === colCount) snap.columnWidths = widths;
+      }
+      const bodyRows = tbl.bodyRowCount || 0;
+      if (bodyRows > 0 && colCount > 0) {
+        for (let j = 0; j < colCount; j++) {
+          try { snap.cellsByCol[j] = snapshotTextStyle(tbl.rows.item(0).cells.item(j).texts.item(0)); } catch (e) {}
+        }
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return snap;
+}
+
+function setTableGeometry(tbl, cols, rows) {
+  try { tbl.properties = { columnCount: cols, bodyRowCount: rows }; return; } catch (e) {}
+  try { tbl.columnCount = cols; } catch (e) {}
+  try { tbl.bodyRowCount = rows; } catch (e) {}
+}
+
+function applyTableColumnWidths(tbl, widths) {
+  if (!widths) return;
+  for (let j = 0; j < widths.length; j++) {
+    try { tbl.columns.item(j).width = widths[j]; } catch (e) {}
+  }
+}
+
+function applyCellStyles(tbl, cellsByCol, rowCount, colCount) {
+  for (let i = 0; i < rowCount; i++) {
+    for (let j = 0; j < colCount; j++) {
+      if (!cellsByCol[j]) continue;
+      let cellText = null;
+      try { cellText = tbl.rows.item(i).cells.item(j).texts.item(0); } catch (e) {}
+      if (cellText) applyTextStyle(cellText, cellsByCol[j]);
+    }
+  }
+}
+
+// Write header + summary as text, then an auto-generated 4-column table
+// (Label | Square | = | Pct%). When there are no logos, the frame shows an
+// empty 4×2 table only. Per-region style snapshots (title / summary / each
+// column's cell) + column widths are captured before wiping and reapplied
+// so the user's formatting survives every refresh.
+function writeReportToFrame(frame, data) {
+  const story = frame.parentStory;
+  const snap = snapshotReport(frame);
+  try {
+    if (!data) {
+      story.contents = "";
+      const ip = story.insertionPoints.lastItem();
+      const tbl = ip.tables.add();
+      setTableGeometry(tbl, 4, 2);
+      applyTableColumnWidths(tbl, snap.columnWidths);
+      applyCellStyles(tbl, snap.cellsByCol, 2, 4);
+      return;
+    }
+
+    story.contents = `${data.header}\r${data.summary}\r`;
+    // Apply title + summary style per paragraph (each has its own look).
+    try {
+      const paras = story.paragraphs;
+      if (snap.title   && paras.length > 0) applyTextStyle(paras.item(0).texts.item(0), snap.title);
+      if (snap.summary && paras.length > 1) applyTextStyle(paras.item(1).texts.item(0), snap.summary);
+    } catch (e) {}
+
+    const ip = story.insertionPoints.lastItem();
+    const tbl = ip.tables.add();
+    setTableGeometry(tbl, 4, data.rows.length);
+    applyTableColumnWidths(tbl, snap.columnWidths);
+
+    for (let i = 0; i < data.rows.length; i++) {
+      const r = data.rows[i];
+      const values = [`${r.label}:`, r.square, "=", `${r.pct}%`];
+      for (let j = 0; j < 4; j++) {
+        let cell = null;
+        try { cell = tbl.rows.item(i).cells.item(j); } catch (e) {}
+        if (!cell) continue;
+        try { cell.contents = values[j]; }
+        catch (e) { try { cell.texts.item(0).contents = values[j]; } catch (e2) {} }
+      }
+    }
+    applyCellStyles(tbl, snap.cellsByCol, data.rows.length, 4);
+  } catch (e) {
+    log(`[report] write error: ${e.message || e}`, "error");
+    throw e;
+  }
 }
 
 // Per-frame cache by frame id so each frame is compared against its own last text
@@ -1185,27 +1391,32 @@ function updateReport() {
   const frames = findAllReportFrames(doc);
   if (frames.length === 0) return;
   frames.forEach(rf => {
-    let text;
-    try { text = buildReportText(doc, rf.info.pageIdx); } catch (e) { console.error("[BannerHelper] report build err", e); return; }
+    let data;
+    try { data = buildReportData(doc, rf.info.pageIdx); } catch (e) { console.error("[BannerHelper] report build err", e); return; }
     let fid = null;
     try { fid = rf.frame.id; } catch (e) {}
     const key = String(fid);
-    if (text === lastReportText[key]) return;
+    const sig = data ? JSON.stringify(data) : "";
+    if (sig === lastReportText[key]) return;
     try {
-      rf.frame.contents = text;
-      lastReportText[key] = text;
+      writeReportToFrame(rf.frame, data);
+      lastReportText[key] = sig;
     } catch (e) { console.error("[BannerHelper] report write err", e); }
   });
 }
 
 function renderReportStatus() {
   const el = $("#reportStatus");
+  const setBtn = $("#btnSetReport");
+  const unlinkBtn = $("#btnUnlinkReport");
   if (!el) return;
   const doc = app.activeDocument;
   const frames = doc ? findAllReportFrames(doc) : [];
   if (frames.length === 0) {
     el.textContent = "Not linked";
     el.classList.remove("is-linked");
+    if (setBtn) setBtn.textContent = "Link selected frame";
+    if (unlinkBtn) unlinkBtn.disabled = true;
     return;
   }
   const parts = frames.map(rf => {
@@ -1219,6 +1430,8 @@ function renderReportStatus() {
   });
   el.textContent = `Linked: ${parts.join(", ")}`;
   el.classList.add("is-linked");
+  if (setBtn) setBtn.textContent = "Replace linked frame";
+  if (unlinkBtn) unlinkBtn.disabled = false;
 }
 
 async function clearAllLogos() {
@@ -1249,14 +1462,13 @@ function exportCsv() {
       const m = computeLogoMetrics(doc, item);
       const client = getClientForLogo(logo);
       const ratio = client ? client.ratio : 1;
-      const rounding = client ? client.rounding : 1;
       const wFull = ptToUnit(m.frameW, unit);
       const hFull = ptToUnit(m.frameH, unit);
       const wVis  = ptToUnit(m.visibleW, unit);
       const hVis  = ptToUnit(m.visibleH, unit);
       const squareFull = wFull * hFull * ratio;
       const squareVis  = wVis * hVis * ratio;
-      computed.push({ logo, m, client, ratio, rounding, wFull, hFull, wVis, hVis, squareFull, squareVis });
+      computed.push({ logo, m, client, ratio, wFull, hFull, wVis, hVis, squareFull, squareVis });
     });
   });
 
@@ -1273,9 +1485,8 @@ function exportCsv() {
   byPage.forEach(indices => {
     const group = indices.map(i => computed[i]);
     const bIdx = group.findIndex(c => c.logo && c.logo.isBalancer);
-    const rnds = group.map(c => c.rounding);
-    const pctsF = balancePercents(group.map(c => c.squareFull), rnds, bIdx);
-    const pctsV = balancePercents(group.map(c => c.squareVis),  rnds, bIdx);
+    const pctsF = balancePercents(group.map(c => c.squareFull), bIdx);
+    const pctsV = balancePercents(group.map(c => c.squareVis),  bIdx);
     indices.forEach((ci, gi) => {
       computed[ci].pctFull = pctsF[gi];
       computed[ci].pctVis  = pctsV[gi];
@@ -1290,18 +1501,17 @@ function exportCsv() {
       c.m.pageIndex + 1,
       formatDim(c.wFull),
       formatDim(c.hFull),
-      formatNumber(c.squareFull, c.rounding),
-      formatNumber(c.pctFull || 0, c.rounding),
+      formatNumber(c.squareFull, AREA_DECIMALS),
+      formatNumber(c.pctFull || 0, PCT_DECIMALS),
       formatDim(c.wVis),
       formatDim(c.hVis),
-      formatNumber(c.squareVis, c.rounding),
-      formatNumber(c.pctVis || 0, c.rounding),
+      formatNumber(c.squareVis, AREA_DECIMALS),
+      formatNumber(c.pctVis || 0, PCT_DECIMALS),
       c.m.clipped ? "yes" : "no"
     ]);
   });
   rows.push([]);
-  const maxRound = Math.max(1, ...settings.clients.map(c => c.rounding | 0));
-  rows.push(["TOTAL", "", "", "", "", "", formatNumber(totalFull, maxRound), "100", "", "", formatNumber(totalVis, maxRound), "100", ""]);
+  rows.push(["TOTAL", "", "", "", "", "", formatNumber(totalFull, AREA_DECIMALS), "100", "", "", formatNumber(totalVis, AREA_DECIMALS), "100", ""]);
 
   const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
   navigator.clipboard.writeText(csv).then(
@@ -1326,14 +1536,43 @@ function renderClientsEditor() {
   settings.clients.forEach((c, i) => {
     const row = document.createElement("div");
     row.className = "client-row";
+    // type=text + inputmode=decimal to bypass Spectrum number widget's locale handling.
     row.innerHTML = `
       <input type="text" class="client-name" data-client-idx="${i}" data-field="name" value="${escapeHtml(c.name)}" placeholder="Name" />
-      <input type="number" class="client-ratio" data-client-idx="${i}" data-field="ratio" step="0.001" value="${c.ratio}" placeholder="Ratio" />
-      <input type="number" class="client-round" data-client-idx="${i}" data-field="rounding" step="1" min="0" max="6" value="${c.rounding}" placeholder="Round" title="Decimal digits" />
+      <input type="text" inputmode="decimal" class="client-ratio" data-client-idx="${i}" data-field="ratio" value="${c.ratio}" placeholder="Ratio" />
       <button data-client-del="${i}" class="secondary small" title="Delete">✕</button>
     `;
     root.appendChild(row);
   });
+}
+
+// Returns true if all client name inputs are unique (case-insensitive).
+// Marks offending inputs with `.has-error` and flashes a status message.
+function validateClientNamesUnique() {
+  const rows = $$('.client-row');
+  const inputs = rows.map(r => r.querySelector('[data-field="name"]'));
+  inputs.forEach(inp => inp && inp.classList.remove("has-error"));
+  const seen = new Map();
+  const dupes = new Set();
+  inputs.forEach((inp, i) => {
+    if (!inp) return;
+    const name = (inp.value || "").trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      dupes.add(name);
+      inp.classList.add("has-error");
+      const first = inputs[seen.get(key)];
+      if (first) first.classList.add("has-error");
+    } else {
+      seen.set(key, i);
+    }
+  });
+  if (dupes.size > 0) {
+    flashStatus(`Duplicate client name: ${[...dupes].join(", ")}`, true);
+    return false;
+  }
+  return true;
 }
 
 function collectSettingsFromForm() {
@@ -1343,15 +1582,15 @@ function collectSettingsFromForm() {
   const rows = $$('.client-row');
   const newClients = rows.map(row => {
     const name = row.querySelector('[data-field="name"]').value.trim() || "Unnamed";
-    const ratio = parseFloat(row.querySelector('[data-field="ratio"]').value);
-    const rounding = parseInt(row.querySelector('[data-field="rounding"]').value, 10);
+    // Normalise locale decimal ("," → ".") so parseFloat doesn't truncate.
+    const ratioRaw = String(row.querySelector('[data-field="ratio"]').value).trim().replace(",", ".");
+    const ratio = parseFloat(ratioRaw);
     const idx = parseInt(row.querySelector('[data-field="name"]').dataset.clientIdx, 10);
     const existing = settings.clients[idx];
     return {
       id: existing ? existing.id : newClientId(),
       name,
-      ratio: isFinite(ratio) ? ratio : 1,
-      rounding: Number.isInteger(rounding) && rounding >= 0 ? rounding : 1
+      ratio: isFinite(ratio) ? ratio : 1
     };
   });
   // Enforce unique names (case-insensitive). Append " (N)" to dupes.
@@ -1391,7 +1630,10 @@ function log(message, level) {
     line.className = "log-success";
   }
   box.appendChild(line);
-  try { line.scrollIntoView({ block: "nearest" }); } catch (e) {}
+  // Scroll only inside the log box, NOT the whole page. scrollIntoView on a
+  // descendant forces every scrolling ancestor (body) to scroll too, which
+  // yanks the panel down whenever any status message fires.
+  try { box.scrollTop = box.scrollHeight; } catch (e) {}
 }
 
 function timestamp() {
@@ -1559,7 +1801,6 @@ async function promptAddLogo(defaultLabel, item) {
 /* ============ RELINK ============ */
 const RECENT_PAIRS_KEY = "bannerHelper.relink.recentPairs";
 const MAX_RECENT = 5;
-let previewRows = []; // cached for Apply
 
 function getLfs() {
   try { return require("uxp").storage.localFileSystem; }
@@ -1606,14 +1847,6 @@ function isEmbedded(link) {
   return statusMatches(link, "LINK_EMBEDDED", "embedded");
 }
 
-async function pathExists(path) {
-  const lfs = getLfs();
-  if (!lfs) return false;
-  try {
-    await lfs.getEntryWithUrl("file:" + path);
-    return true;
-  } catch (e) { return false; }
-}
 
 async function folderToFileMap(folder, recursive) {
   const map = new Map();
@@ -1645,12 +1878,14 @@ function renderLinkList(links, emptyMsg) {
   }
   el.innerHTML = links.map(l => {
     const name = escapeHtml(l.name || "(unnamed)");
-    const path = escapeHtml(l.filePath || "");
+    const rawPath = l.filePath || "";
+    const path = escapeHtml(rawPath);
     const label = linkStatusLabel(l);
     const cls = "rl-badge rl-" + label.replace(/[^a-z]/gi, "");
+    const pathAttr = rawPath ? ` data-copy-path="${path}" title="Click to copy path"` : "";
     return `<div class="relink-item">
       <div class="rl-head"><span class="rl-name">${name}</span><span class="${cls}">${escapeHtml(label)}</span></div>
-      <div class="rl-path">${path}</div>
+      <div class="rl-path"${pathAttr}>${path}${rawPath ? ' <span class="rl-copy-hint">copy</span>' : ""}</div>
     </div>`;
   }).join("");
 }
@@ -1758,6 +1993,7 @@ async function tryGetEntry(path) {
 // Logs which strategy worked so we know what InDesign accepts.
 let _relinkViaLogged = null;
 async function tryRelink(link, path) {
+  let lastErr = null;
   // Strategy 1: UXP entry (best if file exists)
   const entry = await tryGetEntry(path);
   if (entry) {
@@ -1766,9 +2002,7 @@ async function tryRelink(link, path) {
       try { link.update(); } catch (e) {}
       if (_relinkViaLogged !== "entry") { log("Relink via: UXP entry"); _relinkViaLogged = "entry"; }
       return { ok: true, via: "entry" };
-    } catch (e) {
-      log(`    entry relink failed: ${e && e.message || e}`, "warn");
-    }
+    } catch (e) { lastErr = e; }
   }
 
   // Strategy 2: ExtendScript File() (not available in newer UXP)
@@ -1778,7 +2012,7 @@ async function tryRelink(link, path) {
     try { link.update(); } catch (e) {}
     if (_relinkViaLogged !== "File") { log("Relink via: File(path)"); _relinkViaLogged = "File"; }
     return { ok: true, via: "File" };
-  } catch (e) { /* silent, common to fail */ }
+  } catch (e) { lastErr = e; }
 
   // Strategy 3: file:// URI string (works for non-existent paths too)
   const uri = pathToFileUri(path);
@@ -1787,9 +2021,7 @@ async function tryRelink(link, path) {
     try { link.update(); } catch (e) {}
     if (_relinkViaLogged !== "uri") { log(`Relink via: file:// URI (${uri.slice(0, 60)}…)`); _relinkViaLogged = "uri"; }
     return { ok: true, via: "uri" };
-  } catch (e) {
-    log(`    URI relink failed: ${e && e.message || e}`, "warn");
-  }
+  } catch (e) { lastErr = e; }
 
   // Strategy 4: raw native string (last resort)
   try {
@@ -1797,11 +2029,9 @@ async function tryRelink(link, path) {
     try { link.update(); } catch (e) {}
     if (_relinkViaLogged !== "string") { log("Relink via: raw string"); _relinkViaLogged = "string"; }
     return { ok: true, via: "string" };
-  } catch (e) {
-    log(`    string relink failed: ${e && e.message || e}`, "error");
-  }
+  } catch (e) { lastErr = e; }
 
-  return { ok: false };
+  return { ok: false, error: lastErr && (lastErr.message || String(lastErr)) };
 }
 
 /* ---- Path find & replace ---- */
@@ -1839,14 +2069,14 @@ function getScope() {
 function buildRegexFromUI() {
   const pattern = $("#rePattern").value;
   if (!pattern) return null;
-  let flags = "";
-  if ($("#flagI").checked) flags += "i";
-  if ($("#flagG").checked) flags += "g";
+  // Flags are no longer user-toggleable — always case-insensitive + global
+  // so users don't get tripped up by /Users vs /users or partial replacements.
+  const flags = "gi";
   try { return { re: new RegExp(pattern, flags), pattern, flags }; }
   catch (e) { return { error: e.message || String(e) }; }
 }
 
-async function previewRewrite() {
+async function applyRewrite() {
   const doc = app.activeDocument;
   if (!doc) { flashStatus("No document open", true); return; }
   const built = buildRegexFromUI();
@@ -1861,74 +2091,43 @@ async function previewRewrite() {
     return true;
   });
 
-  const rows = [];
+  // Build rewrite plan — no pre-existence check (UXP `request` perms block it);
+  // trust InDesign's link.status AFTER relink to tell us if the file was found.
+  const plan = [];
   for (const link of links) {
     const oldPath = link.filePath || "";
     if (!oldPath) continue;
     const newPath = oldPath.replace(built.re, replacement);
     if (newPath === oldPath) continue;
-    const exists = await pathExists(newPath);
-    rows.push({
-      link, name: link.name || "",
-      oldPath, newPath, exists,
-      status: linkStatusLabel(link),
-    });
+    plan.push({ link, name: link.name || "", oldPath, newPath });
   }
-  previewRows = rows;
-  renderPreview(rows);
-  $("#btnApplyRewrite").disabled = rows.length === 0;
-  if (!rows.length) {
-    flashStatus("No paths matched", true);
-  } else {
-    const willMiss = rows.filter(r => !r.exists).length;
-    flashStatus(`${rows.length} to relink${willMiss ? ` · ${willMiss} will be missing` : ""}`);
-  }
-}
 
-function renderPreview(rows) {
-  const el = $("#previewList");
-  if (!el) return;
-  if (!rows.length) { el.innerHTML = ""; return; }
-  el.innerHTML = rows.map(r => {
-    const cls = r.exists ? "is-ok" : "is-missing";
-    const icon = r.exists ? "✓" : "⚠";
-    return `<div class="preview-item ${cls}">
-      <div class="pi-head"><span class="pi-icon">${icon}</span>${escapeHtml(r.name)}</div>
-      <div class="pi-path">${escapeHtml(r.oldPath)}</div>
-      <div class="pi-path pi-new">→ ${escapeHtml(r.newPath)}</div>
-    </div>`;
-  }).join("");
-}
+  if (!plan.length) { flashStatus("No paths matched", true); log("No matching paths to relink", "warn"); return; }
 
-async function applyRewrite() {
-  log(`Apply clicked (previewRows: ${previewRows.length})`);
-  if (!previewRows.length) {
-    flashStatus("Click Preview first", true);
-    return;
-  }
+  log(`Applying ${plan.length} relink${plan.length > 1 ? "s" : ""}…`);
   let ok = 0, missing = 0, failed = 0;
-  for (const r of previewRows) {
-    log(`  · relinking ${r.name} → ${r.newPath}`);
+  for (const r of plan) {
     const result = await tryRelink(r.link, r.newPath);
-    if (result.ok) {
-      if (r.exists) ok++; else missing++;
-      log(`    ✓ ok (${r.exists ? "file exists" : "now missing"})`, r.exists ? "success" : "warn");
-    } else {
+    if (!result.ok) {
       failed++;
+      log(`  ✗ ${r.name}: ${result.error || "unknown error"}`, "error");
+      continue;
+    }
+    // After relink, InDesign updates link.status — missing vs normal is ground truth
+    if (isMissing(r.link)) {
+      missing++;
+      log(`  ⚠ ${r.name} → ${r.newPath} (still missing — file not found at target)`, "warn");
+    } else {
+      ok++;
+      log(`  ✓ ${r.name} → ${r.newPath}`, "success");
     }
   }
-  const built = buildRegexFromUI();
+
   if (built && !built.error) {
     saveRecentPair({ pattern: built.pattern, replace: $("#reReplace").value, flags: built.flags });
   }
-  flashStatus(`Relinked ${ok}${missing ? ` · ${missing} now missing` : ""}${failed ? ` · ${failed} failed` : ""}`, missing + failed > 0);
-  // Hint: if everything failed and no target file exists, user picked wrong strategy
-  if (failed > 0 && ok === 0 && missing === 0) {
-    log("✗ All relinks failed. InDesign requires target files to exist. Try 'Relink to Folder' instead — point to your Dropbox root and it will match by filename regardless of subpath.", "error");
-  }
-  previewRows = [];
-  $("#previewList").innerHTML = "";
-  $("#btnApplyRewrite").disabled = true;
+  const summary = `Done: ${ok} relinked${missing ? ` · ${missing} now missing` : ""}${failed ? ` · ${failed} failed` : ""}`;
+  flashStatus(summary, missing + failed > 0);
   scanMissing(true);
 }
 
@@ -1939,23 +2138,25 @@ function wireRelink() {
   const scanAllBtn = $("#btnScanAll");
   if (scanAllBtn) scanAllBtn.addEventListener("click", scanAll);
   $("#btnRelinkFolder").addEventListener("click", relinkFromFolder);
-  $("#btnPreview").addEventListener("click", previewRewrite);
-  $("#btnApplyRewrite").addEventListener("click", applyRewrite);
 
-  // Invalidate preview when inputs change
-  const invalidate = () => {
-    previewRows = [];
-    $("#previewList").innerHTML = "";
-    $("#btnApplyRewrite").disabled = true;
-  };
-  ["#rePattern", "#reReplace", "#flagI", "#flagG"].forEach(s => {
-    const el = $(s);
-    if (el) el.addEventListener("input", invalidate);
-    if (el) el.addEventListener("change", invalidate);
-  });
-  document.querySelectorAll('input[name="relinkScope"]').forEach(el => {
-    el.addEventListener("change", invalidate);
-  });
+  // Click-to-copy on the file path. Event delegation on the list container
+  // so it keeps working after re-renders.
+  const list = $("#missingList");
+  if (list) {
+    list.addEventListener("click", async (e) => {
+      const pathEl = e.target.closest("[data-copy-path]");
+      if (!pathEl) return;
+      const path = pathEl.getAttribute("data-copy-path");
+      if (!path) return;
+      try {
+        await navigator.clipboard.writeText(path);
+        flashStatus("Path copied");
+      } catch (err) {
+        flashStatus("Copy failed: " + (err.message || err), true);
+      }
+    });
+  }
+  $("#btnApplyRewrite").addEventListener("click", applyRewrite);
 
   $("#recentPairs").addEventListener("change", (e) => {
     const idx = parseInt(e.target.value, 10);
@@ -1964,8 +2165,6 @@ function wireRelink() {
     if (!p) return;
     $("#rePattern").value = p.pattern;
     $("#reReplace").value = p.replace;
-    $("#flagI").checked = /i/.test(p.flags || "");
-    $("#flagG").checked = /g/.test(p.flags || "");
     invalidate();
   });
 
@@ -2033,6 +2232,8 @@ function wireLogos() {
   $("#btnClearAll").addEventListener("click", clearAllLogos);
   $("#btnSetReport").addEventListener("click", setReportFrameFromSelection);
   $("#btnUnlinkReport").addEventListener("click", unlinkReportFrame);
+  $("#btnInsertDocName").addEventListener("click", insertDocNameToFrame);
+  $("#btnUnlinkDocName").addEventListener("click", unlinkDocNameFrame);
   $("#btnExportData").addEventListener("click", exportData);
   $("#btnImportData").addEventListener("click", importData);
 
@@ -2080,7 +2281,6 @@ function wireLogos() {
     });
   };
   wireReportField($("#setReportTitle"), "reportTitle");
-  wireReportField($("#setReportRowTpl"), "reportRowTemplate");
 
   $("#logoList").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -2142,14 +2342,27 @@ function wireLogos() {
 function wireSettings() {
   $("#btnAddClient").addEventListener("click", () => {
     // Persist current form edits before adding so we don't lose them
+    if (!validateClientNamesUnique()) return;
     collectSettingsFromForm();
+    // Bump suffix until the default name doesn't collide with existing clients.
+    let n = settings.clients.length + 1;
+    let candidate = `Client ${n}`;
+    const taken = new Set(settings.clients.map(c => c.name.toLowerCase()));
+    while (taken.has(candidate.toLowerCase())) { n++; candidate = `Client ${n}`; }
     settings.clients.push({
       id: newClientId(),
-      name: `Client ${settings.clients.length + 1}`,
-      ratio: 1.0,
-      rounding: 1
+      name: candidate,
+      ratio: 1.0
     });
     renderClientsEditor();
+  });
+
+  // Live validation: highlight duplicates on blur, clear error while typing.
+  $("#clientsEditor").addEventListener("focusout", (e) => {
+    if (e.target.matches('input[data-field="name"]')) validateClientNamesUnique();
+  });
+  $("#clientsEditor").addEventListener("input", (e) => {
+    if (e.target.matches('input[data-field="name"]')) e.target.classList.remove("has-error");
   });
 
   $("#clientsEditor").addEventListener("click", (e) => {
@@ -2171,6 +2384,7 @@ function wireSettings() {
   });
 
   $("#btnSaveSettings").addEventListener("click", () => {
+    if (!validateClientNamesUnique()) return;
     collectSettingsFromForm();
     saveSettings();
     flashStatus("Settings saved");
@@ -2310,8 +2524,7 @@ async function exportData() {
       settings: {
         unit: settings.unit,
         reportTitle: settings.reportTitle,
-        reportRowTemplate: settings.reportRowTemplate,
-        clients: settings.clients.map(c => ({ id: c.id, name: c.name, ratio: c.ratio, rounding: c.rounding }))
+        clients: settings.clients.map(c => ({ id: c.id, name: c.name, ratio: c.ratio }))
       },
       logos: logos.map(l => ({ ...l }))
     };
@@ -2345,7 +2558,6 @@ async function importData() {
     for (const inc of incomingClients) {
       let name = String(inc.name || "Unnamed");
       const ratio = Number(inc.ratio) || 1;
-      const rounding = Number.isInteger(inc.rounding) ? inc.rounding : 1;
       const dupeIdx = findByNameCI(name);
       if (dupeIdx >= 0) {
         const choice = await promptImportConflict(name);
@@ -2353,7 +2565,6 @@ async function importData() {
         if (choice.action === "override") {
           const existing = settings.clients[dupeIdx];
           existing.ratio = ratio;
-          existing.rounding = rounding;
           overridden++;
           continue;
         }
@@ -2366,15 +2577,13 @@ async function importData() {
       settings.clients.push({
         id: newClientId(),
         name,
-        ratio,
-        rounding
+        ratio
       });
       added++;
     }
 
-    // Title + template: overwrite if provided
+    // Title + unit: overwrite if provided
     if (typeof parsed.settings.reportTitle === "string") settings.reportTitle = parsed.settings.reportTitle;
-    if (typeof parsed.settings.reportRowTemplate === "string") settings.reportRowTemplate = parsed.settings.reportRowTemplate;
     if (typeof parsed.settings.unit === "string") settings.unit = parsed.settings.unit;
     saveSettings();
 
@@ -2392,7 +2601,6 @@ async function importData() {
     renderSettingsForm();
     renderLogos();
     const reportTitleInp = $("#setReportTitle"); if (reportTitleInp) reportTitleInp.value = settings.reportTitle || "";
-    const reportTplInp = $("#setReportRowTpl"); if (reportTplInp) reportTplInp.value = settings.reportRowTemplate || "";
     flashShareStatus(`Imported: ${added} client${added === 1 ? "" : "s"}${replaced ? `, ${replaced} logos` : ""}`);
   } catch (e) {
     console.error("[BannerHelper] import error", e);
