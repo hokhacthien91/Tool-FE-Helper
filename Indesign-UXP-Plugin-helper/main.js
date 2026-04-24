@@ -3,7 +3,10 @@
  */
 
 const indesign = require("indesign");
-const { app } = indesign;
+// InDesign UXP: `app` có thể đến từ indesign module HOẶC global scope tuỳ version.
+// v21+ đôi khi không expose qua module, chỉ qua global.
+const app = (indesign && indesign.app) || (typeof globalThis !== "undefined" && globalThis.app) || null;
+if (!app) console.error("[BannerHelper] app unavailable. indesign keys:", Object.keys(indesign || {}));
 
 const LABEL_KEY = "bannerHelper.logos.v2";
 const STORAGE_KEY = "bannerHelper.settings.v2";
@@ -1869,25 +1872,48 @@ async function folderToFileMap(folder, recursive) {
   return { map, baseMap };
 }
 
-function renderLinkList(links, emptyMsg) {
+// Accepts raw link objects or wrapped `{link, docName}` entries (multi-doc mode).
+function renderLinkList(items, emptyMsg) {
   const el = $("#missingList");
   if (!el) return;
-  if (!links.length) {
+  if (!items.length) {
     el.innerHTML = `<div class="empty" style="padding:8px;">${escapeHtml(emptyMsg || "No links")}</div>`;
     return;
   }
-  el.innerHTML = links.map(l => {
+  el.innerHTML = items.map(item => {
+    const l = item && item.link ? item.link : item;
+    const docName = item && item.docName ? item.docName : "";
     const name = escapeHtml(l.name || "(unnamed)");
     const rawPath = l.filePath || "";
     const path = escapeHtml(rawPath);
     const label = linkStatusLabel(l);
     const cls = "rl-badge rl-" + label.replace(/[^a-z]/gi, "");
     const pathAttr = rawPath ? ` data-copy-path="${path}" title="Click to copy path"` : "";
+    const docBadge = docName ? `<span class="rl-doc" title="Document">${escapeHtml(docName)}</span>` : "";
     return `<div class="relink-item">
-      <div class="rl-head"><span class="rl-name">${name}</span><span class="${cls}">${escapeHtml(label)}</span></div>
+      <div class="rl-head">${docBadge}<span class="rl-name">${name}</span><span class="${cls}">${escapeHtml(label)}</span></div>
       <div class="rl-path"${pathAttr}>${path}${rawPath ? ' <span class="rl-copy-hint">copy</span>' : ""}</div>
     </div>`;
   }).join("");
+}
+
+// Returns `[{doc, docName}]` — either just active doc, or every opened doc
+// when #optAllDocs is checked.
+function getScanTargets() {
+  const allDocs = !!($("#optAllDocs") && $("#optAllDocs").checked);
+  if (allDocs) {
+    const out = [];
+    try {
+      const n = app.documents.length;
+      for (let i = 0; i < n; i++) {
+        const d = app.documents.item(i);
+        out.push({ doc: d, docName: (d && d.name) || `doc#${i}` });
+      }
+    } catch (e) {}
+    return out;
+  }
+  const doc = app.activeDocument;
+  return doc ? [{ doc, docName: doc.name || "active" }] : [];
 }
 
 function escapeHtml(s) {
@@ -1897,45 +1923,56 @@ function escapeHtml(s) {
 }
 
 function scanMissing(silent) {
-  const doc = app.activeDocument;
-  if (!doc) { if (!silent) flashStatus("No document open", true); return; }
-  const all = getLinksArray(doc);
-  if (!silent) {
-    log(`Scanning ${all.length} link(s)…`);
-    all.forEach(l => {
-      const st = (() => { try { return String(l.status); } catch (e) { return "?"; } })();
-      log(`  · ${l.name || "(unnamed)"} → ${linkStatusLabel(l)} [${st}]`);
-    });
+  const targets = getScanTargets();
+  if (!targets.length) { if (!silent) flashStatus("No document open", true); return; }
+  const multi = targets.length > 1;
+  const allItems = [];
+  let totalLinks = 0;
+  for (const { doc, docName } of targets) {
+    const links = getLinksArray(doc);
+    totalLinks += links.length;
+    if (!silent) {
+      log(`Scanning ${links.length} link(s)${multi ? ` in ${docName}` : ""}…`);
+      links.forEach(l => {
+        const st = (() => { try { return String(l.status); } catch (e) { return "?"; } })();
+        log(`  · ${multi ? `[${docName}] ` : ""}${l.name || "(unnamed)"} → ${linkStatusLabel(l)} [${st}]`);
+      });
+    }
+    links.filter(isMissing).forEach(link => allItems.push({ link, docName: multi ? docName : "" }));
   }
-  const links = all.filter(isMissing);
-  renderLinkList(links, "No missing links");
-  if (!silent) flashStatus(`${links.length} missing / ${all.length} total`);
+  renderLinkList(allItems, "No missing links");
+  if (!silent) flashStatus(`${allItems.length} missing / ${totalLinks} total${multi ? ` · ${targets.length} docs` : ""}`);
 }
 
 function scanAll() {
-  const doc = app.activeDocument;
-  if (!doc) { flashStatus("No document open", true); return; }
-  const all = getLinksArray(doc);
-  log(`Scanning all ${all.length} link(s)…`);
+  const targets = getScanTargets();
+  if (!targets.length) { flashStatus("No document open", true); return; }
+  const multi = targets.length > 1;
   const counts = { missing: 0, "out-of-date": 0, embedded: 0, normal: 0, other: 0 };
-  all.forEach(l => {
-    const lbl = linkStatusLabel(l);
-    if (counts[lbl] != null) counts[lbl]++; else counts.other++;
-    const st = (() => { try { return String(l.status); } catch (e) { return "?"; } })();
-    log(`  · ${l.name || "(unnamed)"} → ${lbl} [${st}]`);
-  });
-  renderLinkList(all, "No links in document");
+  const allItems = [];
+  for (const { doc, docName } of targets) {
+    const links = getLinksArray(doc);
+    log(`Scanning all ${links.length} link(s)${multi ? ` in ${docName}` : ""}…`);
+    links.forEach(l => {
+      const lbl = linkStatusLabel(l);
+      if (counts[lbl] != null) counts[lbl]++; else counts.other++;
+      const st = (() => { try { return String(l.status); } catch (e) { return "?"; } })();
+      log(`  · ${multi ? `[${docName}] ` : ""}${l.name || "(unnamed)"} → ${lbl} [${st}]`);
+      allItems.push({ link: l, docName: multi ? docName : "" });
+    });
+  }
+  renderLinkList(allItems, "No links in document");
   const parts = [];
   if (counts.missing) parts.push(`${counts.missing} missing`);
   if (counts["out-of-date"]) parts.push(`${counts["out-of-date"]} out-of-date`);
   if (counts.embedded) parts.push(`${counts.embedded} embedded`);
   if (counts.normal) parts.push(`${counts.normal} normal`);
-  flashStatus(`${all.length} total${parts.length ? ` · ${parts.join(", ")}` : ""}`);
+  flashStatus(`${allItems.length} total${parts.length ? ` · ${parts.join(", ")}` : ""}${multi ? ` · ${targets.length} docs` : ""}`);
 }
 
 async function relinkFromFolder() {
-  const doc = app.activeDocument;
-  if (!doc) { flashStatus("No document open", true); return; }
+  const targets = getScanTargets();
+  if (!targets.length) { flashStatus("No document open", true); return; }
   const lfs = getLfs();
   if (!lfs) { flashStatus("File system unavailable", true); return; }
 
@@ -1945,29 +1982,34 @@ async function relinkFromFolder() {
   if (!folder) return;
 
   const recursive = $("#optRecursive").checked;
+  const multi = targets.length > 1;
   flashStatus("Scanning folder…");
   const { map, baseMap } = await folderToFileMap(folder, recursive);
 
-  const missing = getLinksArray(doc).filter(isMissing);
-  let ok = 0, notFound = 0, failed = 0;
-  for (const link of missing) {
-    const name = (link.name || "").toLowerCase();
-    let entry = map.get(name);
-    if (!entry) {
-      const base = name.replace(/\.[^.]+$/, "");
-      entry = baseMap.get(base);
-    }
-    if (!entry) { notFound++; log(`  · not found: ${link.name}`, "warn"); continue; }
-    const nativePath = entry.nativePath;
-    const result = await tryRelink(link, nativePath);
-    if (result.ok) {
-      ok++;
-      log(`  · relinked: ${link.name}`, "success");
-    } else {
-      failed++;
+  let ok = 0, notFound = 0, failed = 0, totalMissing = 0;
+  for (const { doc, docName } of targets) {
+    const missing = getLinksArray(doc).filter(isMissing);
+    totalMissing += missing.length;
+    for (const link of missing) {
+      const tag = multi ? `[${docName}] ` : "";
+      const name = (link.name || "").toLowerCase();
+      let entry = map.get(name);
+      if (!entry) {
+        const base = name.replace(/\.[^.]+$/, "");
+        entry = baseMap.get(base);
+      }
+      if (!entry) { notFound++; log(`  · not found: ${tag}${link.name}`, "warn"); continue; }
+      const nativePath = entry.nativePath;
+      const result = await tryRelink(link, nativePath);
+      if (result.ok) {
+        ok++;
+        log(`  · relinked: ${tag}${link.name}`, "success");
+      } else {
+        failed++;
+      }
     }
   }
-  flashStatus(`Relinked ${ok}/${missing.length}${notFound ? ` · ${notFound} not found` : ""}${failed ? ` · ${failed} failed` : ""}`, notFound + failed > 0);
+  flashStatus(`Relinked ${ok}/${totalMissing}${notFound ? ` · ${notFound} not found` : ""}${failed ? ` · ${failed} failed` : ""}${multi ? ` · ${targets.length} docs` : ""}`, notFound + failed > 0);
   scanMissing(true);
 }
 
@@ -2077,49 +2119,69 @@ function buildRegexFromUI() {
 }
 
 async function applyRewrite() {
-  const doc = app.activeDocument;
-  if (!doc) { flashStatus("No document open", true); return; }
+  const targets = getScanTargets();
+  if (!targets.length) { flashStatus("No document open", true); return; }
   const built = buildRegexFromUI();
   if (!built) { flashStatus("Enter a pattern", true); return; }
   if (built.error) { flashStatus(`Invalid regex: ${built.error}`, true); return; }
 
   const replacement = $("#reReplace").value;
   const scope = getScope();
-  const links = getLinksArray(doc).filter(l => {
-    if (isEmbedded(l)) return false;
-    if (scope === "missing") return isMissing(l);
-    return true;
-  });
+  const multi = targets.length > 1;
 
-  // Build rewrite plan — no pre-existence check (UXP `request` perms block it);
+  // Build rewrite plan across targets — no pre-existence check (UXP `request` perms block it);
   // trust InDesign's link.status AFTER relink to tell us if the file was found.
   const plan = [];
-  for (const link of links) {
-    const oldPath = link.filePath || "";
-    if (!oldPath) continue;
-    const newPath = oldPath.replace(built.re, replacement);
-    if (newPath === oldPath) continue;
-    plan.push({ link, name: link.name || "", oldPath, newPath });
+  let considered = 0;
+  const sampleMisses = [];
+  for (const { doc, docName } of targets) {
+    const links = getLinksArray(doc).filter(l => {
+      if (isEmbedded(l)) return false;
+      if (scope === "missing") return isMissing(l);
+      return true;
+    });
+    for (const link of links) {
+      const oldPath = link.filePath || "";
+      if (!oldPath) continue;
+      considered++;
+      built.re.lastIndex = 0;
+      const newPath = oldPath.replace(built.re, replacement);
+      if (newPath === oldPath) {
+        if (sampleMisses.length < 3) sampleMisses.push({ docName, name: link.name || "", oldPath });
+        continue;
+      }
+      plan.push({ link, name: link.name || "", oldPath, newPath, docName });
+    }
   }
 
-  if (!plan.length) { flashStatus("No paths matched", true); log("No matching paths to relink", "warn"); return; }
+  if (!plan.length) {
+    flashStatus("No paths matched", true);
+    log(`No matching paths to relink (considered ${considered} link(s) across ${targets.length} doc(s), scope=${scope})`, "warn");
+    log(`Pattern: /${built.pattern}/${built.flags}`, "warn");
+    sampleMisses.forEach(s => {
+      log(`  · [${s.docName}] ${s.name}`, "warn");
+      log(`      filePath = ${JSON.stringify(s.oldPath)}`, "warn");
+    });
+    if (!considered) log("Tip: enable 'All opened docs' if the links live in a non-active document.", "warn");
+    return;
+  }
 
-  log(`Applying ${plan.length} relink${plan.length > 1 ? "s" : ""}…`);
+  log(`Applying ${plan.length} relink${plan.length > 1 ? "s" : ""}${multi ? ` across ${targets.length} docs` : ""}…`);
   let ok = 0, missing = 0, failed = 0;
   for (const r of plan) {
+    const tag = multi ? `[${r.docName}] ` : "";
     const result = await tryRelink(r.link, r.newPath);
     if (!result.ok) {
       failed++;
-      log(`  ✗ ${r.name}: ${result.error || "unknown error"}`, "error");
+      log(`  ✗ ${tag}${r.name}: ${result.error || "unknown error"}`, "error");
       continue;
     }
-    // After relink, InDesign updates link.status — missing vs normal is ground truth
     if (isMissing(r.link)) {
       missing++;
-      log(`  ⚠ ${r.name} → ${r.newPath} (still missing — file not found at target)`, "warn");
+      log(`  ⚠ ${tag}${r.name} → ${r.newPath} (still missing — file not found at target)`, "warn");
     } else {
       ok++;
-      log(`  ✓ ${r.name} → ${r.newPath}`, "success");
+      log(`  ✓ ${tag}${r.name} → ${r.newPath}`, "success");
     }
   }
 
@@ -2169,6 +2231,312 @@ function wireRelink() {
   });
 
   renderRecentPairs();
+}
+
+/* ============ SCALE CHECK ============ */
+// Detect placed graphics whose horizontal and vertical scale don't match
+// (aspect ratio broken — designer dragged a corner without holding shift).
+
+const SCALE_EPS = 0.001; // percent — tolerance for float noise
+const VECTOR_EXT_RE = /\.(ai|eps|pdf|svg)$/i;
+
+let scaleCheckIssues = [];       // cached for click handlers after render
+let scaleCheckPassItems = [];    // cached proportional items (shown when all-pass)
+let scaleCheckPassExpanded = false;
+let lastScaleSig = "";
+
+function scanScaleIssues(doc, opts) {
+  const vectorOnly = !!(opts && opts.vectorOnly);
+  const currentSpreadOnly = !!(opts && opts.currentSpreadOnly);
+  if (!doc) return { total: 0, issues: [], passing: [] };
+
+  let graphics = null;
+  try {
+    if (currentSpreadOnly) {
+      const win = app.activeWindow;
+      const spread = win && win.activeSpread;
+      graphics = spread ? spread.allGraphics : doc.allGraphics;
+    } else {
+      graphics = doc.allGraphics;
+    }
+  } catch (e) {
+    return { total: 0, issues: [], passing: [], error: e.message || String(e) };
+  }
+  if (!graphics || !graphics.length) return { total: 0, issues: [], passing: [] };
+
+  const issues = [];
+  const passing = [];
+  let total = 0;
+
+  for (let i = 0; i < graphics.length; i++) {
+    let g;
+    try { g = graphics[i]; } catch (e) { continue; }
+    if (!g) continue;
+
+    let linkName = "";
+    try { linkName = (g.itemLink && g.itemLink.name) || ""; } catch (e) {}
+    let displayName = linkName;
+    if (!displayName) {
+      try { displayName = (g.parent && g.parent.name) || ""; } catch (e) {}
+    }
+    if (!displayName) displayName = "(embedded graphic)";
+
+    if (vectorOnly && !VECTOR_EXT_RE.test(linkName)) continue;
+    total++;
+
+    let hs, vs;
+    try { hs = Number(g.horizontalScale); vs = Number(g.verticalScale); } catch (e) { continue; }
+    if (!Number.isFinite(hs) || !Number.isFinite(vs)) continue;
+
+    let frame = null, page = null, pageName = "", pageIdx = -1;
+    try { frame = g.parent; } catch (e) {}
+    try {
+      const pp = frame && frame.parentPage;
+      if (pp) { page = pp; pageName = pp.name; pageIdx = pp.documentOffset; }
+    } catch (e) {}
+
+    const delta = Math.abs(hs - vs);
+    const entry = {
+      name: displayName, hs, vs, delta,
+      pageName, pageIdx,
+      frame, page, graphic: g
+    };
+
+    if (delta <= SCALE_EPS) passing.push(entry);
+    else issues.push(entry);
+  }
+
+  const byPage = (a, b) => {
+    const pa = a.pageIdx < 0 ? Infinity : a.pageIdx;
+    const pb = b.pageIdx < 0 ? Infinity : b.pageIdx;
+    return pa - pb;
+  };
+  issues.sort((a, b) => byPage(a, b) || (b.delta - a.delta));
+  passing.sort(byPage);
+
+  return { total, issues, passing };
+}
+
+function renderIssueItemsHtml(issues) {
+  return issues.map((iss, idx) => {
+    const hs = iss.hs.toFixed(1);
+    const vs = iss.vs.toFixed(1);
+    const delta = iss.delta.toFixed(1);
+    const hClass = iss.hs < iss.vs ? "sc-val-lo" : "";
+    const vClass = iss.vs < iss.hs ? "sc-val-lo" : "";
+    const deltaClass = iss.delta > 5 ? "sc-delta-hi" : "sc-delta-lo";
+    const page = iss.pageName ? `p.${escapeHtml(iss.pageName)}` : "pasteboard";
+    return `
+      <div class="sc-item" data-issue-idx="${idx}">
+        <div class="sc-head">
+          <span class="sc-name" title="${escapeHtml(iss.name)}">${escapeHtml(iss.name)}</span>
+          <span class="sc-page">${page}</span>
+        </div>
+        <div class="sc-body">
+          <span class="sc-val ${hClass}">W ${hs}%</span>
+          <span class="sc-val ${vClass}">H ${vs}%</span>
+          <span class="sc-delta ${deltaClass}">Δ ${delta}%</span>
+          <button class="secondary small sc-select-btn" data-issue-idx="${idx}">Select</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderPassItemsHtml(passing) {
+  return passing.map((p, idx) => {
+    const hs = p.hs.toFixed(1);
+    const vs = p.vs.toFixed(1);
+    const page = p.pageName ? `p.${escapeHtml(p.pageName)}` : "pasteboard";
+    return `
+      <div class="sc-item sc-item-pass" data-pass-idx="${idx}">
+        <div class="sc-head">
+          <span class="sc-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+          <span class="sc-page">${page}</span>
+        </div>
+        <div class="sc-body">
+          <span class="sc-val sc-val-ok">W ${hs}%</span>
+          <span class="sc-val sc-val-ok">H ${vs}%</span>
+          <button class="secondary small sc-select-btn" data-pass-idx="${idx}">Select</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderScaleCheck(opts) {
+  const force = !!(opts && opts.force);
+  const summaryEl = $("#scaleCheckSummary");
+  const listEl = $("#scaleCheckList");
+  const passToggleEl = $("#scaleCheckPassToggle");
+  const passListEl = $("#scaleCheckPassList");
+  if (!summaryEl || !listEl || !passToggleEl || !passListEl) return;
+
+  let doc;
+  try { doc = app.activeDocument; } catch (e) { doc = null; }
+
+  const vectorOnly = !!($("#optScaleVectorOnly") && $("#optScaleVectorOnly").checked);
+  const currentSpreadOnly = !!($("#optScaleCurrentSpread") && $("#optScaleCurrentSpread").checked);
+
+  let result;
+  if (!doc) {
+    result = { total: 0, issues: [], passing: [], noDoc: true };
+  } else {
+    result = scanScaleIssues(doc, { vectorOnly, currentSpreadOnly });
+  }
+
+  const sigParts = [
+    `doc:${doc ? doc.name : "none"}`,
+    `v:${vectorOnly ? 1 : 0}`,
+    `cs:${currentSpreadOnly ? 1 : 0}`,
+    `t:${result.total}`,
+    `e:${result.error || ""}`
+  ];
+  for (let i = 0; i < result.issues.length; i++) {
+    const it = result.issues[i];
+    sigParts.push(`i:${it.name}|${it.hs.toFixed(4)}|${it.vs.toFixed(4)}|${it.pageIdx}`);
+  }
+  for (let i = 0; i < result.passing.length; i++) {
+    const it = result.passing[i];
+    sigParts.push(`p:${it.name}|${it.hs.toFixed(4)}|${it.pageIdx}`);
+  }
+  const sig = sigParts.join("#");
+  if (!force && sig === lastScaleSig) return;
+  lastScaleSig = sig;
+  scaleCheckIssues = result.issues;
+  scaleCheckPassItems = result.passing;
+
+  // Tab badge — visible from every top-tab so users notice scale issues even
+  // when working in Calculator/Relink.
+  const badgeEl = $("#scaleCheckBadge");
+  if (badgeEl) {
+    const n = result.issues.length;
+    if (n > 0) {
+      badgeEl.textContent = String(n);
+      badgeEl.classList.remove("tab-badge-hidden");
+    } else {
+      badgeEl.textContent = "";
+      badgeEl.classList.add("tab-badge-hidden");
+    }
+  }
+
+  // Reset shared state; each branch below sets what it needs.
+  listEl.innerHTML = "";
+  passListEl.innerHTML = "";
+  passToggleEl.innerHTML = "";
+  passToggleEl.classList.add("scale-pass-toggle-hidden");
+  passListEl.classList.add("scale-list-hidden");
+
+  if (result.noDoc) {
+    summaryEl.className = "scale-summary scale-summary-empty";
+    summaryEl.textContent = "No document open";
+    return;
+  }
+  if (result.error) {
+    summaryEl.className = "scale-summary scale-summary-warn";
+    summaryEl.textContent = `Scan error: ${result.error}`;
+    return;
+  }
+  if (result.total === 0) {
+    summaryEl.className = "scale-summary scale-summary-empty";
+    summaryEl.textContent = vectorOnly
+      ? "No vector graphics placed in document"
+      : "No placed graphics in document";
+    return;
+  }
+
+  if (result.issues.length === 0) {
+    summaryEl.className = "scale-summary scale-summary-ok";
+    summaryEl.textContent = `✓ All ${result.total} placed graphics are proportional`;
+  } else {
+    summaryEl.className = "scale-summary scale-summary-warn";
+    summaryEl.textContent = `⚠ ${result.issues.length} of ${result.total} placed graphics have broken ratio`;
+    listEl.innerHTML = renderIssueItemsHtml(result.issues);
+  }
+
+  // Pass list is shown as a collapsible section below issues whenever any
+  // proportional graphics exist. Visible in both all-pass and has-issues
+  // states so the designer can always verify what was checked.
+  if (result.passing.length > 0) {
+    passToggleEl.classList.remove("scale-pass-toggle-hidden");
+    passToggleEl.classList.toggle("is-expanded", scaleCheckPassExpanded);
+    passToggleEl.innerHTML = `<span class="scale-caret"></span>${scaleCheckPassExpanded ? "Hide" : "Show"} ${result.passing.length} proportional graphic${result.passing.length === 1 ? "" : "s"}`;
+    passListEl.innerHTML = renderPassItemsHtml(result.passing);
+    passListEl.classList.toggle("scale-list-hidden", !scaleCheckPassExpanded);
+  }
+}
+
+function selectScaleEntry(entry) {
+  if (!entry) return;
+  try {
+    if (entry.page && app.activeWindow) {
+      app.activeWindow.activePage = entry.page;
+    }
+  } catch (e) {}
+  try {
+    if (entry.frame) app.select(entry.frame);
+    else if (entry.graphic) app.select(entry.graphic);
+  } catch (e) {}
+}
+
+function togglePassListExpanded() {
+  scaleCheckPassExpanded = !scaleCheckPassExpanded;
+  const passToggleEl = $("#scaleCheckPassToggle");
+  const passListEl = $("#scaleCheckPassList");
+  if (passToggleEl) {
+    passToggleEl.classList.toggle("is-expanded", scaleCheckPassExpanded);
+    const n = scaleCheckPassItems.length;
+    passToggleEl.innerHTML = `<span class="scale-caret"></span>${scaleCheckPassExpanded ? "Hide" : "Show"} ${n} proportional graphic${n === 1 ? "" : "s"}`;
+  }
+  if (passListEl) passListEl.classList.toggle("scale-list-hidden", !scaleCheckPassExpanded);
+}
+
+function wireScaleCheck() {
+  const btn = $("#btnScaleRescan");
+  if (!btn) return;
+  btn.addEventListener("click", () => renderScaleCheck({ force: true }));
+
+  const vOnly = $("#optScaleVectorOnly");
+  if (vOnly) vOnly.addEventListener("change", () => renderScaleCheck({ force: true }));
+  const curSpread = $("#optScaleCurrentSpread");
+  if (curSpread) curSpread.addEventListener("change", () => renderScaleCheck({ force: true }));
+
+  const passToggleEl = $("#scaleCheckPassToggle");
+  if (passToggleEl) {
+    passToggleEl.addEventListener("click", () => {
+      if (passToggleEl.classList.contains("scale-pass-toggle-hidden")) return;
+      togglePassListExpanded();
+    });
+    passToggleEl.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && !passToggleEl.classList.contains("scale-pass-toggle-hidden")) {
+        e.preventDefault();
+        togglePassListExpanded();
+      }
+    });
+  }
+
+  const onListClick = (e) => {
+    const issueTarget = e.target.closest("[data-issue-idx]");
+    if (issueTarget) {
+      const idx = parseInt(issueTarget.getAttribute("data-issue-idx"), 10);
+      if (!Number.isNaN(idx)) selectScaleEntry(scaleCheckIssues[idx]);
+      return;
+    }
+    const passTarget = e.target.closest("[data-pass-idx]");
+    if (passTarget) {
+      const idx = parseInt(passTarget.getAttribute("data-pass-idx"), 10);
+      if (!Number.isNaN(idx)) selectScaleEntry(scaleCheckPassItems[idx]);
+    }
+  };
+  const issuesListEl = $("#scaleCheckList");
+  const passListEl = $("#scaleCheckPassList");
+  if (issuesListEl) issuesListEl.addEventListener("click", onListClick);
+  if (passListEl) passListEl.addEventListener("click", onListClick);
+
+  // Force fresh scan when user activates this tab (results may be stale if
+  // they were editing while another tab was visible).
+  const tabBtn = document.querySelector('[data-toptab="scalecheck"]');
+  if (tabBtn) tabBtn.addEventListener("click", () => renderScaleCheck({ force: true }));
 }
 
 /* ============ WIRING ============ */
@@ -2452,6 +2820,7 @@ function tickAutoRefresh() {
     loadLogos();
     refreshDocInfo();
     renderLogos();
+    renderScaleCheck({ force: true });
     lastSig = buildSignature(doc);
     return;
   }
@@ -2463,6 +2832,12 @@ function tickAutoRefresh() {
     refreshDocInfo();
     renderLogos();
   }
+
+  // Scale changes don't always change frame geometry (graphic scale can
+  // change without bounds moving), so scan every tick. Internal sig in
+  // renderScaleCheck skips DOM work when stable. Runs regardless of which
+  // tab is active so the tab badge stays fresh from anywhere.
+  renderScaleCheck();
 }
 
 function startAutoRefresh() {
@@ -2620,10 +2995,12 @@ function boot() {
   wireLog();
   wireLogos();
   wireRelink();
+  wireScaleCheck();
   wireSettings();
   renderSettingsForm();
   refreshDocInfo();
   renderLogos();
+  renderScaleCheck({ force: true });
   lastDocKey = docIdentityKey(app.activeDocument);
   lastSig = buildSignature(app.activeDocument);
   startAutoRefresh();

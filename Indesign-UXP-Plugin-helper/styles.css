@@ -78,6 +78,26 @@ textarea {
 .tab-panel { display: none; }
 .tab-panel.is-active { display: block; }
 
+/* Red pill badge embedded in a tab label (used on Scale Check to surface
+   issue count from any tab). */
+.tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+  color: #ffb8a0;
+  background: rgba(163, 38, 0, 0.2);
+  border: 1px solid var(--gg-accent);
+  border-radius: 8px;
+  vertical-align: 1px;
+  min-width: 14px;
+  text-align: center;
+}
+.tab-badge-hidden { display: none; }
+
 /* TOP TABS (outer) — UXP Spectrum injects button {color,background,border}
    with high specificity, so class rules need !important to win. */
 .top-tabs {
@@ -841,6 +861,20 @@ button[disabled] {
   color: var(--text-muted);
   background: var(--bg-input);
 }
+.rl-doc {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-input);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rl-missing {
   color: #ffb8a0;
   border-color: var(--gg-accent);
@@ -1062,6 +1096,180 @@ button[disabled] {
   font-size: 10px;
 }
 .app-footer-author strong {
+  color: var(--gg-green);
+  font-weight: 700;
+}
+
+/* SCALE CHECK */
+.scale-summary {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+}
+.scale-summary-empty {
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+.scale-summary-ok {
+  color: var(--gg-green);
+  background: rgba(89, 161, 57, 0.1);
+  border-color: var(--gg-green-dark);
+}
+.scale-summary-warn {
+  color: #ffb8a0;
+  background: rgba(163, 38, 0, 0.15);
+  border-color: var(--gg-accent);
+}
+
+/* Collapsible toggle header for the "proportional graphics" pass list.
+   Green-tinted so the "ok" items stay visually distinct from red issues. */
+.scale-pass-toggle {
+  padding: 7px 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gg-green);
+  background: rgba(89, 161, 57, 0.1);
+  border: 1px solid var(--gg-green-dark);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+  letter-spacing: 0.3px;
+}
+.scale-pass-toggle:hover {
+  background: rgba(89, 161, 57, 0.2);
+}
+.scale-pass-toggle-hidden { display: none; }
+
+/* UXP: transform:rotate unreliable on inline text → swap glyph instead
+   (same pattern as .log-caret). */
+.scale-caret {
+  display: inline-block;
+  margin-right: 6px;
+}
+.scale-caret::before { content: "\25B8"; }
+.scale-pass-toggle.is-expanded .scale-caret::before { content: "\25BE"; }
+
+.scale-controls {
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.scale-controls .checkbox-row {
+  font-size: 11px;
+}
+
+.scale-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 4px 0;
+}
+.scale-list:empty { display: none; }
+.scale-list.scale-list-hidden { display: none; }
+
+.sc-item {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.sc-item:hover {
+  border-color: var(--gg-green-dark);
+  background: #232323;
+}
+.sc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.sc-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 6px;
+}
+.sc-page {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-input);
+}
+.sc-body {
+  display: flex;
+  align-items: center;
+  font-family: -apple-system, "SF Mono", "Menlo", monospace;
+}
+.sc-body > * { margin-right: 6px; }
+.sc-body > *:last-child { margin-right: 0; }
+.sc-val {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  min-width: 60px;
+  text-align: center;
+}
+.sc-val-lo {
+  color: #ffb8a0;
+  border-color: var(--gg-accent);
+  background: rgba(163, 38, 0, 0.12);
+}
+.sc-val-ok {
+  color: var(--gg-green);
+  border-color: var(--gg-green-dark);
+  background: rgba(89, 161, 57, 0.1);
+}
+.sc-delta {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.sc-delta-lo {
+  color: #e3c86b;
+  border-color: #8a7a2a;
+  background: rgba(227, 200, 107, 0.12);
+}
+.sc-delta-hi {
+  color: #ffb8a0;
+  border-color: var(--gg-accent);
+  background: rgba(163, 38, 0, 0.18);
+}
+.sc-select-btn {
+  flex: 0 0 auto !important;
+  margin-left: auto;
+}
+
+.scale-tip {
+  margin-top: 8px;
+}
+.scale-tip strong {
   color: var(--gg-green);
   font-weight: 700;
 }

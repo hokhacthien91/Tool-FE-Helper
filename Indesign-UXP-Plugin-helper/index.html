@@ -9,6 +9,7 @@
   <div class="top-tabs">
     <div class="top-tab-btn is-active" role="button" tabindex="0" data-toptab="calculator">Calculator</div>
     <div class="top-tab-btn" role="button" tabindex="0" data-toptab="relink">Relink</div>
+    <div class="top-tab-btn" role="button" tabindex="0" data-toptab="scalecheck">Scale Check<span id="scaleCheckBadge" class="tab-badge tab-badge-hidden"></span></div>
   </div>
 
   <!-- CALCULATOR TOP TAB -->
@@ -123,6 +124,10 @@
     <div class="row">
       <button id="btnScanMissing" class="secondary">Scan missing</button>
       <button id="btnScanAll" class="secondary">Scan all</button>
+      <label class="checkbox-row relink-sub-opt">
+        <input type="checkbox" id="optAllDocs" />
+        <span>All opened docs</span>
+      </label>
     </div>
     <div class="row relink-action-row">
       <label class="checkbox-row relink-sub-opt">
@@ -168,6 +173,30 @@
     </div>
 
     <div id="relinkStatus" class="status"></div>
+  </div>
+
+  <!-- SCALE CHECK TOP TAB -->
+  <div class="top-tab-panel" data-toppanel="scalecheck">
+    <div id="scaleCheckSummary" class="scale-summary scale-summary-empty">No document open</div>
+
+    <div class="row scale-controls">
+      <button id="btnScaleRescan" class="secondary">⟳ Re-scan</button>
+      <label class="checkbox-row relink-sub-opt">
+        <input type="checkbox" id="optScaleVectorOnly" />
+        <span>Vector only</span>
+      </label>
+      <label class="checkbox-row relink-sub-opt">
+        <input type="checkbox" id="optScaleCurrentSpread" />
+        <span>Current spread</span>
+      </label>
+    </div>
+
+    <div id="scaleCheckList" class="scale-list"></div>
+
+    <div id="scaleCheckPassToggle" class="scale-pass-toggle" role="button" tabindex="0"></div>
+    <div id="scaleCheckPassList" class="scale-list scale-list-hidden"></div>
+
+    <div class="section-hint scale-tip">Tip: select a frame in InDesign then press <strong>Cmd+Alt+Shift+C</strong> (Fill Frame Proportionally) or <strong>Cmd+Alt+Shift+E</strong> (Fit Content Proportionally) to fix.</div>
   </div>
 
   <!-- LOGS (shared across all tabs) -->

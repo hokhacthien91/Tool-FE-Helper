@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Banner Helper — Hướng dẫn sử dụng</title>
+<style>
+  :root {
+    --gg-green: #b7e39b;
+    --gg-green-dark: #59a139;
+    --gg-accent: #a32600;
+    --bg-page: #121212;
+    --bg-card: #1c1c1c;
+    --bg-soft: #181818;
+    --border: #2a2a2a;
+    --text-primary: #f2f2f2;
+    --text-secondary: #bfbfbf;
+    --text-muted: #8a8a8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+  }
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  header {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    color: var(--gg-green);
+    letter-spacing: 0.4px;
+  }
+  header .ver {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gg-green);
+    background: rgba(89, 161, 57, 0.1);
+    border: 1px solid var(--gg-green-dark);
+    border-radius: 10px;
+    padding: 2px 8px;
+    margin-left: 8px;
+    vertical-align: 3px;
+    letter-spacing: 0.5px;
+  }
+  header .tag {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  header .author {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  header .author strong { color: var(--gg-green); }
+
+  nav.toc {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 32px;
+  }
+  nav.toc h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  nav.toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  nav.toc li { padding: 2px 0; }
+  nav.toc a {
+    color: var(--gg-green);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  nav.toc a:hover { text-decoration: underline; }
+
+  section {
+    margin-bottom: 40px;
+    scroll-margin-top: 20px;
+  }
+  section h2 {
+    margin: 0 0 14px;
+    font-size: 20px;
+    color: var(--gg-green);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  section h3 {
+    margin: 24px 0 8px;
+    font-size: 15px;
+    color: var(--text-primary);
+    letter-spacing: 0.3px;
+  }
+  section p {
+    color: var(--text-secondary);
+    margin: 8px 0;
+  }
+  section strong { color: var(--text-primary); }
+  section code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--gg-green);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin: 10px 0 18px;
+  }
+
+  ol, ul { padding-left: 22px; color: var(--text-secondary); }
+  ol li, ul li { margin: 4px 0; }
+  ol strong, ul strong { color: var(--text-primary); }
+
+  .kbd {
+    display: inline-block;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-primary);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin: 0 1px;
+  }
+
+  .tip {
+    background: rgba(89, 161, 57, 0.08);
+    border-left: 3px solid var(--gg-green-dark);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  .tip strong { color: var(--gg-green); }
+
+  .warn {
+    background: rgba(163, 38, 0, 0.08);
+    border-left: 3px solid var(--gg-accent);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    color: #ffcbba;
+    font-size: 13px;
+  }
+  .warn strong { color: #ffb8a0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { color: var(--text-secondary); }
+  td strong, td code { color: var(--text-primary); }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+  footer strong { color: var(--gg-green); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Banner Helper<span class="ver">v1.0.0</span></h1>
+  <div class="tag">InDesign UXP plugin — tính diện tích logo, relink hàng loạt, kiểm tra tỉ lệ scale.</div>
+  <div class="author">by <strong>Thien Ho</strong> · Technical Solution · Gravity Global</div>
+</header>
+
+<nav class="toc">
+  <h3>Mục lục</h3>
+  <ul>
+    <li><a href="#install">1. Cài đặt &amp; mở plugin</a></li>
+    <li><a href="#quickstart">2. Quick Start</a></li>
+    <li><a href="#calculator">3. Tab Calculator</a></li>
+    <li><a href="#settings">4. Tab Settings</a></li>
+    <li><a href="#relink">5. Tab Relink</a></li>
+    <li><a href="#scalecheck">6. Tab Scale Check</a></li>
+    <li><a href="#logs">7. Panel Logs</a></li>
+    <li><a href="#faq">8. FAQ / Tips</a></li>
+  </ul>
+</nav>
+
+<section id="install">
+  <h2>1. Cài đặt &amp; mở plugin</h2>
+  <ol>
+    <li>Mở <strong>Adobe UXP Developer Tool</strong>.</li>
+    <li>Add Plugin → chọn folder <code>Indesign-UXP-Plugin-helper</code> (có file <code>manifest.json</code>).</li>
+    <li>Trong InDesign: <strong>Window → Extensions → Banner Helper</strong>.</li>
+  </ol>
+  <div class="tip"><strong>Reload nhanh khi dev:</strong> vào UXP Developer Tool, nút <strong>Reload</strong> ở plugin row.</div>
+</section>
+
+<section id="quickstart">
+  <h2>2. Quick Start — 30 giây làm quen</h2>
+  <ol>
+    <li><strong>Mở doc</strong> InDesign muốn kiểm tra.</li>
+    <li><strong>Calculator</strong>: chọn 1 frame logo trong canvas → bấm <em>+ Add selection as logo</em> → thấy diện tích tính theo client ratio.</li>
+    <li><strong>Scale Check</strong>: plugin tự scan khi mở, badge đỏ trên tab báo số lỗi. Click vào tab → list logo bị sai tỉ lệ, nút Select để nhảy tới frame.</li>
+    <li><strong>Relink</strong>: file link bị thiếu / đường dẫn đổi → scan + chọn folder mới → relink hàng loạt.</li>
+  </ol>
+</section>
+
+<section id="calculator">
+  <h2>3. Tab Calculator — Logos</h2>
+  <p>Tính diện tích từng logo theo ratio của client, và tổng diện tích. Dùng cho báo giá / tính phần trăm brand coverage.</p>
+
+  <h3>3.1 Add logo</h3>
+  <ol>
+    <li>Chọn 1 frame trong InDesign.</li>
+    <li>Bấm <strong>+ Add selection as logo</strong>.</li>
+    <li>Dialog hiện ra: đặt tên + chọn client → OK.</li>
+  </ol>
+  <p>Mỗi logo hiển thị: tên, client, kích thước (W × H), diện tích (<code>W × H × ratio</code>). Click tên logo để edit, click vùng trống trên row để <strong>select</strong> frame đó trong InDesign.</p>
+
+  <h3>3.2 Page filter &amp; Compact view</h3>
+  <p>Doc nhiều page → thanh filter trên cùng hiện số page. Click để lọc logo của page đó. Page đang active có border xanh.</p>
+  <p>Icon <strong>≡</strong> = toggle compact view (row gọn hơn, ẩn bớt meta).</p>
+
+  <h3>3.3 Total + Copy CSV</h3>
+  <p>Footer hiển thị tổng số logo + tổng diện tích. <strong>Copy CSV</strong> copy toàn bộ list vào clipboard để paste vào Excel / Sheet.</p>
+
+  <h3>3.4 Report frame (auto-update)</h3>
+  <div class="card">
+    <p><strong>Mục đích:</strong> in bảng tổng kết ngay trong InDesign doc, tự update mỗi khi add/edit/xóa logo.</p>
+    <ol>
+      <li>Tạo 1 text frame trống trong doc (vị trí muốn show bảng).</li>
+      <li>Chọn frame → plugin → bấm <strong>Link selected frame</strong>.</li>
+      <li>Nhập <em>Title</em> (vd: "QSR Percentages").</li>
+    </ol>
+    <p>Output trong frame: <code>Title All = ...</code> + bảng 4 cột (Label | Square | = | Pct%). Style text giữ nguyên, plugin chỉ thay nội dung.</p>
+    <p><strong>Unlink</strong> để ngắt liên kết khi không muốn tự update nữa.</p>
+  </div>
+
+  <h3>3.5 Document name (stamp tên file)</h3>
+  <p>Chọn 1 text frame → bấm <strong>Link &amp; insert</strong> → plugin ghi tên file (bỏ <code>.indd</code>) vào frame đó. Mỗi lần đổi tên doc, frame tự update.</p>
+
+  <h3>3.6 Share — Export / Import</h3>
+  <p><strong>Export:</strong> lưu toàn bộ logos + clients + settings ra <code>.json</code>. Dùng để backup hoặc share setup sang máy khác.</p>
+  <p><strong>Import:</strong></p>
+  <ul>
+    <li>Client trùng tên → prompt <em>Override / Rename / Skip</em>.</li>
+    <li>Logo list → replace hoàn toàn (có confirm nếu đang có data).</li>
+    <li>Title + unit → overwrite nếu file có.</li>
+  </ul>
+</section>
+
+<section id="settings">
+  <h2>4. Tab Calculator — Settings</h2>
+
+  <h3>4.1 Display unit</h3>
+  <p>Chọn đơn vị hiển thị: <strong>Auto</strong> (theo ruler của doc), hoặc fix: <code>px / mm / cm / in</code>. Tất cả tính toán nội bộ vẫn chạy bằng points — chỉ display đổi.</p>
+
+  <h3>4.2 Clients</h3>
+  <p>Mỗi logo gắn với 1 client. Client có <strong>name</strong> + <strong>ratio</strong> (hệ số nhân lên diện tích thực khi tính giá).</p>
+  <p>Default:</p>
+  <table>
+    <thead><tr><th>Client</th><th>Ratio</th></tr></thead>
+    <tbody>
+      <tr><td>Pilot</td><td><code>0.587</code></td></tr>
+      <tr><td>Flying</td><td><code>0.556</code></td></tr>
+      <tr><td>Generic</td><td><code>1.0</code></td></tr>
+    </tbody>
+  </table>
+  <p><strong>+ Add client</strong> để thêm. Bấm <strong>Save settings</strong> để lưu (settings persist qua localStorage, áp dụng cho mọi doc).</p>
+</section>
+
+<section id="relink">
+  <h2>5. Tab Relink</h2>
+  <p>Fix link bị missing / out-of-date hàng loạt khi đổi máy, đổi đường dẫn, hoặc copy project sang folder khác.</p>
+
+  <h3>5.1 Relink to Folder</h3>
+  <ol>
+    <li><strong>Scan missing</strong> — list các link bị missing. <strong>Scan all</strong> = list tất cả kèm status.</li>
+    <li>Checkbox <strong>+ subfolders</strong> (default ON): tìm sâu vào subfolder khi relink.</li>
+    <li>Bấm <strong>Pick folder &amp; relink</strong> → chọn folder chứa file mới. Plugin match theo <em>tên file</em>.</li>
+  </ol>
+  <div class="tip"><strong>Checkbox "All opened docs"</strong> áp dụng <em>cả scan lẫn thao tác relink</em> (cả Pick folder &amp; Path Find &amp; Replace). Bật nó = tất cả doc đang mở đều bị ảnh hưởng. Tắt = chỉ active doc.</div>
+
+  <h3>5.2 Path Find &amp; Replace (regex)</h3>
+  <p>Khi chỉ phần <strong>đầu path</strong> đổi (vd: đổi user folder), không cần pick file lại từng cái.</p>
+  <div class="card">
+    <p><strong>Ví dụ:</strong> copy project từ máy đồng nghiệp sang máy mình.</p>
+    <p>Pattern: <code>/Users/anh\.le/</code><br>Replace: <code>/Users/thien.ho/</code></p>
+    <p>Scope:</p>
+    <ul>
+      <li><strong>Missing links only</strong> — chỉ rewrite link đang missing.</li>
+      <li><strong>All links</strong> — rewrite tất cả, kể cả link đang OK (cẩn thận).</li>
+    </ul>
+    <p>Dropdown <strong>Recent</strong> nhớ 5 cặp pattern/replace gần nhất — click để load lại.</p>
+  </div>
+  <div class="warn"><strong>Lưu ý:</strong> regex phải escape dấu chấm (<code>\.</code>). Chạy sai có thể làm link sai path — Undo (<span class="kbd">Cmd+Z</span>) trong InDesign revert được.</div>
+</section>
+
+<section id="scalecheck">
+  <h2>6. Tab Scale Check</h2>
+  <p>Phát hiện placed graphic bị scale <strong>không đều 2 chiều</strong> (designer kéo corner không giữ <span class="kbd">Shift</span> → logo méo). Tự scan khi mở plugin / switch doc / khi có thay đổi.</p>
+
+  <h3>6.1 Cách đọc kết quả</h3>
+  <div class="card">
+    <p><strong>Summary bar</strong> (trên cùng):</p>
+    <ul>
+      <li><span style="color:var(--gg-green)">✓ All N placed graphics are proportional</span> — toàn bộ OK.</li>
+      <li><span style="color:#ffb8a0">⚠ X of N placed graphics have broken ratio</span> — có lỗi.</li>
+    </ul>
+    <p><strong>Badge đỏ</strong> trên tab <em>Scale Check</em> hiện số lỗi — thấy từ mọi tab khác, không cần phải ở trong tab Scale Check mới biết.</p>
+  </div>
+
+  <h3>6.2 Row kết quả</h3>
+  <p>Mỗi dòng trong list lỗi:</p>
+  <ul>
+    <li><strong>Tên file link</strong> (vd: <code>logo-white.png</code>) + tag page (<code>p.1</code>, <code>p.2</code>…)</li>
+    <li><strong>W xx.x%</strong> / <strong>H xx.x%</strong> — scale ngang/dọc hiện tại. Giá trị <em>nhỏ hơn</em> được highlight đỏ.</li>
+    <li><strong>Δ xx.x%</strong> — delta (chênh lệch). Đỏ khi &gt; 5%, vàng khi ≤ 5%.</li>
+    <li>Nút <strong>Select</strong> — nhảy tới page + chọn frame đó ngay trong InDesign.</li>
+  </ul>
+
+  <h3>6.3 Filter</h3>
+  <ul>
+    <li><strong>Vector only</strong> — chỉ check <code>.ai / .eps / .pdf / .svg</code> (thường là logo). Default OFF = check tất cả placed graphics.</li>
+    <li><strong>Current spread</strong> — chỉ check spread đang active (nhanh khi doc dài).</li>
+  </ul>
+
+  <h3>6.4 Pass list (proportional graphics)</h3>
+  <p>Dưới list lỗi có toggle xanh <strong>▸ Show N proportional graphics</strong>. Click để xem danh sách các graphics đang OK — kèm scale values (vd <code>W 100%  H 100%</code>) để verify plugin đã quét đúng.</p>
+
+  <h3>6.5 Cách fix logo bị lỗi</h3>
+  <ol>
+    <li>Click <strong>Select</strong> trên row lỗi → plugin nhảy tới frame.</li>
+    <li>Trong InDesign bấm phím tắt:
+      <ul>
+        <li><span class="kbd">Cmd+Alt+Shift+C</span> — Fill Frame Proportionally (frame giữ size, image scale đều, có thể bị crop).</li>
+        <li><span class="kbd">Cmd+Alt+Shift+E</span> — Fit Content Proportionally (image scale đều, không crop, có thể để khoảng trống).</li>
+      </ul>
+    </li>
+    <li>Plugin tự re-scan sau 500ms → row biến mất khỏi list lỗi, badge giảm.</li>
+  </ol>
+
+  <div class="tip"><strong>Tiêu chí detect:</strong> <code>horizontalScale !== verticalScale</code> (tolerance 0.001%). Nghĩa là scale đều 98% / 98% vẫn PASS, nhưng 98.5% / 100% thì FAIL.</div>
+</section>
+
+<section id="logs">
+  <h2>7. Panel Logs (shared)</h2>
+  <p>Dưới cùng plugin, dùng chung cho cả 3 tab. Click header để expand/collapse.</p>
+  <ul>
+    <li><strong>Copy</strong> — copy toàn bộ log vào clipboard.</li>
+    <li><strong>Clear</strong> — xóa log.</li>
+  </ul>
+  <p>Log hữu ích khi relink fail hoặc import bị lỗi — đọc để biết file nào, lý do gì.</p>
+</section>
+
+<section id="faq">
+  <h2>8. FAQ / Tips</h2>
+
+  <h3>Plugin scan doc nào?</h3>
+  <p>Tất cả tab đều làm việc trên <strong>active document</strong>. Riêng Relink có option <em>All opened docs</em> để scan nhiều doc cùng lúc.</p>
+
+  <h3>Data có persist không?</h3>
+  <ul>
+    <li><strong>Logos</strong> — lưu trong label của doc <code>.indd</code> → theo doc, share với team khi share file.</li>
+    <li><strong>Settings (clients, unit, report title)</strong> — localStorage của plugin → theo máy.</li>
+    <li><strong>UI state (page filter, compact view)</strong> — localStorage → theo máy.</li>
+  </ul>
+
+  <h3>Plugin reload mất data?</h3>
+  <p>Không. Logos đọc từ doc label. Settings đọc từ localStorage. Reload chỉ refresh UI.</p>
+
+  <h3>Switch doc có phải re-scan không?</h3>
+  <p>Không. Plugin polling mỗi <strong>500ms</strong>, tự detect doc switch → load lại data + render list.</p>
+
+  <h3>Badge Scale Check không update?</h3>
+  <ol>
+    <li>Check xem đã mở đúng doc chưa (plugin chỉ scan active doc).</li>
+    <li>Bấm nút <strong>⟳ Re-scan</strong> trong tab Scale Check để force.</li>
+    <li>Nếu graphic nested sâu trong group → plugin vẫn quét (dùng <code>doc.allGraphics</code>).</li>
+  </ol>
+
+  <h3>Relink pick folder nhưng không relink được?</h3>
+  <ul>
+    <li>Check log — thường là tên file mismatch (viết hoa/thường).</li>
+    <li>Bật <strong>+ subfolders</strong> nếu file nằm trong subfolder.</li>
+    <li>Nếu chỉ path đổi (không đổi tên file) → dùng <strong>Path Find &amp; Replace</strong> thay vì Pick folder.</li>
+  </ul>
+
+  <h3>Muốn ignore 1 logo cố ý bị non-proportional?</h3>
+  <p>Chưa hỗ trợ trong v1. Tạm thời bỏ qua row đó trong list.</p>
+</section>
+
+<footer>
+  <div>Banner Helper · v1.0.0 · © 2026</div>
+  <div>by <strong>Thien Ho</strong> · Technical Solution · Gravity Global</div>
+</footer>
+
+</div>
+</body>
+</html>
