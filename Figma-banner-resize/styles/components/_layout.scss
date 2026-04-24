@@ -1,0 +1,254 @@
+@use "variables" as *;
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: $font;
+  font-size: $fs-base;
+  color: $text;
+  background: $bg;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+.header {
+  padding: $sp-lg $sp-lg $sp-sm;
+  h1 { font-size: $fs-lg; font-weight: 700; }
+  .subtitle { font-size: $fs-sm; color: $text-muted; margin-top: 2px; }
+  .subtitle.error { color: $danger; }
+}
+
+// Tabs
+.tabs {
+  display: flex;
+  border-bottom: 1px solid $border;
+  padding: 0 $sp-lg;
+  gap: 0;
+}
+
+.tab {
+  background: none;
+  border: none;
+  color: $text-muted;
+  font-size: $fs-sm;
+  font-weight: 500;
+  padding: $sp-sm $sp-md;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+
+  &:hover { color: $text; }
+  &.active { color: $primary; border-bottom-color: $primary; }
+}
+
+.tab-content {
+  display: none;
+  padding: $sp-lg;
+  &.active { display: block; }
+}
+
+// Section
+.section {
+  margin-bottom: $sp-lg;
+}
+.section-title {
+  font-size: $fs-sm;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: $text-muted;
+  margin-bottom: $sp-sm;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $sp-sm;
+}
+
+// Fields
+.field {
+  margin-bottom: $sp-sm;
+  label {
+    display: block;
+    font-size: $fs-xs;
+    color: $text-muted;
+    margin-bottom: 2px;
+    font-weight: 500;
+  }
+  input[type="text"],
+  input[type="number"] {
+    width: 100%;
+    background: $bg-input;
+    border: 1px solid $border;
+    border-radius: $radius-sm;
+    color: $text;
+    font-size: $fs-base;
+    padding: $sp-xs $sp-sm;
+    outline: none;
+    &:focus { border-color: $primary; }
+  }
+}
+
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: $sp-sm;
+  label { margin-bottom: 0; white-space: nowrap; }
+  input[type="number"] { width: 80px; }
+  input[type="range"] { flex: 1; }
+}
+
+.naming-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px;
+  gap: $sp-sm;
+}
+
+.naming-preview {
+  margin-top: $sp-xs;
+  font-size: $fs-xs;
+  color: $text-muted;
+  .mono { font-family: $font-mono; color: $text; }
+}
+
+// Buttons
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $border;
+  border-radius: $radius-sm;
+  background: $bg-light;
+  color: $text;
+  font-size: $fs-sm;
+  font-weight: 500;
+  padding: $sp-xs $sp-md;
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover { background: $bg-hover; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+.btn-primary {
+  background: $primary;
+  border-color: $primary;
+  color: #fff;
+  &:hover { background: $primary-hover; }
+}
+.btn-ghost {
+  background: none;
+  border-color: transparent;
+  color: $text-muted;
+  &:hover { color: $text; background: $bg-hover; }
+}
+.btn-sm { font-size: $fs-xs; padding: 2px $sp-sm; }
+.btn-full { width: 100%; padding: $sp-sm; }
+.btn-icon {
+  background: none;
+  border: none;
+  color: $text-muted;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: $radius-sm;
+  &:hover { color: $danger; background: rgba($danger, 0.15); }
+}
+
+// Checkbox
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: $sp-xs;
+  font-size: $fs-sm;
+  cursor: pointer;
+  input[type="checkbox"] { accent-color: $primary; }
+}
+
+// Status
+.status {
+  font-size: $fs-xs;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  &.pass { color: $success; background: rgba($success, 0.12); }
+  &.fail { color: $danger; background: rgba($danger, 0.12); }
+}
+
+// Progress bar
+.progress-bar {
+  position: relative;
+  height: 20px;
+  background: $bg-input;
+  border-radius: $radius-sm;
+  overflow: hidden;
+  margin-top: $sp-sm;
+}
+.progress-fill {
+  height: 100%;
+  background: $primary;
+  transition: width 0.2s;
+  border-radius: $radius-sm;
+}
+.progress-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: $fs-xs;
+  line-height: 20px;
+  color: $text;
+}
+
+// Modal
+.modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+}
+.modal-content {
+  position: relative;
+  background: $bg;
+  border: 1px solid $border;
+  border-radius: $radius;
+  padding: $sp-lg;
+  width: 260px;
+}
+.modal-title {
+  font-size: $fs-md;
+  font-weight: 600;
+  margin-bottom: $sp-md;
+}
+.modal-fields {
+  display: flex;
+  gap: $sp-sm;
+  margin-bottom: $sp-md;
+  .field { flex: 1; }
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: $sp-sm;
+}
+
+// Utility
+.hidden { display: none !important; }
+.empty-state {
+  text-align: center;
+  color: $text-muted;
+  padding: $sp-xl;
+  font-size: $fs-sm;
+}
+
+// Scrollbar
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: $border; border-radius: 3px; }

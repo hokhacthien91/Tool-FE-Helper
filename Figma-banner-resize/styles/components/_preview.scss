@@ -1,0 +1,51 @@
+@use "variables" as *;
+
+.banner-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $sp-sm;
+}
+
+.banner-card {
+  background: $bg-light;
+  border: 1px solid $border;
+  border-radius: $radius;
+  padding: $sp-sm;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-xs;
+}
+
+.banner-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.banner-name {
+  font-size: $fs-xs;
+  font-family: $font-mono;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.banner-card-body {
+  font-size: $fs-xs;
+}
+
+.banner-dim {
+  font-family: $font-mono;
+  color: $text-muted;
+}
+
+.banner-warn {
+  color: $warning;
+  font-size: $fs-xs;
+}
+
+.btn-select {
+  margin-top: auto;
+  font-size: $fs-xs;
+}

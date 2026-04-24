@@ -507,15 +507,46 @@ function buildUnifiedRow(entry, idx) {
   if (entry.kind === "text") {
     const input = row.querySelector("textarea");
     input.value = entry.newContent || "";
+
+    // UXP Chromium's native paste drops the whole buffer when clipboard
+    // contains variation selectors (U+FE0F etc). Insert manually; blur+focus
+    // after so Spectrum widget re-syncs and typing keeps working.
+    input.addEventListener("paste", (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const text = cd.getData("text/plain");
+      if (!text) return;
+      e.preventDefault();
+      const start = input.selectionStart ?? input.value.length;
+      const end   = input.selectionEnd   ?? input.value.length;
+      input.value = input.value.slice(0, start) + text + input.value.slice(end);
+      const pos = start + text.length;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      setTimeout(() => {
+        input.blur();
+        input.focus();
+        try { input.setSelectionRange(pos, pos); } catch (_) {}
+      }, 0);
+    });
+
+    // Keep state in sync synchronously so Apply reads the latest value,
+    // but coalesce heavy UI updates so fast typing doesn't starve UXP's
+    // input loop for long text.
+    let pendingRefresh = false;
     input.addEventListener("input", () => {
       state.allEntries[idx].newContent = input.value;
-      input.rows = Math.max(4, input.value.split("\n").length);
-      if (input.value.length > 0 && !idInput.value) {
-        const newId = nextLinkId();
-        idInput.value = newId;
-        state.allEntries[idx].linkId = newId;
-      }
-      refreshApplyEnabled();
+      if (pendingRefresh) return;
+      pendingRefresh = true;
+      setTimeout(() => {
+        pendingRefresh = false;
+        input.rows = Math.max(4, input.value.split("\n").length);
+        if (input.value.length > 0 && !idInput.value) {
+          const newId = nextLinkId();
+          idInput.value = newId;
+          state.allEntries[idx].linkId = newId;
+        }
+        refreshApplyEnabled();
+      }, 120);
     });
   }
 
@@ -1242,6 +1273,246 @@ async function renameTargetLayer(newName) {
 }
 
 // ─── Replace operations ────────────────────────────────
+function u(v) { return v?._value ?? v ?? null; }
+function fmtAA(v) {
+  if (v == null) return "null";
+  if (typeof v === "object") return `${v._value ?? "?"}(${v._enum ?? "?"})`;
+  return String(v);
+}
+// Subset of keys that actually affect rendering weight/position.
+const STYLE_WATCH_KEYS = [
+  "fontPostScriptName","fontName","fontStyleName","fontScript","fontTechnology",
+  "size","impliedFontSize",
+  "syntheticBold","syntheticItalic","fauxBold","fauxItalic","impliedFauxBold","impliedFauxItalic",
+  "autoLeading","leading","impliedLeading",
+  "tracking","impliedTracking","autoKerning","kerning",
+  "horizontalScale","verticalScale","impliedHorizontalScale","impliedVerticalScale",
+  "baseline","baselineShift","impliedBaselineShift",
+  "hindiNumbers","ligature","altligature","oldStyle","proportionalMetrics",
+  "noBreak","strikethrough","underline",
+  "fontCaps","baselineDirection","textLanguage",
+];
+function dumpTextDiag(label, desc) {
+  const tk = desc?.textKey;
+  if (!tk) { log(`  [DIAG ${label}] no textKey`); return; }
+  const ts = tk.textStyleRange?.[0]?.textStyle;
+  const ps = tk.paragraphStyleRange?.[0]?.paragraphStyle;
+  const sh = tk.textShape?.[0];
+  const b  = sh?.bounds;
+  const c  = ts?.color;
+  const tsrN = tk.textStyleRange?.length ?? 0;
+  const psrN = tk.paragraphStyleRange?.length ?? 0;
+
+  log(`  [DIAG ${label}] ranges tsr=${tsrN} psr=${psrN} txtLen=${tk.textKey?.length ?? "?"}`);
+  if (ts) {
+    log(`  [DIAG ${label}] font=${ts.fontPostScriptName || ts.fontName} style="${ts.fontStyleName||""}" size=${u(ts.size)} impliedSize=${u(ts.impliedFontSize)}`);
+    log(`  [DIAG ${label}] synthBold=${ts.syntheticBold} synthItalic=${ts.syntheticItalic} fauxBold=${ts.fauxBold} fauxItalic=${ts.fauxItalic} impliedFauxBold=${ts.impliedFauxBold} impliedFauxItalic=${ts.impliedFauxItalic}`);
+    log(`  [DIAG ${label}] autoLead=${ts.autoLeading} lead=${u(ts.leading)} impliedLead=${u(ts.impliedLeading)} tracking=${ts.tracking} impliedTracking=${ts.impliedTracking}`);
+    log(`  [DIAG ${label}] hScale=${u(ts.horizontalScale)} vScale=${u(ts.verticalScale)} impliedHScale=${u(ts.impliedHorizontalScale)} impliedVScale=${u(ts.impliedVerticalScale)}`);
+    log(`  [DIAG ${label}] baseline=${u(ts.baseline)} baselineShift=${u(ts.baselineShift)} impliedBaselineShift=${u(ts.impliedBaselineShift)}`);
+    if (c) log(`  [DIAG ${label}] color r=${u(c.red)} g=${u(c.grain ?? c.green)} b=${u(c.blue)}`);
+    // Report any textStyle keys we are NOT explicitly tracking — catches hidden round-trip fields.
+    const extra = Object.keys(ts).filter(k => !STYLE_WATCH_KEYS.includes(k) && !["_obj","color"].includes(k));
+    if (extra.length) log(`  [DIAG ${label}] extraKeys=${extra.join(",")}`);
+  }
+  // antiAlias can appear on textKey OR on textStyle — log both in raw form.
+  log(`  [DIAG ${label}] antiAlias(tk)=${fmtAA(tk.antiAlias)} antiAlias(ts)=${fmtAA(ts?.antiAlias)}`);
+  if (ps) {
+    log(`  [DIAG ${label}] align=${u(ps.align)} firstIndent=${u(ps.firstLineIndent)} spaceBefore=${u(ps.spaceBefore)} spaceAfter=${u(ps.spaceAfter)} hyphenate=${ps.hyphenate}`);
+    const extraP = Object.keys(ps).filter(k => !["_obj","align","firstLineIndent","spaceBefore","spaceAfter","hyphenate","startIndent","endIndent"].includes(k));
+    if (extraP.length) log(`  [DIAG ${label}] paraExtraKeys=${extraP.join(",")}`);
+  }
+  if (sh) {
+    const hasUnit = b && (b.top?._unit || b.left?._unit);
+    log(`  [DIAG ${label}] shape=${u(sh.char)} hasUnit=${!!hasUnit} bounds L=${u(b?.left)} T=${u(b?.top)} R=${u(b?.right)} B=${u(b?.bottom)} orient=${u(sh.orientation)}`);
+    if (sh.transform) {
+      const t = sh.transform;
+      log(`  [DIAG ${label}] shapeTransform xx=${t.xx} xy=${t.xy} yx=${t.yx} yy=${t.yy} tx=${t.tx} ty=${t.ty}`);
+    }
+  }
+  if (tk.transform) {
+    const t = tk.transform;
+    log(`  [DIAG ${label}] tkTransform xx=${t.xx} xy=${t.xy} yx=${t.yx} yy=${t.yy} tx=${t.tx} ty=${t.ty}`);
+  }
+  const lb = rectSize(desc.bounds);
+  log(`  [DIAG ${label}] layerBounds ${Math.round(lb.width)}×${Math.round(lb.height)} @ ${Math.round(lb.left)},${Math.round(lb.top)}`);
+  // boundsNoEffects is the raw text bounds without layer effects — useful to see baseline drift.
+  if (desc.boundsNoEffects) {
+    const lbn = rectSize(desc.boundsNoEffects);
+    log(`  [DIAG ${label}] boundsNoEffects ${Math.round(lbn.width)}×${Math.round(lbn.height)} @ ${Math.round(lbn.left)},${Math.round(lbn.top)}`);
+  }
+}
+
+// Log full style object being sent (stringified, but trimmed).
+function dumpSentStyle(label, styleObj) {
+  if (!styleObj) { log(`  [DIAG ${label}] no style`); return; }
+  const keys = Object.keys(styleObj);
+  log(`  [DIAG ${label}] allKeys(${keys.length})=${keys.join(",")}`);
+  try {
+    const json = JSON.stringify(styleObj, (k, v) => {
+      if (v && typeof v === "object" && "_value" in v && Object.keys(v).length <= 3) return `${v._value}${v._unit ? v._unit : ""}`;
+      return v;
+    });
+    // Split long JSON so the log file stays readable.
+    const CHUNK = 500;
+    for (let i = 0; i < json.length; i += CHUNK) log(`  [DIAG ${label}] json[${i}]=${json.slice(i, i + CHUNK)}`);
+  } catch (e) {
+    log(`  [DIAG ${label}] json err: ${e.message}`);
+  }
+}
+
+// ─── Mixed-style preservation ──────────────────────────
+// Extracts <sup>…</sup> and <sub>…</sub> spans so the caller can apply a
+// "superscript-like" / "subscript-like" style to those spans in the new text.
+// Tags are stripped; returned positions are in the cleaned text. Markers are
+// case-insensitive and non-nested (lazy match).
+function stripStyleMarkers(text) {
+  const spans = [];
+  let clean = "";
+  const re = /<(sup|sub)>([\s\S]*?)<\/\1>/gi;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    clean += text.slice(last, m.index);
+    const from = clean.length;
+    clean += m[2];
+    spans.push({ kind: m[1].toLowerCase(), from, to: clean.length });
+    last = m.index + m[0].length;
+  }
+  clean += text.slice(last);
+  return { clean, spans };
+}
+
+// LCS-based char-level map: returns an array of length oldText.length whose
+// value at index i is the corresponding index in newText, or -1 if the char
+// was not part of the common subsequence.
+function lcsMapOldToNew(oldText, newText) {
+  const n = oldText.length, m = newText.length;
+  const map = new Array(n).fill(-1);
+  if (!n || !m) return map;
+  // Cap memory at ~16MB (4M ints). Fall back to identity map beyond that.
+  if (n * m > 4_000_000) {
+    const lim = Math.min(n, m);
+    for (let i = 0; i < lim; i++) if (oldText.charCodeAt(i) === newText.charCodeAt(i)) map[i] = i;
+    return map;
+  }
+  const dp = [];
+  for (let i = 0; i <= n; i++) dp.push(new Int32Array(m + 1));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      if (oldText.charCodeAt(i - 1) === newText.charCodeAt(j - 1)) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = dp[i - 1][j] >= dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
+    }
+  }
+  let i = n, j = m;
+  while (i > 0 && j > 0) {
+    if (oldText.charCodeAt(i - 1) === newText.charCodeAt(j - 1)) {
+      map[i - 1] = j - 1;
+      i--; j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--;
+    else j--;
+  }
+  return map;
+}
+
+// Clone the base style and force a super/subscript baseline + size scale.
+// Used when the PSD has no existing super/sub range to copy from.
+function synthesizeBaselineStyle(base, kind) {
+  if (!base) return base;
+  const cloned = { ...base };
+  cloned.baseline = {
+    _enum: "baselineType",
+    _value: kind === "sub" ? "subScript" : "superScript",
+  };
+  const sz = base?.size?._value;
+  if (typeof sz === "number") {
+    const scaled = Math.round(sz * 0.583 * 100) / 100;
+    cloned.size = { _unit: "pointsUnit", _value: scaled };
+    if ("impliedFontSize" in cloned) cloned.impliedFontSize = { _unit: "pointsUnit", _value: scaled };
+  }
+  delete cloned.impliedFauxBold;
+  delete cloned.impliedFauxItalic;
+  return cloned;
+}
+
+// Pick a textStyle for the requested marker kind ("sup" | "sub"):
+//   1) an original range whose baseline/otbaseline explicitly matches
+//   2) (sup only) an original range with a smaller size than base
+//   3) synthesized baseline style derived from base (guaranteed correct rendering)
+function pickMarkerStyle(ranges, baseRange, kind) {
+  const base = baseRange?.textStyle;
+  const baseSize = base?.size?._value ?? base?.size ?? 0;
+  const wantSub = kind === "sub";
+  const hit = s => {
+    const bl = String(s?.baseline?._value ?? s?.baseline ?? "").toLowerCase();
+    const ob = String(s?.otbaseline?._value ?? s?.otbaseline ?? "").toLowerCase();
+    const needle = wantSub ? "sub" : "super";
+    return bl.includes(needle) || ob.includes(needle);
+  };
+  for (const r of ranges) {
+    if (r === baseRange) continue;
+    if (hit(r.textStyle)) { return { style: r.textStyle, source: "matched" }; }
+  }
+  if (!wantSub) {
+    for (const r of ranges) {
+      if (r === baseRange) continue;
+      const sz = r.textStyle?.size?._value ?? r.textStyle?.size ?? 0;
+      if (sz > 0 && baseSize > 0 && sz < baseSize) return { style: r.textStyle, source: "smallerSize" };
+    }
+  }
+  return { style: synthesizeBaselineStyle(base, kind), source: "synthesized" };
+}
+
+// Rebuilds textStyleRange entries for `newText` by:
+//   1) Picking the longest old range as the base style.
+//   2) Mapping each non-base old range onto newText via LCS char alignment.
+//   3) Overriding any sup-marker span with a "sup-like" style.
+//   4) Collapsing the per-char assignment into contiguous ranges.
+function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
+  if (!oldRanges?.length || !newText.length) {
+    return [{ _obj: "textStyleRange", from: 0, to: newText.length, textStyle: oldRanges?.[0]?.textStyle }];
+  }
+  let baseRange = oldRanges[0], baseLen = -1;
+  for (const r of oldRanges) {
+    const len = Math.max(0, (r.to ?? 0) - (r.from ?? 0));
+    if (len > baseLen) { baseLen = len; baseRange = r; }
+  }
+  const baseStyle = baseRange.textStyle;
+  const supPick = pickMarkerStyle(oldRanges, baseRange, "sup");
+  const subPick = pickMarkerStyle(oldRanges, baseRange, "sub");
+  const markerStyles = { sup: supPick.style, sub: subPick.style };
+  if ((markerSpans || []).length) {
+    log(`  [TXT] marker styles: sup=${supPick.source} sub=${subPick.source}`);
+  }
+
+  const posStyle = new Array(newText.length).fill(baseStyle);
+
+  const map = lcsMapOldToNew(oldText, newText);
+  for (const r of oldRanges) {
+    if (r === baseRange) continue;
+    const from = Math.max(0, r.from ?? 0);
+    const to = Math.min(oldText.length, r.to ?? 0);
+    for (let k = from; k < to; k++) {
+      const nj = map[k];
+      if (nj >= 0) posStyle[nj] = r.textStyle;
+    }
+  }
+
+  for (const span of markerSpans || []) {
+    const style = markerStyles[span.kind] || baseStyle;
+    for (let k = span.from; k < Math.min(span.to, newText.length); k++) posStyle[k] = style;
+  }
+
+  const out = [];
+  let start = 0;
+  for (let k = 1; k <= newText.length; k++) {
+    if (k === newText.length || posStyle[k] !== posStyle[start]) {
+      out.push({ _obj: "textStyleRange", from: start, to: k, textStyle: posStyle[start] });
+      start = k;
+    }
+  }
+  return out.length ? out : [{ _obj: "textStyleRange", from: 0, to: newText.length, textStyle: baseStyle }];
+}
+
 async function replaceTextOnLayer(occ, newContent) {
   await selectLayerById(occ.layerId);
   const preDesc = await getTargetLayerDescriptor();
@@ -1249,13 +1520,19 @@ async function replaceTextOnLayer(occ, newContent) {
     throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${preDesc.layerID})`);
   }
   const wasVisible = preDesc.visible !== false;
-  const psContent = newContent.replace(/\r?\n/g, "\r");
+  const { clean: rawClean, spans: markerSpans } = stripStyleMarkers(newContent);
+  const psContent = rawClean.replace(/\r?\n/g, "\r");
+  if (markerSpans.length) {
+    const counts = markerSpans.reduce((a, s) => (a[s.kind] = (a[s.kind] || 0) + 1, a), {});
+    log(`  [TXT] style markers stripped: ${JSON.stringify(counts)}`);
+  }
   const tk = preDesc.textKey;
   if (tk && !tk.textShape && preDesc.textShape) tk.textShape = preDesc.textShape;
 
   const isPointText = !tk?.textShape?.length || tk.textShape[0]?.char?._value !== "box";
   const oldBounds = rectSize(preDesc.bounds);
   log(`  [TXT] type=${isPointText ? "point" : "box"} before=${Math.round(oldBounds.width)}×${Math.round(oldBounds.height)} @ ${Math.round(oldBounds.left)},${Math.round(oldBounds.top)}`);
+  dumpTextDiag("PRE", preDesc);
 
   // Convert point→paragraph BEFORE reading fresh descriptor and setting content
   if (isPointText && oldBounds.width > 0) {
@@ -1276,21 +1553,37 @@ async function replaceTextOnLayer(occ, newContent) {
   const hasBox = freshTK?.textShape?.[0]?.char?._value === "box";
   const boxRight = freshTK?.textShape?.[0]?.bounds?.right ?? "none";
   log(`  [TXT] freshDesc: hasBox=${hasBox} right=${boxRight}`);
+  dumpTextDiag("MID", freshDesc);
   const toObj = { _obj: "textLayer", textKey: psContent };
 
   if (freshTK) {
     const newLen = psContent.length;
-    if (freshTK.textStyleRange && freshTK.textStyleRange.length) {
-      const ranges = freshTK.textStyleRange.map((r, i, arr) => {
-        const clone = { _obj: "textStyleRange", from: r.from, to: r.to, textStyle: r.textStyle };
-        if (i === arr.length - 1) clone.to = newLen;
-        return clone;
-      });
-      if (ranges.length === 1) ranges[0].from = 0;
+    // Use PRE style ranges (original fonts), not freshTK — convertToParagraphText resets
+    // range[0] to the parent style (e.g. Roboto-CondensedLight → MyriadPro-Regular),
+    // which would make the rendered text visibly heavier and wrong.
+    const styleSource = (tk?.textStyleRange?.length) ? tk : freshTK;
+    log(`  [TXT] styleSource=${styleSource === tk ? "PRE" : "MID"} (preserves original font)`);
+    if (styleSource.textStyleRange && styleSource.textStyleRange.length) {
+      // Map original style ranges onto the new text via LCS char alignment so that
+      // per-glyph formatting (e.g. superscript ®) follows its character instead of
+      // sticking to stale offsets. <sup>…</sup> markers in the input override onto
+      // the "sup-like" style picked from the original ranges.
+      const oldText = styleSource.textKey || tk?.textKey || "";
+      const ranges = buildRangesForNewText(oldText, styleSource.textStyleRange, psContent, markerSpans);
+      log(`  [TXT] rebuilt ranges: ${ranges.length} from ${styleSource.textStyleRange.length} (markers=${markerSpans.length})`);
+      for (let i = 0; i < ranges.length; i++) {
+        const r = ranges[i];
+        const ts = r.textStyle || {};
+        const bl = ts.baseline?._value ?? ts.baseline;
+        const ob = ts.otbaseline?._value ?? ts.otbaseline;
+        const sz = ts.size?._value ?? ts.size;
+        log(`  [TXT] range[${i}] ${r.from}-${r.to} font=${ts.fontPostScriptName || ts.fontName} size=${sz} baseline=${bl} otbaseline=${ob}`);
+      }
       toObj.textStyleRange = ranges;
     }
-    if (freshTK.paragraphStyleRange && freshTK.paragraphStyleRange.length) {
-      const paras = freshTK.paragraphStyleRange.map((p, i, arr) => {
+    const paraSource = (tk?.paragraphStyleRange?.length) ? tk : freshTK;
+    if (paraSource.paragraphStyleRange && paraSource.paragraphStyleRange.length) {
+      const paras = paraSource.paragraphStyleRange.map((p, i, arr) => {
         const clone = { _obj: "paragraphStyleRange", from: p.from, to: p.to, paragraphStyle: p.paragraphStyle };
         if (i === arr.length - 1) clone.to = newLen;
         return clone;
@@ -1298,7 +1591,9 @@ async function replaceTextOnLayer(occ, newContent) {
       if (paras.length === 1) paras[0].from = 0;
       toObj.paragraphStyleRange = paras;
     }
-    if (freshTK.antiAlias) toObj.antiAlias = freshTK.antiAlias;
+    // Prefer PRE antiAlias — same rationale (convert can change rendering hints).
+    if (tk?.antiAlias) toObj.antiAlias = tk.antiAlias;
+    else if (freshTK.antiAlias) toObj.antiAlias = freshTK.antiAlias;
     if (freshTK.orientation) toObj.orientation = freshTK.orientation;
     // Preserve box (now paragraph text after conversion)
     if (freshTK.textShape && freshTK.textShape.length) {
@@ -1323,6 +1618,19 @@ async function replaceTextOnLayer(occ, newContent) {
     }
   }
 
+  // Log what we are about to send
+  const sentTS = toObj.textStyleRange?.[0]?.textStyle;
+  if (sentTS) {
+    log(`  [DIAG SENT] font=${sentTS.fontPostScriptName || sentTS.fontName} size=${u(sentTS.size)} impliedSize=${u(sentTS.impliedFontSize)} synthBold=${sentTS.syntheticBold} fauxBold=${sentTS.fauxBold} impliedFauxBold=${sentTS.impliedFauxBold}`);
+    log(`  [DIAG SENT] antiAlias(obj)=${fmtAA(toObj.antiAlias)} antiAlias(style)=${fmtAA(sentTS.antiAlias)} tsrN=${toObj.textStyleRange?.length} psrN=${toObj.paragraphStyleRange?.length}`);
+    const sb = toObj.textShape?.[0]?.bounds;
+    if (sb) log(`  [DIAG SENT] shapeBounds L=${sb.left} T=${sb.top} R=${sb.right} B=${sb.bottom}`);
+    dumpSentStyle("SENT-STYLE", sentTS);
+    if (toObj.paragraphStyleRange?.[0]?.paragraphStyle) {
+      dumpSentStyle("SENT-PARA", toObj.paragraphStyleRange[0].paragraphStyle);
+    }
+  }
+
   await bp([{
     _obj: "set",
     _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
@@ -1330,10 +1638,62 @@ async function replaceTextOnLayer(occ, newContent) {
     _options: { dialogOptions: "dontDisplay" }
   }]);
 
+  // Realign so the new layer sits at the original visual position.
+  // Point text was anchored at the first-line baseline, but after point→box
+  // conversion PS anchors at top-left and the box is often wider than the visual
+  // bounds — left and top drift. We translate so that:
+  //   - horizontal center matches oldBounds center (center-aligned point text)
+  //   - top of the rendered text matches oldBounds.top
+  if (isPointText && oldBounds.width > 0) {
+    const afterSet = await getTargetLayerDescriptor();
+    const nb = rectSize(afterSet.bounds);
+    if (nb.width > 0 && nb.height > 0) {
+      const oldCenterX = oldBounds.left + oldBounds.width / 2;
+      const newCenterX = nb.left + nb.width / 2;
+      const dx = oldCenterX - newCenterX;
+      const dy = oldBounds.top - nb.top;
+      log(`  [TXT] realign dx=${Math.round(dx)} dy=${Math.round(dy)} (old@${Math.round(oldBounds.left)},${Math.round(oldBounds.top)} new@${Math.round(nb.left)},${Math.round(nb.top)})`);
+      const activeIds = (app.activeDocument.activeLayers || []).map(l => l.id).join(",");
+      log(`  [TXT] activeLayers=[${activeIds}] target=${occ.layerId}`);
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        try {
+          // Target the layer explicitly by ID — activeLayers[0] sometimes shifts
+          // after `set textKey`, especially inside artboards.
+          const moveResult = await bp([{
+            _obj: "move",
+            _target: [{ _ref: "layer", _id: occ.layerId }],
+            to: {
+              _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: dx },
+              vertical:   { _unit: "pixelsUnit", _value: dy },
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`  [TXT] move batchPlay ok=${!!moveResult}`);
+          // Verify it moved by re-reading bounds immediately.
+          await selectLayerById(occ.layerId);
+          const verifyDesc = await getTargetLayerDescriptor();
+          const vb = rectSize(verifyDesc.bounds);
+          log(`  [TXT] post-move bounds @ ${Math.round(vb.left)},${Math.round(vb.top)} ${Math.round(vb.width)}×${Math.round(vb.height)}`);
+        } catch (e) {
+          log(`  [TXT] realign failed: ${e.message}`);
+          // Fallback: DOM translate.
+          try {
+            const lyr = app.activeDocument.activeLayers[0];
+            if (lyr) await lyr.translate(dx, dy);
+            log(`  [TXT] fallback DOM translate done`);
+          } catch (e2) {
+            log(`  [TXT] DOM translate also failed: ${e2.message}`);
+          }
+        }
+      }
+    }
+  }
 
   // Log final state
+  const endDesc = await getTargetLayerDescriptor();
+  dumpTextDiag("POST", endDesc);
   if (isPointText) {
-    const endDesc = await getTargetLayerDescriptor();
     const endBounds = rectSize(endDesc.bounds);
     const endChar = endDesc.textKey?.textShape?.[0]?.char?._value ?? "?";
     log(`  [TXT] final: ${Math.round(endBounds.width)}×${Math.round(endBounds.height)} @ ${Math.round(endBounds.left)},${Math.round(endBounds.top)} char=${endChar} (target w=${Math.round(oldBounds.width)})`);
@@ -1910,28 +2270,3 @@ try {
 renderEmptyStates();
 refreshApplyEnabled();
 refreshSaveEnabled();
-
-// ─── Wheel forwarding ─────────────────────────────────
-// UXP Chromium traps wheel events on <select>, <input>, and <textarea>
-// (wrapped by Spectrum internals), so the .app scroll container never
-// sees them. Intercept in capture phase and forward when the target
-// can't (or shouldn't) consume the scroll.
-(function installWheelForward() {
-  const appEl = document.querySelector(".app");
-  if (!appEl) return;
-  appEl.addEventListener("wheel", (e) => {
-    const el = e.target;
-    if (!el || !el.tagName) return;
-    const tag = el.tagName;
-    if (tag === "TEXTAREA") {
-      const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      // Let textarea handle its own scroll unless at an edge
-      if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return;
-    } else if (tag !== "SELECT" && tag !== "INPUT") {
-      return; // only forward for form controls that trap wheel
-    }
-    e.preventDefault();
-    appEl.scrollTop += e.deltaY;
-  }, { passive: false, capture: true });
-})();

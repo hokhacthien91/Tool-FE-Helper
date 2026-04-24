@@ -1,0 +1,1125 @@
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Replacer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="mode-replace">
+  <div class="app">
+    <div class="section scan-mode">
+      <div class="label">Scan mode</div>
+      <label class="radio-row">
+        <input type="radio" name="scanMode" value="current" checked="checked">
+        <span>Current document (multiple artboards)</span>
+      </label>
+      <label class="radio-row">
+        <input type="radio" name="scanMode" value="all">
+        <span>All open documents</span>
+      </label>
+      <div class="label" style="margin-top: 10px;">Matching</div>
+      <label class="radio-row">
+        <input type="checkbox" id="matchByNameOnly">
+        <span>Match by layer name only (ignore path)</span>
+      </label>
+    </div>
+
+    <div class="section">
+      <button id="scanBtn" class="btn btn-primary btn-full">Scan document</button>
+    </div>
+    <div id="summaryBar" class="summary-bar"><span class="pending">1 rename</span> ready across 13 layers</div>
+
+    <div class="section info-card" id="infoCard">
+      <div><strong>Open Docs:</strong> <span id="docCount">1</span></div>
+      <div><strong>Targets:</strong> <span id="targetCount">13</span> <span id="targetBreakdown" class="sizes-count">(1 multi-artboard)</span></div>
+      <div id="scanStatus" class="json-status loaded">Found 13 text, 17 image, 10 group, 11 other layers</div>
+      <div id="dirtyStatus" class="json-status loaded"></div>
+    </div>
+
+    <div id="progressSection" class="section clone-progress" style="display:none;">
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      <div id="progressText" class="progress-text">Working…</div>
+    </div>
+
+    <div id="artboardsSection" class="section collapsible-section" style="display: block;">
+      <div class="log-header" id="artboardsToggle">
+        <div class="label">Artboards <span id="artboardsCount" class="sizes-count">(13/13)</span> <span class="toggle-icon">▶</span></div>
+        <div class="log-btn-group">
+          <button id="artboardsAllBtn" class="btn btn-tertiary" title="Enable all (or all matching search)">All</button>
+          <button id="artboardsNoneBtn" class="btn btn-tertiary" title="Disable all (or all matching search)">None</button>
+        </div>
+      </div>
+      <div id="artboardsBody" style="display:none;">
+        <div class="search-bar artboards-search" id="artboardsSearchBar" style="display: flex;">
+          <input id="artboardsSearchInput" type="text" placeholder="Search artboards…">
+          <button id="artboardsSearchClear" class="search-clear" title="Clear">×</button>
+        </div>
+        <div class="artboard-rename" id="artboardRenameBox">
+          <div class="artboard-rename-label">Rename (keeps <code>_WxH</code> suffix)</div>
+          <input id="artboardRenameCurrent" type="text" class="artboard-rename-input" placeholder="Current name" readonly="" value="P0010809-Africa-Twin-Dealer-Materials-Banners_320x50">
+          <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="New name (e.g. P001_honda_)">
+          <button id="artboardRenameBtn" class="btn btn-secondary btn-full">Rename artboards</button>
+        </div>
+        <div id="artboardsList" class="artboards-list"><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_320x50</span>
+      <span class="ab-meta">320×50</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_300x600</span>
+      <span class="ab-meta">300×600</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_970x250</span>
+      <span class="ab-meta">970×250</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_300x250</span>
+      <span class="ab-meta">300×250</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_728x90</span>
+      <span class="ab-meta">728×90</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_160x600</span>
+      <span class="ab-meta">160×600</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_2000x900</span>
+      <span class="ab-meta">2000×900</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_1920x823</span>
+      <span class="ab-meta">1920×823</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_1920x640</span>
+      <span class="ab-meta">1920×640</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_1920x620</span>
+      <span class="ab-meta">1920×620</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_1920x1080</span>
+      <span class="ab-meta">1920×1080</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_1366x768</span>
+      <span class="ab-meta">1366×768</span>
+    </label><label class="artboard-row">
+      <input type="checkbox" checked="">
+      <span class="ab-name">P0010809-Africa-Twin-Dealer-Materials-Banners_360x640</span>
+      <span class="ab-meta">360×640</span>
+    </label></div>
+      </div>
+    </div>
+
+    <div id="appendTextSection" class="section collapsible-section" style="display: block;">
+      <div class="log-header" id="appendTextToggle">
+        <div class="label">Append Text Layer <span id="appendTextCount" class="sizes-count">(13)</span> <span class="toggle-icon">▶</span></div>
+      </div>
+      <div id="appendTextBody" class="append-text-body" style="display:none;">
+        <div class="at-top" style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;">
+          <label class="at-sync" style="display:flex;align-items:center;">
+            <input type="checkbox" id="appendTextAutoSync" checked="">
+            <span>Auto-sync with selection</span>
+          </label>
+          <button id="appendTextSampleBtn" class="btn btn-accent">Sample from selection</button>
+        </div>
+
+        <div class="at-label">Content</div>
+        <textarea id="appendTextContent" class="at-input at-textarea" rows="2" placeholder="Text content (multi-line ok)"></textarea>
+
+        <div class="at-label">Font</div>
+        <input id="appendTextFont" class="at-input" type="text" value="Arial">
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell">
+            <div class="at-label">Size (pt)</div>
+            <input id="appendTextSize" class="at-input" type="text" inputmode="numeric" value="12">
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Line height (pt)</div>
+            <input id="appendTextLeading" class="at-input" type="text" inputmode="numeric" value="" placeholder="auto">
+          </div>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell">
+            <div class="at-label">Color</div>
+            <input id="appendTextColor" class="at-input" type="text" value="#000000">
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Box width (px)</div>
+            <input id="appendTextWidth" class="at-input" type="text" inputmode="numeric" value="300">
+          </div>
+        </div>
+
+        <div class="at-label">Text align</div>
+        <div class="at-align-radios" style="display:flex;flex-direction:row;align-items:center;height:28px;margin-bottom:8px;">
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="left" checked=""><span>Left</span></label>
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="center"><span>Center</span></label>
+          <label class="at-radio"><input type="radio" name="appendTextAlign" value="right"><span>Right</span></label>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell at-cell-2x">
+            <div class="at-label">X anchor</div>
+            <select id="appendTextXAnchor" class="at-input" selectedoptions="248">
+              <option value="left" selected="">From left</option>
+              <option value="center">From center</option>
+              <option value="right">From right</option>
+            </select>
+          </div>
+          <div class="at-cell">
+            <div class="at-label">X offset (px)</div>
+            <input id="appendTextXOffset" class="at-input" type="text" inputmode="numeric" value="10">
+          </div>
+        </div>
+
+        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
+          <div class="at-cell at-cell-2x">
+            <div class="at-label">Y anchor</div>
+            <select id="appendTextYAnchor" class="at-input" selectedoptions="277">
+              <option value="top" selected="">From top</option>
+              <option value="center">From center</option>
+              <option value="bottom">From bottom</option>
+            </select>
+          </div>
+          <div class="at-cell">
+            <div class="at-label">Y offset (px)</div>
+            <input id="appendTextYOffset" class="at-input" type="text" inputmode="numeric" value="10">
+          </div>
+        </div>
+
+        <button id="appendTextApplyBtn" class="btn btn-primary btn-full at-apply-btn">Append to 13 artboard(s)</button>
+      </div>
+    </div>
+
+    <div id="emptyState" class="section empty-state" style="display: none;">
+      <strong>Get started</strong>
+      Open your PSD in Photoshop, then click <b>Scan</b>.<br>
+      Switch to <b>All open documents</b> if each size is a separate PSD.
+    </div>
+
+    <div id="layerSection" class="section" style="display: block;">
+      <div class="label">What to do</div>
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="replace">Edit content</button>
+        <button class="mode-tab" data-mode="action">Run Photoshop Action</button>
+      </div>
+      <div class="search-bar">
+        <input id="searchInput" type="text" placeholder="Search layer name…" defaultvalue="">
+        <button id="searchClearBtn" class="search-clear" title="Clear">×</button>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">All <span id="countAll" class="sizes-count">(51)</span></button>
+        <button class="filter-btn" data-filter="text">Text <span id="countText" class="sizes-count">(13)</span></button>
+        <button class="filter-btn" data-filter="image">Image <span id="countImage" class="sizes-count">(17)</span></button>
+        <button class="filter-btn" data-filter="group">Group <span id="countGroup" class="sizes-count">(10)</span></button>
+        <button class="filter-btn" data-filter="other">Other <span id="countOther" class="sizes-count">(11)</span></button>
+        <button class="filter-btn select-btn action-only" id="selectAllBtn">Select All</button>
+        <button class="filter-btn select-btn action-only" id="deselectAllBtn">Deselect All</button>
+      </div>
+      <div id="actionBar" class="action-bar" style="display: none;">
+        <div class="action-bar-row">
+          <select id="actionSetSelect" class="action-select" selectedoptions="2449"><option value="">— Select set —</option><option value="Default Actions">Default Actions (14)</option><option value="custom action" selected="selected">custom action (3)</option></select>
+          <select id="actionSelect" class="action-select" selectedoptions="2455"><option value="convert to paragraph text">convert to paragraph text</option><option value="test-color2">test-color2</option><option value="merge-layer" selected="selected">merge-layer</option></select>
+          <button id="refreshActionsBtn" class="filter-btn action-refresh-btn" title="Reload Actions from Photoshop">↻</button>
+        </div>
+        <button id="runActionBtn" class="btn btn-primary btn-full action-run-btn is-disabled" disabled="disabled">Run Action</button>
+      </div>
+      <div class="layers-toggle" id="layersToggle">
+        <span>Layers</span>
+        <span id="layersToggleCount" class="sizes-count">(51)</span>
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div id="layerList"><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">bgr</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="â" defaultvalue="" selectionstart="1" selectionend="1">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 11</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">bgr / Layer 13</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 15</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 16</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 17</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 18</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 19</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Bgr / Layer 19 copy</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 19 copy 2</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 20</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">bgr / Layer 20 copy</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 21 copy</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Layer 22 copy</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">rancher_4x4_red_action_my26_32826_rt</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">bgr / Rancher_4x4_Red_ACTION_MY26_32826_rt</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">12/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Rancher_4x4_Red_ACTION_MY26_32826_rt</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div></div>
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Rectangle 16</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Rectangle 19</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">rectangle 20</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">bgr / Rectangle 20</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">8/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Rectangle 20</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div></div>
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Rectangle 21</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Rectangle 22</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">BGR / Rectangle 24</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">cta</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / cta</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">cta</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">7/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div></div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">rectangle 13 copy 2</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / cta / Rectangle 13 copy 2</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">cta / Rectangle 13 copy 2</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">7/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div></div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">ride now</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / cta / ride now</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">cta / ride now</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">7/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div></div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">txt</span>
+      <span class="layer-group-count">(2)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / txt</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Txt</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div></div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">gg-headline</span>
+      <span class="layer-group-count">(6)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / txt / gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">3/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 13 / gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 14 / gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 20 / gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Txt / gg-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div></div>
+  </div><div class="layer-group">
+    <div class="layer-group-header">
+      <span class="toggle-icon">▼</span>
+      <span class="layer-group-name">gg-sub-headline</span>
+      <span class="layer-group-count">(5)</span>
+    </div>
+    <div class="layer-group-body"><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Content / txt / gg-sub-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">6/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">gg-sub-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">3/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 13 / gg-sub-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 14 / gg-sub-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div><div class="replace-row" data-kind="text">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Txt / gg-sub-headline</span>
+      <span class="replace-row-kind">text</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip" value="" defaultvalue=""></textarea>
+  </div></div>
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 13</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 14</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Group 20</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">1/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">HR3-7_Logos_5-6-19 (1)</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="group">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">logo</span>
+      <span class="replace-row-kind">group</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">logo / Rectangle 2 copy 3</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div><div class="replace-row" data-kind="image">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">logo / Vector Smart Object</span>
+      <span class="replace-row-kind">image</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+      <div class="replace-row-file">
+        <button class="file-pick-btn">Browse…</button>
+        <span class="file-name">No file picked</span>
+        <button class="file-clear-btn" style="display:none;">Clear</button>
+      </div>
+  </div><div class="replace-row" data-kind="other">
+    <div class="replace-row-head">
+      <input type="checkbox" class="row-checkbox">
+      <span class="replace-row-name" style="cursor: pointer;">Outline</span>
+      <span class="replace-row-kind">other</span>
+      <span class="replace-row-count">13/13</span>
+      <button class="locate-btn">Show</button>
+    </div>
+    <div class="replace-row-meta">
+      <input type="text" class="link-id-input" placeholder="Link ID" value="" defaultvalue="">
+      <input type="text" class="new-name-input" placeholder="New name" value="" defaultvalue="">
+      <button class="update-now-btn">Update</button>
+    </div>
+    
+  </div></div>
+    </div>
+
+    <div id="noResultsState" class="section empty-state" style="display: none;">
+      <strong>No layers found</strong>
+      Scan found no layers in the open documents.
+    </div>
+
+    <div class="section" id="logsSection">
+      <div class="log-header">
+        <div class="label" id="logToggle">Logs <span class="toggle-icon">▼</span></div>
+        <div class="log-btn-group">
+          <button id="logCopyBtn" class="btn btn-tertiary">Copy</button>
+          <button id="logClearBtn" class="btn btn-tertiary">Clear</button>
+        </div>
+      </div>
+      <pre id="logBox" class="log-box"><div>Ready.</div><div>Scan (current): 1 doc(s), 13 target(s) → 13 text + 17 image + 10 group + 11 other</div><div>Loaded 2 action set(s)</div></pre>
+    </div>
+
+    <footer class="app-footer">
+      <div class="footer-title">Content Replacer <span class="footer-version">v0.1.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
+      <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
+    </footer>
+
+    <div id="stickyCta" class="sticky-cta" style="">
+      <button id="applyBtn" class="btn btn-primary btn-full btn-lg replace-only" style="">Apply edits (13)</button>
+      <button id="saveBtn" class="btn btn-primary btn-full btn-lg is-disabled" style="display: none;" disabled="disabled">Save</button>
+    </div>
+  </div>
+  <script src="main.js"></script>
+
+
+</body></html>

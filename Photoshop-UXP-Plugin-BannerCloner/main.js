@@ -1,6 +1,6 @@
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
-const { app, core, action } = require("photoshop");
+const { app, core, action, imaging, constants } = require("photoshop");
 
 uxp.entrypoints.setup({
   panels: {
@@ -68,6 +68,12 @@ const assetSearchRow = document.getElementById("assetSearchRow");
 const assetSearchInput = document.getElementById("assetSearch");
 let scannedAssets = [];
 let scannedArtboards = [];
+
+// Map of layerId → exported asset filename (e.g., "mfb-logo.png").
+// Populated by runExportAssetsFlow after each successful save.
+// Consumed by collectLayerInfo so JSON `src` field points at the actual
+// rasterized PNG instead of the raw PSD smartObject reference (.ai/.jpg).
+const assetExportMap = new Map();
 const IGNORE_KEY = "bannerCloner.ignoreAssets";
 
 const cloneProgress = document.getElementById("cloneProgress");
@@ -456,12 +462,32 @@ async function setTextFontSize(layerId, targetPx) {
   }
 }
 
+// Fill/adjustment layers (adjustment-like Color Fill, Gradient Fill, Pattern)
+// cover the full canvas and cannot be transformed — bounds match canvas exactly.
+// Shape layers with a solid fill ALSO report kind=solidColor but have bounded geometry.
+// Use bounds-vs-canvas heuristic to distinguish.
+function isUnboundedFillLayer(layer, bounds) {
+  const isFillKind = layer.kind === "solidColor" || layer.kind === "solidFill"
+    || layer.kind === "gradientFill" || layer.kind === "pattern";
+  if (!isFillKind) return false;
+  const doc = app.activeDocument;
+  if (!doc) return false;
+  return Math.abs(bounds.width - doc.width) < 2 && Math.abs(bounds.height - doc.height) < 2
+      && Math.abs(bounds.left) < 2 && Math.abs(bounds.top) < 2;
+}
+
 // Resize a shape layer to absolute width/height (uses non-uniform transform)
 async function resizeShapeLayer(layer, targetW, targetH) {
   const bounds = await getLayerBounds(layer.id);
-  if (bounds.width === 0 || bounds.height === 0) return;
+  log(`[RESIZE] "${layer.name}" (kind=${layer.kind}) before: ${bounds.width}x${bounds.height} → target: ${Math.round(targetW)}x${Math.round(targetH)}`);
+  if (bounds.width === 0 || bounds.height === 0) { log(`[RESIZE]   skip: zero bounds`); return; }
+  if (isUnboundedFillLayer(layer, bounds)) {
+    log(`[RESIZE]   skip: unbounded fill layer (bounds = canvas)`);
+    return;
+  }
   const scaleX = targetW / bounds.width;
   const scaleY = targetH / bounds.height;
+  log(`[RESIZE]   scale: X=${(scaleX*100).toFixed(1)}% Y=${(scaleY*100).toFixed(1)}%`);
   await selectLayerById(layer.id);
   await bpSafe([{
     _obj: "transform",
@@ -472,11 +498,19 @@ async function resizeShapeLayer(layer, targetW, targetH) {
     interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
     _options: { dialogOptions: "dontDisplay" }
   }]);
+  const after = await getLayerBounds(layer.id);
+  log(`[RESIZE]   after: ${after.width}x${after.height} (expected ${Math.round(targetW)}x${Math.round(targetH)})`);
 }
 
 // Scale a single layer uniformly (e.g. logo by width)
 async function scaleLayerUniform(layer, scale) {
   if (Math.abs(scale - 1) < 0.01) return;
+  const before = await getLayerBounds(layer.id);
+  if (isUnboundedFillLayer(layer, before)) {
+    log(`[SCALE] "${layer.name}" skip: unbounded fill layer (bounds = canvas)`);
+    return;
+  }
+  log(`[SCALE] "${layer.name}" (kind=${layer.kind}) before: ${before.width}x${before.height} × ${(scale*100).toFixed(1)}%`);
   await selectLayerById(layer.id);
   await bpSafe([{
     _obj: "transform",
@@ -487,6 +521,8 @@ async function scaleLayerUniform(layer, scale) {
     interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
     _options: { dialogOptions: "dontDisplay" }
   }]);
+  const after = await getLayerBounds(layer.id);
+  log(`[SCALE]   after: ${after.width}x${after.height}`);
 }
 
 function isBgGroup(layer) {
@@ -1026,6 +1062,36 @@ function findLayersByName(parent, targetName) {
   return results;
 }
 
+// JSON rules from web have child positions RELATIVE to parent group.
+// In PSD, all positions are absolute (canvas coords). So we need to sum
+// up all ancestor groups' rules (top/left) to get the absolute target.
+function getAncestorGroupOffset(layer, rules) {
+  let offX = 0, offY = 0;
+  const trail = [];
+  const chain = [];
+  let parent = layer.parent;
+  while (parent) {
+    if (parent.name) {
+      chain.push(parent.name);
+      const pn = normalizeName(parent.name);
+      const parentRule = rules.find(r => r.name && normalizeName(r.name) === pn);
+      if (parentRule) {
+        const pl = parentRule.left !== "" && parentRule.left !== undefined ? parseFloat(parentRule.left) : 0;
+        const pt = parentRule.top !== "" && parentRule.top !== undefined ? parseFloat(parentRule.top) : 0;
+        offX += isNaN(pl) ? 0 : pl;
+        offY += isNaN(pt) ? 0 : pt;
+        trail.push(`${parent.name}(+${pl},+${pt})`);
+      } else {
+        trail.push(`${parent.name}(no-rule)`);
+      }
+    } else {
+      chain.push("<root>");
+    }
+    parent = parent.parent;
+  }
+  return { offX, offY, trail, chain };
+}
+
 async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, originX, originY, originalBounds, srcW, srcH) {
   // Pre-compute scale from JSON using PSD source size as base
   const baseSize = (srcW && srcH) ? findBaseSizeFromJson(srcW, srcH) : null;
@@ -1114,6 +1180,13 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           hasBothWH = hasElemW && hasElemH;
         }
 
+        // SIZE-DEBUG: snapshot bounds BEFORE any size transforms, plus target from rule
+        const isGroupLayer = layer.layers && layer.layers.length > 0;
+        const sizeBefore = isGroupLayer ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+        const tw = targetW !== undefined ? Math.round(targetW) : "?";
+        const th = targetH !== undefined ? Math.round(targetH) : "?";
+        log(`[SIZE-DEBUG] "${layer.name}" BEFORE: ${Math.round(sizeBefore.width)}x${Math.round(sizeBefore.height)} → target: ${tw}x${th}${isGroupLayer ? " (group — size skipped)" : ""}`);
+
         // 1. TEXT: set fontSize directly
         const targetFontSize = rule._fontSize;
         if (targetFontSize && texts.length > 0) {
@@ -1130,7 +1203,12 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         // Both W+H from same source → non-uniform resize (CTA bg, button shape)
         // Only W → uniform scale (logo)
         const nonTextLeaves = shapes.concat(images).concat(others.filter(o => !isTextLayer(o)));
-        if (nonTextLeaves.length > 0 && (targetW || targetH)) {
+        // Group rules must NOT cascade width/height onto children — each child has its own rule.
+        const isGroupRule = layer.layers && layer.layers.length > 0;
+        if (isGroupRule && (targetW || targetH)) {
+          log(`[RULE]   group rule: skip width/height for ${nonTextLeaves.length} child leaves (children have own rules)`);
+        }
+        if (!isGroupRule && nonTextLeaves.length > 0 && (targetW || targetH)) {
           for (const lf of nonTextLeaves) {
             try {
               const lb = await getLayerBounds(lf.id);
@@ -1172,32 +1250,12 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
             const isGroupForScale = layer.layers && layer.layers.length > 0;
             if (isGroupForScale) {
-              const allChildren = texts.concat(shapes).concat(images);
-              if (allChildren.length > 0) {
-                await selectLayerById(allChildren[0].id);
-                for (let i = 1; i < allChildren.length; i++) {
-                  await bp([{
-                    _obj: "select",
-                    _target: [{ _ref: "layer", _id: allChildren[i].id }],
-                    selectionModifier: { _enum: "selectionModifierType", _value: "addToSelection" },
-                    makeVisible: false,
-                    _options: { dialogOptions: "dontDisplay" }
-                  }]);
-                }
-                await bpSafe([{
-                  _obj: "transform",
-                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-                  freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-                  width: { _unit: "percentUnit", _value: scaleVal * 100 },
-                  height: { _unit: "percentUnit", _value: scaleVal * 100 },
-                  interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-                  _options: { dialogOptions: "dontDisplay" }
-                }]);
-              }
+              // Group rules are independent of children — children have own rules.
+              log(`[RULE]   group rule: skip scale (children have own rules)`);
             } else {
               await scaleLayerUniform(layer, scaleVal);
+              log(`[RULE]   scale: ${(scaleVal * 100).toFixed(0)}%`);
             }
-            log(`[RULE]   scale: ${(scaleVal * 100).toFixed(0)}%`);
           }
         }
 
@@ -1207,6 +1265,20 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         const boundsNoFx = isGroup ? await getGroupBoundsNoEffects(layer) : await getLayerBoundsNoEffects(layer.id);
         log(`[RULE]   boundsWithFx: (${Math.round(boundsWithFx.left)},${Math.round(boundsWithFx.top)}) ${Math.round(boundsWithFx.width)}x${Math.round(boundsWithFx.height)}`);
         log(`[RULE]   boundsNoFx:   (${Math.round(boundsNoFx.left)},${Math.round(boundsNoFx.top)}) ${Math.round(boundsNoFx.width)}x${Math.round(boundsNoFx.height)}`);
+
+        // SIZE-DEBUG: AFTER all size transforms, compare to target
+        const aw = Math.round(boundsWithFx.width);
+        const ah = Math.round(boundsWithFx.height);
+        if (isGroup) {
+          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (group — size not enforced)`);
+        } else if (targetW !== undefined || targetH !== undefined) {
+          const dW = targetW !== undefined ? aw - Math.round(targetW) : 0;
+          const dH = targetH !== undefined ? ah - Math.round(targetH) : 0;
+          const okSize = Math.abs(dW) <= 1 && Math.abs(dH) <= 1 ? "OK" : "DRIFT";
+          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} | drift: dW=${dW} dH=${dH} ${okSize}`);
+        } else {
+          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (no size target in rule)`);
+        }
         const bounds = boundsNoFx;
         if (bounds.width === 0 || bounds.height === 0) { log(`[RULE]   skip: zero bounds`); continue; }
 
@@ -1218,9 +1290,15 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         log(`[RULE]   rule: top=${rule.top} left=${rule.left} right=${rule.right} bottom=${rule.bottom} | hasTop=${hasTop} hasLeft=${hasLeft} hasRight=${hasRight} hasBottom=${hasBottom}`);
         log(`[RULE]   canvas: ${canvasW}x${canvasH} origin: (${originX},${originY})`);
 
+        // JSON positions are relative to parent group (web convention).
+        // Accumulate ancestor group offsets so child ends at correct absolute canvas position.
+        const { offX: ancOffX, offY: ancOffY, trail: ancTrail, chain: ancChain } = getAncestorGroupOffset(layer, rules);
+        log(`[PARENT] "${layer.name}" PS chain: ${ancChain.length ? ancChain.join(" → ") : "(root)"}`);
+        log(`[PARENT]   ancestor offset total: dx+${ancOffX} dy+${ancOffY}${ancTrail.length ? " via " + ancTrail.join(" → ") : " (no matching rules)"}`);
+
         // Priority: top > bottom, left > right
         if (hasTop) {
-          const targetTop = originY + parseFloat(rule.top);
+          const targetTop = originY + parseFloat(rule.top) + ancOffY;
           dy = targetTop - bounds.top;
           log(`[RULE]   top: targetTop=${targetTop} bounds.top=${Math.round(bounds.top)} dy=${Math.round(dy)}`);
         } else if (hasBottom) {
@@ -1230,7 +1308,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         }
 
         if (hasLeft) {
-          const targetLeft = originX + parseFloat(rule.left);
+          const targetLeft = originX + parseFloat(rule.left) + ancOffX;
           dx = targetLeft - bounds.left;
           log(`[RULE]   left: targetLeft=${targetLeft} bounds.left=${Math.round(bounds.left)} dx=${Math.round(dx)}`);
         } else if (hasRight) {
@@ -1242,8 +1320,12 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         log(`[RULE]   final move: dx=${Math.round(dx)} dy=${Math.round(dy)}`);
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
           if (isGroup) {
-            await moveGroupChildren(layer, dx, dy);
+            // Group rules are independent of children — don't cascade position.
+            log(`[RULE]   group rule: skip position move (children have own rules)`);
           } else {
+            const expectedLeft = Math.round(bounds.left + dx);
+            const expectedTop = Math.round(bounds.top + dy);
+            log(`[POS-DEBUG] "${layer.name}" BEFORE move: left=${Math.round(bounds.left)} top=${Math.round(bounds.top)} → expected: left=${expectedLeft} top=${expectedTop}`);
             await selectLayerById(layer.id);
             await bpSafe([{
               _obj: "move",
@@ -1255,8 +1337,13 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
               },
               _options: { dialogOptions: "dontDisplay" }
             }]);
+            const afterMove = await getLayerBoundsNoEffects(layer.id);
+            const deltaL = Math.round(afterMove.left) - expectedLeft;
+            const deltaT = Math.round(afterMove.top) - expectedTop;
+            const ok = Math.abs(deltaL) <= 1 && Math.abs(deltaT) <= 1 ? "OK" : "DRIFT";
+            log(`[POS-DEBUG] "${layer.name}" AFTER move:  left=${Math.round(afterMove.left)} top=${Math.round(afterMove.top)} | drift: dL=${deltaL} dT=${deltaT} ${ok}`);
+            log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
           }
-          log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
         }
 
         // --- Extended fields from JSON import ---
@@ -2879,7 +2966,322 @@ function readTransform(desc) {
   } catch (e) { return null; }
 }
 
-async function collectLayerInfo(layer, artLeft, artTop) {
+function readSmartObjectSrc(desc) {
+  try {
+    return desc.smartObject?.fileReference ||
+           desc.smartObjectMore?.fileReference ||
+           desc.smartObject?.link?.fileReference ||
+           null;
+  } catch (e) { return null; }
+}
+
+function readMaskInfo(desc) {
+  try {
+    const hasUser = desc.hasUserMask === true;
+    const hasVector = desc.hasVectorMask === true;
+    if (!hasUser && !hasVector) return null;
+    const result = {};
+    if (hasUser) {
+      result.hasUserMask = true;
+      if (desc.userMaskEnabled !== undefined) result.enabled = desc.userMaskEnabled !== false;
+      const density = desc.userMaskDensity?._value;
+      if (density !== undefined) result.density = density;
+      const feather = desc.userMaskFeather?._value;
+      if (feather !== undefined) result.feather = feather;
+    }
+    if (hasVector) {
+      result.hasVectorMask = true;
+      if (desc.vectorMaskEnabled !== undefined) result.vectorMaskEnabled = desc.vectorMaskEnabled !== false;
+    }
+    return result;
+  } catch (e) { return null; }
+}
+
+// ─── Mask gradient analysis ────────────────────────────────────────────────
+//
+// Goal: convert PSD user mask raster pixels into CSS-ready gradient params
+//   { type: "linearGradient" | "radialGradient", angle, stops: [...] }
+//
+// PSD descriptor does NOT expose gradient params for raster user masks (mask
+// is rasterized once painted). We sample mask channel pixels via UXP imaging
+// API, detect linear pattern, and derive params for CSS output.
+//
+// Set MASK_VERBOSE = true to dump descriptor keys, pixel strips, and full
+// step-by-step detection. Defaults to false to keep export logs clean.
+const MASK_VERBOSE = false;
+function vlog(msg) { if (MASK_VERBOSE) log(msg); }
+
+async function analyzeMaskGradient(layerId, layerName, desc) {
+  vlog(`[MASK ANALYZE] ─── "${layerName}" (id=${layerId}) ───`);
+
+  // Dump descriptor mask-related keys
+  if (MASK_VERBOSE) {
+    try {
+      const maskKeys = Object.keys(desc).filter(k => /mask/i.test(k));
+      vlog(`[MASK ANALYZE] desc mask keys: [${maskKeys.join(", ") || "(none)"}]`);
+      for (const k of maskKeys) {
+        let val = desc[k];
+        try {
+          if (typeof val === "object" && val !== null) val = JSON.stringify(val);
+        } catch (_) { val = "[unserializable]"; }
+        const s = String(val);
+        vlog(`[MASK ANALYZE]   ${k} = ${s.length > 200 ? s.slice(0, 200) + "..." : s}`);
+      }
+    } catch (e) {
+      vlog(`[MASK ANALYZE] desc dump error: ${e.message}`);
+    }
+  }
+
+  if (!desc.hasUserMask) {
+    vlog(`[MASK ANALYZE] no user mask channel — skipping`);
+    return null;
+  }
+
+  if (!imaging) {
+    log(`[MASK] "${layerName}" — imaging API unavailable, cannot analyze gradient`);
+    return null;
+  }
+
+  // Fetch mask pixels via imaging.getLayerMask
+  let pixelData = null;
+  let buf = null;
+  let dims = { width: 0, height: 0 };
+  try {
+    const docId = app.activeDocument.id;
+    await core.executeAsModal(async () => {
+      pixelData = await imaging.getLayerMask({
+        documentID: docId,
+        layerID: layerId,
+        kind: constants?.LayerMaskKind?.USER || "user"
+      });
+    }, { commandName: "Read Layer Mask Pixels" });
+
+    if (!pixelData) {
+      log(`[MASK] "${layerName}" — getLayerMask returned null, skip`);
+      return null;
+    }
+
+    const w = pixelData.imageData?.width ?? pixelData.width ?? 0;
+    const h = pixelData.imageData?.height ?? pixelData.height ?? 0;
+    dims = { width: w, height: h };
+    vlog(`[MASK ANALYZE] dimensions: ${w} × ${h}, sourceBounds: ${JSON.stringify(pixelData.sourceBounds || {})}`);
+
+    if (pixelData.imageData?.getData) buf = await pixelData.imageData.getData();
+    else if (pixelData.getData) buf = await pixelData.getData();
+  } catch (e) {
+    log(`[MASK] "${layerName}" — analyze error: ${e.message}`);
+    return null;
+  }
+
+  if (!buf || !buf.length || !dims.width || !dims.height) {
+    log(`[MASK] "${layerName}" — no pixel buffer, skip`);
+    return null;
+  }
+
+  // Compute LAYER's visible region within the mask buffer.
+  // Mask channel covers `boundsNoMask` (entire reachable area). Sample only
+  // inside layer.bounds where the gradient actually matters.
+  const w = dims.width;
+  const h = dims.height;
+
+  const srcB = pixelData?.sourceBounds || null;
+  const srcLeft   = srcB?.left   ?? srcB?.x ?? 0;
+  const srcTop    = srcB?.top    ?? srcB?.y ?? 0;
+  const srcWidth  = srcB?.width  ?? (srcB ? (srcB.right  - srcB.left) : w);
+  const srcHeight = srcB?.height ?? (srcB ? (srcB.bottom - srcB.top)  : h);
+
+  const lb = desc?.bounds;
+  const layerLeft   = lb?.left?._value   ?? lb?.left   ?? 0;
+  const layerTop    = lb?.top?._value    ?? lb?.top    ?? 0;
+  const layerRight  = lb?.right?._value  ?? lb?.right  ?? w;
+  const layerBottom = lb?.bottom?._value ?? lb?.bottom ?? h;
+
+  const doc2pxX = w / srcWidth;
+  const doc2pxY = h / srcHeight;
+  const regionX0 = Math.max(0, Math.round((layerLeft   - srcLeft) * doc2pxX));
+  const regionY0 = Math.max(0, Math.round((layerTop    - srcTop)  * doc2pxY));
+  const regionX1 = Math.min(w, Math.round((layerRight  - srcLeft) * doc2pxX));
+  const regionY1 = Math.min(h, Math.round((layerBottom - srcTop)  * doc2pxY));
+  const regionW = Math.max(1, regionX1 - regionX0);
+  const regionH = Math.max(1, regionY1 - regionY0);
+  vlog(`[MASK ANALYZE] sampling region in mask buffer: x=[${regionX0}..${regionX1}] y=[${regionY0}..${regionY1}] (${regionW}×${regionH})`);
+
+  const sample = (x, y) => {
+    const xi = Math.max(0, Math.min(w - 1, Math.round(x)));
+    const yi = Math.max(0, Math.min(h - 1, Math.round(y)));
+    return buf[yi * w + xi]; // mask is single-channel grayscale 0–255
+  };
+
+  // 3×3 grid INSIDE the layer's region (used for diagonal detection only)
+  const grid = [];
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const x = regionX0 + (regionW - 1) * col / 2;
+      const y = regionY0 + (regionH - 1) * row / 2;
+      const labels = [["TL", "TM", "TR"], ["ML", "MM", "MR"], ["BL", "BM", "BR"]];
+      grid.push([labels[row][col], sample(x, y)]);
+    }
+  }
+  if (MASK_VERBOSE) {
+    vlog(`[MASK ANALYZE] 3×3 grid (alpha 0=transparent, 255=opaque):`);
+    for (let i = 0; i < 9; i += 3) {
+      vlog(`[MASK ANALYZE]   ${grid[i][0]}=${grid[i][1]}  ${grid[i + 1][0]}=${grid[i + 1][1]}  ${grid[i + 2][0]}=${grid[i + 2][1]}`);
+    }
+  }
+
+  // Step 4: sample STRIPS (vertical + horizontal) — 21 points each for finer
+  // gradient curve resolution. Strip values become candidate stops.
+  const STRIP_N = 21; // 21 points = 5%-step samples
+  const stripX = regionX0 + regionW / 2;
+  const vStrip = [];
+  for (let i = 0; i < STRIP_N; i++) {
+    const y = regionY0 + (regionH - 1) * i / (STRIP_N - 1);
+    vStrip.push(sample(stripX, y));
+  }
+  const stripY = regionY0 + regionH / 2;
+  const hStrip = [];
+  for (let i = 0; i < STRIP_N; i++) {
+    const x = regionX0 + (regionW - 1) * i / (STRIP_N - 1);
+    hStrip.push(sample(x, stripY));
+  }
+  vlog(`[MASK ANALYZE] vStrip (${STRIP_N}): ${vStrip.join(" ")}`);
+  vlog(`[MASK ANALYZE] hStrip (${STRIP_N}): ${hStrip.join(" ")}`);
+
+  // Outlier filter:
+  //   • Middle samples → 3-window median, replace if deviation > 80
+  //   • First/last sample → can't use a centered window (clamping reuses the
+  //     outlier itself). Use linear extrapolation from the 2 inward neighbors.
+  //     If the value diverges from BOTH (a) the extrapolated trend and
+  //     (b) the immediate neighbor by > 80, treat as edge artifact.
+  function smoothOutliers(arr) {
+    const out = arr.slice();
+    // Middle elements
+    for (let i = 1; i < out.length - 1; i++) {
+      const window = [out[i - 1], out[i], out[i + 1]].sort((a, b) => a - b);
+      const med = window[1];
+      if (Math.abs(out[i] - med) > 80) out[i] = med;
+    }
+    if (out.length < 3) return out;
+    // First element
+    {
+      const expected = 2 * out[1] - out[2];
+      if (Math.abs(out[0] - expected) > 80 && Math.abs(out[0] - out[1]) > 80) {
+        out[0] = out[1];
+      }
+    }
+    // Last element
+    {
+      const last = out.length - 1;
+      const expected = 2 * out[last - 1] - out[last - 2];
+      if (Math.abs(out[last] - expected) > 80 && Math.abs(out[last] - out[last - 1]) > 80) {
+        out[last] = out[last - 1];
+      }
+    }
+    return out;
+  }
+  const vClean = smoothOutliers(vStrip);
+  const hClean = smoothOutliers(hStrip);
+  if (MASK_VERBOSE) {
+    if (vClean.join(",") !== vStrip.join(",")) vlog(`[MASK ANALYZE]   v-clean: ${vClean.join(" ")}`);
+    if (hClean.join(",") !== hStrip.join(",")) vlog(`[MASK ANALYZE]   h-clean: ${hClean.join(" ")}`);
+  }
+
+  // Range detection — uses cleaned strip
+  const vRange = Math.max(...vClean) - Math.min(...vClean);
+  const hRange = Math.max(...hClean) - Math.min(...hClean);
+  vlog(`[MASK ANALYZE] strip ranges: vertical=${vRange}, horizontal=${hRange}`);
+
+  let direction = "unknown";
+  let angle = 180;
+  const RANGE_THRESHOLD = 40; // need at least 40/255 (~16%) variance to call it a gradient
+
+  let dominantStrip = null;
+  if (vRange >= RANGE_THRESHOLD && vRange >= hRange * 1.5) {
+    // Vertical gradient — top vs bottom
+    direction = vClean[0] > vClean[vClean.length - 1] ? "vertical (top opaque → bottom transparent)" : "vertical (top transparent → bottom opaque)";
+    angle = vClean[0] > vClean[vClean.length - 1] ? 180 : 0;
+    dominantStrip = vClean;
+  } else if (hRange >= RANGE_THRESHOLD && hRange >= vRange * 1.5) {
+    // Horizontal gradient — left vs right
+    direction = hClean[0] > hClean[hClean.length - 1] ? "horizontal (left opaque → right transparent)" : "horizontal (left transparent → right opaque)";
+    angle = hClean[0] > hClean[hClean.length - 1] ? 90 : 270;
+    dominantStrip = hClean;
+  } else if (vRange >= RANGE_THRESHOLD && hRange >= RANGE_THRESHOLD) {
+    direction = "diagonal";
+    // Approximate diagonal angle using vertical+horizontal magnitudes.
+    // CSS: 0=up, 90=right, 180=down, 270=left.
+    const dy = vClean[0] - vClean[vClean.length - 1]; // positive = top brighter (fades down)
+    const dx = hClean[hClean.length - 1] - hClean[0]; // positive = right brighter
+    angle = (Math.round(Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360;
+    dominantStrip = vRange >= hRange ? vClean : hClean;
+  } else {
+    direction = "uniform / no gradient detected";
+  }
+  vlog(`[MASK ANALYZE] direction: ${direction}, angle ≈ ${angle}°`);
+
+  // Step 5: build stops from the dominant strip — direct 1:1 mapping.
+  let stops = [];
+  if (dominantStrip) {
+    // Reduce 21-point strip to a manageable number of stops (5-7) by
+    // picking inflection points OR uniform sampling. Simple uniform:
+    const STOP_COUNT = 7;
+    for (let i = 0; i < STOP_COUNT; i++) {
+      const idx = Math.round((dominantStrip.length - 1) * i / (STOP_COUNT - 1));
+      const v = dominantStrip[idx];
+      stops.push({
+        position: Math.round(i * 100 / (STOP_COUNT - 1)),
+        opacity: Math.round(v / 255 * 100),
+      });
+    }
+  }
+  vlog(`[MASK ANALYZE] sampled stops: ${JSON.stringify(stops)}`);
+
+  if (direction === "uniform / no gradient detected" || stops.length === 0) {
+    log(`[MASK] "${layerName}" — uniform mask, no gradient`);
+    return { detected: false };
+  }
+
+  const result = {
+    type: "linearGradient",
+    angle,
+    stops,
+  };
+  // Compact summary for production logs
+  const stopsCompact = stops.map(s => `${s.position}:${s.opacity}%`).join(", ");
+  log(`[MASK] "${layerName}" — gradient detected: ${direction}, angle=${angle}°, stops=[${stopsCompact}]`);
+  return result;
+}
+
+async function collectChildrenInfo(layers, artLeft, artTop) {
+  const descs = [];
+  for (const lyr of layers) {
+    try { descs.push(await getLayerDescriptor(lyr.id)); }
+    catch (e) { descs.push(null); }
+  }
+  // For each layer that's part of a clipping group (desc.group === true),
+  // find the next sibling whose group !== true — that's its clip base.
+  const clipBases = layers.map((_, i) => {
+    const d = descs[i];
+    if (!d || d.group !== true) return null;
+    for (let j = i + 1; j < layers.length; j++) {
+      const d2 = descs[j];
+      if (d2 && d2.group !== true) return layers[j].name;
+    }
+    return null;
+  });
+  // Auto-derive `role: "clipBase"` for any layer that another sibling
+  // references via clipTo. Set of base names → passed into collectLayerInfo
+  // so each base layer can self-tag.
+  const clipBaseNames = new Set(clipBases.filter(Boolean));
+  const result = [];
+  for (let i = 0; i < layers.length; i++) {
+    const isClipBase = clipBaseNames.has(layers[i].name);
+    result.push(await collectLayerInfo(layers[i], artLeft, artTop, descs[i], clipBases[i], isClipBase));
+  }
+  return result;
+}
+
+async function collectLayerInfo(layer, artLeft, artTop, preDesc = null, clipBase = null, isClipBase = false) {
   const info = { name: layer.name, kind: layer.kind || "unknown" };
 
   // Visible
@@ -2909,8 +3311,8 @@ async function collectLayerInfo(layer, artLeft, artTop) {
   }
 
   // Layer descriptor (for extra properties)
-  let desc = null;
-  if (!isGroup) {
+  let desc = preDesc;
+  if (!desc) {
     try { desc = await getLayerDescriptor(layer.id); } catch (e) {}
   }
 
@@ -2933,7 +3335,7 @@ async function collectLayerInfo(layer, artLeft, artTop) {
   }
 
   // Border radius (shape layers)
-  if (desc) {
+  if (desc && !isGroup) {
     const radius = readBorderRadius(desc);
     if (radius !== null) info.borderRadius = radius;
   }
@@ -2945,17 +3347,61 @@ async function collectLayerInfo(layer, artLeft, artTop) {
   }
 
   // Transform
-  if (desc) {
+  if (desc && !isGroup) {
     const tx = readTransform(desc);
     if (tx) info.transform = tx;
   }
 
-  // Children (recursive)
-  if (layer.layers && layer.layers.length > 0) {
-    info.children = [];
-    for (const child of layer.layers) {
-      info.children.push(await collectLayerInfo(child, artLeft, artTop));
+  // Smart object source — prefer the exported asset filename (synced from
+  // a prior Export Assets run) over the raw PSD reference (.ai/.jpg).
+  // Falls back to raw fileReference when no export has happened yet.
+  if (desc && layer.kind === "smartObject") {
+    const exportedFilename = assetExportMap.get(layer.id);
+    if (exportedFilename) {
+      info.src = exportedFilename;
+    } else {
+      const src = readSmartObjectSrc(desc);
+      if (src) info.src = src;
     }
+  }
+
+  // Clipping mask target — name of layer this is clipped to
+  if (clipBase) info.clipTo = clipBase;
+
+  // Clip base marker — if any sibling clipped to this layer, tag it.
+  // Renderer uses `role: "clipBase"` to render this element WITHOUT wrapping
+  // the clipped image, so image stays as a positioning sibling (Hướng 2).
+  if (isClipBase) info.role = "clipBase";
+
+  // Layer mask info (presence + metadata; gradient mask pixels exported separately)
+  if (desc) {
+    const mask = readMaskInfo(desc);
+    if (mask) info.mask = mask;
+
+    // Mask gradient analysis — sample pixels to derive CSS-ready params.
+    // Only runs when layer has a user mask. Diagnostic logs are verbose
+    // first-pass; trim once UXP API surface is confirmed.
+    if (mask?.hasUserMask) {
+      try {
+        const gradInfo = await analyzeMaskGradient(layer.id, layer.name, desc);
+        if (gradInfo && gradInfo.detected !== false) {
+          // Merge detected gradient params into info.mask
+          info.mask = {
+            ...info.mask,
+            type: gradInfo.type,
+            angle: gradInfo.angle,
+            stops: gradInfo.stops,
+          };
+        }
+      } catch (e) {
+        log(`[MASK ANALYZE] error analyzing "${layer.name}": ${e.message}`);
+      }
+    }
+  }
+
+  // Children (recursive, with clip-base resolution among siblings)
+  if (layer.layers && layer.layers.length > 0) {
+    info.children = await collectChildrenInfo(layer.layers, artLeft, artTop);
   }
 
   return info;
@@ -2974,10 +3420,7 @@ async function exportLayerJson() {
       const ab = artboards[i];
       log(`[EXPORT JSON] Reading ${i + 1}/${artboards.length}: ${ab.name} (${ab.size.width}x${ab.size.height})`);
 
-      const layers = [];
-      for (const child of ab.layer.layers) {
-        layers.push(await collectLayerInfo(child, ab.size.left, ab.size.top));
-      }
+      const layers = await collectChildrenInfo(ab.layer.layers, ab.size.left, ab.size.top);
 
       allArtboards.push({
         artboard: ab.name,
@@ -3011,6 +3454,64 @@ function isImageLayerForAssets(layer) {
   if (!layer) return false;
   const k = layer.kind;
   return k === "pixel" || k === "smartObject";
+}
+
+function hasGgPrefix(name) {
+  return /^gg-/i.test((name || "").trim());
+}
+
+function isGgPrefixFilterEnabled() {
+  if (!isAdvancedEnabled()) return false;
+  return !!document.getElementById("filterGgPrefix")?.checked;
+}
+
+function isAdvancedEnabled() {
+  return !!document.getElementById("advancedOptionsEnabled")?.checked;
+}
+
+function getJpgQuality() {
+  const raw = document.getElementById("jpgQuality")?.value;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 75;
+  return Math.max(0, Math.min(100, n));
+}
+
+// When Advanced options are on, path + quality are required.
+// Returns { ok, errors[], fieldErrors: { id: msg } }. Also toggles .input-error CSS class.
+function validateAdvancedInputs() {
+  const pathEl = document.getElementById("customExportPath");
+  const qualityEl = document.getElementById("jpgQuality");
+  pathEl?.classList.remove("input-error");
+  qualityEl?.classList.remove("input-error");
+
+  if (!isAdvancedEnabled()) return { ok: true, errors: [], fieldErrors: {} };
+
+  const errors = [];
+  const fieldErrors = {};
+
+  const path = (pathEl?.value || "").trim();
+  if (!path) {
+    fieldErrors.customExportPath = "Custom output path is required";
+    pathEl?.classList.add("input-error");
+  } else if (!path.startsWith("/")) {
+    fieldErrors.customExportPath = "Path must be absolute (start with /)";
+    pathEl?.classList.add("input-error");
+  }
+
+  const qRaw = (qualityEl?.value || "").trim();
+  if (!qRaw) {
+    fieldErrors.jpgQuality = "JPG quality is required";
+    qualityEl?.classList.add("input-error");
+  } else {
+    const q = parseInt(qRaw, 10);
+    if (!Number.isFinite(q) || q < 0 || q > 100) {
+      fieldErrors.jpgQuality = "JPG quality must be 0-100";
+      qualityEl?.classList.add("input-error");
+    }
+  }
+
+  for (const msg of Object.values(fieldErrors)) errors.push(msg);
+  return { ok: errors.length === 0, errors, fieldErrors };
 }
 
 function getIgnoreKeywords() {
@@ -3049,6 +3550,8 @@ async function resolveSelectedArtboards() {
 
 async function scanArtboardImages() {
   try {
+    const v = validateAdvancedInputs();
+    if (!v.ok) { v.errors.forEach(e => log(`[ASSETS] ${e}`)); log("[ASSETS] Fill required fields before Get Images."); return; }
     const artboards = await resolveSelectedArtboards();
     scannedArtboards = artboards;
     log(`[ASSETS] Scanning ${artboards.length} artboard(s)`);
@@ -3056,64 +3559,100 @@ async function scanArtboardImages() {
     const ignoreKws = getIgnoreKeywords();
     if (ignoreKws.length) log(`[ASSETS] Ignoring: ${ignoreKws.join(", ")}`);
 
+    const ggOnly = isGgPrefixFilterEnabled();
+    if (ggOnly) log(`[ASSETS] Filter: only names starting with "gg-"`);
+
     scannedAssets = [];
     for (const source of artboards) {
       log(`[ASSETS] Scanning: ${source.name} (${source.size.width}x${source.size.height})`);
 
-      const images = [];
+      // Collected items: pixel/smart object OR group treated as a single asset (gg- group when filter on).
+      const items = [];
       function walk(layer) {
         if (isIgnoredLayer(layer.name, ignoreKws)) {
           log(`[ASSETS] Ignored: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
           return;
         }
-        // Skip hidden layer/group — subtree không render ra canvas, không cần export
         if (layer.visible === false) {
           log(`[ASSETS] Skipped hidden: ${layer.name}${layer.layers && layer.layers.length ? " (group)" : ""}`);
           return;
         }
-        if (layer.layers && layer.layers.length > 0) {
+        const isGroup = layer.layers && layer.layers.length > 0;
+        const matchesGg = hasGgPrefix(layer.name);
+
+        if (isGroup) {
+          // gg- group: export as one flattened asset, do NOT recurse into it.
+          if (ggOnly && matchesGg) {
+            items.push({ layer, isGroup: true });
+            return;
+          }
+          // Otherwise keep walking to find children.
           for (const child of layer.layers) walk(child);
-        } else if (isImageLayerForAssets(layer)) {
-          images.push(layer);
+          return;
         }
+
+        // Leaf layer: pixel/smartObject only.
+        if (!isImageLayerForAssets(layer)) return;
+        if (ggOnly && !matchesGg) return;
+        items.push({ layer, isGroup: false });
       }
       for (const child of source.layer.layers) walk(child);
 
-      for (const img of images) {
-        const bounds = await getLayerBounds(img.id);
+      for (const item of items) {
+        const layer = item.layer;
+        const bounds = item.isGroup
+          ? await getGroupBounds(layer)
+          : await getLayerBounds(layer.id);
         if (bounds.width === 0 || bounds.height === 0) continue;
 
         let defaultType = "PNG";
         let isVector = false;
         try {
-          if (img.kind === "smartObject") {
-            const desc = await getLayerDescriptor(img.id);
+          if (layer.kind === "smartObject") {
+            const desc = await getLayerDescriptor(layer.id);
             const fileRef = desc.smartObjectMore?.fileReference;
             if (fileRef && /\.jpe?g$/i.test(fileRef)) defaultType = "JPG";
-            isVector = await isVectorSmartObject(img.id);
+            isVector = await isVectorSmartObject(layer.id);
           }
         } catch (e) {}
 
-        const defaultSizeMode = (img.kind === "smartObject" && !isVector) ? "D" : "A";
+        const kind = item.isGroup ? "group" : layer.kind;
+        const advancedOn = isAdvancedEnabled();
+        const defaultSizeMode = advancedOn
+          ? "B"
+          : ((layer.kind === "smartObject" && !isVector) ? "D" : "A");
+        const defaultScale = advancedOn ? 1 : 2;
+        // Advanced mode strips "gg-" prefix from exportName → cleaner filenames.
+        const exportName = advancedOn ? layer.name.replace(/^gg-/i, "") : layer.name;
         scannedAssets.push({
-          layerId: img.id,
-          layerName: img.name,
-          exportName: img.name,
-          kind: img.kind,
+          layerId: layer.id,
+          layerName: layer.name,
+          exportName,
+          kind,
+          isGroup: item.isGroup || undefined,
           isVector,
           sizeMode: defaultSizeMode,
-          scale: 2,
+          scale: defaultScale,
           type: defaultType,
           bounds: bounds,
-          artboardRect: source.size
+          artboardRect: source.size,
+          artboardId: source.id,
+          artboardName: source.name
         });
       }
     }
 
-    // Deduplicate by name — keep largest bounds
+    // Deduplicate:
+    //  - Advanced on  → key = `${artboardId}::${exportName}` (per-artboard; cross-artboard dupes kept
+    //    so each size folder gets its own set).
+    //  - Advanced off → key = `${exportName}` (cross-artboard; only the largest instance is kept,
+    //    avoiding wasted exports that would overwrite each other in the single output folder).
+    const advancedDedupeOn = isAdvancedEnabled();
     const nameMap = new Map();
     for (const asset of scannedAssets) {
-      const key = asset.exportName;
+      const key = advancedDedupeOn
+        ? `${asset.artboardId}::${asset.exportName}`
+        : asset.exportName;
       const area = asset.bounds.width * asset.bounds.height;
       const existing = nameMap.get(key);
       if (!existing || area > existing.area) {
@@ -3123,7 +3662,8 @@ async function scanArtboardImages() {
     const before = scannedAssets.length;
     scannedAssets = [...nameMap.values()].map(v => v.asset);
     if (before > scannedAssets.length) {
-      log(`[ASSETS] Deduplicated: ${before} → ${scannedAssets.length} (kept largest)`);
+      const scope = advancedDedupeOn ? "per-artboard" : "cross-artboard";
+      log(`[ASSETS] Deduplicated ${scope}: ${before} → ${scannedAssets.length} (kept largest)`);
     }
 
     log(`[ASSETS] Found ${scannedAssets.length} image layer(s) across ${artboards.length} artboard(s)`);
@@ -3214,15 +3754,23 @@ function hideCustomTooltip() {
 }
 
 function getAssetFilenameKey(asset) {
-  const safeName = (asset.exportName || "").replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
+  const raw = (asset.exportName || "").replace(/[<>:"/\\|?*]/g, "_");
+  const safeName = isAdvancedEnabled() ? raw : raw.replace(/\s+/g, "-").toLowerCase();
   const ext = asset.type === "JPG" ? "jpg" : "png";
   return `${safeName}.${ext}`;
+}
+
+function getAssetCollisionKey(asset) {
+  // Advanced mode: scope collision check per-artboard (cross-artboard dupes land
+  // in different size folders, so they don't actually collide on disk).
+  const file = getAssetFilenameKey(asset);
+  return isAdvancedEnabled() ? `${asset.artboardId}::${file}` : file;
 }
 
 function computeAssetCollisions() {
   const counts = new Map();
   for (const a of scannedAssets) {
-    const k = getAssetFilenameKey(a);
+    const k = getAssetCollisionKey(a);
     counts.set(k, (counts.get(k) || 0) + 1);
   }
   const dupes = new Set();
@@ -3264,7 +3812,7 @@ function renderAssetList() {
     const card = document.createElement("div");
     card.className = "asset-row";
     if (asset.collapsed) card.classList.add("asset-row-collapsed");
-    const isDupe = collisions.has(getAssetFilenameKey(asset));
+    const isDupe = collisions.has(getAssetCollisionKey(asset));
     if (isDupe) card.classList.add("asset-row-duplicate");
 
     // Name input + kind badge + remove button
@@ -3290,7 +3838,14 @@ function renderAssetList() {
     });
     const kindBadge = document.createElement("span");
     kindBadge.className = "asset-kind-badge";
-    kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : "Pixel";
+    kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : (asset.kind === "group" ? "Group" : "Pixel");
+
+    // Size/artboard source badge
+    const ab = scannedArtboards.find(x => x.id === asset.artboardId);
+    const sizeBadge = document.createElement("span");
+    sizeBadge.className = "asset-size-badge";
+    sizeBadge.textContent = ab ? getArtboardSizeKey(ab) : `${Math.round(asset.artboardRect?.width || 0)}x${Math.round(asset.artboardRect?.height || 0)}`;
+    sizeBadge.title = ab ? `From artboard: ${ab.name}` : `From artboard: ${asset.artboardName || "unknown"}`;
 
     // Show button — select layer in PS Layers panel để user biết đang nói layer nào
     const showBtn = document.createElement("button");
@@ -3315,7 +3870,8 @@ function renderAssetList() {
       renderAssetList();
     });
     nameRow.appendChild(nameInput);
-    nameRow.appendChild(kindBadge);
+    if (!isAdvancedEnabled()) nameRow.appendChild(kindBadge);
+    nameRow.appendChild(sizeBadge);
     nameRow.appendChild(showBtn);
     if (isDupe) {
       const dupBadge = document.createElement("span");
@@ -3331,19 +3887,21 @@ function renderAssetList() {
     const fieldsRow = document.createElement("div");
     fieldsRow.className = "asset-row-fields";
 
-    const sizeOptions = [
-      { value: "A", label: "A - Original", tooltip: "Full layer bounds (including parts outside artboard)" },
-      { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
-      { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
-    ];
-    if (asset.kind === "smartObject" && !asset.isVector) {
-      sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
+    const advancedOn = isAdvancedEnabled();
+    if (!advancedOn) {
+      const sizeOptions = [
+        { value: "A", label: "A - Original", tooltip: "Full layer bounds (including parts outside artboard)" },
+        { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
+        { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
+      ];
+      if (asset.kind === "smartObject" && !asset.isVector) {
+        sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
+      }
+      if (asset.sizeMode === "D" && !sizeOptions.some(o => o.value === "D")) {
+        asset.sizeMode = "A";
+      }
+      fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
     }
-    // If asset was previously set to D but is now vector, fall back to A
-    if (asset.sizeMode === "D" && !sizeOptions.some(o => o.value === "D")) {
-      asset.sizeMode = "A";
-    }
-    fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
 
     fieldsRow.appendChild(createAssetCycleBtn("Scale", [
       { value: "1", label: "1x" },
@@ -3380,6 +3938,37 @@ function toggleAllAssetsCollapsed(collapsed) {
 }
 
 // Create a timestamped subfolder inside a picked folder
+// Extract "300x600" from "...-300x600". Fallback → full sanitized artboard name.
+function getArtboardSizeKey(artboard) {
+  const m = /(\d+x\d+)(?:[^a-z0-9]*)?$/i.exec(artboard.name || "");
+  if (m) return m[1].toLowerCase();
+  return (artboard.name || "artboard").replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-");
+}
+
+// Resolve an existing absolute folder path. Throws if path missing or not a folder.
+async function resolveExistingFolderPath(absPath) {
+  const clean = absPath.replace(/\/+$/, "");
+  const url = "file:" + (clean.startsWith("/") ? clean : "/" + clean);
+  let entry;
+  try {
+    entry = await fs.getEntryWithUrl(url);
+  } catch (e) {
+    throw new Error(`Path not found: ${clean}`);
+  }
+  if (!entry || !entry.isFolder) throw new Error(`Not a folder: ${clean}`);
+  return entry;
+}
+
+// Return existing child folder with name, or create it.
+async function getOrCreateChildFolder(parentFolder, name) {
+  try {
+    const children = await parentFolder.getEntries();
+    const found = children.find(e => e.name === name && e.isFolder);
+    if (found) return found;
+  } catch (e) {}
+  return await parentFolder.createFolder(name);
+}
+
 async function createTimestampedSubfolder(parentFolder, label) {
   const now = new Date();
   const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
@@ -3398,7 +3987,7 @@ async function exportSingleAsset(asset) {
   const backup = scannedAssets;
   scannedAssets = [asset];
   try {
-    await runExportAssetsFlow(subfolder, { writeLayersJson: false });
+    await runExportAssetsFlow(subfolder, { writeLayersJson: false, jpgQuality: getJpgQuality() });
   } finally {
     scannedAssets = backup;
   }
@@ -3428,7 +4017,7 @@ async function getSmartObjectOriginalSize(layerId) {
 }
 
 // Save active document as PNG or JPG to a folder using UXP photoshop API
-async function saveActiveDocAs(folder, filename, type) {
+async function saveActiveDocAs(folder, filename, type, { jpgQuality = 75 } = {}) {
   // Cap width at 3000px (maintain aspect ratio)
   const maxW = 3000;
   const curW = app.activeDocument.width;
@@ -3443,11 +4032,38 @@ async function saveActiveDocAs(folder, filename, type) {
   const doc = app.activeDocument;
   const finalW = doc.width;
   const finalH = doc.height;
+
   if (type === "JPG") {
-    await doc.saveAs.jpg(file, { quality: 8 }, true);
+    // JPG → Save for Web via batchPlay: user-controlled quality (0-100), strips
+    // metadata/ICC, optimized encoder. Fallback to doc.saveAs.jpg on failure.
+    const token = await fs.createSessionToken(file);
+    try {
+      await bp([{
+        _obj: "export",
+        using: {
+          _obj: "SaveForWeb",
+          format: { _enum: "saveForWebFormatType", _value: "JPEG" },
+          quality: Math.max(0, Math.min(100, jpgQuality | 0)),
+          optimized: true,
+          includeProfile: false,
+          interlaced: false,
+          metadata: 0,
+          in: { _path: token, _kind: "local" }
+        },
+        _options: { dialogOptions: "silent" }
+      }]);
+    } catch (e) {
+      log(`[ASSETS] Save for Web (JPG) failed (${e.message}) — fallback to saveAs`);
+      const psQuality = Math.round((jpgQuality / 100) * 12); // 0-100 → 0-12
+      await doc.saveAs.jpg(file, { quality: psQuality }, true);
+    }
   } else {
+    // PNG → doc.saveAs.png preserves full alpha (including partial transparency).
+    // Save for Web PNG24 matted partial alpha against white, producing visible
+    // white patches in shadow/feather regions.
     await doc.saveAs.png(file, { compression: 6 }, true);
   }
+
   let bytes = 0;
   try {
     const meta = await file.getMetadata();
@@ -3544,10 +4160,76 @@ async function isVectorSmartObject(layerId) {
 async function exportAssets() {
   if (scannedAssets.length === 0) { log("[ASSETS] No assets to export."); return; }
 
+  const v = validateAdvancedInputs();
+  if (!v.ok) { v.errors.forEach(e => log(`[ASSETS] ${e}`)); log("[ASSETS] Fill required fields before Export."); return; }
+
+  const advanced = isAdvancedEnabled();
+  const customPathRaw = advanced ? (document.getElementById("customExportPath")?.value || "").trim() : "";
+  const jpgQuality = advanced ? getJpgQuality() : 75;
+
+  // Clear stale layerId → filename mappings from prior runs. Layer IDs are
+  // doc-scoped and can collide across documents.
+  assetExportMap.clear();
+
+  if (customPathRaw) {
+    // Per-artboard mode — verify root exists first, no timestamp, assets only.
+    let rootFolder;
+    try {
+      rootFolder = await resolveExistingFolderPath(customPathRaw);
+    } catch (e) {
+      log(`[ASSETS] ${e.message}. Folder gốc phải tồn tại — aborted.`);
+      return;
+    }
+    log(`[ASSETS] Custom output root: ${customPathRaw}`);
+
+    // Advanced mode forces Mode B (clip to artboard visible area) for every asset,
+    // even if they were scanned before Advanced was toggled on.
+    for (const a of scannedAssets) a.sizeMode = "B";
+
+    // Group assets by artboardId preserving original order.
+    const groups = new Map();
+    for (const a of scannedAssets) {
+      if (!groups.has(a.artboardId)) groups.set(a.artboardId, []);
+      groups.get(a.artboardId).push(a);
+    }
+
+    const aggregatedForHtml = [];
+    for (const [abId, assets] of groups) {
+      const ab = scannedArtboards.find(x => x.id === abId);
+      if (!ab) { log(`[ASSETS] Artboard ${abId} not found — skipped`); continue; }
+      const sizeKey = getArtboardSizeKey(ab);
+      try {
+        const sizeFolder = await getOrCreateChildFolder(rootFolder, sizeKey);
+        const assetsFolder = await getOrCreateChildFolder(sizeFolder, "assets");
+        log(`[ASSETS] → ${sizeKey}/assets/ (${assets.length} asset(s) from "${ab.name}")`);
+        const exported = await runExportAssetsFlow(assetsFolder, { writeLayersJson: false, scopedAssets: assets, jpgQuality });
+        if (generateInfoHtmlInput?.checked && Array.isArray(exported)) {
+          for (const it of exported) aggregatedForHtml.push({ ...it, pathPrefix: `${sizeKey}/assets` });
+        }
+      } catch (e) {
+        log(`[ASSETS] Failed "${ab.name}" → ${sizeKey}/: ${e.message}`);
+      }
+    }
+
+    if (generateInfoHtmlInput?.checked && aggregatedForHtml.length) {
+      try {
+        const html = buildAssetsIndexHtml(aggregatedForHtml);
+        const htmlFile = await rootFolder.createFile("info-image.html", { overwrite: true });
+        await htmlFile.write(html);
+        log(`[ASSETS] Saved: info-image.html at root (${aggregatedForHtml.length} item(s))`);
+      } catch (e) {
+        log(`[ASSETS] info-image.html skipped: ${e.message}`);
+      }
+    }
+
+    log(`[ASSETS] Synced ${assetExportMap.size} layer→filename mapping(s).`);
+    return;
+  }
+
+  // Default mode — picker + timestamped subfolder.
   const parent = await fs.getFolder();
   if (!parent) { log("[ASSETS] Export cancelled."); return; }
 
-  // Derive label from source doc name
   let label = "assets";
   try {
     const docName = (app.activeDocument.name || "assets").replace(/\.(psd|psb|jpg|jpeg|png|tif|tiff)$/i, "");
@@ -3557,24 +4239,31 @@ async function exportAssets() {
   const subfolder = await createTimestampedSubfolder(parent, label);
   log(`[ASSETS] Output: ${subfolder.name}/`);
 
-  await runExportAssetsFlow(subfolder);
+  await runExportAssetsFlow(subfolder, { jpgQuality });
+  log(`[ASSETS] Synced ${assetExportMap.size} layer→filename mapping(s). Run Export Layer JSON now to bake them into JSON.`);
 }
 
-async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
+async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAssets = null, jpgQuality = 75 } = {}) {
   const exportedAssets = [];
+  const assetList = scopedAssets || scannedAssets;
   await core.executeAsModal(async () => {
     const sourceDoc = app.activeDocument;
     const sourceDocId = sourceDoc.id;
 
-    for (let i = 0; i < scannedAssets.length; i++) {
-      const asset = scannedAssets[i];
+    for (let i = 0; i < assetList.length; i++) {
+      const asset = assetList[i];
       let tempDocId = null;
 
       try {
-        log(`[ASSETS] (${i + 1}/${scannedAssets.length}) ${asset.exportName} — mode=${asset.sizeMode}, ${asset.scale}x, ${asset.type}`);
+        log(`[ASSETS] (${i + 1}/${assetList.length}) ${asset.exportName} — mode=${asset.sizeMode}, ${asset.scale}x, ${asset.type}`);
 
         // Filename
-        const safeName = asset.exportName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
+        // Advanced mode: keep filename identical to PSD layer name
+        //   (only strip illegal filesystem chars; preserve case, spaces, underscores).
+        // Default mode: legacy behavior — replace spaces with "-", lowercase all.
+        const safeName = isAdvancedEnabled()
+          ? asset.exportName.replace(/[<>:"/\\|?*]/g, "_")
+          : asset.exportName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
         const extLower = asset.type === "JPG" ? "jpg" : "png";
         const filename = `${safeName}.${extLower}`;
 
@@ -3597,7 +4286,7 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
           }
 
           await selectLayerById(asset.layerId);
-          await bp([{ _obj: "placedLayerEditContents", _options: { dialogOptions: "dontDisplay" } }]);
+          await bp([{ _obj: "placedLayerEditContents", _options: { dialogOptions: "silent" } }]);
 
           if (app.activeDocument.id === sourceDocId) {
             log(`[ASSETS] Skipped "${asset.exportName}" — failed to open SO contents`);
@@ -3611,17 +4300,21 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
             await resizeImage(Math.round(w * asset.scale), Math.round(h * asset.scale), true);
           }
           if (asset.type === "JPG") {
-            try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]); } catch (e) {}
+            try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "silent" } }]); } catch (e) {}
           }
 
-          const savedD = await saveActiveDocAs(folder, filename, asset.type);
-          if (savedD) exportedAssets.push({ ...savedD, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
+          const savedD = await saveActiveDocAs(folder, filename, asset.type, { jpgQuality });
+          if (savedD) {
+            exportedAssets.push({ ...savedD, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
+            assetExportMap.set(asset.layerId, filename);
+          }
 
           // Close temp doc by ID
           await bp([{
             _obj: "close",
             _target: [{ _ref: "document", _id: tempDocId }],
-            saving: { _enum: "yesNo", _value: "no" }
+            saving: { _enum: "yesNo", _value: "no" },
+            _options: { dialogOptions: "silent" }
           }]);
           tempDocId = null;
           log(`[ASSETS] Saved: ${filename}`);
@@ -3667,7 +4360,7 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
             profile: "sRGB IEC61966-2.1",
             name: tempDocName
           },
-          _options: { dialogOptions: "dontDisplay" }
+          _options: { dialogOptions: "silent" }
         }]);
 
         if (app.activeDocument.id === sourceDocId) {
@@ -3681,28 +4374,25 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
         await bp([{
           _obj: "select",
           _target: [{ _ref: "document", _id: sourceDocId }],
-          _options: { dialogOptions: "dontDisplay" }
+          _options: { dialogOptions: "silent" }
         }]);
-        log(`[DEBUG] Switched to source doc. activeDoc.id=${app.activeDocument.id}, sourceDocId=${sourceDocId}`);
 
         // Select target layer in source
         await selectLayerById(asset.layerId);
-        log(`[DEBUG] Selected source layer: ${asset.layerName} (id=${asset.layerId})`);
 
         // Duplicate layer into the new temp doc by name
         await bp([{
           _obj: "duplicate",
           _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
           to: { _ref: "document", _name: tempDocName },
-          _options: { dialogOptions: "dontDisplay" }
+          _options: { dialogOptions: "silent" }
         }]);
-        log(`[DEBUG] Duplicate layer command sent. activeDoc.id after dup=${app.activeDocument.id}`);
 
         // Switch to temp doc
         await bp([{
           _obj: "select",
           _target: [{ _ref: "document", _id: tempDocId }],
-          _options: { dialogOptions: "dontDisplay" }
+          _options: { dialogOptions: "silent" }
         }]);
         log(`[DEBUG] Switched to temp doc. layers=${app.activeDocument.layers.length}, activeLayers=${app.activeDocument.activeLayers.length}`);
         if (app.activeDocument.layers.length > 0) {
@@ -3785,7 +4475,7 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
         // Merge group layers into one
         if (asset.isGroup) {
           try {
-            await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]);
+            await bp([{ _obj: "flattenImage", _options: { dialogOptions: "silent" } }]);
           } catch (e) {}
         }
 
@@ -3831,12 +4521,15 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
 
         // Flatten for JPG
         if (asset.type === "JPG") {
-          try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "dontDisplay" } }]); } catch (e) {}
+          try { await bp([{ _obj: "flattenImage", _options: { dialogOptions: "silent" } }]); } catch (e) {}
         }
 
         // Save
-        const saved = await saveActiveDocAs(folder, filename, asset.type);
-        if (saved) exportedAssets.push({ ...saved, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
+        const saved = await saveActiveDocAs(folder, filename, asset.type, { jpgQuality });
+        if (saved) {
+          exportedAssets.push({ ...saved, exportName: asset.exportName, kind: asset.kind, sizeMode: asset.sizeMode });
+          assetExportMap.set(asset.layerId, filename);
+        }
 
         // Close temp doc by ID
         await bp([{
@@ -3877,10 +4570,7 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
       try {
         const allArtboards = [];
         for (const source of scannedArtboards) {
-          const layersInfo = [];
-          for (const child of source.layer.layers) {
-            layersInfo.push(await collectLayerInfo(child, source.size.left, source.size.top));
-          }
+          const layersInfo = await collectChildrenInfo(source.layer.layers, source.size.left, source.size.top);
           allArtboards.push({
             artboard: source.name,
             width: source.size.width,
@@ -3896,22 +4586,24 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true } = {}) {
         log(`[ASSETS] layers.json skipped: ${e.message}`);
       }
 
-      // Generate index.html gallery (full export only)
+      // Generate info-image.html gallery (full export only)
       if (exportedAssets.length) {
         try {
           const html = buildAssetsIndexHtml(exportedAssets);
-          const htmlFile = await folder.createFile("index.html", { overwrite: true });
+          const htmlFile = await folder.createFile("info-image.html", { overwrite: true });
           await htmlFile.write(html);
-          log(`[ASSETS] Saved: index.html (${exportedAssets.length} item(s))`);
+          log(`[ASSETS] Saved: info-image.html (${exportedAssets.length} item(s))`);
         } catch (e) {
-          log(`[ASSETS] index.html skipped: ${e.message}`);
+          log(`[ASSETS] info-image.html skipped: ${e.message}`);
         }
       }
     }
 
-    log(`[ASSETS] === Export complete: ${scannedAssets.length} asset(s) ===`);
+    log(`[ASSETS] === Export complete: ${assetList.length} asset(s) ===`);
 
   }, { commandName: "Banner Cloner - Export Assets" });
+
+  return exportedAssets;
 }
 
 function formatFileSize(bytes) {
@@ -3926,16 +4618,28 @@ function escapeHtml(s) {
 }
 
 function buildAssetsIndexHtml(items) {
-  const rows = items.map(it => {
+  // Derive group key from pathPrefix (e.g. "300x600/assets" → "300x600").
+  // Items without pathPrefix go into the unnamed group "" (single-folder exports).
+  const groupOrder = [];
+  const groupMap = new Map();
+  for (const it of items) {
+    const key = (it.pathPrefix || "").split("/")[0] || "";
+    if (!groupMap.has(key)) { groupMap.set(key, []); groupOrder.push(key); }
+    groupMap.get(key).push(it);
+  }
+
+  const renderCard = (it) => {
     const name = escapeHtml(it.exportName || it.filename);
     const fname = encodeURIComponent(it.filename);
-    const kind = escapeHtml(it.kind === "smartObject" ? "Smart" : "Pixel");
+    const prefix = it.pathPrefix ? it.pathPrefix.split("/").map(encodeURIComponent).join("/") + "/" : "";
+    const href = `./${prefix}${fname}`;
+    const kind = escapeHtml(it.kind === "smartObject" ? "Smart" : (it.kind === "group" ? "Group" : "Pixel"));
     const dims = `${it.width} × ${it.height}`;
     const size = formatFileSize(it.bytes);
     return `
     <figure class="card">
-      <a href="./${fname}" target="_blank" rel="noopener">
-        <img src="./${fname}" alt="${name}" loading="lazy">
+      <a href="${href}" target="_blank" rel="noopener">
+        <img src="${href}" alt="${name}" loading="lazy">
       </a>
       <figcaption>
         <div class="name" title="${name}">${name}</div>
@@ -3947,6 +4651,15 @@ function buildAssetsIndexHtml(items) {
         </div>
       </figcaption>
     </figure>`;
+  };
+
+  const sections = groupOrder.map(key => {
+    const list = groupMap.get(key);
+    const bytes = list.reduce((s, i) => s + (i.bytes || 0), 0);
+    const heading = key
+      ? `<h2 class="group-title">${escapeHtml(key)} <span class="group-meta">${list.length} item(s) · ${formatFileSize(bytes)}</span></h2>`
+      : "";
+    return `${heading}\n<section class="grid">\n${list.map(renderCard).join("\n")}\n</section>`;
   }).join("\n");
 
   const totalBytes = items.reduce((s, i) => s + (i.bytes || 0), 0);
@@ -3965,9 +4678,11 @@ function buildAssetsIndexHtml(items) {
   header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 12px; }
   h1 { margin: 0; font-size: 18px; font-weight: 600; }
   .summary { font-size: 13px; color: #888; }
+  .group-title { font-size: 15px; font-weight: 600; color: #8bc34a; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #333; }
+  .group-title .group-meta { font-size: 12px; font-weight: 400; color: #888; margin-left: 8px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
   .card { margin: 0; background: #242424; border: 1px solid #333; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
-  .card img { display: block; width: 100%; max-width: 400px; height: auto; margin: 0 auto; background: repeating-conic-gradient(#2a2a2a 0% 25%, #1e1e1e 0% 50%) 50% / 20px 20px; cursor: zoom-in; }
+  .card img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: repeating-conic-gradient(#2a2a2a 0% 25%, #1e1e1e 0% 50%) 50% / 20px 20px; cursor: zoom-in; }
   figcaption { padding: 10px 12px; border-top: 1px solid #333; }
   .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: #aaa; align-items: center; }
@@ -3981,21 +4696,25 @@ function buildAssetsIndexHtml(items) {
   <h1>Exported Assets</h1>
   <div class="summary">${summary}</div>
 </header>
-<section class="grid">
-${rows}
-</section>
+${sections}
 </body>
 </html>`;
 }
 
 async function addGroupToAssets() {
   try {
+    const v = validateAdvancedInputs();
+    if (!v.ok) { v.errors.forEach(e => log(`[ASSETS] ${e}`)); log("[ASSETS] Fill required fields before Add Group."); return; }
     const doc = app.activeDocument;
     if (!doc) { log("[ASSETS] No document open."); return; }
     const sel = doc.activeLayers?.[0];
     if (!sel) { log("[ASSETS] Please select a group in Layers panel."); return; }
     if (!sel.layers || !sel.layers.length) {
       log("[ASSETS] Selected layer is not a group."); return;
+    }
+    if (isGgPrefixFilterEnabled() && !hasGgPrefix(sel.name)) {
+      log(`[ASSETS] Skipped "${sel.name}" — filter gg- is on, group name must start with "gg-"`);
+      return;
     }
 
     // Find parent artboard for bounds reference
@@ -4019,14 +4738,16 @@ async function addGroupToAssets() {
       log("[ASSETS] Group has empty bounds."); return;
     }
 
+    const advancedOn = isAdvancedEnabled();
+    const exportName = advancedOn ? sel.name.replace(/^gg-/i, "") : sel.name;
     scannedAssets.push({
       layerId: sel.id,
       layerName: sel.name,
-      exportName: sel.name,
+      exportName,
       kind: "group",
       isGroup: true,
-      sizeMode: "A",
-      scale: 2,
+      sizeMode: advancedOn ? "B" : "A",
+      scale: advancedOn ? 1 : 2,
       type: "PNG",
       bounds: bounds,
       artboardRect: artboardRect
@@ -4046,6 +4767,60 @@ ignoreLayerInput.addEventListener("input", () => {
   try { localStorage.setItem(IGNORE_KEY, ignoreLayerInput.value); } catch (e) {}
 });
 try { const saved = localStorage.getItem(IGNORE_KEY); if (saved) ignoreLayerInput.value = saved; } catch (e) {}
+
+// ─── Advanced options persistence + toggle ───
+const ADV_KEY = "bannerCloner.advancedOptions";
+const advancedOptionsEnabled = document.getElementById("advancedOptionsEnabled");
+const advancedOptionsPanel = document.getElementById("advancedOptionsPanel");
+const customExportPathInput = document.getElementById("customExportPath");
+const jpgQualityInput = document.getElementById("jpgQuality");
+const filterGgPrefixInput = document.getElementById("filterGgPrefix");
+const generateInfoHtmlInput = document.getElementById("generateInfoHtml");
+
+function updateAdvancedPanelVisibility() {
+  if (advancedOptionsPanel) advancedOptionsPanel.style.display = advancedOptionsEnabled?.checked ? "" : "none";
+}
+
+try {
+  const saved = JSON.parse(localStorage.getItem(ADV_KEY) || "{}");
+  // Advanced toggle always starts unchecked on plugin load — other fields are restored.
+  if (advancedOptionsEnabled) advancedOptionsEnabled.checked = false;
+  if (typeof saved.path === "string" && customExportPathInput) customExportPathInput.value = saved.path;
+  if (Number.isFinite(saved.quality) && jpgQualityInput) jpgQualityInput.value = String(saved.quality);
+  if (typeof saved.ggFilter === "boolean" && filterGgPrefixInput) filterGgPrefixInput.checked = saved.ggFilter;
+  if (typeof saved.infoHtml === "boolean" && generateInfoHtmlInput) generateInfoHtmlInput.checked = saved.infoHtml;
+} catch (e) {}
+updateAdvancedPanelVisibility();
+
+function saveAdvancedOptions() {
+  try {
+    localStorage.setItem(ADV_KEY, JSON.stringify({
+      enabled: !!advancedOptionsEnabled?.checked,
+      path: customExportPathInput?.value || "",
+      quality: parseInt(jpgQualityInput?.value, 10),
+      ggFilter: !!filterGgPrefixInput?.checked,
+      infoHtml: !!generateInfoHtmlInput?.checked
+    }));
+  } catch (e) {}
+}
+
+advancedOptionsEnabled?.addEventListener("change", () => {
+  updateAdvancedPanelVisibility();
+  saveAdvancedOptions();
+  // Advanced toggle changes dedupe scope + export naming + size-mode defaults,
+  // so existing scan results become stale. Clear them to force a fresh scan.
+  if (scannedAssets.length) {
+    scannedAssets = [];
+    scannedArtboards = [];
+    assetExportMap.clear();
+    log("[ASSETS] Advanced changed — scanned list cleared. Click Get Images to rescan.");
+    renderAssetList();
+  }
+});
+customExportPathInput?.addEventListener("input", () => { customExportPathInput.classList.remove("input-error"); saveAdvancedOptions(); });
+jpgQualityInput?.addEventListener("input", () => { jpgQualityInput.classList.remove("input-error"); saveAdvancedOptions(); });
+filterGgPrefixInput?.addEventListener("change", saveAdvancedOptions);
+generateInfoHtmlInput?.addEventListener("change", saveAdvancedOptions);
 
 // ─── Artboard picker ───
 

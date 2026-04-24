@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banner Resize</title>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <h1>Banner Resize</h1>
+    <p class="subtitle" id="selection-info">Select a frame to begin</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="setup">Setup</button>
+    <button class="tab" data-tab="preview">Preview</button>
+    <button class="tab" data-tab="export">Export</button>
+  </div>
+
+  <!-- Tab: Setup -->
+  <div class="tab-content active" id="tab-setup">
+    <!-- Naming -->
+    <div class="section">
+      <div class="section-title">Naming Convention</div>
+      <div class="naming-grid">
+        <div class="field">
+          <label>Client</label>
+          <input type="text" id="naming-client" placeholder="client_name">
+        </div>
+        <div class="field">
+          <label>Campaign</label>
+          <input type="text" id="naming-campaign" placeholder="campaign_name">
+        </div>
+        <div class="field">
+          <label>Version</label>
+          <input type="text" id="naming-version" placeholder="v1">
+        </div>
+      </div>
+      <div class="naming-preview">
+        <span class="label">Preview:</span>
+        <span id="naming-preview-text" class="mono">client_campaign_300x250_v1</span>
+      </div>
+    </div>
+
+    <!-- Size list -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">Target Sizes</div>
+        <button class="btn btn-sm" id="btn-add-size">+ Add Size</button>
+      </div>
+      <div class="size-list" id="size-list">
+        <!-- Rendered by JS -->
+      </div>
+      <div class="size-actions">
+        <button class="btn btn-sm btn-ghost" id="btn-select-all">Select All</button>
+        <button class="btn btn-sm btn-ghost" id="btn-deselect-all">Deselect All</button>
+      </div>
+    </div>
+
+    <!-- Generate -->
+    <div class="section">
+      <button class="btn btn-primary btn-full" id="btn-generate" disabled>Generate All Sizes</button>
+      <div class="progress-bar hidden" id="generate-progress">
+        <div class="progress-fill" id="generate-progress-fill"></div>
+        <span class="progress-text" id="generate-progress-text"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Preview -->
+  <div class="tab-content" id="tab-preview">
+    <div class="empty-state" id="preview-empty">
+      <p>No banners generated yet.<br>Go to Setup tab to generate.</p>
+    </div>
+    <div class="banner-grid" id="banner-grid">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+
+  <!-- Tab: Export -->
+  <div class="tab-content" id="tab-export">
+    <div class="section">
+      <div class="section-title">Export Settings</div>
+      <div class="export-formats">
+        <label class="checkbox-label"><input type="checkbox" id="fmt-png" checked> PNG</label>
+        <label class="checkbox-label"><input type="checkbox" id="fmt-jpg"> JPG</label>
+        <label class="checkbox-label"><input type="checkbox" id="fmt-svg"> SVG</label>
+      </div>
+      <div class="field field-inline" id="jpg-quality-field" style="display:none;">
+        <label>JPG Quality</label>
+        <input type="range" id="jpg-quality" min="1" max="100" value="80">
+        <span id="jpg-quality-value">80</span>
+      </div>
+      <div class="field field-inline">
+        <label>Max file size (kb)</label>
+        <input type="number" id="max-size" value="200" min="1">
+      </div>
+    </div>
+
+    <div class="section">
+      <button class="btn btn-primary btn-full" id="btn-export" disabled>Export All</button>
+      <div class="progress-bar hidden" id="export-progress">
+        <div class="progress-fill" id="export-progress-fill"></div>
+        <span class="progress-text" id="export-progress-text"></span>
+      </div>
+    </div>
+
+    <div class="export-results hidden" id="export-results">
+      <div class="section-header">
+        <div class="section-title">Results</div>
+        <button class="btn btn-sm btn-primary" id="btn-download-all">Download All</button>
+      </div>
+      <table class="results-table">
+        <thead>
+          <tr><th>File</th><th>Format</th><th>Size</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody id="export-results-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add Size Modal -->
+  <div class="modal hidden" id="modal-add-size">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-title">Add Custom Size</div>
+      <div class="modal-fields">
+        <div class="field">
+          <label>Width (px)</label>
+          <input type="number" id="custom-width" min="1" placeholder="300">
+        </div>
+        <div class="field">
+          <label>Height (px)</label>
+          <input type="number" id="custom-height" min="1" placeholder="250">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-cancel-size">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-size">Add</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Banner Helper — User Guide</title>
+<style>
+  :root {
+    --gg-green: #b7e39b;
+    --gg-green-dark: #59a139;
+    --gg-accent: #a32600;
+    --bg-page: #121212;
+    --bg-card: #1c1c1c;
+    --bg-soft: #181818;
+    --border: #2a2a2a;
+    --text-primary: #f2f2f2;
+    --text-secondary: #bfbfbf;
+    --text-muted: #8a8a8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+  }
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .lang-switch {
+    text-align: right;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .lang-switch a {
+    color: var(--gg-green);
+    text-decoration: none;
+    font-weight: 700;
+    margin-left: 4px;
+  }
+  .lang-switch a:hover { text-decoration: underline; }
+  .lang-switch .current {
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-left: 4px;
+  }
+
+  header {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    color: var(--gg-green);
+    letter-spacing: 0.4px;
+  }
+  header .ver {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gg-green);
+    background: rgba(89, 161, 57, 0.1);
+    border: 1px solid var(--gg-green-dark);
+    border-radius: 10px;
+    padding: 2px 8px;
+    margin-left: 8px;
+    vertical-align: 3px;
+    letter-spacing: 0.5px;
+  }
+  header .tag {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  header .author {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  header .author strong { color: var(--gg-green); }
+
+  nav.toc {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 32px;
+  }
+  nav.toc h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+  nav.toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  nav.toc li { padding: 2px 0; }
+  nav.toc a {
+    color: var(--gg-green);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  nav.toc a:hover { text-decoration: underline; }
+
+  section {
+    margin-bottom: 40px;
+    scroll-margin-top: 20px;
+  }
+  section h2 {
+    margin: 0 0 14px;
+    font-size: 20px;
+    color: var(--gg-green);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  section h3 {
+    margin: 24px 0 8px;
+    font-size: 15px;
+    color: var(--text-primary);
+    letter-spacing: 0.3px;
+  }
+  section p {
+    color: var(--text-secondary);
+    margin: 8px 0;
+  }
+  section strong { color: var(--text-primary); }
+  section code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--gg-green);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin: 10px 0 18px;
+  }
+
+  ol, ul { padding-left: 22px; color: var(--text-secondary); }
+  ol li, ul li { margin: 4px 0; }
+  ol strong, ul strong { color: var(--text-primary); }
+
+  .kbd {
+    display: inline-block;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-primary);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin: 0 1px;
+  }
+
+  .tip {
+    background: rgba(89, 161, 57, 0.08);
+    border-left: 3px solid var(--gg-green-dark);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  .tip strong { color: var(--gg-green); }
+
+  .warn {
+    background: rgba(163, 38, 0, 0.08);
+    border-left: 3px solid var(--gg-accent);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    color: #ffcbba;
+    font-size: 13px;
+  }
+  .warn strong { color: #ffb8a0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { color: var(--text-secondary); }
+  td strong, td code { color: var(--text-primary); }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+  footer strong { color: var(--gg-green); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="lang-switch">
+  Language:
+  <a href="README.html">VI</a>
+  <span class="current">· EN</span>
+</div>
+
+<header>
+  <h1>Banner Helper<span class="ver">v1.0.0</span></h1>
+  <div class="tag">InDesign UXP plugin — calculate logo area, bulk relink, and check scale integrity.</div>
+  <div class="author">by <strong>Thien Ho</strong> · Technical Solution · Gravity Global</div>
+</header>
+
+<nav class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#install">1. Install &amp; Open</a></li>
+    <li><a href="#quickstart">2. Quick Start</a></li>
+    <li><a href="#calculator">3. Calculator Tab</a></li>
+    <li><a href="#settings">4. Settings Tab</a></li>
+    <li><a href="#relink">5. Relink Tab</a></li>
+    <li><a href="#scalecheck">6. Scale Check Tab</a></li>
+    <li><a href="#logs">7. Logs Panel</a></li>
+    <li><a href="#faq">8. FAQ / Tips</a></li>
+  </ul>
+</nav>
+
+<section id="install">
+  <h2>1. Install &amp; Open</h2>
+  <ol>
+    <li>Open <strong>Adobe UXP Developer Tool</strong>.</li>
+    <li>Add Plugin → select the <code>Indesign-UXP-Plugin-helper</code> folder (the one with <code>manifest.json</code>).</li>
+    <li>In InDesign: <strong>Window → Extensions → Banner Helper</strong>.</li>
+  </ol>
+  <div class="tip"><strong>Quick reload while developing:</strong> in the UXP Developer Tool, click <strong>Reload</strong> on the plugin row.</div>
+</section>
+
+<section id="quickstart">
+  <h2>2. Quick Start — 30-second tour</h2>
+  <ol>
+    <li><strong>Open</strong> the InDesign document you want to check.</li>
+    <li><strong>Calculator</strong>: select a logo frame on the canvas → click <em>+ Add selection as logo</em> → see the area calculated using the client ratio.</li>
+    <li><strong>Scale Check</strong>: auto-scans on open. A red badge on the tab shows the issue count. Click the tab to see a list of broken-ratio graphics with a Select button to jump to each frame.</li>
+    <li><strong>Relink</strong>: when links go missing or paths change, scan + pick a new folder → relink in bulk.</li>
+  </ol>
+</section>
+
+<section id="calculator">
+  <h2>3. Calculator Tab — Logos</h2>
+  <p>Calculates each logo's area using the client ratio, plus the document total. Useful for quoting and brand-coverage percentage reports.</p>
+
+  <h3>3.1 Add a logo</h3>
+  <ol>
+    <li>Select a frame in InDesign.</li>
+    <li>Click <strong>+ Add selection as logo</strong>.</li>
+    <li>A dialog prompts for a name + client → OK.</li>
+  </ol>
+  <p>Each row shows: name, client, dimensions (W × H), area (<code>W × H × ratio</code>). Click the name to edit; click the empty row area to <strong>select</strong> that frame in InDesign.</p>
+
+  <h3>3.2 Page filter &amp; Compact view</h3>
+  <p>Multi-page document → page filter bar at the top. Click a page to filter logos to it. The currently active page is highlighted in green.</p>
+  <p>The <strong>≡</strong> icon toggles compact view (denser rows, less meta).</p>
+
+  <h3>3.3 Totals + Copy CSV</h3>
+  <p>Footer shows total logo count + total area. <strong>Copy CSV</strong> copies the full list to the clipboard for pasting into Excel/Sheets.</p>
+
+  <h3>3.4 Report frame (auto-updating)</h3>
+  <div class="card">
+    <p><strong>Purpose:</strong> render a summary table inside the InDesign doc that auto-updates as you add/edit/remove logos.</p>
+    <ol>
+      <li>Create an empty text frame in the doc, wherever you want the report.</li>
+      <li>Select it → in the plugin, click <strong>Link selected frame</strong>.</li>
+      <li>Enter a <em>Title</em> (e.g. "QSR Percentages").</li>
+    </ol>
+    <p>Output in the frame: <code>Title All = ...</code> + a 4-column table (Label | Square | = | Pct%). Text styling is preserved — the plugin only replaces content.</p>
+    <p><strong>Unlink</strong> to stop auto-updates.</p>
+  </div>
+
+  <h3>3.5 Document name (stamp filename)</h3>
+  <p>Select a text frame → click <strong>Link &amp; insert</strong> → the plugin writes the doc's filename (without <code>.indd</code>) into that frame. It updates automatically if the file is renamed.</p>
+
+  <h3>3.6 Share — Export / Import</h3>
+  <p><strong>Export:</strong> saves logos + clients + settings to a <code>.json</code> file. Good for backups or moving a setup between machines.</p>
+  <p><strong>Import:</strong></p>
+  <ul>
+    <li>Client name conflict → prompts <em>Override / Rename / Skip</em>.</li>
+    <li>Logo list → fully replaced (asks for confirmation if you already have data).</li>
+    <li>Title + unit → overwritten if present in the file.</li>
+  </ul>
+</section>
+
+<section id="settings">
+  <h2>4. Calculator — Settings</h2>
+
+  <h3>4.1 Display unit</h3>
+  <p>Display unit: <strong>Auto</strong> (follows the doc's ruler) or fixed: <code>px / mm / cm / in</code>. All math runs in points internally — only the display changes.</p>
+
+  <h3>4.2 Clients</h3>
+  <p>Every logo is tied to a client. A client has a <strong>name</strong> + <strong>ratio</strong> (multiplier applied to the raw area when billing).</p>
+  <p>Defaults:</p>
+  <table>
+    <thead><tr><th>Client</th><th>Ratio</th></tr></thead>
+    <tbody>
+      <tr><td>Pilot</td><td><code>0.587</code></td></tr>
+      <tr><td>Flying</td><td><code>0.556</code></td></tr>
+      <tr><td>Generic</td><td><code>1.0</code></td></tr>
+    </tbody>
+  </table>
+  <p>Use <strong>+ Add client</strong> to add more. Click <strong>Save settings</strong> to persist (stored in localStorage, applies across every document).</p>
+</section>
+
+<section id="relink">
+  <h2>5. Relink Tab</h2>
+  <p>Bulk-fix missing/out-of-date links when switching machines, moving projects, or renaming folders.</p>
+
+  <h3>5.1 Relink to Folder</h3>
+  <ol>
+    <li><strong>Scan missing</strong> — lists missing links. <strong>Scan all</strong> = lists everything with its status.</li>
+    <li><strong>+ subfolders</strong> checkbox (default ON): walks into subfolders when relinking.</li>
+    <li>Click <strong>Pick folder &amp; relink</strong> → choose the folder with the new files. Matching is by <em>filename</em>.</li>
+  </ol>
+  <div class="tip"><strong>The "All opened docs" checkbox</strong> affects <em>both scanning and the relink actions</em> (Pick folder &amp; Path Find &amp; Replace). Enabled = every open document is touched. Disabled = active doc only.</div>
+
+  <h3>5.2 Path Find &amp; Replace (regex)</h3>
+  <p>When only the <strong>path prefix</strong> changed (e.g. different user folder), no need to repick files one by one.</p>
+  <div class="card">
+    <p><strong>Example:</strong> copying a project from a teammate's machine to your own.</p>
+    <p>Pattern: <code>/Users/anh\.le/</code><br>Replace: <code>/Users/thien.ho/</code></p>
+    <p>Scope:</p>
+    <ul>
+      <li><strong>Missing links only</strong> — rewrite only the missing ones.</li>
+      <li><strong>All links</strong> — rewrite everything, even links that are currently OK (use with care).</li>
+    </ul>
+    <p>The <strong>Recent</strong> dropdown remembers the last 5 pattern/replace pairs — click to reload.</p>
+  </div>
+  <div class="warn"><strong>Careful:</strong> escape the dots in regex (<code>\.</code>). A bad pattern can break paths — <span class="kbd">Cmd+Z</span> in InDesign reverts it.</div>
+</section>
+
+<section id="scalecheck">
+  <h2>6. Scale Check Tab</h2>
+  <p>Detects placed graphics whose horizontal and vertical scale <strong>don't match</strong> (designer dragged a corner without holding <span class="kbd">Shift</span> → logo is distorted). Auto-scans on plugin open / doc switch / geometry change.</p>
+
+  <h3>6.1 Reading the result</h3>
+  <div class="card">
+    <p><strong>Summary bar</strong> at the top:</p>
+    <ul>
+      <li><span style="color:var(--gg-green)">✓ All N placed graphics are proportional</span> — everything's fine.</li>
+      <li><span style="color:#ffb8a0">⚠ X of N placed graphics have broken ratio</span> — issues found.</li>
+    </ul>
+    <p>The <strong>red badge</strong> on the <em>Scale Check</em> tab shows the issue count — visible from every other tab, so you don't need to be on Scale Check to know there's a problem.</p>
+  </div>
+
+  <h3>6.2 Result rows</h3>
+  <p>Each row in the issues list shows:</p>
+  <ul>
+    <li><strong>Link filename</strong> (e.g. <code>logo-white.png</code>) + page tag (<code>p.1</code>, <code>p.2</code>…)</li>
+    <li><strong>W xx.x%</strong> / <strong>H xx.x%</strong> — current horizontal/vertical scale. The <em>smaller</em> value is highlighted red.</li>
+    <li><strong>Δ xx.x%</strong> — the delta. Red when &gt; 5%, amber when ≤ 5%.</li>
+    <li><strong>Select</strong> button — jumps to the page and selects that frame in InDesign.</li>
+  </ul>
+
+  <h3>6.3 Filters</h3>
+  <ul>
+    <li><strong>Vector only</strong> — only check <code>.ai / .eps / .pdf / .svg</code> (typical logo formats). Default OFF = check every placed graphic.</li>
+    <li><strong>Current spread</strong> — only check the active spread (faster on long documents).</li>
+  </ul>
+
+  <h3>6.4 Pass list (proportional graphics)</h3>
+  <p>Below the issues list, a green toggle <strong>▸ Show N proportional graphics</strong> reveals the list of graphics that are currently OK — including their scale values (e.g. <code>W 100%  H 100%</code>) so you can verify the plugin scanned the right things.</p>
+
+  <h3>6.5 How to fix a broken-ratio logo</h3>
+  <ol>
+    <li>Click <strong>Select</strong> on the issue row → the plugin jumps to the frame.</li>
+    <li>In InDesign, press either:
+      <ul>
+        <li><span class="kbd">Cmd+Alt+Shift+C</span> — Fill Frame Proportionally (frame size kept, image scales evenly, may crop).</li>
+        <li><span class="kbd">Cmd+Alt+Shift+E</span> — Fit Content Proportionally (image scales evenly, no crop, may leave whitespace).</li>
+      </ul>
+    </li>
+    <li>The plugin re-scans within 500 ms → the row disappears from the issues list, the badge count drops.</li>
+  </ol>
+
+  <div class="tip"><strong>Detection rule:</strong> <code>horizontalScale !== verticalScale</code> (tolerance 0.001%). So a graphic scaled evenly at 98% / 98% still PASSES, but 98.5% / 100% is flagged.</div>
+</section>
+
+<section id="logs">
+  <h2>7. Logs Panel (shared)</h2>
+  <p>Bottom of the plugin, shared by all three tabs. Click the header to expand/collapse.</p>
+  <ul>
+    <li><strong>Copy</strong> — copies all log output to the clipboard.</li>
+    <li><strong>Clear</strong> — clears the log.</li>
+  </ul>
+  <p>Useful when a relink or import fails — the log tells you which file and why.</p>
+</section>
+
+<section id="faq">
+  <h2>8. FAQ / Tips</h2>
+
+  <h3>Which document does the plugin scan?</h3>
+  <p>All tabs operate on the <strong>active document</strong>. Relink has an <em>All opened docs</em> option to scan/act on multiple documents at once.</p>
+
+  <h3>Does data persist?</h3>
+  <ul>
+    <li><strong>Logos</strong> — stored in the <code>.indd</code> doc label → travels with the file, shared with your team when you share it.</li>
+    <li><strong>Settings (clients, unit, report title)</strong> — plugin localStorage → per machine.</li>
+    <li><strong>UI state (page filter, compact view)</strong> — localStorage → per machine.</li>
+  </ul>
+
+  <h3>Does reloading the plugin lose data?</h3>
+  <p>No. Logos are read from the doc label. Settings are read from localStorage. Reload only refreshes the UI.</p>
+
+  <h3>Do I need to re-scan after switching documents?</h3>
+  <p>No. The plugin polls every <strong>500 ms</strong> and auto-detects doc switches → reloads data + re-renders.</p>
+
+  <h3>Scale Check badge isn't updating?</h3>
+  <ol>
+    <li>Make sure the correct doc is active (plugin scans the active doc only).</li>
+    <li>Click the <strong>⟳ Re-scan</strong> button inside the Scale Check tab to force.</li>
+    <li>Deeply nested graphics inside groups are still scanned (we use <code>doc.allGraphics</code>).</li>
+  </ol>
+
+  <h3>Pick folder ran but nothing relinked?</h3>
+  <ul>
+    <li>Check the log — usually a filename mismatch (case sensitivity).</li>
+    <li>Turn on <strong>+ subfolders</strong> if files are in a subdirectory.</li>
+    <li>If only the path prefix changed (same filenames) → use <strong>Path Find &amp; Replace</strong> instead of Pick folder.</li>
+  </ul>
+
+  <h3>How do I ignore a logo I deliberately scaled non-proportionally?</h3>
+  <p>Not supported in v1. Just skip that row in the list for now.</p>
+</section>
+
+<footer>
+  <div>Banner Helper · v1.0.0 · © 2026</div>
+  <div>by <strong>Thien Ho</strong> · Technical Solution · Gravity Global</div>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,43 @@
+@use "variables" as *;
+
+.size-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid $border;
+  border-radius: $radius-sm;
+  background: $bg-input;
+}
+
+.size-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $sp-xs $sp-sm;
+  border-bottom: 1px solid rgba($border, 0.3);
+
+  &:last-child { border-bottom: none; }
+  &:hover { background: rgba($bg-hover, 0.5); }
+  &.disabled { opacity: 0.5; }
+}
+
+.size-check {
+  flex: 1;
+  gap: $sp-sm;
+}
+
+.size-dim {
+  font-family: $font-mono;
+  font-size: $fs-sm;
+  min-width: 90px;
+}
+
+.size-ratio {
+  font-size: $fs-xs;
+  color: $text-muted;
+}
+
+.size-actions {
+  display: flex;
+  gap: $sp-sm;
+  margin-top: $sp-xs;
+}

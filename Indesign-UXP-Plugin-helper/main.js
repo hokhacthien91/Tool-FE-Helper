@@ -1645,6 +1645,59 @@ function timestamp() {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+// HTML-capable log. Continuation lines align under the timestamp instead of
+// repeating it, so diff output reads as a block, not a spam of timestamps.
+// Callers must pre-escape any untrusted substrings; only the markup they add
+// (e.g. diff highlight spans) is allowed through.
+function logHtml(html, level, opts) {
+  const continuation = !!(opts && opts.continuation);
+  try { console.log(`[BannerHelper] ${String(html).replace(/<[^>]+>/g, "")}`); } catch (e) {}
+  const box = document.getElementById("logBox");
+  if (!box) return;
+  const line = document.createElement("div");
+  const prefix = continuation ? "           " : `[${timestamp()}] `;
+  line.innerHTML = `${prefix}${html}`;
+  if (level === "error") { line.className = "log-error"; expandLog(); flashLogHeader(); }
+  else if (level === "warn") line.className = "log-warn";
+  else if (level === "success") line.className = "log-success";
+  box.appendChild(line);
+  try { box.scrollTop = box.scrollHeight; } catch (e) {}
+}
+
+// Compute the longest common prefix + suffix between two paths so the middle
+// "changed" portion can be highlighted. Returns null if the paths are equal.
+function pathDiff(oldPath, newPath) {
+  const a = String(oldPath || "");
+  const b = String(newPath || "");
+  if (a === b) return null;
+  let p = 0;
+  const maxP = Math.min(a.length, b.length);
+  while (p < maxP && a[p] === b[p]) p++;
+  let s = 0;
+  const maxS = Math.min(a.length - p, b.length - p);
+  while (s < maxS && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  return {
+    prefix: a.slice(0, p),
+    oldMid: a.slice(p, a.length - s),
+    newMid: b.slice(p, b.length - s),
+    suffix: s > 0 ? a.slice(a.length - s) : ""
+  };
+}
+
+// Logs old/new paths on two indented lines, with the changed segment marked.
+// Designed to follow a parent status line (✓/⚠/✗), so both lines use the
+// continuation flag to suppress timestamps and align under the header.
+function logPathDiff(oldPath, newPath, level) {
+  const d = pathDiff(oldPath, newPath);
+  if (!d) return;
+  const pre = escapeHtml(d.prefix);
+  const suf = escapeHtml(d.suffix);
+  const oldMark = d.oldMid ? `<span class="log-diff-old">${escapeHtml(d.oldMid)}</span>` : "";
+  const newMark = d.newMid ? `<span class="log-diff-new">${escapeHtml(d.newMid)}</span>` : "";
+  logHtml(`    <span class="log-diff-label">old:</span> ${pre}${oldMark}${suf}`, level, { continuation: true });
+  logHtml(`    <span class="log-diff-label">new:</span> ${pre}${newMark}${suf}`, level, { continuation: true });
+}
+
 function expandLog() {
   const box = document.getElementById("logBox");
   const header = document.querySelector(".log-header");
@@ -2174,14 +2227,17 @@ async function applyRewrite() {
     if (!result.ok) {
       failed++;
       log(`  ✗ ${tag}${r.name}: ${result.error || "unknown error"}`, "error");
+      logPathDiff(r.oldPath, r.newPath, "error");
       continue;
     }
     if (isMissing(r.link)) {
       missing++;
-      log(`  ⚠ ${tag}${r.name} → ${r.newPath} (still missing — file not found at target)`, "warn");
+      log(`  ⚠ ${tag}${r.name} — file not found at new path`, "warn");
+      logPathDiff(r.oldPath, r.newPath, "warn");
     } else {
       ok++;
-      log(`  ✓ ${tag}${r.name} → ${r.newPath}`, "success");
+      log(`  ✓ ${tag}${r.name}`, "success");
+      logPathDiff(r.oldPath, r.newPath, "success");
     }
   }
 

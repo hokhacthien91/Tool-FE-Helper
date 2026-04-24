@@ -1,0 +1,38 @@
+@use "variables" as *;
+
+.export-formats {
+  display: flex;
+  gap: $sp-lg;
+  margin-bottom: $sp-md;
+}
+
+.export-results {
+  margin-top: $sp-lg;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $fs-xs;
+
+  th, td {
+    text-align: left;
+    padding: $sp-xs $sp-sm;
+    border-bottom: 1px solid rgba($border, 0.3);
+  }
+
+  th {
+    color: $text-muted;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+}
+
+.cell-name {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: $font-mono;
+}

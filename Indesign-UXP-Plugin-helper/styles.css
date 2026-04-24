@@ -1061,6 +1061,26 @@ button[disabled] {
 .log-warn { color: #e3c86b; }
 .log-success { color: var(--gg-green); }
 
+/* Path diff markers — highlight only the changed segment of an old/new path
+   so users can spot the exact portion rewritten by a regex replace. */
+.log-diff-label {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.log-diff-old {
+  color: #ffb8a0;
+  background: rgba(163, 38, 0, 0.22);
+  border-radius: 2px;
+  padding: 0 2px;
+  text-decoration: line-through;
+}
+.log-diff-new {
+  color: var(--gg-green);
+  background: rgba(89, 161, 57, 0.22);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
 /* APP FOOTER */
 .app-footer {
   margin-top: 14px;

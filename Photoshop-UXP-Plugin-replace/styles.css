@@ -253,11 +253,8 @@ input[type="radio"]:checked::after {
   color: #fff;
 }
 
-body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; font-size: 13px;}
-.app { padding: 16px; height: 100vh; 
-  
-
-}
+body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; font-size: 13px; overflow-x: auto; overflow-y: auto; }
+.app { padding: 16px; height: 100vh; overflow-y: auto; }
 .replace-row {
   background: var(--panel);
   border: 1px solid var(--border);
