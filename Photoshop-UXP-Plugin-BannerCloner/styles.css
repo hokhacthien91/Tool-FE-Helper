@@ -5,10 +5,10 @@
   --bg: #121212;
   --panel: #1c1c1c;
   --bg-input: #0a0a0a;
-  --text: #f2f2f2;
-  --muted: #b0b0b0;
-  --text-muted: #707070;
-  --border: #2a2a2a;
+  --text: #fff;
+  --muted: #f2f2f2;
+  --text-muted: #a1a1a1;
+  --border: #464646;
 }
 * { box-sizing: border-box; }
 
@@ -38,6 +38,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--bg-input);
+  color: var(--text);
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
@@ -59,7 +60,29 @@ input[type="checkbox"]:checked::after {
 }
 
 body { margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; font-size: 13px; overflow-x: auto; overflow-y: auto; }
-.app { padding: 60px 16px 10px; height: 100vh; overflow-y: auto; }
+.app { padding: 130px 16px 10px; height: 100vh; overflow-y: auto; }
+
+.action-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  padding: 8px 12px;
+  background: #0a0a0a;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  box-sizing: border-box;
+}
+.action-bar button {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  min-height: 0;
+  line-height: 1.2;
+  margin-left: 8px;
+}
+.action-bar button:first-child { margin-left: 0; }
 h1 {
   margin: 0 0 6px;
   font-size: 28px;
@@ -78,26 +101,28 @@ h1::before {
 .muted { color: var(--muted); margin: 0 0 18px; line-height: 1.4; }
 .tab-bar {
   display: flex;
-  margin-bottom: 16px;
+  padding: 20px 0 5px;
+  margin: 0;
   border-bottom: 1px solid var(--border);
   position: fixed;
-  top: 0;
+  top: 40px;
   width: 100%;
   left: 0;
   background: #0a0a0a;
+  z-index: 9;
 }
 .tab-btn {
   flex: 1;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text);
   padding: 10px 12px;
-  font-size: 11px;
+  margin: 0;
+  font-size: 15px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border: 0;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   cursor: pointer;
   border-radius: 0;
   transition: color 0.15s;
@@ -169,11 +194,13 @@ sp-textfield.input-error {
   color: #fff;
   border-color: var(--gg-green-dark);
 }
-.checkbox-row { display: flex; align-items: center; margin-bottom: 12px; color: var(--text); }
+.checkbox-row { display: flex; align-items: center; margin-bottom: 12px; color: #fff !important; }
 .checkbox-row > * { margin-right: 10px; }
 .checkbox-row > *:last-child { margin-right: 0; }
-.checkbox-row > span {
-  color: var(--text);
+label.checkbox-row,
+label.checkbox-row > span {
+  color: #fff !important;
+  opacity: 1 !important;
 }
 button {
   border: 0;

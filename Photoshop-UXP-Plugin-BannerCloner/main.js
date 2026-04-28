@@ -138,9 +138,10 @@ function parseSizes(input) {
     .map(s => s.trim())
     .filter(Boolean)
     .map(token => {
-      const m = token.match(/^(\d+)x(\d+)$/i);
+      // Accept "300x600" (plain) or "v2-300x600" (variant-prefixed) tokens.
+      const m = token.match(/^(?:(v\d+)-)?(\d+)x(\d+)$/i);
       if (!m) return null;
-      return { raw: token, width: Number(m[1]), height: Number(m[2]) };
+      return { raw: token, variant: m[1] || null, width: Number(m[2]), height: Number(m[3]) };
     })
     .filter(Boolean);
 }
@@ -165,8 +166,9 @@ function renderPresets() {
 }
 
 function stripSizeSuffix(name) {
-  const m = name.match(/([-_ ])\d+x\d+$/i);
-  return { base: name.replace(/[-_ ]\d+x\d+$/i, ""), sep: m ? m[1] : "_" };
+  // Strip optional variant prefix + dim suffix, e.g. "_v2-300x600" or "_300x600".
+  const m = name.match(/([-_ ])(?:v\d+-)?\d+x\d+$/i);
+  return { base: name.replace(/[-_ ](?:v\d+-)?\d+x\d+$/i, ""), sep: m ? m[1] : "_" };
 }
 
 // ─── Photoshop helpers ───
@@ -480,24 +482,59 @@ function isUnboundedFillLayer(layer, bounds) {
 async function resizeShapeLayer(layer, targetW, targetH) {
   const bounds = await getLayerBounds(layer.id);
   log(`[RESIZE] "${layer.name}" (kind=${layer.kind}) before: ${bounds.width}x${bounds.height} → target: ${Math.round(targetW)}x${Math.round(targetH)}`);
-  if (bounds.width === 0 || bounds.height === 0) { log(`[RESIZE]   skip: zero bounds`); return; }
+  // Source bounds guard — Photoshop transform fails on zero/sub-pixel layers
+  if (bounds.width < 1 || bounds.height < 1) { log(`[RESIZE]   skip: source bounds too small (${bounds.width}x${bounds.height})`); return; }
+  // Target guard — sub-pixel target triggers "initial bounding rectangle is empty"
+  if (!(targetW >= 1) || !(targetH >= 1)) { log(`[RESIZE]   skip: target too small (${targetW}x${targetH})`); return; }
   if (isUnboundedFillLayer(layer, bounds)) {
     log(`[RESIZE]   skip: unbounded fill layer (bounds = canvas)`);
     return;
   }
+  // Adjustment-style fill layers (solidColor / gradientFill / pattern) carry a mask
+  // that covers the source canvas. Resizing them with non-uniform scale collapses the
+  // mask and Photoshop throws "initial bounding rectangle is empty".
+  //
+  // BUT: vector shape layers (drawn rectangles, etc.) ALSO report kind="solidColor"
+  // in UXP — these MUST resize. Tell them apart via the layer descriptor: adjustment
+  // fills have NO vectorMask (their shape is the layer mask itself); shape layers DO
+  // have a vectorMask path that defines their geometry.
+  const isAdjustmentFillKind = layer.kind === "solidColor" || layer.kind === "solidFill"
+    || layer.kind === "gradientFill" || layer.kind === "pattern";
+  if (isAdjustmentFillKind) {
+    let hasVectorMask = false;
+    try {
+      const desc = await getLayerDescriptor(layer.id);
+      // hasVectorMask is true for vector shapes; absent/false for adjustment fills
+      hasVectorMask = !!(desc && (desc.hasVectorMask === true || desc.vectorMaskEnabled === true));
+    } catch (e) { /* fall through — assume shape (safer, will try resize) */ }
+    if (!hasVectorMask) {
+      log(`[RESIZE]   skip: adjustment fill layer (${layer.kind}, no vectorMask) — transform unsafe`);
+      return;
+    }
+    // Vector shape — proceed with resize below
+  }
   const scaleX = targetW / bounds.width;
   const scaleY = targetH / bounds.height;
+  if (!isFinite(scaleX) || !isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    log(`[RESIZE]   skip: invalid scale X=${scaleX} Y=${scaleY}`);
+    return;
+  }
   log(`[RESIZE]   scale: X=${(scaleX*100).toFixed(1)}% Y=${(scaleY*100).toFixed(1)}%`);
   await selectLayerById(layer.id);
-  await bpSafe([{
-    _obj: "transform",
-    _target: [{ _ref: "layer", _id: layer.id }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    width: { _unit: "percentUnit", _value: scaleX * 100 },
-    height: { _unit: "percentUnit", _value: scaleY * 100 },
-    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-    _options: { dialogOptions: "dontDisplay" }
-  }]);
+  try {
+    await bpSafe([{
+      _obj: "transform",
+      _target: [{ _ref: "layer", _id: layer.id }],
+      freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+      width: { _unit: "percentUnit", _value: scaleX * 100 },
+      height: { _unit: "percentUnit", _value: scaleY * 100 },
+      interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) {
+    log(`[RESIZE]   transform failed: ${e.message} — skipping`);
+    return;
+  }
   const after = await getLayerBounds(layer.id);
   log(`[RESIZE]   after: ${after.width}x${after.height} (expected ${Math.round(targetW)}x${Math.round(targetH)})`);
 }
@@ -505,22 +542,34 @@ async function resizeShapeLayer(layer, targetW, targetH) {
 // Scale a single layer uniformly (e.g. logo by width)
 async function scaleLayerUniform(layer, scale) {
   if (Math.abs(scale - 1) < 0.01) return;
+  if (!isFinite(scale) || scale <= 0) { log(`[SCALE] "${layer.name}" skip: invalid scale ${scale}`); return; }
   const before = await getLayerBounds(layer.id);
+  if (before.width < 1 || before.height < 1) { log(`[SCALE] "${layer.name}" skip: source bounds too small (${before.width}x${before.height})`); return; }
+  // Predicted size guard
+  if (before.width * scale < 1 || before.height * scale < 1) {
+    log(`[SCALE] "${layer.name}" skip: target too small (${(before.width*scale).toFixed(2)}x${(before.height*scale).toFixed(2)})`);
+    return;
+  }
   if (isUnboundedFillLayer(layer, before)) {
     log(`[SCALE] "${layer.name}" skip: unbounded fill layer (bounds = canvas)`);
     return;
   }
   log(`[SCALE] "${layer.name}" (kind=${layer.kind}) before: ${before.width}x${before.height} × ${(scale*100).toFixed(1)}%`);
   await selectLayerById(layer.id);
-  await bpSafe([{
-    _obj: "transform",
-    _target: [{ _ref: "layer", _id: layer.id }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    width: { _unit: "percentUnit", _value: scale * 100 },
-    height: { _unit: "percentUnit", _value: scale * 100 },
-    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-    _options: { dialogOptions: "dontDisplay" }
-  }]);
+  try {
+    await bpSafe([{
+      _obj: "transform",
+      _target: [{ _ref: "layer", _id: layer.id }],
+      freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+      width: { _unit: "percentUnit", _value: scale * 100 },
+      height: { _unit: "percentUnit", _value: scale * 100 },
+      interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) {
+    log(`[SCALE]   transform failed: ${e.message} — skipping`);
+    return;
+  }
   const after = await getLayerBounds(layer.id);
   log(`[SCALE]   after: ${after.width}x${after.height}`);
 }
@@ -1504,6 +1553,7 @@ async function cloneAsArtboards() {
       const templateDocId = templateDoc.id;
 
       // Flatten template: keep only selected artboard, delete others with children
+      const tFlatten = perfNow();
       const abToDelete = [];
       let abToFlatten = null;
       for (const layer of [...templateDoc.layers]) {
@@ -1519,29 +1569,34 @@ async function cloneAsArtboards() {
         } catch (e) { /* skip */ }
       }
 
-      // Delete non-selected artboards AND their children
-      for (const ab of abToDelete) {
+      // Batch-delete non-selected artboards in a SINGLE batchPlay call.
+      // Multi-target `_id` array deletes all artboards (and their children — Photoshop
+      // removes the whole subtree when you delete an artboard container) in one round-trip
+      // instead of N×(children+1) round-trips. Massive speedup for docs with many artboards.
+      if (abToDelete.length) {
         try {
-          if (ab.layers && ab.layers.length > 0) {
-            for (const child of [...ab.layers]) {
-              try {
-                await selectLayerById(child.id);
-                await bp([{
-                  _obj: "delete",
-                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-                  _options: { dialogOptions: "dontDisplay" }
-                }]);
-              } catch (e) { /* skip */ }
-            }
-          }
-          await selectLayerById(ab.id);
           await bp([{
             _obj: "delete",
-            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            _target: abToDelete.map(ab => ({ _ref: "layer", _id: ab.id })),
             _options: { dialogOptions: "dontDisplay" }
           }]);
-        } catch (e) { /* skip */ }
+          log(`[PERF] Batch-deleted ${abToDelete.length} artboard(s) in 1 call`);
+        } catch (e) {
+          // Fallback: per-artboard delete (no per-child loop — Photoshop deletes subtree on artboard delete)
+          log(`[PERF] Batch delete failed (${e.message}), falling back to per-artboard`);
+          for (const ab of abToDelete) {
+            try {
+              await selectLayerById(ab.id);
+              await bp([{
+                _obj: "delete",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            } catch (e2) { /* skip */ }
+          }
+        }
       }
+      perfLog(`Flatten template (delete ${abToDelete.length} artboards)`, tFlatten);
 
       // Flatten the selected artboard
       if (abToFlatten) {
@@ -1790,6 +1845,7 @@ async function cloneAsArtboards() {
     hideProgress();
     cloneBtn.disabled = false;
     cloneBtn.textContent = "Clone Artboards";
+    updateActionButtonsVisibility().catch(() => {});
   }
 }
 
@@ -1853,31 +1909,33 @@ async function cloneAll() {
         } catch (e) { /* skip */ }
       }
 
-      // Delete non-selected artboards and ALL their children
-      for (const ab of toDelete) {
+      // Batch-delete non-selected artboards in a SINGLE batchPlay call.
+      // Photoshop deletes the whole subtree when you delete an artboard container,
+      // so per-child loop is unnecessary. Multi-target `_id` array → one round-trip.
+      const tFlattenDocs = perfNow();
+      if (toDelete.length) {
         try {
-          // Select all children inside this artboard and delete them first
-          if (ab.layers && ab.layers.length > 0) {
-            for (const child of [...ab.layers]) {
-              try {
-                await selectLayerById(child.id);
-                await bp([{
-                  _obj: "delete",
-                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-                  _options: { dialogOptions: "dontDisplay" }
-                }]);
-              } catch (e) { /* skip */ }
-            }
-          }
-          // Now delete the empty artboard container
-          await selectLayerById(ab.id);
           await bp([{
             _obj: "delete",
-            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            _target: toDelete.map(ab => ({ _ref: "layer", _id: ab.id })),
             _options: { dialogOptions: "dontDisplay" }
           }]);
-        } catch (e) { /* skip */ }
+          log(`[PERF] Batch-deleted ${toDelete.length} artboard(s) in 1 call`);
+        } catch (e) {
+          log(`[PERF] Batch delete failed (${e.message}), falling back to per-artboard`);
+          for (const ab of toDelete) {
+            try {
+              await selectLayerById(ab.id);
+              await bp([{
+                _obj: "delete",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            } catch (e2) { /* skip */ }
+          }
+        }
       }
+      perfLog(`Flatten template (delete ${toDelete.length} artboards)`, tFlattenDocs);
 
       // Flatten the selected artboard
       if (toFlatten) {
@@ -2045,6 +2103,7 @@ async function cloneAll() {
     hideProgress();
     cloneBtn.disabled = false;
     cloneBtn.textContent = "Clone Artboards";
+    updateActionButtonsVisibility().catch(() => {});
   }
 }
 
@@ -2252,6 +2311,7 @@ async function splitToDocuments() {
     hideProgress();
     splitBtn.disabled = false;
     splitBtn.textContent = "Split to Documents";
+    updateActionButtonsVisibility().catch(() => {});
   }
 }
 
@@ -2268,7 +2328,38 @@ async function refreshSource() {
     sourceSizeEl.textContent = "-";
     log("Refresh: " + e.message);
   }
+  updateActionButtonsVisibility().catch(() => {});
 }
+
+// Show Export + Split + Apply Rules only when the active doc has more than 1 artboard
+// (i.e. the user has cloned at least one new artboard from the source — or already had multiple).
+async function updateActionButtonsVisibility() {
+  let count = 0;
+  try {
+    const doc = app.activeDocument;
+    if (doc) {
+      for (const layer of doc.layers) {
+        try {
+          const desc = await getLayerDescriptor(layer.id);
+          if (desc.artboardEnabled || desc.artboard) count++;
+          if (count > 1) break;  // early exit — we only need to know "more than 1"
+        } catch (e) { /* skip */ }
+      }
+    }
+  } catch (e) { /* no doc — keep buttons hidden */ }
+  const show = count > 1 ? "" : "none";
+  exportBtn.style.display = show;
+  splitBtn.style.display = show;
+  if (typeof splitSection !== "undefined" && splitSection) splitSection.style.display = show;
+  // Apply Rules requires ≥2 artboards AND user has imported JSON in THIS session
+  // (not counting rules persisted from previous sessions — those would surprise the user)
+  const applyRulesSection = document.getElementById("applyRulesSection");
+  if (applyRulesSection) applyRulesSection.style.display = (count > 1 && jsonImportedThisSession) ? "" : "none";
+}
+
+// Tracks whether user clicked Import JSON in the current plugin session.
+// Reset on plugin reload — persisted layerRules in localStorage do NOT count.
+let jsonImportedThisSession = false;
 
 // ─── Settings: Layer Rules per target size ───
 
@@ -2322,9 +2413,25 @@ function renderSizeGroups() {
   }
 
   sizes.forEach(sizeKey => {
+    sizeGroupsContainer.appendChild(buildSizeGroup(sizeKey));
+  });
+}
+
+// Re-render a single size group in place (no full list rebuild). Used when
+// adding/removing a rule: full re-render rebuilds thousands of sp-textfields
+// across all sizes which is unbearably slow in UXP.
+function rerenderSizeGroup(sizeKey) {
+  const oldNode = sizeGroupsContainer.querySelector(`.size-group[data-size="${CSS.escape(sizeKey)}"]`);
+  if (!oldNode) { renderSizeGroups(); return; }
+  const newNode = buildSizeGroup(sizeKey);
+  oldNode.replaceWith(newNode);
+}
+
+function buildSizeGroup(sizeKey) {
     const rules = getRulesForSize(sizeKey);
     const group = document.createElement("div");
     group.className = "size-group";
+    group.setAttribute("data-size", sizeKey);
 
     // Header — clickable toggle + delete button
     const header = document.createElement("div");
@@ -2347,12 +2454,18 @@ function renderSizeGroups() {
       e.stopPropagation();
       // Remove from layerRules
       delete layerRules[sizeKey];
-      saveLayerRules();
       // Remove from Target Sizes input
       const currentSizes = parseSizes(sizesInput.value).map(s => s.raw).filter(s => s !== sizeKey);
       sizesInput.value = currentSizes.join(" ");
-      renderPresets();
-      renderSizeGroups();
+      // Remove DOM node directly — full re-render of all size groups is O(N×M) of
+      // sp-textfield creation, which is very slow in UXP for large rule sets.
+      group.remove();
+      // Defer storage + chip refresh so the X-click feels instant
+      setTimeout(() => {
+        saveLayerRules();
+        renderPresets();
+        updateSizesCount();
+      }, 0);
     });
     header.appendChild(deleteGroupBtn);
 
@@ -2386,8 +2499,11 @@ function renderSizeGroups() {
       removeBtn.textContent = "X";
       removeBtn.addEventListener("click", () => {
         rules.splice(idx, 1);
-        saveLayerRules();
-        renderSizeGroups();
+        // Re-render JUST this size group (not the whole list) so sibling rules get
+        // fresh idx closures. Full re-render rebuilds thousands of sp-textfields
+        // across all sizes, which is unbearably slow in UXP.
+        rerenderSizeGroup(sizeKey);
+        setTimeout(saveLayerRules, 0);
       });
       ruleHeader.appendChild(removeBtn);
       card.appendChild(ruleHeader);
@@ -2431,14 +2547,13 @@ function renderSizeGroups() {
     addBtn.textContent = "+ Add Layer";
     addBtn.addEventListener("click", () => {
       rules.push({ name: "", top: "", left: "", right: "", bottom: "", scale: "" });
-      saveLayerRules();
-      renderSizeGroups();
+      rerenderSizeGroup(sizeKey);
+      setTimeout(saveLayerRules, 0);
     });
     body.appendChild(addBtn);
 
     group.appendChild(body);
-    sizeGroupsContainer.appendChild(group);
-  });
+    return group;
 }
 
 // ─── Import JSON ───
@@ -2491,15 +2606,30 @@ function cssDirectionToAngle(dir) {
 // Store raw JSON for runtime scale computation (so we can pick base size based on PSD source)
 let importedJson = null;
 
-// Find the JSON size that matches PSD source (or closest by area)
+// Find the JSON size that matches PSD source (or closest by area).
+// Variant-aware: when multiple sizes share the dim (vd v1/v2/v3-300x600),
+// prefer the lowest-numbered variant (v1, then v2, ...). Plain (no variant)
+// always wins over any variant.
 function findBaseSizeFromJson(srcW, srcH) {
   if (!importedJson || !importedJson.sizes) return null;
-  // Exact match by dimensions
-  const exact = importedJson.sizes.find(s => s.width === srcW && s.height === srcH);
-  if (exact) return exact;
-  // Exact match by name "WxH"
-  const nameMatch = importedJson.sizes.find(s => s.name === `${srcW}x${srcH}`);
-  if (nameMatch) return nameMatch;
+
+  const variantNumOf = (s) => {
+    const m = (s.name || "").match(/^v(\d+)-/i);
+    return m ? parseInt(m[1], 10) : -1; // -1 = plain (no variant) → wins
+  };
+  const pickLowestVariant = (candidates) => {
+    if (!candidates.length) return null;
+    return candidates.slice().sort((a, b) => variantNumOf(a) - variantNumOf(b))[0];
+  };
+
+  // Exact match by name (vd source artboard tên "v2-300x600")
+  const nameExact = importedJson.sizes.find(s => s.name === `${srcW}x${srcH}`);
+  if (nameExact) return nameExact;
+
+  // Match by dimensions — collect all then pick lowest variant (plain > v1 > v2 ...)
+  const dimMatches = importedJson.sizes.filter(s => s.width === srcW && s.height === srcH);
+  if (dimMatches.length) return pickLowestVariant(dimMatches);
+
   // Fallback: largest size
   return importedJson.sizes.reduce((a, b) => (a.width * a.height >= b.width * b.height) ? a : b);
 }
@@ -2534,6 +2664,96 @@ function computeRuleScale(rule, baseSize) {
 
 // Text-only layer names — heightElement is unreliable for these (often constant 24px)
 const TEXT_ONLY_ELEMENTS = new Set(["headline", "tagline", "subheadline", "subline", "title", "subtitle"]);
+
+// ─── layer-full.json (PSD-tree) → rules format adapter ───
+//
+// `clone-banner-sizes` skill outputs an array of artboards with nested
+// `layers[]` (PSD tree). Plugin natively expects `{ moduleName, sizes[].elements{} }`
+// (CSS-rule flat map). This adapter converts on the fly so users can import
+// either format.
+function isLayerFullFormat(json) {
+  return Array.isArray(json) && json.length > 0
+    && json[0] && typeof json[0] === "object"
+    && typeof json[0].artboard === "string"
+    && Array.isArray(json[0].layers);
+}
+
+function angleToCssDirection(angle) {
+  const a = ((Number(angle) % 360) + 360) % 360;
+  const map = { 0: "to top", 45: "to top right", 90: "to right", 135: "to bottom right",
+                180: "to bottom", 225: "to bottom left", 270: "to left", 315: "to top left" };
+  if (map[a]) return map[a];
+  // Fallback: snap to nearest 45°
+  const nearest = Math.round(a / 45) * 45 % 360;
+  return map[nearest] || "to bottom";
+}
+
+function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY = 0) {
+  if (!Array.isArray(layers)) return;
+  for (const layer of layers) {
+    const name = layer && layer.name;
+    const b = layer.bounds || {};
+    // PSD bounds.top/left are absolute within the canvas. The plugin's applyLayerRules
+    // expects rule.top/left to be RELATIVE to the parent group (it adds the parent
+    // ancestor offset back). So we subtract parent.bounds to get the relative coords.
+    const relTop = (typeof b.top === "number") ? b.top - parentOffsetY : undefined;
+    const relLeft = (typeof b.left === "number") ? b.left - parentOffsetX : undefined;
+
+    // Recurse into children FIRST (bottom-up insertion). The plugin's applyLayerRules
+    // skips any layer whose parent group already had a rule applied, so children must
+    // appear in the rules dict BEFORE their parent group — otherwise the group runs
+    // first, marks itself as matched, and every child gets skipped.
+    if (layer && Array.isArray(layer.children)) {
+      const childOffsetX = (typeof b.left === "number") ? b.left : parentOffsetX;
+      const childOffsetY = (typeof b.top === "number") ? b.top : parentOffsetY;
+      flattenLayersToElements(layer.children, out, childOffsetX, childOffsetY);
+    }
+
+    if (name && !out[name]) {  // skip duplicates — first-wins to preserve outer-most layer
+      const elem = {};
+      if (relTop !== undefined) elem.top = `${relTop}px`;
+      if (relLeft !== undefined) elem.left = `${relLeft}px`;
+      if (typeof b.width === "number") elem.width = `${b.width}px`;
+      if (typeof b.height === "number") elem.height = `${b.height}px`;
+      // Element box width/height (used for scale computation)
+      if (typeof b.width === "number") elem.widthElement = `${b.width}px`;
+      if (typeof b.height === "number") elem.heightElement = `${b.height}px`;
+      // Text fields
+      if (layer.text) {
+        if (layer.text.fontSize) elem.fontSize = String(layer.text.fontSize);
+        if (layer.text.color) elem.color = layer.text.color;
+      }
+      // Solid color fill
+      if (layer.kind === "solidColor" && layer.fillColor && !elem.color) {
+        elem.color = layer.fillColor;
+      }
+      // Opacity (PSD: 0-100; rules use direct value, parseJsonToRules stores as string)
+      if (typeof layer.opacity === "number" && layer.opacity !== 100) {
+        elem.opacity = layer.opacity;
+      }
+      // Gradient mask direction
+      if (layer.mask && typeof layer.mask.angle === "number") {
+        elem.direction = angleToCssDirection(layer.mask.angle);
+      }
+      out[name] = elem;
+    }
+  }
+}
+
+function convertLayerFullToRules(artboards) {
+  const sizes = artboards.map(ab => {
+    const elements = {};
+    flattenLayersToElements(ab.layers, elements);
+    // Extract size token from artboard name; supports plain (300x600) or variant (v1-300x600)
+    const m = String(ab.artboard || "").match(/((?:v\d+-)?\d+x\d+)$/i);
+    const name = m ? m[1] : `${ab.width}x${ab.height}`;
+    return { name, width: ab.width, height: ab.height, elements };
+  });
+  // Derive moduleName by stripping the trailing size token from the first artboard
+  const firstName = String(artboards[0]?.artboard || "imported");
+  const moduleName = firstName.replace(/[-_ ](?:v\d+-)?\d+x\d+$/i, "") || "imported";
+  return { moduleName, sizes };
+}
 
 function parseJsonToRules(json) {
   const rules = {};
@@ -2598,16 +2818,64 @@ function parseJsonToRules(json) {
   return rules;
 }
 
+// When a dimension has only ONE variant in the import (e.g. only `v1-970x250`,
+// no v2/v3), strip the variant prefix so the artboard ends up named
+// `mybanner_970x250` instead of `mybanner_v1-970x250`. Plain (no-variant)
+// keys are left alone. Mutates the rules object AND the importedJson.sizes
+// array so downstream lookups (sizesInput autofill, base size match) agree.
+function dedupSingleVariants(rules, json) {
+  const byDim = new Map();
+  for (const key of Object.keys(rules)) {
+    const m = key.match(/^(?:v\d+-)?(\d+x\d+)$/i);
+    if (!m) continue;
+    const dim = m[1];
+    if (!byDim.has(dim)) byDim.set(dim, []);
+    byDim.get(dim).push(key);
+  }
+  const renamed = [];
+  for (const [dim, keys] of byDim.entries()) {
+    if (keys.length !== 1) continue;     // multiple variants — keep prefixes
+    const only = keys[0];
+    if (only === dim) continue;          // already plain
+    rules[dim] = rules[only];
+    delete rules[only];
+    renamed.push({ from: only, to: dim });
+  }
+  if (json && Array.isArray(json.sizes)) {
+    for (const r of renamed) {
+      const s = json.sizes.find(x => x.name === r.from);
+      if (s) s.name = r.to;
+    }
+  }
+  return renamed;
+}
+
 async function importJson() {
   try {
     const file = await fs.getFileForOpening({ types: ["json"] });
     if (!file) { log("Import cancelled."); return; }
 
     const contents = await file.read();
-    const json = JSON.parse(contents);
+    let json = JSON.parse(contents);
+
+    // Auto-detect layer-full.json (PSD-tree) format and convert to rules format.
+    // Lets users import output from the `clone-banner-sizes` skill directly.
+    if (isLayerFullFormat(json)) {
+      const artboardCount = json.length;
+      json = convertLayerFullToRules(json);
+      log(`[IMPORT] Detected layer-full format → converted ${artboardCount} artboard(s) to rules`);
+    }
 
     // Parse and populate layerRules
     layerRules = parseJsonToRules(json);
+
+    // If a dim has only one variant in the import (e.g. only v1-970x250),
+    // collapse it to plain `970x250` so cloned artboards drop the version
+    // suffix. Multi-variant dims keep their prefixes.
+    const renamed = dedupSingleVariants(layerRules, json);
+    if (renamed.length) {
+      log(`[IMPORT] Single-variant dims collapsed: ${renamed.map(r => `${r.from}→${r.to}`).join(", ")}`);
+    }
     saveLayerRules();
 
     // Auto-fill Target Sizes in Documents tab
@@ -2630,6 +2898,8 @@ async function importJson() {
       log(`[IMPORT]   ${sizeKey}: ${rules.length} elements (${rules.map(r => r.name).join(", ")})`);
     }
     updateJsonStatus();
+    jsonImportedThisSession = true;
+    updateActionButtonsVisibility().catch(() => {});
   } catch (e) {
     log(`[IMPORT] Error: ${e.message}`);
   }
@@ -2680,8 +2950,9 @@ async function applyRulesToExisting() {
       let applied = 0;
       for (let i = 0; i < artboards.length; i++) {
         const ab = artboards[i];
-        // Extract size key from artboard name (e.g. "Banner_1280x900" → "1280x900")
-        const sizeMatch = ab.name.match(/(\d+x\d+)/i);
+        // Extract size key from artboard name. Variant-aware so names like
+        // "Banner_v2-300x600" map to rules keyed "v2-300x600" (not "300x600").
+        const sizeMatch = ab.name.match(/((?:v\d+-)?\d+x\d+)/i);
         const sizeKey = sizeMatch ? sizeMatch[1] : `${ab.size.width}x${ab.size.height}`;
 
         const rules = layerRules[sizeKey];
@@ -5036,9 +5307,9 @@ function switchMode(mode) {
     settingsPanel.style.display = "none";
     exportAssetsPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "";
-    splitSection.style.display = mode === "artboards" ? "block" : "none";
-    splitBtn.style.display = mode === "artboards" ? "" : "none";
   }
+  // Action bar (Clone/Export/Split) is global — visibility driven by artboards count, not tab
+  updateActionButtonsVisibility().catch(() => {});
 }
 
 // ─── Event listeners ───

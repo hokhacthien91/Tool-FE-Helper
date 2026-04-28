@@ -8,6 +8,12 @@
 </head>
 <body>
   <div class="app">
+    <div class="action-bar">
+      <button id="cloneBtn" class="primary">Clone Artboards</button>
+      <button id="exportBtn" class="primary export-all-btn" style="display:none;">Export</button>
+      <button id="splitBtn" class="primary split-btn" style="display:none;">Split to Documents</button>
+    </div>
+
     <div class="tab-bar">
       <button class="tab-btn" data-mode="documents" style="display:none;">Documents</button>
       <button class="tab-btn active" data-mode="artboards">Artboards</button>
@@ -20,12 +26,6 @@
       <sp-textfield id="sizesInput" value="300x250"></sp-textfield>
       <div class="hint">Enter sizes separated by spaces or commas</div>
       <div id="presetWrap" class="preset-wrap"></div>
-    </div>
-
-    <div class="section btn-row">
-      <button id="cloneBtn" class="primary">Clone Artboards</button>
-      <button id="exportBtn" class="primary export-all-btn">Export</button>
-      <button id="splitBtn" class="primary split-btn" style="display:none;">Split to Documents</button>
     </div>
 
     <div id="cloneProgress" class="section shared-section clone-progress" style="display:none;">
@@ -105,7 +105,7 @@
       <div class="section checkboxes">
         <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
         <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
-        <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" checked /> <span>Require GG- prefix for layer rules</span></label>
+        <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" /> <span>Require GG- prefix for layer rules</span></label>
       </div>
 
       <div class="section">
@@ -123,7 +123,7 @@
         <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
         <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
       </div>
-      <div class="section btn-row">
+      <div class="section btn-row" id="applyRulesSection" style="display:none;">
         <button id="applyRulesBtn" class="primary">Apply Rules to Existing</button>
       </div>
 
