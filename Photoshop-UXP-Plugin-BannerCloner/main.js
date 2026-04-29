@@ -1808,6 +1808,7 @@ async function cloneAsArtboards() {
         _options: { dialogOptions: "dontDisplay" }
       }]);
 
+
       // Switch back to source doc
       await bp([{
         _obj: "select",

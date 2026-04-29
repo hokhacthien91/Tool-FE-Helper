@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banner Cloner — README (EN)</title>
+  <link rel="stylesheet" href="readme.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <div class="brand-title">Banner Cloner</div>
+          <div class="brand-sub">Photoshop UXP Plugin · v1.1.0</div>
+        </div>
+      </div>
+      <nav class="lang-switch" aria-label="Language">
+        <a class="lang-btn active" href="readme.html" aria-current="page">English</a>
+        <a class="lang-btn" href="readme.vi.html">Tiếng Việt</a>
+      </nav>
+    </header>
+
+    <h1>Banner Cloner</h1>
+    <p class="lead">Clone a single source artboard into multiple banner sizes, then export the whole set as JPG/PSD/PNG assets — all without leaving Photoshop. Built for production banner-ad workflows where one master design needs to ship across 10+ sizes with variants.</p>
+
+    <div class="callout">
+      <strong>Who is this for?</strong> Designers and motion artists in agency/studio teams producing display-ad banner sets (300x250, 728x90, 970x250, …) from a single master design. Pairs well with a JSON layout spec coming out of Figma or a sister tool.
+    </div>
+
+    <!-- ─── TOC ─── -->
+    <h2>Contents</h2>
+    <ul class="dot toc">
+      <li><a href="#quickstart">1. Quick Start</a></li>
+      <li><a href="#tabs">2. Panel Tabs</a></li>
+      <li><a href="#features">3. Core Features (in detail)</a></li>
+      <li><a href="#modes">4. Asset Export Modes (A / B / C / D)</a></li>
+      <li><a href="#json">5. JSON Formats</a></li>
+      <li><a href="#settings">6. Settings Reference</a></li>
+      <li><a href="#tips">7. Tips & Conventions</a></li>
+      <li><a href="#limits">8. Known Limitations</a></li>
+      <li><a href="#install">9. Installation</a></li>
+    </ul>
+
+    <!-- ─── Quick Start ─── -->
+    <h2 id="quickstart">1. Quick Start</h2>
+    <ol class="steps">
+      <li>Open your master PSD in Photoshop and <strong>select any layer inside the source artboard</strong> (the plugin walks up to the parent artboard automatically).</li>
+      <li>Open the panel: <code>Plugins ▸ Banner Cloner</code>.</li>
+      <li>Type or pick target sizes (e.g. <code>300x250 728x90 970x250</code>) — separated by spaces or commas. Variant prefixes are supported: <code>v1-300x600</code>, <code>v2-300x600</code>.</li>
+      <li>Click <strong>Clone Artboards</strong>. Each new size appears as a fresh artboard in the same document, side-by-side with an 80px gap.</li>
+      <li><em>(Optional)</em> Click <strong>Export</strong> to save all artboards as JPG + PSD into a structured output folder, or <strong>Split to Documents</strong> to break each artboard into its own PSD file.</li>
+      <li><em>(Optional)</em> Switch to the <strong>Assets</strong> tab to export individual layer/group assets per artboard.</li>
+    </ol>
+
+    <!-- ─── Tabs Overview ─── -->
+    <h2 id="tabs">2. Panel Tabs</h2>
+    <div class="grid">
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Artboards</div>
+        <div class="feature-desc">Default view. Enter target sizes, toggle preset chips, run <em>Clone Artboards</em>. Source name + size and JSON status display below the action bar.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Settings</div>
+        <div class="feature-desc">Smart-match toggle, GG- prefix gating, suffix naming, background layer name, layer rules per size, JSON import/export, <em>Apply Rules to Existing</em>.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Assets</div>
+        <div class="feature-desc">Multi-artboard scan + export. Per-asset size mode (A/B/C/D), scale, format (PNG/JPG), search, collapse all, custom output path with strict validation.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Documents</div>
+        <div class="feature-desc">Hidden by default — appears only after <em>Split to Documents</em> opens multiple PSDs. Lets you batch-export them as JPG + PSD in one click.</div>
+      </div>
+    </div>
+
+    <!-- ─── Core Features ─── -->
+    <h2 id="features">3. Core Features (in detail)</h2>
+
+    <h3>3.1 Clone Artboards</h3>
+    <p>Duplicates the selected source artboard into multiple new artboards in the <strong>same document</strong>. The original is preserved and never modified. Each clone is positioned to the right of the rightmost existing artboard with an 80px gap.</p>
+    <ul class="dot">
+      <li><strong>Same-doc cloning</strong> — fastest workflow; everything stays in one PSD until you decide to split.</li>
+      <li><strong>Smart positioning</strong> — finds the rightmost edge of all existing artboards and lays new ones out from there. Original artboard position is restored if it drifts during cloning.</li>
+      <li><strong>Variant-aware</strong> — sizes prefixed <code>v1-</code>, <code>v2-</code>, … are kept distinct; rules apply per variant.</li>
+      <li><strong>Three layout modes</strong>, picked automatically per size:
+        <ul class="dot">
+          <li><strong>JSON rules</strong> — when a layer rule exists for the target size (highest priority).</li>
+          <li><strong>Smart match</strong> — when no rule but Smart Match is on. Auto scales/repositions/cover-fits content groups.</li>
+          <li><strong>Canvas only</strong> — when both off; just resizes the canvas, leaves layers untouched.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <p><strong>Built-in preset sizes</strong> (one-click chips):</p>
+    <div class="chips">
+      <span class="chip">300x250</span>
+      <span class="chip">300x600</span>
+      <span class="chip">160x600</span>
+      <span class="chip">728x90</span>
+      <span class="chip">320x50</span>
+      <span class="chip">300x50</span>
+      <span class="chip">970x250</span>
+      <span class="chip">480x320</span>
+      <span class="chip">1080x1080</span>
+      <span class="chip">1080x1920</span>
+      <span class="chip">1920x1080</span>
+      <span class="chip">1080x1440</span>
+      <span class="chip">1080x1350</span>
+    </div>
+
+    <h3>3.2 Smart Match (auto-layout)</h3>
+    <p>Toggle in <strong>Settings</strong>. When enabled and no JSON rule exists for a size, the plugin:</p>
+    <ul class="dot">
+      <li>Captures the source artboard's content layout (groups + their bounds) before cloning.</li>
+      <li>For each target size, scales content groups proportionally to fit the new canvas.</li>
+      <li>Repositions groups to maintain visual balance (centered/anchored).</li>
+      <li>Treats the layer/group named in <strong>Background Layer</strong> (default <code>GG-background</code>) as cover-fill — it's scaled to fully cover the new canvas, never just repositioned.</li>
+      <li>Falls back to fitting individual content layers inside the canvas when no group structure is found.</li>
+    </ul>
+    <div class="callout">First-pass layouts only. Always review and polish manually before delivery.</div>
+
+    <h3>3.3 Layer Rules (per-size)</h3>
+    <p>Define explicit position, size, and style overrides per layer per target size. Rules can be:</p>
+    <ul class="dot">
+      <li><strong>Auto-synced</strong> from your target-sizes list — every size in the input field gets a row in <em>Settings</em>.</li>
+      <li><strong>Imported from JSON</strong> — supports two formats:
+        <ul class="dot">
+          <li><strong>Rules format</strong> — <code>moduleName</code> + <code>sizes[]</code> + <code>elements[]</code>.</li>
+          <li><strong>Layer-full format (PSD-tree)</strong> — exported by Banner Cloner's own <em>Export Layer JSON</em> or by sister tooling. Auto-detected and converted on import.</li>
+        </ul>
+      </li>
+      <li><strong>Single-variant collapse</strong> — if your import has only <code>v1-300x600</code> for a given dim, it's automatically renamed to <code>300x600</code>. Multi-variant dims keep their <code>vN-</code> prefix.</li>
+      <li><strong>Exported as JSON</strong> via <em>Export Layer JSON</em> — captures the full layer tree (text, fills, gradients, effects, masks, smart-object refs).</li>
+      <li><strong>Re-applied to existing artboards</strong> via <em>Apply Rules to Existing</em> — re-runs rules without re-cloning. Match key is the size suffix in the artboard name (<code>v2-300x600</code> or <code>300x600</code>).</li>
+      <li><strong>GG- prefix gate</strong> (optional) — when on, rules apply only to layers whose names start with <code>GG-</code> (e.g. <code>GG-headline</code>, <code>GG-cta</code>). Other layers are ignored.</li>
+    </ul>
+
+    <h3>3.4 Background cover scaling</h3>
+    <p>The layer/group named in <strong>Background Layer</strong> (default <code>GG-background</code>) is treated specially:</p>
+    <ul class="dot">
+      <li>In <em>Smart Match</em> mode → scaled as <em>cover</em> to fully fill the new canvas.</li>
+      <li>In <em>JSON rules</em> mode → scaled and positioned per its rule entry.</li>
+      <li>The matcher is case-insensitive and reads from a saved localStorage value, so your custom background name persists across sessions.</li>
+    </ul>
+
+    <h3>3.5 Export (all artboards)</h3>
+    <p>Visible only when the active document has more than 1 artboard. Workflow:</p>
+    <ol class="steps">
+      <li>Click <strong>Export</strong> → pick a parent folder.</li>
+      <li>Plugin creates: <code>{parent}/{base}-output-working-file-{HHMM-DDMMYYYY}/</code></li>
+      <li>Inside, two subfolders: <code>output/</code> for JPGs, <code>working-file/</code> for editable PSDs.</li>
+      <li>Each artboard → 1 PSD (full quality, maximize compatibility on) + 1 JPG (quality 8, white matte).</li>
+      <li>JPG width is capped at 3000px; oversized banners are downscaled while preserving aspect ratio.</li>
+      <li>All filenames are lowercased and sanitized.</li>
+    </ol>
+
+    <h3>3.6 Split to Documents</h3>
+    <p>Each artboard becomes its own PSD document (one window per banner size). Useful when you need to hand off individual files for review or upload. After splitting, the <strong>Documents</strong> tab appears and lets you batch-export everything in one click.</p>
+
+    <h3>3.7 Export Layer JSON</h3>
+    <p>Saves a complete, lossless JSON representation of every selected artboard's layer tree. Captured fields per layer:</p>
+    <ul class="dot">
+      <li><strong>Geometry</strong> — bounds, position relative to artboard, size.</li>
+      <li><strong>Text</strong> — font family, weight, size, color, line-height, tracking, alignment, text content.</li>
+      <li><strong>Fills</strong> — solid color (RGB), gradient (with stops + angle, CSS-direction-friendly).</li>
+      <li><strong>Effects</strong> — drop shadow, inner shadow, outer/inner glow, stroke, gradient overlay.</li>
+      <li><strong>Border radius</strong> — corner radii on shape layers.</li>
+      <li><strong>Transform</strong> — rotation, flip, scale.</li>
+      <li><strong>Masks</strong> — vector masks + raster mask gradient analysis (gradient direction, stop colors/opacities).</li>
+      <li><strong>Smart Objects</strong> — original src filename, vector vs raster detection.</li>
+      <li><strong>Asset filename binding</strong> — if you ran <em>Export Assets</em> first, the JSON's <code>src</code> field points to the actual exported PNG/JPG instead of the raw PSD reference.</li>
+    </ul>
+
+    <h3>3.8 Export Assets (per-artboard)</h3>
+    <p>Exports individual layer/group assets across selected artboards. The <strong>Artboard picker</strong> at the top of the Assets tab lets you choose which artboards to scan. After scanning, each detected asset appears as a row with editable size mode, scale, and format.</p>
+    <ul class="dot">
+      <li><strong>Per-asset controls</strong> — cycle through size mode (A/B/C/D), scale (1×/2×/3×), format (PNG/JPG), or rename the export.</li>
+      <li><strong>Search & collapse</strong> — filter the asset list by name, or collapse all rows for a denser view.</li>
+      <li><strong>Duplicate detection</strong> — two assets with the same final filename are flagged in orange so you can rename one before export.</li>
+      <li><strong>Show in PS</strong> — every row has a button that selects that layer in Photoshop.</li>
+      <li><strong>Add Group</strong> — manually add an extra group as one flattened asset (useful when scan missed it).</li>
+      <li><strong>Ignore list</strong> — comma-separated keywords; layer names containing any keyword are skipped.</li>
+      <li><strong>Hidden layers</strong> are skipped automatically.</li>
+      <li><strong>Output structure</strong>:
+        <ul class="dot">
+          <li><strong>Default mode</strong> → <code>{picked-folder}/assets-{docname}-{timestamp}/</code></li>
+          <li><strong>Advanced mode (Custom path)</strong> → <code>{path}/{size}/assets/</code> per artboard. The root path must already exist (no auto-create) and must be absolute.</li>
+        </ul>
+      </li>
+      <li><strong>info-image.html</strong> (Advanced) — generates a gallery HTML at the export root showing every exported asset grouped by size. Quick visual sanity check.</li>
+      <li><strong>"gg-" filter</strong> (Advanced) — only export layers/groups whose names start with <code>gg-</code>. Strips the prefix from the output filename so files come out as <code>logo.png</code> not <code>gg-logo.png</code>.</li>
+    </ul>
+
+    <h3>3.9 Apply Rules to Existing</h3>
+    <p>After importing JSON, click <strong>Apply Rules to Existing</strong> in Settings to re-run the layout pipeline on every artboard already in the document. Useful when you've tweaked the JSON and want to update without recloning. Only artboards whose name contains a recognized size suffix are touched.</p>
+
+    <h3>3.10 Refresh Source</h3>
+    <p>Clicking <strong>Refresh Source</strong> (Artboards tab info card) re-detects the active artboard from the current selection. Use this whenever you change selection in Photoshop mid-session.</p>
+
+    <h3>3.11 Logs panel</h3>
+    <p>The bottom panel logs every action with timestamps. Behaviour:</p>
+    <ul class="dot">
+      <li>Errors get a red highlight + 3-second flash on the header to grab attention.</li>
+      <li>"Complete" / "created" lines get a green highlight.</li>
+      <li>Errors auto-expand the panel if it was collapsed.</li>
+      <li><strong>Copy</strong> button copies the entire log to clipboard for sharing.</li>
+      <li><strong>Clear</strong> resets to <em>Ready.</em></li>
+      <li>Click the <em>Logs</em> title to collapse/expand.</li>
+      <li><code>[PERF]</code> entries appear when <code>DEBUG_PERF</code> is on — round-trip timings for tuning.</li>
+    </ul>
+
+    <!-- ─── Modes ─── -->
+    <h2 id="modes">4. Asset Export Modes (A / B / C / D)</h2>
+    <p>Each asset row in the <em>Assets</em> tab has a <strong>size mode</strong> toggle. Cycle through them by clicking the mode button.</p>
+    <table>
+      <thead><tr><th>Mode</th><th>What it does</th><th>Best for</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>A — Layer bounds</strong></td>
+          <td>Exports the layer at its full layer bounds. Output canvas = layer size.</td>
+          <td>Logos, icons, free-floating shapes that should keep their full extent.</td>
+        </tr>
+        <tr>
+          <td><strong>B — Clip to artboard</strong></td>
+          <td>Exports only the visible intersection of the layer with the artboard. Output canvas = visible overlap area.</td>
+          <td>Background images that overflow the artboard — you only want what's actually visible. <em>Forced when Custom output path is set.</em></td>
+        </tr>
+        <tr>
+          <td><strong>C — Trim transparent</strong></td>
+          <td>Like A, but trims transparent edges off the result.</td>
+          <td>Sprite-style assets where padding is just empty pixels.</td>
+        </tr>
+        <tr>
+          <td><strong>D — Edit Contents</strong></td>
+          <td>Opens a Smart Object's source content and exports that. Skipped for vector SOs.</td>
+          <td>Raster Smart Objects where you want the original embedded resolution rather than the on-canvas size.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><strong>Scale</strong> options per asset: 1× / 2× / 3× (default 2× outside Advanced mode, 1× inside).</p>
+    <p><strong>Format</strong> options: <code>PNG</code> (default) or <code>JPG</code> (uses the JPG quality from Advanced settings; default 75).</p>
+
+    <!-- ─── JSON ─── -->
+    <h2 id="json">5. JSON Formats</h2>
+
+    <h3>5.1 Rules format (canonical)</h3>
+    <p>Authored manually or generated by sister tooling. Shape:</p>
+    <ul class="dot">
+      <li><code>moduleName</code> — campaign / module label, shown in the Settings info card.</li>
+      <li><code>sizes[]</code> — list of <code>{ name, width, height }</code>. Drives the size keys used to look up rules.</li>
+      <li><code>elements[]</code> — per-layer entries with per-size overrides for position, size, font size, color, etc.</li>
+    </ul>
+
+    <h3>5.2 Layer-full format (PSD tree)</h3>
+    <p>Output of <em>Export Layer JSON</em> — a deep snapshot of an artboard's layers. Auto-detected on import and converted to rules format. Used internally to:</p>
+    <ul class="dot">
+      <li>Round-trip designs through external tools.</li>
+      <li>Reuse one master's full layer tree as the spec for all sizes.</li>
+      <li>Bind the rule's <code>src</code> to actual exported PNG filenames (after running <em>Export Assets</em>).</li>
+    </ul>
+
+    <!-- ─── Settings ─── -->
+    <h2 id="settings">6. Settings Reference</h2>
+    <table>
+      <thead><tr><th>Setting</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Smart match</strong></td><td>Auto resize, move, and cover-fit content when no JSON rule exists for the size.</td></tr>
+        <tr><td><strong>Append size suffix to name</strong></td><td>Appends <code>-300x250</code>-style suffix to cloned artboard names. Off → just the size.</td></tr>
+        <tr><td><strong>Require GG- prefix</strong></td><td>Layer rules apply only to layers whose names start with <code>GG-</code> (case-insensitive).</td></tr>
+        <tr><td><strong>Background Layer</strong></td><td>Layer/group treated as cover-fill background (default <code>GG-background</code>). Saved per-user.</td></tr>
+        <tr><td><strong>Ignore layers</strong> <em>(Assets)</em></td><td>Comma-separated keywords. Any layer/group whose name contains a keyword is skipped during scan. Persisted in localStorage.</td></tr>
+        <tr><td><strong>Custom output path</strong> <em>(Assets, Advanced — required when Advanced is on)</em></td><td>Override default export folder. Format: <code>{path}/{size}/assets/</code>. Must be absolute and the root must already exist.</td></tr>
+        <tr><td><strong>JPG quality</strong> <em>(Advanced — required)</em></td><td>0–100. Default 75. Validated on save.</td></tr>
+        <tr><td><strong>Only export "gg-" layers</strong> <em>(Advanced)</em></td><td>Filter assets to layers/groups starting with <code>gg-</code>. Strips the prefix from output filenames.</td></tr>
+        <tr><td><strong>Generate info-image.html</strong> <em>(Advanced)</em></td><td>Builds a gallery HTML at the export root after asset export. Quick preview of what was exported.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ─── Tips ─── -->
+    <h2 id="tips">7. Tips & Conventions</h2>
+    <ul class="dot">
+      <li>Name your master background group <code>GG-background</code> so it auto-cover-scales without configuration.</li>
+      <li>Prefix layers you want governed by rules with <code>GG-</code> (e.g. <code>GG-headline</code>, <code>GG-cta</code>). Combined with <em>Require GG- prefix</em>, this gives you a clean opt-in convention.</li>
+      <li>Sizes are persisted to localStorage, so the input field repopulates on next launch.</li>
+      <li>Use the <strong>Import JSON</strong> feature to apply a campaign-wide rule template across all sizes in one shot. The auto-fill will update the Target Sizes input too.</li>
+      <li>If you need 2 layout variants of the same dim (e.g. 300x600 portrait + landscape), use <code>v1-300x600</code> and <code>v2-300x600</code>. Single-variant dims auto-collapse to <code>300x600</code> on import.</li>
+      <li><strong>Refresh Source</strong> if you change selection mid-session — it re-detects the active artboard.</li>
+      <li>For Asset export with <em>Custom output path</em>, run <em>Export Assets</em> <strong>before</strong> <em>Export Layer JSON</em> so the JSON's <code>src</code> fields point at real PNG/JPG filenames instead of <code>.ai</code>/<code>.psd</code> raws.</li>
+      <li>The log panel auto-scrolls; click a log line to copy via the <strong>Copy</strong> button at the top.</li>
+    </ul>
+
+    <!-- ─── Limitations ─── -->
+    <h2 id="limits">8. Known Limitations</h2>
+    <div class="callout warn">
+      <ul class="dot" style="margin:0;">
+        <li>Smart-match auto-layout is best-effort; complex designs may still need manual cleanup.</li>
+        <li>Asset export <em>Mode D</em> (Edit Contents) only works for raster Smart Objects — vector SOs are skipped.</li>
+        <li>Custom output path requires the root folder to <strong>already exist</strong> — no auto-create.</li>
+        <li>JPG export caps width at 3000px (downscaled); PSDs are saved at full resolution.</li>
+        <li>Only Photoshop is supported (UXP). Min host version: <strong>23.0.0</strong>.</li>
+        <li>Photoshop's color descriptor stores green channel as <code>grain</code> in some contexts — readers must check both fields to avoid G=0 magenta artifacts.</li>
+      </ul>
+    </div>
+
+    <!-- ─── Install ─── -->
+    <h2 id="install">9. Installation</h2>
+    <ol class="steps">
+      <li>Install the <strong>Adobe UXP Developer Tool</strong> (free download from Adobe).</li>
+      <li>In UXP DT, click <strong>Add Plugin</strong> and pick this folder's <code>manifest.json</code>.</li>
+      <li>Click <strong>Load</strong>. The panel appears under <code>Plugins ▸ Banner Cloner</code> in Photoshop.</li>
+      <li>The panel docks at the right; minimum size 320×520, preferred 360×760. Resizable up to 1200×2000.</li>
+    </ol>
+
+    <!-- Footer -->
+    <footer>
+      Banner Cloner v1.1.0 · © 2026 · by <span class="author">Thien Ho</span> · Technical Solution · Gravity Global
+      &nbsp;·&nbsp; <a href="readme.vi.html">Tiếng Việt →</a>
+    </footer>
+  </div>
+</body>
+</html>

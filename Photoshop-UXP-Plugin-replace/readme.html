@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Content Replacer — README</title>
+<style>
+  :root {
+    --gg-green: #b7e39b;
+    --gg-green-dark: #59a139;
+    --gg-accent: #a32600;
+    --gg-cyan: #2bc9de;
+    --bg-page: #121212;
+    --bg-card: #1c1c1c;
+    --bg-input: #0a0a0a;
+    --border: #2a2a2a;
+    --text-primary: #f2f2f2;
+    --text-secondary: #b0b0b0;
+    --text-muted: #707070;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.65;
+    font-size: 14px;
+  }
+  .wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  header.top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 22px;
+    margin-bottom: 28px;
+  }
+  .title { display: flex; flex-direction: column; gap: 8px; }
+  .title h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-primary);
+  }
+  .title h1::before {
+    content: '';
+    width: 6px;
+    height: 26px;
+    background: var(--gg-green);
+    border-radius: 1px;
+    display: inline-block;
+  }
+  .title .sub {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .pill {
+    display: inline-block;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-right: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .pill.brand {
+    color: var(--gg-green);
+    border-color: var(--gg-green-dark);
+  }
+
+  .lang-switch {
+    display: inline-flex;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px;
+  }
+  .lang-switch button {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 0;
+    padding: 8px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .lang-switch button.active {
+    background: var(--gg-green);
+    color: #121212;
+  }
+  .lang-switch button:not(.active):hover { color: var(--text-primary); }
+  .lang-switch button:focus { outline: none; box-shadow: 0 0 0 3px rgba(183, 227, 155, 0.15); }
+
+  h2 {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--gg-green);
+    margin: 36px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2::before {
+    content: '';
+    width: 4px;
+    height: 14px;
+    background: var(--gg-green);
+    border-radius: 1px;
+  }
+  h3 {
+    font-size: 13px;
+    margin: 18px 0 8px;
+    color: var(--gg-green);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 700;
+  }
+
+  p { margin: 8px 0; color: var(--text-primary); }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+  li { margin: 5px 0; }
+
+  a { color: var(--gg-green); text-decoration: underline; font-weight: 600; }
+  a:hover { color: #fff; }
+
+  code {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--gg-green);
+  }
+  kbd {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+  }
+  strong { color: var(--text-primary); font-weight: 700; }
+  em { color: var(--text-secondary); font-style: normal; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin: 10px 0;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--gg-green-dark); }
+  .card .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--gg-green);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .card.tip { border-left: 3px solid var(--gg-green); }
+  .card.warn {
+    border-left: 3px solid var(--gg-accent);
+    background: rgba(163, 38, 0, 0.08);
+  }
+  .card.warn .card-title { color: #ffb8a0; }
+  .card.ok {
+    border-left: 3px solid var(--gg-green-dark);
+    background: rgba(89, 161, 57, 0.08);
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .feature-grid .card { margin: 0; }
+
+  .step {
+    counter-increment: step;
+    display: flex;
+    gap: 14px;
+    margin: 10px 0;
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    transition: border-color 0.15s;
+  }
+  .step:hover { border-color: var(--gg-green-dark); }
+  .step::before {
+    content: counter(step);
+    flex: 0 0 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: var(--gg-green);
+    color: #121212;
+    text-align: center;
+    line-height: 28px;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .step-body strong { color: var(--gg-green); font-weight: 700; }
+  ol.steps {
+    counter-reset: step;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .lang-section { display: none; }
+  .lang-section.active { display: block; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--gg-green);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-size: 11px;
+    background: var(--bg-input);
+  }
+  tr:last-child td { border-bottom: 0; }
+  tr:hover td { background: rgba(183, 227, 155, 0.04); }
+
+  footer {
+    margin-top: 50px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  details {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 8px 0;
+    transition: border-color 0.15s;
+  }
+  details:hover { border-color: var(--gg-green-dark); }
+  details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--gg-green);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  details summary::before {
+    content: '+';
+    color: var(--gg-green);
+    font-weight: 700;
+    transition: transform 0.15s;
+    display: inline-block;
+    width: 14px;
+  }
+  details[open] summary::before { content: '−'; }
+  details[open] summary { margin-bottom: 10px; }
+  details summary::-webkit-details-marker { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="title">
+      <h1>Content Replacer</h1>
+      <div class="sub">
+        <span class="pill brand">Photoshop UXP Plugin</span>
+        <span class="pill">v0.1.0</span>
+        <span class="pill">by Thien Ho · Technical Solution</span>
+      </div>
+    </div>
+    <div class="lang-switch" role="tablist">
+      <button id="btn-vi" class="active" onclick="setLang('vi')">Tiếng Việt</button>
+      <button id="btn-en" onclick="setLang('en')">English</button>
+    </div>
+  </header>
+
+  <!-- ───────────────────────── VIETNAMESE ───────────────────────── -->
+  <section id="lang-vi" class="lang-section active">
+
+    <h2>Tổng quan</h2>
+    <p>
+      <strong>Content Replacer</strong> là plugin Photoshop (UXP) giúp các bạn Designer / Studio
+      <strong>thay nội dung hàng loạt</strong> trên file PSD nhiều artboards (hoặc nhiều file PSD mở cùng lúc).
+      Một lần khai báo — plugin tự tìm tất cả layer trùng tên ở mọi artboard và thay đồng loạt:
+      sửa text, đổi ảnh trong Smart Object, đổi tên layer, đổi tên artboard, thêm text layer mới,
+      hoặc chạy Photoshop Action lên các layer đã chọn.
+    </p>
+
+    <div class="card tip">
+      <div class="card-title">Phù hợp với ai?</div>
+      Workflow banner / KV nhiều size — ví dụ 1 PSD có 20 artboards (300x250, 728x90, 970x250…),
+      hoặc 20 file PSD riêng cho từng size. Thay vì sửa từng artboard / từng file, plugin xử lý 1 lần cho tất cả.
+    </div>
+
+    <h2>Cài đặt</h2>
+    <ol class="steps">
+      <li class="step"><div class="step-body"><strong>Mở Adobe UXP Developer Tool</strong> (nếu chưa có, tải tại Creative Cloud Desktop).</div></li>
+      <li class="step"><div class="step-body"><strong>Add Plugin → Add Existing Plugin</strong>, chọn file <code>manifest.json</code> trong thư mục plugin này.</div></li>
+      <li class="step"><div class="step-body"><strong>Load</strong> plugin. Trong Photoshop: <em>Plugins → Content Replacer</em> để mở panel.</div></li>
+      <li class="step"><div class="step-body">Yêu cầu: Photoshop <strong>23.0</strong> trở lên.</div></li>
+    </ol>
+
+    <h2>Quy trình sử dụng cơ bản</h2>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-body">
+          <strong>Mở file PSD</strong> trong Photoshop. Nếu mỗi size là một file PSD riêng → mở tất cả.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          <strong>Chọn Scan mode</strong>:
+          <ul>
+            <li><em>Current document</em> — file đang active (PSD nhiều artboards).</li>
+            <li><em>All open documents</em> — quét tất cả file PSD đang mở.</li>
+          </ul>
+          Tuỳ chọn <em>Match by layer name only</em>: gộp các layer cùng tên kể cả khi nằm khác đường dẫn (group).
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          Nhấn <strong>Scan document</strong>. Plugin liệt kê toàn bộ layer (text / image / group / other),
+          kèm số <em>occurrences</em> — ví dụ <code>10/12</code> nghĩa là layer xuất hiện ở 10 trên 12 artboards đang bật.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          Trong mục <strong>Artboards</strong>, bỏ chọn artboard nào không muốn áp dụng.
+          Plugin chỉ tác động lên các artboard đang được tick.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          Điền nội dung mới cho từng layer (xem các chức năng phía dưới),
+          rồi nhấn <strong>Apply</strong> ở cuối panel. Sau đó nhấn <strong>Save</strong> để lưu lại các file đã chỉnh.
+        </div>
+      </li>
+    </ol>
+
+    <h2>Các chức năng chính</h2>
+
+    <div class="feature-grid">
+      <div class="card">
+        <div class="card-title">1. Thay nội dung text</div>
+        Nhập text mới vào ô <em>textarea</em> của layer. Plugin giữ lại định dạng (font, size, màu, mixed style)
+        ở mức tốt nhất có thể bằng thuật toán LCS map giữa text cũ và text mới.
+      </div>
+      <div class="card">
+        <div class="card-title">2. Thay ảnh Smart Object</div>
+        Với layer <em>image</em> (pixel / smartObject), nhấn <strong>Browse…</strong> chọn file mới
+        (PNG, JPG, PSD, TIFF, AI, SVG, PDF…). Plugin replace contents và giữ transform của smart object.
+      </div>
+      <div class="card">
+        <div class="card-title">3. Đổi tên layer hàng loạt</div>
+        Điền <em>New name</em> cho một layer → plugin đổi tên layer đó ở mọi artboard cùng lúc.
+        Có nút <strong>Update</strong> để rename ngay không cần Apply.
+      </div>
+      <div class="card">
+        <div class="card-title">4. Đổi tên artboard giữ size suffix</div>
+        Trong mục Artboards, điền tên mới (ví dụ <code>P001_honda_</code>).
+        Plugin tự thêm phần <code>WxH</code> của từng artboard → <code>P001_honda_300x250</code>, <code>P001_honda_728x90</code>…
+      </div>
+      <div class="card">
+        <div class="card-title">5. Append Text Layer</div>
+        Tạo <strong>thêm 1 text layer</strong> giống nhau lên tất cả artboards đang bật.
+        Cấu hình font, size, line-height, màu, box-width, align, anchor X/Y, offset.
+        Có nút <em>Sample from selection</em> để copy thuộc tính từ text layer đang chọn.
+      </div>
+      <div class="card">
+        <div class="card-title">6. Run Photoshop Action</div>
+        Tab <strong>Run Photoshop Action</strong>: chọn 1 hoặc nhiều layer, chọn Action Set + Action
+        từ palette Actions của Photoshop, plugin chạy action lên từng layer đã tick.
+      </div>
+      <div class="card">
+        <div class="card-title">7. Show / Locate layer</div>
+        Nút <strong>Show</strong> ở mỗi dòng nhảy đến đúng layer trong Photoshop và highlight nó —
+        tiện để kiểm tra trước khi sửa.
+      </div>
+      <div class="card">
+        <div class="card-title">8. Lọc & tìm kiếm</div>
+        Bộ lọc theo loại (Text / Image / Group / Other), tìm kiếm theo tên layer, tìm artboard theo tên.
+        Hỗ trợ <em>Select All</em> / <em>Deselect All</em> theo filter hiện tại.
+      </div>
+    </div>
+
+    <h2>Mẹo thực chiến</h2>
+    <div class="card tip">
+      <div class="card-title">Link ID — đồng bộ nhiều layer</div>
+      Mỗi dòng có ô <em>Link ID</em>. Nếu hai layer có cùng Link ID, khi bạn sửa text ở dòng A,
+      dòng B sẽ tự apply cùng nội dung. Hữu ích khi cùng 1 thông điệp xuất hiện ở nhiều layer khác tên.
+    </div>
+
+    <div class="card warn">
+      <div class="card-title">Lưu ý về định dạng text</div>
+      Plugin cố gắng giữ <em>mixed style</em> (chữ in hoa, màu khác nhau, font khác nhau trong cùng 1 layer).
+      Tuy nhiên với text quá phức tạp, hãy kiểm tra lại sau Apply. Trống ô textarea = bỏ qua layer đó.
+    </div>
+
+    <div class="card ok">
+      <div class="card-title">Save một lần cho tất cả</div>
+      Sau Apply, nút <strong>Save</strong> sẽ lưu tất cả document đã bị chỉnh sửa.
+      Không cần chuyển từng tab Photoshop để Ctrl+S.
+    </div>
+
+    <h2>Phím tắt & Shortcut UI</h2>
+    <table>
+      <tr><th>Hành động</th><th>Cách thực hiện</th></tr>
+      <tr><td>Scan lại</td><td>Nút <strong>Scan document</strong></td></tr>
+      <tr><td>Bật/tắt toàn bộ artboards</td><td>Nút <strong>All</strong> / <strong>None</strong> ở header Artboards</td></tr>
+      <tr><td>Chọn nhanh tên cũ làm tên mới</td><td>Click vào tên layer ở mỗi dòng</td></tr>
+      <tr><td>Copy log</td><td>Nút <strong>Copy</strong> ở Logs</td></tr>
+      <tr><td>Reload Actions từ Photoshop</td><td>Nút <strong>↻</strong> bên Action dropdown</td></tr>
+    </table>
+
+    <h2>Khắc phục sự cố</h2>
+    <details>
+      <summary>Plugin không hiện trong Photoshop</summary>
+      Kiểm tra UXP Developer Tool đã <em>Load</em> plugin chưa. Restart Photoshop nếu vừa add plugin lần đầu.
+    </details>
+    <details>
+      <summary>Scan báo "No active document"</summary>
+      Mở file PSD trong Photoshop trước, đảm bảo file đang active rồi mới Scan.
+    </details>
+    <details>
+      <summary>Apply text bị lỗi font</summary>
+      Đảm bảo font gốc đã được cài. Plugin reuse font hiện có của layer; nếu font missing, Photoshop sẽ thay thế font mặc định.
+    </details>
+    <details>
+      <summary>Replace ảnh không vừa khung</summary>
+      Plugin replace contents giữ nguyên transform. Nếu ảnh mới có tỷ lệ khác, hãy chỉnh lại smart object thủ công sau Apply.
+    </details>
+    <details>
+      <summary>Run Action không thấy Action mong muốn</summary>
+      Action set phải được load sẵn trong palette Actions của Photoshop. Nhấn <strong>↻</strong> để reload danh sách.
+    </details>
+
+  </section>
+
+  <!-- ───────────────────────── ENGLISH ───────────────────────── -->
+  <section id="lang-en" class="lang-section">
+
+    <h2>Overview</h2>
+    <p>
+      <strong>Content Replacer</strong> is a Photoshop UXP plugin built for designers and studio teams
+      who need to <strong>batch-edit content</strong> across multi-artboard PSDs (or many PSDs at once).
+      Declare your changes in one panel — the plugin matches layers by name across all artboards and
+      applies edits in bulk: replace text, swap smart-object images, rename layers, rename artboards,
+      append a new text layer, or run a Photoshop Action against selected layers.
+    </p>
+
+    <div class="card tip">
+      <div class="card-title">Who is it for?</div>
+      Banner / key-visual workflows with many sizes — e.g. one PSD with 20 artboards (300x250, 728x90, 970x250…),
+      or 20 separate PSDs. Instead of editing each artboard or file by hand, do it once for everything.
+    </div>
+
+    <h2>Installation</h2>
+    <ol class="steps">
+      <li class="step"><div class="step-body"><strong>Open Adobe UXP Developer Tool</strong> (install via Creative Cloud Desktop if missing).</div></li>
+      <li class="step"><div class="step-body"><strong>Add Plugin → Add Existing Plugin</strong> and pick the <code>manifest.json</code> in this plugin folder.</div></li>
+      <li class="step"><div class="step-body"><strong>Load</strong> the plugin. In Photoshop, open <em>Plugins → Content Replacer</em>.</div></li>
+      <li class="step"><div class="step-body">Requires Photoshop <strong>23.0</strong> or newer.</div></li>
+    </ol>
+
+    <h2>Basic workflow</h2>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-body">
+          <strong>Open the PSD(s)</strong> in Photoshop. If each size is a separate PSD, open them all.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          <strong>Pick a Scan mode</strong>:
+          <ul>
+            <li><em>Current document</em> — the active file (a multi-artboard PSD).</li>
+            <li><em>All open documents</em> — every PSD currently open.</li>
+          </ul>
+          Optional <em>Match by layer name only</em>: groups layers that share a name even if their group paths differ.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          Click <strong>Scan document</strong>. The panel lists every layer (text / image / group / other)
+          with an <em>occurrences</em> count — e.g. <code>10/12</code> means the layer exists in 10 of the 12 enabled artboards.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          In the <strong>Artboards</strong> section, untick any artboard you want to skip.
+          The plugin only touches enabled artboards.
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-body">
+          Fill in the new content for each layer (see features below), then click <strong>Apply</strong>.
+          Click <strong>Save</strong> to write changes back to disk.
+        </div>
+      </li>
+    </ol>
+
+    <h2>Core features</h2>
+
+    <div class="feature-grid">
+      <div class="card">
+        <div class="card-title">1. Text replacement</div>
+        Type new text in the row's textarea. The plugin preserves formatting (font, size, color, mixed styling)
+        as best as possible via an LCS-based mapping between old and new text.
+      </div>
+      <div class="card">
+        <div class="card-title">2. Smart-object image swap</div>
+        For <em>image</em> layers (pixel / smartObject), click <strong>Browse…</strong> and pick a new file
+        (PNG, JPG, PSD, TIFF, AI, SVG, PDF…). The plugin replaces contents and keeps the smart object's transform.
+      </div>
+      <div class="card">
+        <div class="card-title">3. Bulk layer rename</div>
+        Type a <em>New name</em> for a layer — every matching layer across all artboards is renamed at once.
+        Use the <strong>Update</strong> button for an instant rename without going through Apply.
+      </div>
+      <div class="card">
+        <div class="card-title">4. Artboard rename with size suffix</div>
+        Enter a base name (e.g. <code>P001_honda_</code>) — the plugin appends each artboard's
+        <code>WxH</code>, producing <code>P001_honda_300x250</code>, <code>P001_honda_728x90</code>, etc.
+      </div>
+      <div class="card">
+        <div class="card-title">5. Append Text Layer</div>
+        Drop an <strong>identical new text layer</strong> onto every enabled artboard.
+        Configure font, size, line-height, color, box width, alignment, X/Y anchor, and offset.
+        <em>Sample from selection</em> copies properties from the currently selected text layer.
+      </div>
+      <div class="card">
+        <div class="card-title">6. Run Photoshop Action</div>
+        Switch to the <strong>Run Photoshop Action</strong> tab, tick layers, pick an Action Set + Action
+        from Photoshop's Actions palette, and run it on each ticked layer.
+      </div>
+      <div class="card">
+        <div class="card-title">7. Show / locate layer</div>
+        The <strong>Show</strong> button in each row jumps to the layer in Photoshop and highlights it —
+        useful for sanity-checking before Apply.
+      </div>
+      <div class="card">
+        <div class="card-title">8. Filter & search</div>
+        Filter by kind (Text / Image / Group / Other), search by layer name, and search artboards by name.
+        <em>Select All</em> / <em>Deselect All</em> respect the active filter.
+      </div>
+    </div>
+
+    <h2>Power-user tips</h2>
+    <div class="card tip">
+      <div class="card-title">Link ID — sync changes across rows</div>
+      Each row has a <em>Link ID</em>. Two rows sharing the same Link ID stay in sync — change text in row A
+      and row B applies the same content. Handy when the same copy lives on multiple differently-named layers.
+    </div>
+
+    <div class="card warn">
+      <div class="card-title">Mixed text styling caveat</div>
+      The plugin tries to preserve <em>mixed styling</em> (uppercase runs, varied colors/fonts inside a single layer).
+      For very complex text, double-check the result after Apply. An empty textarea means "skip this layer".
+    </div>
+
+    <div class="card ok">
+      <div class="card-title">One Save for everything</div>
+      After Apply, the <strong>Save</strong> button writes every modified document at once —
+      no need to tab through Photoshop and Ctrl+S each file.
+    </div>
+
+    <h2>UI shortcuts</h2>
+    <table>
+      <tr><th>Action</th><th>How</th></tr>
+      <tr><td>Re-scan</td><td><strong>Scan document</strong> button</td></tr>
+      <tr><td>Toggle all artboards</td><td><strong>All</strong> / <strong>None</strong> in the Artboards header</td></tr>
+      <tr><td>Use the existing name as new name</td><td>Click the layer name in any row</td></tr>
+      <tr><td>Copy logs</td><td><strong>Copy</strong> button in the Logs section</td></tr>
+      <tr><td>Reload Photoshop Actions</td><td><strong>↻</strong> button next to the Action dropdown</td></tr>
+    </table>
+
+    <h2>Troubleshooting</h2>
+    <details>
+      <summary>The plugin doesn't show up in Photoshop</summary>
+      Make sure UXP Developer Tool has <em>Loaded</em> the plugin. Restart Photoshop the first time you add it.
+    </details>
+    <details>
+      <summary>Scan says "No active document"</summary>
+      Open a PSD in Photoshop first and ensure it's the active document, then Scan.
+    </details>
+    <details>
+      <summary>Text Apply produces missing fonts</summary>
+      Make sure the original font is installed. The plugin reuses each layer's existing font; if it's missing,
+      Photoshop falls back to a default font.
+    </details>
+    <details>
+      <summary>Image swap doesn't fit the frame</summary>
+      Replace-contents preserves the smart object's transform. If the new image has a different aspect ratio,
+      adjust the smart object manually after Apply.
+    </details>
+    <details>
+      <summary>Run Action can't find my action</summary>
+      The action set must be loaded in Photoshop's Actions palette. Click <strong>↻</strong> to reload the list.
+    </details>
+
+  </section>
+
+  <footer>
+    Content Replacer · v0.1.0 · © 2026 · by Thien Ho — Technical Solution, Gravity Global
+  </footer>
+</div>
+
+<script>
+  function setLang(lang) {
+    document.getElementById('lang-vi').classList.toggle('active', lang === 'vi');
+    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+    document.getElementById('btn-vi').classList.toggle('active', lang === 'vi');
+    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+    document.documentElement.lang = lang;
+    try { localStorage.setItem('contentReplacer.readmeLang', lang); } catch (e) {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  try {
+    const saved = localStorage.getItem('contentReplacer.readmeLang');
+    if (saved === 'en' || saved === 'vi') setLang(saved);
+  } catch (e) {}
+</script>
+</body>
+</html>

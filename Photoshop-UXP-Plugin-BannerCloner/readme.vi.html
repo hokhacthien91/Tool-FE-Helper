@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banner Cloner — Hướng dẫn (VI)</title>
+  <link rel="stylesheet" href="readme.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <div class="brand-title">Banner Cloner</div>
+          <div class="brand-sub">Photoshop UXP Plugin · v1.1.0</div>
+        </div>
+      </div>
+      <nav class="lang-switch" aria-label="Ngôn ngữ">
+        <a class="lang-btn" href="readme.html">English</a>
+        <a class="lang-btn active" href="readme.vi.html" aria-current="page">Tiếng Việt</a>
+      </nav>
+    </header>
+
+    <h1>Banner Cloner</h1>
+    <p class="lead">Clone 1 artboard gốc thành nhiều kích thước banner, rồi export cả bộ ra JPG/PSD/PNG asset — tất cả không cần rời Photoshop. Dành cho workflow banner ads cần ship 10+ sizes (kèm variant) từ 1 design master.</p>
+
+    <div class="callout">
+      <strong>Plugin này dành cho ai?</strong> Designer / motion artist trong các team agency/studio làm display ad banners (300x250, 728x90, 970x250, …) từ 1 file master. Kết hợp tốt với JSON layout spec xuất từ Figma hoặc tool sister.
+    </div>
+
+    <!-- ─── TOC ─── -->
+    <h2>Mục lục</h2>
+    <ul class="dot toc">
+      <li><a href="#quickstart">1. Bắt đầu nhanh</a></li>
+      <li><a href="#tabs">2. Các tab trong panel</a></li>
+      <li><a href="#features">3. Chức năng chính (chi tiết)</a></li>
+      <li><a href="#modes">4. Asset Export Modes (A / B / C / D)</a></li>
+      <li><a href="#json">5. Các format JSON</a></li>
+      <li><a href="#settings">6. Bảng tham chiếu Settings</a></li>
+      <li><a href="#tips">7. Tips & Conventions</a></li>
+      <li><a href="#limits">8. Hạn chế hiện tại</a></li>
+      <li><a href="#install">9. Cài đặt</a></li>
+    </ul>
+
+    <!-- ─── Quick Start ─── -->
+    <h2 id="quickstart">1. Bắt đầu nhanh</h2>
+    <ol class="steps">
+      <li>Mở file PSD master trong Photoshop và <strong>chọn 1 layer bất kỳ trong artboard nguồn</strong> (plugin tự traverse lên parent artboard).</li>
+      <li>Mở panel: <code>Plugins ▸ Banner Cloner</code>.</li>
+      <li>Nhập hoặc chọn target sizes (vd: <code>300x250 728x90 970x250</code>) — phân cách bằng dấu cách hoặc dấu phẩy. Hỗ trợ variant prefix: <code>v1-300x600</code>, <code>v2-300x600</code>.</li>
+      <li>Click <strong>Clone Artboards</strong>. Mỗi size mới xuất hiện thành 1 artboard riêng trong cùng document, xếp kế nhau cách 80px.</li>
+      <li><em>(Tùy chọn)</em> Click <strong>Export</strong> để lưu tất cả artboards ra JPG + PSD vào folder có cấu trúc, hoặc <strong>Split to Documents</strong> để tách mỗi artboard thành 1 file PSD riêng.</li>
+      <li><em>(Tùy chọn)</em> Chuyển sang tab <strong>Assets</strong> để export từng layer/group asset theo từng artboard.</li>
+    </ol>
+
+    <!-- ─── Tabs ─── -->
+    <h2 id="tabs">2. Các tab trong panel</h2>
+    <div class="grid">
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Artboards</div>
+        <div class="feature-desc">View mặc định. Nhập sizes, toggle preset chip, chạy <em>Clone Artboards</em>. Source name + size và JSON status hiển thị bên dưới action bar.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Settings</div>
+        <div class="feature-desc">Bật smart-match, GG- prefix gating, suffix tên, background layer, layer rules theo từng size, import/export JSON, <em>Apply Rules to Existing</em>.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Assets</div>
+        <div class="feature-desc">Scan + export theo nhiều artboard. Mỗi asset có size mode (A/B/C/D), scale, format (PNG/JPG), search, collapse all, custom output path validate chặt.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Documents</div>
+        <div class="feature-desc">Mặc định ẩn — chỉ hiện sau khi <em>Split to Documents</em> mở nhiều PSD. Cho phép batch export tất cả ra JPG + PSD trong 1 click.</div>
+      </div>
+    </div>
+
+    <!-- ─── Core Features ─── -->
+    <h2 id="features">3. Chức năng chính (chi tiết)</h2>
+
+    <h3>3.1 Clone Artboards</h3>
+    <p>Duplicate artboard nguồn đang chọn thành nhiều artboard mới <strong>trong cùng document</strong>. Bản gốc luôn được giữ nguyên, không bao giờ bị sửa. Mỗi clone được đặt phía bên phải của artboard ngoài cùng bên phải, cách 80px.</p>
+    <ul class="dot">
+      <li><strong>Same-doc cloning</strong> — workflow nhanh nhất; mọi thứ ở trong 1 PSD đến khi bạn quyết định split.</li>
+      <li><strong>Định vị thông minh</strong> — tìm cạnh phải xa nhất của tất cả artboards hiện có rồi xếp tiếp. Position của artboard gốc được restore nếu bị drift trong lúc clone.</li>
+      <li><strong>Variant-aware</strong> — sizes có prefix <code>v1-</code>, <code>v2-</code>, … được giữ riêng biệt; rules apply theo từng variant.</li>
+      <li><strong>3 layout modes</strong>, plugin tự chọn theo từng size:
+        <ul class="dot">
+          <li><strong>JSON rules</strong> — khi có layer rule cho size đó (ưu tiên cao nhất).</li>
+          <li><strong>Smart match</strong> — khi không có rule nhưng Smart Match đang on. Tự scale/reposition/cover-fit content groups.</li>
+          <li><strong>Canvas only</strong> — khi cả 2 đều off; chỉ resize canvas, layer giữ nguyên.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <p><strong>Preset sizes có sẵn</strong> (chip click 1 phát):</p>
+    <div class="chips">
+      <span class="chip">300x250</span>
+      <span class="chip">300x600</span>
+      <span class="chip">160x600</span>
+      <span class="chip">728x90</span>
+      <span class="chip">320x50</span>
+      <span class="chip">300x50</span>
+      <span class="chip">970x250</span>
+      <span class="chip">480x320</span>
+      <span class="chip">1080x1080</span>
+      <span class="chip">1080x1920</span>
+      <span class="chip">1920x1080</span>
+      <span class="chip">1080x1440</span>
+      <span class="chip">1080x1350</span>
+    </div>
+
+    <h3>3.2 Smart Match (auto-layout)</h3>
+    <p>Toggle trong <strong>Settings</strong>. Khi bật và không có JSON rule cho size, plugin sẽ:</p>
+    <ul class="dot">
+      <li>Capture content layout của artboard nguồn (groups + bounds) trước khi clone.</li>
+      <li>Với từng target size, scale các content group theo tỉ lệ vừa với canvas mới.</li>
+      <li>Reposition groups để cân bằng visual (centered/anchored).</li>
+      <li>Coi layer/group có tên trùng <strong>Background Layer</strong> (mặc định <code>GG-background</code>) là cover-fill — scale phủ kín canvas mới, không chỉ reposition.</li>
+      <li>Fallback: fit từng content layer vào canvas khi không tìm thấy cấu trúc group.</li>
+    </ul>
+    <div class="callout">Chỉ là layout pass đầu. Luôn review và chỉnh tay trước khi giao file.</div>
+
+    <h3>3.3 Layer Rules (theo từng size)</h3>
+    <p>Định nghĩa rule cụ thể về vị trí, kích thước, style cho từng layer ở từng target size. Rules có thể:</p>
+    <ul class="dot">
+      <li><strong>Auto-sync</strong> từ danh sách target sizes — mỗi size trong input sẽ có 1 row trong <em>Settings</em>.</li>
+      <li><strong>Import từ JSON</strong> — hỗ trợ 2 format:
+        <ul class="dot">
+          <li><strong>Rules format</strong> — <code>moduleName</code> + <code>sizes[]</code> + <code>elements[]</code>.</li>
+          <li><strong>Layer-full format (PSD-tree)</strong> — output từ chính <em>Export Layer JSON</em> hoặc tool sister. Tự detect và convert khi import.</li>
+        </ul>
+      </li>
+      <li><strong>Single-variant collapse</strong> — nếu import chỉ có <code>v1-300x600</code> cho 1 dim, plugin tự rename về <code>300x600</code>. Multi-variant dims giữ nguyên prefix <code>vN-</code>.</li>
+      <li><strong>Export ra JSON</strong> qua <em>Export Layer JSON</em> — capture toàn bộ layer tree (text, fill, gradient, effect, mask, smart-object refs).</li>
+      <li><strong>Apply lại cho artboards đã có</strong> qua <em>Apply Rules to Existing</em> — chạy lại rules không cần clone lại. Match key là size suffix trong tên artboard (<code>v2-300x600</code> hoặc <code>300x600</code>).</li>
+      <li><strong>GG- prefix gate</strong> (tùy chọn) — khi bật, rules chỉ apply cho layer có tên bắt đầu bằng <code>GG-</code> (vd <code>GG-headline</code>, <code>GG-cta</code>). Layer khác bị bỏ qua.</li>
+    </ul>
+
+    <h3>3.4 Scale background dạng cover</h3>
+    <p>Layer/group có tên trong <strong>Background Layer</strong> (mặc định <code>GG-background</code>) được xử lý đặc biệt:</p>
+    <ul class="dot">
+      <li>Mode <em>Smart Match</em> → scale dạng <em>cover</em>, phủ kín canvas mới.</li>
+      <li>Mode <em>JSON rules</em> → scale + position theo entry rule của nó.</li>
+      <li>Matcher case-insensitive và đọc từ giá trị localStorage đã lưu, nên tên background custom của bạn được giữ qua nhiều session.</li>
+    </ul>
+
+    <h3>3.5 Export (tất cả artboards)</h3>
+    <p>Chỉ hiện khi document active có nhiều hơn 1 artboard. Workflow:</p>
+    <ol class="steps">
+      <li>Click <strong>Export</strong> → chọn parent folder.</li>
+      <li>Plugin tạo: <code>{parent}/{base}-output-working-file-{HHMM-DDMMYYYY}/</code></li>
+      <li>Bên trong có 2 subfolder: <code>output/</code> chứa JPGs, <code>working-file/</code> chứa PSDs editable.</li>
+      <li>Mỗi artboard → 1 PSD (full chất lượng, maximize compatibility on) + 1 JPG (quality 8, white matte).</li>
+      <li>Width JPG cap ở 3000px; banner quá lớn sẽ được downscale, giữ tỉ lệ.</li>
+      <li>Tất cả filenames đều lowercase và sanitize ký tự đặc biệt.</li>
+    </ol>
+
+    <h3>3.6 Split to Documents</h3>
+    <p>Mỗi artboard trở thành 1 PSD document riêng (1 cửa sổ / 1 size). Tiện khi cần handoff từng file để review hoặc upload. Sau khi split, tab <strong>Documents</strong> hiện ra cho phép batch export tất cả trong 1 click.</p>
+
+    <h3>3.7 Export Layer JSON</h3>
+    <p>Lưu JSON đầy đủ, lossless về cấu trúc layer tree của các artboard đã chọn. Mỗi layer capture:</p>
+    <ul class="dot">
+      <li><strong>Hình học</strong> — bounds, vị trí relative tới artboard, size.</li>
+      <li><strong>Text</strong> — font family, weight, size, color, line-height, tracking, alignment, nội dung text.</li>
+      <li><strong>Fill</strong> — solid color (RGB), gradient (kèm stops + angle, theo CSS direction).</li>
+      <li><strong>Effects</strong> — drop shadow, inner shadow, outer/inner glow, stroke, gradient overlay.</li>
+      <li><strong>Border radius</strong> — bán kính góc của shape layer.</li>
+      <li><strong>Transform</strong> — rotation, flip, scale.</li>
+      <li><strong>Masks</strong> — vector mask + phân tích gradient của raster mask (direction, stop colors/opacities).</li>
+      <li><strong>Smart Objects</strong> — tên file src gốc, detect vector hay raster.</li>
+      <li><strong>Asset filename binding</strong> — nếu bạn chạy <em>Export Assets</em> trước, field <code>src</code> trong JSON sẽ trỏ tới đúng file PNG/JPG đã export, không phải file PSD/AI gốc.</li>
+    </ul>
+
+    <h3>3.8 Export Assets (theo artboard)</h3>
+    <p>Export từng layer/group asset trên các artboard đã chọn. <strong>Artboard picker</strong> ở đầu tab Assets cho phép chọn artboards nào sẽ scan. Sau scan, mỗi asset hiện thành 1 row có thể chỉnh size mode, scale, format.</p>
+    <ul class="dot">
+      <li><strong>Per-asset controls</strong> — cycle qua size mode (A/B/C/D), scale (1×/2×/3×), format (PNG/JPG), hoặc rename file export.</li>
+      <li><strong>Search & collapse</strong> — lọc asset list theo tên, hoặc collapse all rows để view gọn.</li>
+      <li><strong>Duplicate detection</strong> — 2 asset cùng tên file output sẽ được flag màu cam để bạn rename trước khi export.</li>
+      <li><strong>Show in PS</strong> — mỗi row có nút select layer đó trong Photoshop.</li>
+      <li><strong>Add Group</strong> — thêm thủ công 1 group thành 1 asset flatten (khi scan miss).</li>
+      <li><strong>Ignore list</strong> — keywords cách bằng dấu phẩy; layer có tên chứa keyword nào sẽ bị bỏ qua.</li>
+      <li><strong>Layer ẩn</strong> tự động bỏ qua.</li>
+      <li><strong>Cấu trúc output</strong>:
+        <ul class="dot">
+          <li><strong>Default mode</strong> → <code>{folder-chọn}/assets-{docname}-{timestamp}/</code></li>
+          <li><strong>Advanced mode (Custom path)</strong> → <code>{path}/{size}/assets/</code> theo từng artboard. Folder gốc phải tồn tại sẵn (không auto-create) và phải là path tuyệt đối.</li>
+        </ul>
+      </li>
+      <li><strong>info-image.html</strong> (Advanced) — tạo gallery HTML ở root export, hiển thị mọi asset đã export, gom theo size. Preview nhanh để kiểm tra.</li>
+      <li><strong>"gg-" filter</strong> (Advanced) — chỉ export layer/group có tên bắt đầu bằng <code>gg-</code>. Strip prefix khỏi filename → ra <code>logo.png</code> chứ không phải <code>gg-logo.png</code>.</li>
+    </ul>
+
+    <h3>3.9 Apply Rules to Existing</h3>
+    <p>Sau khi import JSON, click <strong>Apply Rules to Existing</strong> trong Settings để chạy lại layout pipeline trên mọi artboard đã có trong document. Tiện khi bạn đã chỉnh JSON và muốn update mà không clone lại. Chỉ artboard có size suffix nhận diện được mới bị động.</p>
+
+    <h3>3.10 Refresh Source</h3>
+    <p>Click <strong>Refresh Source</strong> (info card tab Artboards) để re-detect artboard active từ selection hiện tại. Dùng khi bạn đổi selection trong Photoshop giữa session.</p>
+
+    <h3>3.11 Logs panel</h3>
+    <p>Panel ở dưới cùng log mọi action. Behavior:</p>
+    <ul class="dot">
+      <li>Error có highlight đỏ + flash 3 giây trên header để gây chú ý.</li>
+      <li>Dòng "complete" / "created" có highlight xanh.</li>
+      <li>Error tự động expand panel nếu đang collapsed.</li>
+      <li>Nút <strong>Copy</strong> copy toàn bộ log ra clipboard để share.</li>
+      <li><strong>Clear</strong> reset về <em>Ready.</em></li>
+      <li>Click title <em>Logs</em> để collapse/expand.</li>
+      <li>Dòng <code>[PERF]</code> hiện khi <code>DEBUG_PERF</code> bật — đo round-trip để tune perf.</li>
+    </ul>
+
+    <!-- ─── Modes ─── -->
+    <h2 id="modes">4. Asset Export Modes (A / B / C / D)</h2>
+    <p>Mỗi asset row trong tab <em>Assets</em> có toggle <strong>size mode</strong>. Click vào nút mode để cycle qua các options.</p>
+    <table>
+      <thead><tr><th>Mode</th><th>Tác dụng</th><th>Phù hợp với</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>A — Layer bounds</strong></td>
+          <td>Export layer ở bounds đầy đủ. Output canvas = kích thước layer.</td>
+          <td>Logo, icon, shape free-floating cần giữ toàn bộ extent.</td>
+        </tr>
+        <tr>
+          <td><strong>B — Clip to artboard</strong></td>
+          <td>Chỉ export phần overlap visible giữa layer và artboard. Output canvas = vùng overlap.</td>
+          <td>Background tràn ra ngoài artboard — bạn chỉ cần phần thấy được. <em>Bị force khi Custom output path được set.</em></td>
+        </tr>
+        <tr>
+          <td><strong>C — Trim transparent</strong></td>
+          <td>Giống A, nhưng trim các edge trong suốt khỏi output.</td>
+          <td>Asset dạng sprite, padding chỉ là pixel rỗng.</td>
+        </tr>
+        <tr>
+          <td><strong>D — Edit Contents</strong></td>
+          <td>Mở source content của Smart Object và export cái đó. Skip vector SO.</td>
+          <td>Raster Smart Object cần lấy resolution gốc embed bên trong, không phải kích thước on-canvas.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><strong>Scale</strong> options theo từng asset: 1× / 2× / 3× (mặc định 2× ngoài Advanced mode, 1× trong Advanced).</p>
+    <p><strong>Format</strong> options: <code>PNG</code> (mặc định) hoặc <code>JPG</code> (dùng JPG quality từ Advanced settings; mặc định 75).</p>
+
+    <!-- ─── JSON ─── -->
+    <h2 id="json">5. Các format JSON</h2>
+
+    <h3>5.1 Rules format (canonical)</h3>
+    <p>Tạo thủ công hoặc generate từ tool sister. Cấu trúc:</p>
+    <ul class="dot">
+      <li><code>moduleName</code> — label campaign / module, hiển thị trong info card Settings.</li>
+      <li><code>sizes[]</code> — list <code>{ name, width, height }</code>. Drive các size key dùng để lookup rules.</li>
+      <li><code>elements[]</code> — entry theo từng layer với override per-size (position, size, font size, color, …).</li>
+    </ul>
+
+    <h3>5.2 Layer-full format (PSD tree)</h3>
+    <p>Output của <em>Export Layer JSON</em> — snapshot sâu của layer tree 1 artboard. Auto-detect khi import và convert qua rules format. Dùng nội bộ để:</p>
+    <ul class="dot">
+      <li>Round-trip design qua external tools.</li>
+      <li>Tái sử dụng layer tree đầy đủ của master làm spec cho mọi sizes.</li>
+      <li>Bind <code>src</code> của rule với filename PNG thực tế (sau khi chạy <em>Export Assets</em>).</li>
+    </ul>
+
+    <!-- ─── Settings ─── -->
+    <h2 id="settings">6. Bảng tham chiếu Settings</h2>
+    <table>
+      <thead><tr><th>Setting</th><th>Tác dụng</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Smart match</strong></td><td>Auto resize, move, và cover-fit content khi không có JSON rule cho size.</td></tr>
+        <tr><td><strong>Append size suffix to name</strong></td><td>Thêm suffix dạng <code>-300x250</code> vào tên artboard đã clone. Off → chỉ là size thôi.</td></tr>
+        <tr><td><strong>Require GG- prefix</strong></td><td>Layer rules chỉ apply cho layer có tên bắt đầu bằng <code>GG-</code> (case-insensitive).</td></tr>
+        <tr><td><strong>Background Layer</strong></td><td>Layer/group được xử lý dạng cover-fill (mặc định <code>GG-background</code>). Save per-user.</td></tr>
+        <tr><td><strong>Ignore layers</strong> <em>(Assets)</em></td><td>Keywords cách bằng dấu phẩy. Layer/group có tên chứa keyword sẽ bị skip khi scan. Persist trong localStorage.</td></tr>
+        <tr><td><strong>Custom output path</strong> <em>(Assets, Advanced — bắt buộc khi Advanced bật)</em></td><td>Override folder export. Format: <code>{path}/{size}/assets/</code>. Phải là path tuyệt đối và folder gốc phải tồn tại.</td></tr>
+        <tr><td><strong>JPG quality</strong> <em>(Advanced — bắt buộc)</em></td><td>0–100. Mặc định 75. Validate khi save.</td></tr>
+        <tr><td><strong>Only export "gg-" layers</strong> <em>(Advanced)</em></td><td>Lọc assets, chỉ export layer/group bắt đầu bằng <code>gg-</code>. Strip prefix khỏi filename.</td></tr>
+        <tr><td><strong>Generate info-image.html</strong> <em>(Advanced)</em></td><td>Tạo gallery HTML ở root export sau khi export. Preview nhanh những gì đã export.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ─── Tips ─── -->
+    <h2 id="tips">7. Tips & Conventions</h2>
+    <ul class="dot">
+      <li>Đặt tên group background master là <code>GG-background</code> để tự động cover-scale, không cần config.</li>
+      <li>Đặt prefix <code>GG-</code> cho các layer cần áp dụng rules (vd: <code>GG-headline</code>, <code>GG-cta</code>). Kết hợp với <em>Require GG- prefix</em> sẽ cho convention opt-in sạch sẽ.</li>
+      <li>Sizes được persist vào localStorage, nên input field tự fill lại khi launch lần sau.</li>
+      <li>Dùng <strong>Import JSON</strong> để apply 1 template rule cho toàn campaign trong 1 lần. Auto-fill cũng update Target Sizes input.</li>
+      <li>Cần 2 layout variant cho cùng 1 dim (vd 300x600 dọc + ngang)? Dùng <code>v1-300x600</code> và <code>v2-300x600</code>. Single-variant dim sẽ tự collapse về <code>300x600</code> khi import.</li>
+      <li><strong>Refresh Source</strong> nếu bạn đổi selection giữa session — plugin sẽ detect lại artboard active.</li>
+      <li>Asset export với <em>Custom output path</em>: chạy <em>Export Assets</em> <strong>trước</strong> <em>Export Layer JSON</em> để field <code>src</code> trong JSON trỏ tới file PNG/JPG thực tế thay vì raw <code>.ai</code>/<code>.psd</code>.</li>
+      <li>Log panel auto-scroll; click 1 dòng log để copy qua nút <strong>Copy</strong> ở trên.</li>
+    </ul>
+
+    <!-- ─── Limitations ─── -->
+    <h2 id="limits">8. Hạn chế hiện tại</h2>
+    <div class="callout warn">
+      <ul class="dot" style="margin:0;">
+        <li>Smart-match auto-layout là best-effort; design phức tạp vẫn cần chỉnh tay.</li>
+        <li>Asset export <em>Mode D</em> (Edit Contents) chỉ work với raster Smart Object — vector SO bị skip.</li>
+        <li>Custom output path yêu cầu folder gốc <strong>phải tồn tại sẵn</strong> — không auto-create.</li>
+        <li>JPG export cap width 3000px (downscale); PSD lưu full resolution.</li>
+        <li>Chỉ hỗ trợ Photoshop (UXP). Phiên bản tối thiểu: <strong>23.0.0</strong>.</li>
+        <li>Color descriptor của Photoshop lưu kênh green vào <code>grain</code> trong 1 số context — reader phải check cả 2 field để tránh artifact G=0 magenta.</li>
+      </ul>
+    </div>
+
+    <!-- ─── Install ─── -->
+    <h2 id="install">9. Cài đặt</h2>
+    <ol class="steps">
+      <li>Cài <strong>Adobe UXP Developer Tool</strong> (download free từ Adobe).</li>
+      <li>Trong UXP DT, click <strong>Add Plugin</strong> và chọn file <code>manifest.json</code> trong folder này.</li>
+      <li>Click <strong>Load</strong>. Panel sẽ xuất hiện ở <code>Plugins ▸ Banner Cloner</code> trong Photoshop.</li>
+      <li>Panel dock ở bên phải; min size 320×520, ưu tiên 360×760. Resize được tới 1200×2000.</li>
+    </ol>
+
+    <!-- Footer -->
+    <footer>
+      Banner Cloner v1.1.0 · © 2026 · by <span class="author">Thien Ho</span> · Technical Solution · Gravity Global
+      &nbsp;·&nbsp; <a href="readme.html">English →</a>
+    </footer>
+  </div>
+</body>
+</html>

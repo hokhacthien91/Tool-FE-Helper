@@ -655,10 +655,12 @@ function renderLogos() {
       }
       const client = getClientForLogo(logo);
       const ratio = client ? client.ratio : 1;
-      const wFull = ptToUnit(m.frameW, unit);
-      const hFull = ptToUnit(m.frameH, unit);
-      const wVis  = ptToUnit(m.visibleW, unit);
-      const hVis  = ptToUnit(m.visibleH, unit);
+      // Round W/H to 4 decimals (matches InDesign Transform panel) before multiplying,
+      // so manual W×H from displayed values matches the plugin's square.
+      const wFull = roundTo(ptToUnit(m.frameW, unit), 4);
+      const hFull = roundTo(ptToUnit(m.frameH, unit), 4);
+      const wVis  = roundTo(ptToUnit(m.visibleW, unit), 4);
+      const hVis  = roundTo(ptToUnit(m.visibleH, unit), 4);
       const squareFull = wFull * hFull * ratio;
       const squareVis  = wVis * hVis * ratio;
       items.push({ logo, idx, item, metrics: m, client, wFull, hFull, wVis, hVis, squareFull, squareVis });
@@ -1465,10 +1467,10 @@ function exportCsv() {
       const m = computeLogoMetrics(doc, item);
       const client = getClientForLogo(logo);
       const ratio = client ? client.ratio : 1;
-      const wFull = ptToUnit(m.frameW, unit);
-      const hFull = ptToUnit(m.frameH, unit);
-      const wVis  = ptToUnit(m.visibleW, unit);
-      const hVis  = ptToUnit(m.visibleH, unit);
+      const wFull = roundTo(ptToUnit(m.frameW, unit), 4);
+      const hFull = roundTo(ptToUnit(m.frameH, unit), 4);
+      const wVis  = roundTo(ptToUnit(m.visibleW, unit), 4);
+      const hVis  = roundTo(ptToUnit(m.visibleH, unit), 4);
       const squareFull = wFull * hFull * ratio;
       const squareVis  = wVis * hVis * ratio;
       computed.push({ logo, m, client, ratio, wFull, hFull, wVis, hVis, squareFull, squareVis });

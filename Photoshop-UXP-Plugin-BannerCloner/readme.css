@@ -1,0 +1,349 @@
+:root {
+  --gg-green: #b7e39b;
+  --gg-green-dark: #59a139;
+  --gg-accent: #a32600;
+  --gg-cyan: #2bc9de;
+  --bg-page: #121212;
+  --bg-card: #1c1c1c;
+  --bg-input: #0a0a0a;
+  --border: #2a2a2a;
+  --text-primary: #f2f2f2;
+  --text-secondary: #b0b0b0;
+  --text-muted: #707070;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 28px 80px;
+}
+
+/* ─── Header ─── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 28px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.brand-mark {
+  width: 6px;
+  height: 36px;
+  background: var(--gg-green);
+  border-radius: 1px;
+}
+.brand-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.brand-sub {
+  font-size: 11px;
+  color: var(--gg-green);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ─── Language Switcher ─── */
+.lang-switch {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lang-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.lang-btn:hover {
+  color: var(--gg-green);
+}
+.lang-btn.active {
+  background: var(--gg-green);
+  color: #121212;
+}
+
+/* ─── Headings ─── */
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+h1::before {
+  content: '';
+  width: 6px;
+  height: 24px;
+  background: var(--gg-green);
+  border-radius: 1px;
+}
+h2 {
+  font-size: 12px;
+  color: var(--gg-green);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  margin: 32px 0 14px;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 18px 0 8px;
+}
+p { color: var(--text-secondary); margin: 8px 0; }
+.lead {
+  color: var(--text-primary);
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+/* ─── Card ─── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 11px;
+  color: var(--gg-green);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+/* ─── Feature grid ─── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.feature {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  transition: border-color 0.15s;
+}
+.feature:hover { border-color: var(--gg-green-dark); }
+.feature-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gg-green);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.feature-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─── Steps ─── */
+ol.steps {
+  counter-reset: step;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+ol.steps > li {
+  position: relative;
+  padding: 12px 14px 12px 48px;
+  margin-bottom: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  counter-increment: step;
+  color: var(--text-secondary);
+}
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 24px;
+  height: 24px;
+  background: var(--gg-green);
+  color: #121212;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+ol.steps > li strong { color: var(--text-primary); }
+
+/* ─── Lists ─── */
+ul.dot {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+ul.dot > li {
+  position: relative;
+  padding: 4px 0 4px 18px;
+  color: var(--text-secondary);
+}
+ul.dot > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 13px;
+  width: 6px;
+  height: 6px;
+  background: var(--gg-green);
+  border-radius: 1px;
+}
+ul.dot > li strong { color: var(--text-primary); }
+
+/* ─── Code & badges ─── */
+code {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--gg-green);
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 4px;
+}
+.badge-tab {
+  background: rgba(89, 161, 57, 0.15);
+  border: 1px solid var(--gg-green-dark);
+  color: var(--gg-green);
+}
+.badge-warn {
+  background: rgba(163, 38, 0, 0.15);
+  border: 1px solid var(--gg-accent);
+  color: #ffb8a0;
+}
+
+/* ─── Preset chips ─── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ─── Tables ─── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+th, td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  color: var(--gg-green);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+td { color: var(--text-secondary); }
+td strong { color: var(--text-primary); }
+
+/* ─── Callout ─── */
+.callout {
+  border-left: 3px solid var(--gg-green);
+  background: rgba(183, 227, 155, 0.06);
+  padding: 12px 16px;
+  border-radius: 0 4px 4px 0;
+  margin: 14px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.callout.warn {
+  border-left-color: var(--gg-accent);
+  background: rgba(163, 38, 0, 0.08);
+}
+
+/* ─── Footer ─── */
+footer {
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+footer .author { color: var(--gg-green); font-weight: 600; }
+
+a { color: var(--gg-green); text-decoration: underline; font-weight: 600; }
+a:hover { color: #fff; }
+
+/* TOC */
+ul.toc {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 20px;
+  margin: 12px 0;
+}
+ul.toc a { font-weight: 600; }
+
+/* Anchor offset so headings aren't hidden under sticky elements (none here, but
+   prevents header-clipping if we add one later) */
+:target { scroll-margin-top: 12px; }
