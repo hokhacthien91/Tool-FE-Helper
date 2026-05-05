@@ -16,8 +16,7 @@
 
     <div class="tab-bar">
       <button class="tab-btn" data-mode="documents" style="display:none;">Documents</button>
-      <button class="tab-btn active" data-mode="artboards">Artboards</button>
-      <button class="tab-btn" data-mode="settings">Settings</button>
+      <button class="tab-btn active" data-mode="settings">Settings</button>
       <button class="tab-btn" data-mode="exportAssets">Assets</button>
     </div>
 
@@ -35,14 +34,6 @@
 
     <div class="section" id="splitSection" style="display:none;">
       <div class="hint">Split each artboard into a separate document and save as PSD.</div>
-    </div>
-
-    <div class="section info-card">
-      <div><strong>Source:</strong> <span id="sourceName">-</span></div>
-      <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
-      <div class="hint">Tip: Cmd/Ctrl-click trong Layers panel để chọn nhiều artboard nguồn (vd F1, F2, F3) → mỗi artboard sẽ được clone ra đủ tập sizes.</div>
-      <div id="jsonStatus" class="json-status">No JSON imported</div>
-      <button id="refreshBtn" class="link-btn">Refresh Source</button>
     </div>
 
     <!-- Export Assets Panel (hidden by default) -->
@@ -103,7 +94,16 @@
 
     <!-- Settings Panel (hidden by default) -->
     <div id="settingsPanel" class="settings-panel" style="display:none;">
+      <div class="section info-card">
+        <div><strong>Source:</strong> <span id="sourceName">-</span></div>
+        <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
+        <div class="hint">Tip: Cmd/Ctrl-click trong Layers panel để chọn nhiều artboard nguồn (vd F1, F2, F3) → mỗi artboard sẽ được clone ra đủ tập sizes.</div>
+        <div id="jsonStatus" class="json-status">No JSON imported</div>
+        <button id="refreshBtn" class="link-btn">Refresh Source</button>
+      </div>
+
       <div class="section checkboxes">
+        <label class="checkbox-row"><input id="uniformScaleEnabled" type="checkbox" /> <span>Uniform scale (preserve ratio — bỏ qua smart match & JSON rules)</span></label>
         <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
         <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
         <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" /> <span>Require GG- prefix for layer rules</span></label>

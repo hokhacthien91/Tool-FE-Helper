@@ -15,7 +15,7 @@
         <div class="brand-mark"></div>
         <div>
           <div class="brand-title">Banner Cloner</div>
-          <div class="brand-sub">Photoshop UXP Plugin · v1.1.0</div>
+          <div class="brand-sub">Photoshop UXP Plugin · v1.2.0</div>
         </div>
       </div>
       <nav class="lang-switch" aria-label="Language">
@@ -25,10 +25,10 @@
     </header>
 
     <h1>Banner Cloner</h1>
-    <p class="lead">Clone a single source artboard into multiple banner sizes, then export the whole set as JPG/PSD/PNG assets — all without leaving Photoshop. Built for production banner-ad workflows where one master design needs to ship across 10+ sizes with variants.</p>
+    <p class="lead">Clone a single source artboard (or a multi-frame step-animation set) into multiple banner sizes, then export the whole set as JPG/PSD/PNG assets and a structured JSON layer dump — all without leaving Photoshop. Built for production banner-ad workflows where one master design needs to ship across 10+ sizes (and optionally 2–10 animation frames).</p>
 
     <div class="callout">
-      <strong>Who is this for?</strong> Designers and motion artists in agency/studio teams producing display-ad banner sets (300x250, 728x90, 970x250, …) from a single master design. Pairs well with a JSON layout spec coming out of Figma or a sister tool.
+      <strong>Who is this for?</strong> Designers and motion artists in agency/studio teams producing display-ad banner sets (300x250, 728x90, 970x250, …) from a single master design. Pairs with the web-ui generator (<code>banner-cloner-v1</code> JSON schema) to skip the hand-coded HTML step.
     </div>
 
     <!-- ─── TOC ─── -->
@@ -37,65 +37,71 @@
       <li><a href="#quickstart">1. Quick Start</a></li>
       <li><a href="#tabs">2. Panel Tabs</a></li>
       <li><a href="#features">3. Core Features (in detail)</a></li>
-      <li><a href="#modes">4. Asset Export Modes (A / B / C / D)</a></li>
-      <li><a href="#json">5. JSON Formats</a></li>
-      <li><a href="#settings">6. Settings Reference</a></li>
-      <li><a href="#tips">7. Tips & Conventions</a></li>
-      <li><a href="#limits">8. Known Limitations</a></li>
-      <li><a href="#install">9. Installation</a></li>
+      <li><a href="#export-modes">4. Export-mode Auto-detection</a></li>
+      <li><a href="#asset-modes">5. Asset Export Modes (A / B / C / D)</a></li>
+      <li><a href="#json">6. JSON Formats &amp; Schema</a></li>
+      <li><a href="#settings">7. Settings Reference</a></li>
+      <li><a href="#tips">8. Tips &amp; Conventions</a></li>
+      <li><a href="#limits">9. Known Limitations</a></li>
+      <li><a href="#install">10. Installation</a></li>
     </ul>
 
     <!-- ─── Quick Start ─── -->
     <h2 id="quickstart">1. Quick Start</h2>
     <ol class="steps">
-      <li>Open your master PSD in Photoshop and <strong>select any layer inside the source artboard</strong> (the plugin walks up to the parent artboard automatically).</li>
+      <li>Open your master PSD in Photoshop and <strong>select any layer inside the source artboard</strong> (the plugin walks up to the parent artboard automatically). Cmd/Ctrl-click in the Layers panel to select <strong>multiple sources</strong> at once (e.g. F1 + F2 + F3 frames).</li>
       <li>Open the panel: <code>Plugins ▸ Banner Cloner</code>.</li>
-      <li>Type or pick target sizes (e.g. <code>300x250 728x90 970x250</code>) — separated by spaces or commas. Variant prefixes are supported: <code>v1-300x600</code>, <code>v2-300x600</code>.</li>
-      <li>Click <strong>Clone Artboards</strong>. Each new size appears as a fresh artboard in the same document, side-by-side with an 80px gap.</li>
+      <li>Type or pick target sizes (e.g. <code>300x250 728x90 970x250</code>) — separated by spaces or commas. Variant prefixes are supported: <code>v1-300x600</code>, <code>v2-300x600</code>. Frame prefixes are also supported: <code>F1-300x600</code>, <code>F2-300x600</code>.</li>
+      <li>Click <strong>Clone Artboards</strong>. Each new size appears as a fresh artboard in the same document, side-by-side with an 80px gap. Multi-source workflow stacks each frame's row beneath the previous one.</li>
       <li><em>(Optional)</em> Click <strong>Export</strong> to save all artboards as JPG + PSD into a structured output folder, or <strong>Split to Documents</strong> to break each artboard into its own PSD file.</li>
-      <li><em>(Optional)</em> Switch to the <strong>Assets</strong> tab to export individual layer/group assets per artboard.</li>
+      <li><em>(Optional)</em> Switch to <strong>Assets</strong> tab to export individual layer/group assets per artboard.</li>
+      <li><em>(Optional)</em> Click <strong>Export Layer JSON</strong> in Settings to emit a <code>banner-cloner-v1</code> schema dump consumable by the web-ui generator.</li>
     </ol>
 
     <!-- ─── Tabs Overview ─── -->
     <h2 id="tabs">2. Panel Tabs</h2>
     <div class="grid">
       <div class="feature">
-        <div class="feature-name"><span class="badge badge-tab">Tab</span> Artboards</div>
-        <div class="feature-desc">Default view. Enter target sizes, toggle preset chips, run <em>Clone Artboards</em>. Source name + size and JSON status display below the action bar.</div>
-      </div>
-      <div class="feature">
-        <div class="feature-name"><span class="badge badge-tab">Tab</span> Settings</div>
-        <div class="feature-desc">Smart-match toggle, GG- prefix gating, suffix naming, background layer name, layer rules per size, JSON import/export, <em>Apply Rules to Existing</em>.</div>
+        <div class="feature-name"><span class="badge badge-tab">Tab</span> Settings <em>(default)</em></div>
+        <div class="feature-desc">Source info card (name + size, JSON status), all toggles (Uniform / Smart match / Suffix / GG-prefix gate / Frame-token match), background layer name, layer rules, JSON import/export, export-mode override, <em>Apply Rules to Existing</em>.</div>
       </div>
       <div class="feature">
         <div class="feature-name"><span class="badge badge-tab">Tab</span> Assets</div>
-        <div class="feature-desc">Multi-artboard scan + export. Per-asset size mode (A/B/C/D), scale, format (PNG/JPG), search, collapse all, custom output path with strict validation.</div>
+        <div class="feature-desc">Multi-artboard scan + export. Artboard picker (search / All / None), per-asset size mode (A/B/C/D), scale (1×/2×/3×), format (PNG/JPG), search, collapse all, ignore-layer keywords, advanced options panel (custom output path, JPG quality, gg-filter, info-image.html gallery).</div>
       </div>
       <div class="feature">
         <div class="feature-name"><span class="badge badge-tab">Tab</span> Documents</div>
         <div class="feature-desc">Hidden by default — appears only after <em>Split to Documents</em> opens multiple PSDs. Lets you batch-export them as JPG + PSD in one click.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-name"><span class="badge badge-tab">Bar</span> Action bar &amp; Logs</div>
+        <div class="feature-desc">Top: <em>Clone Artboards</em> + (when applicable) <em>Export</em> &amp; <em>Split to Documents</em>. Bottom: collapsible logs with Copy/Clear buttons, error highlighting, perf timings.</div>
       </div>
     </div>
 
     <!-- ─── Core Features ─── -->
     <h2 id="features">3. Core Features (in detail)</h2>
 
-    <h3>3.1 Clone Artboards</h3>
-    <p>Duplicates the selected source artboard into multiple new artboards in the <strong>same document</strong>. The original is preserved and never modified. Each clone is positioned to the right of the rightmost existing artboard with an 80px gap.</p>
+    <h3>3.1 Clone Artboards (single &amp; multi-source)</h3>
+    <p>Duplicates the selected source artboard(s) into multiple new artboards in the <strong>same document</strong>. The original is preserved and never modified. Each clone is positioned to the right of the rightmost existing artboard with an 80px gap.</p>
     <ul class="dot">
       <li><strong>Same-doc cloning</strong> — fastest workflow; everything stays in one PSD until you decide to split.</li>
-      <li><strong>Smart positioning</strong> — finds the rightmost edge of all existing artboards and lays new ones out from there. Original artboard position is restored if it drifts during cloning.</li>
+      <li><strong>Smart positioning</strong> — finds the rightmost edge of all existing artboards and lays new ones from there. Original artboard position is restored if it drifts during cloning.</li>
+      <li><strong>Multi-source</strong> — Cmd/Ctrl-click to pick several source artboards at once. Each source clones a full row of targets; rows stack vertically with the original layout preserved.</li>
       <li><strong>Variant-aware</strong> — sizes prefixed <code>v1-</code>, <code>v2-</code>, … are kept distinct; rules apply per variant.</li>
+      <li><strong>Frame-token match</strong> (Settings → <em>Match source frame token</em>) — when a source name carries a frame prefix (<code>...-F2</code>), only target sizes also prefixed with the same frame (<code>F2-300x600</code>) are cloned from that source. Sources without a frame token clone all targets (legacy behaviour). Toggleable.</li>
       <li><strong>Three layout modes</strong>, picked automatically per size:
         <ul class="dot">
+          <li><strong>Uniform scale</strong> — when <em>Uniform scale</em> is on. Bypasses smart match and JSON rules; just scales the canvas + content proportionally to fit.</li>
           <li><strong>JSON rules</strong> — when a layer rule exists for the target size (highest priority).</li>
           <li><strong>Smart match</strong> — when no rule but Smart Match is on. Auto scales/repositions/cover-fits content groups.</li>
-          <li><strong>Canvas only</strong> — when both off; just resizes the canvas, leaves layers untouched.</li>
+          <li><strong>Canvas only</strong> — when all three are off; just resizes the canvas, leaves layers untouched.</li>
         </ul>
       </li>
+      <li><strong>Live progress</strong> — a progress bar shows current target and total.</li>
     </ul>
 
-    <p><strong>Built-in preset sizes</strong> (one-click chips):</p>
+    <p><strong>Built-in preset sizes</strong> (one-click chips, click to add/remove from the input):</p>
     <div class="chips">
       <span class="chip">300x250</span>
       <span class="chip">300x600</span>
@@ -112,96 +118,136 @@
       <span class="chip">1080x1350</span>
     </div>
 
-    <h3>3.2 Smart Match (auto-layout)</h3>
+    <h3>3.2 Uniform scale (preserve ratio)</h3>
+    <p>Toggle in <strong>Settings</strong>. When enabled, every target size scales the source content uniformly (smaller of <code>targetW / srcW</code> and <code>targetH / srcH</code>), then re-aligns the result inside the new canvas. <strong>Bypasses</strong> both smart match and JSON rules. Useful for purely uniform decks where layout direction doesn't change. Persisted in localStorage.</p>
+
+    <h3>3.3 Smart Match (auto-layout)</h3>
     <p>Toggle in <strong>Settings</strong>. When enabled and no JSON rule exists for a size, the plugin:</p>
     <ul class="dot">
       <li>Captures the source artboard's content layout (groups + their bounds) before cloning.</li>
       <li>For each target size, scales content groups proportionally to fit the new canvas.</li>
       <li>Repositions groups to maintain visual balance (centered/anchored).</li>
-      <li>Treats the layer/group named in <strong>Background Layer</strong> (default <code>GG-background</code>) as cover-fill — it's scaled to fully cover the new canvas, never just repositioned.</li>
+      <li>Treats the layer/group named in <strong>Background Layer</strong> (default <code>GG-background</code>) as cover-fill — scaled to fully cover the new canvas, never just repositioned.</li>
       <li>Falls back to fitting individual content layers inside the canvas when no group structure is found.</li>
+      <li>Honors group <em>fit-lock</em> for groups whose name contains <code>fit-lock</code> — the entire group scales as one rather than per-child.</li>
     </ul>
     <div class="callout">First-pass layouts only. Always review and polish manually before delivery.</div>
 
-    <h3>3.3 Layer Rules (per-size)</h3>
+    <h3>3.4 Layer Rules (per-size)</h3>
     <p>Define explicit position, size, and style overrides per layer per target size. Rules can be:</p>
     <ul class="dot">
-      <li><strong>Auto-synced</strong> from your target-sizes list — every size in the input field gets a row in <em>Settings</em>.</li>
+      <li><strong>Auto-synced</strong> from your target-sizes list — every size in the input field gets a row in <em>Settings → Layer Rules</em>.</li>
       <li><strong>Imported from JSON</strong> — supports two formats:
         <ul class="dot">
           <li><strong>Rules format</strong> — <code>moduleName</code> + <code>sizes[]</code> + <code>elements[]</code>.</li>
           <li><strong>Layer-full format (PSD-tree)</strong> — exported by Banner Cloner's own <em>Export Layer JSON</em> or by sister tooling. Auto-detected and converted on import.</li>
         </ul>
       </li>
-      <li><strong>Single-variant collapse</strong> — if your import has only <code>v1-300x600</code> for a given dim, it's automatically renamed to <code>300x600</code>. Multi-variant dims keep their <code>vN-</code> prefix.</li>
-      <li><strong>Exported as JSON</strong> via <em>Export Layer JSON</em> — captures the full layer tree (text, fills, gradients, effects, masks, smart-object refs).</li>
-      <li><strong>Re-applied to existing artboards</strong> via <em>Apply Rules to Existing</em> — re-runs rules without re-cloning. Match key is the size suffix in the artboard name (<code>v2-300x600</code> or <code>300x600</code>).</li>
+      <li><strong>Single-variant collapse</strong> — if your import has only <code>v1-300x600</code> for a given dim, it's automatically renamed to <code>300x600</code>. Multi-variant dims keep their <code>vN-</code> / <code>Fn-</code> prefix. Frame-token prefixes are preserved verbatim.</li>
+      <li><strong>Exported as JSON</strong> via <em>Export Layer JSON</em> — captures the full layer tree with the new <code>banner-cloner-v1</code> schema (see §6).</li>
+      <li><strong>Re-applied to existing artboards</strong> via <em>Apply Rules to Existing</em> — re-runs rules without re-cloning. Match key is the size suffix in the artboard name (<code>v2-300x600</code>, <code>F2-300x600</code>, or plain <code>300x600</code>).</li>
+      <li><strong>Per-layer scale override</strong> — rules can carry a <code>scale</code> field to multiply the imported size by a per-rule factor (driven by <code>computeRuleScale</code>).</li>
       <li><strong>GG- prefix gate</strong> (optional) — when on, rules apply only to layers whose names start with <code>GG-</code> (e.g. <code>GG-headline</code>, <code>GG-cta</code>). Other layers are ignored.</li>
     </ul>
 
-    <h3>3.4 Background cover scaling</h3>
+    <h3>3.5 Background cover scaling</h3>
     <p>The layer/group named in <strong>Background Layer</strong> (default <code>GG-background</code>) is treated specially:</p>
     <ul class="dot">
       <li>In <em>Smart Match</em> mode → scaled as <em>cover</em> to fully fill the new canvas.</li>
-      <li>In <em>JSON rules</em> mode → scaled and positioned per its rule entry.</li>
-      <li>The matcher is case-insensitive and reads from a saved localStorage value, so your custom background name persists across sessions.</li>
+      <li>In <em>JSON rules</em> mode → scaled and positioned per its rule entry (with optional rule scale factor).</li>
+      <li>The matcher is case-insensitive and persisted to localStorage so your custom background name survives across sessions.</li>
     </ul>
 
-    <h3>3.5 Export (all artboards)</h3>
+    <h3>3.6 Export (all artboards)</h3>
     <p>Visible only when the active document has more than 1 artboard. Workflow:</p>
     <ol class="steps">
       <li>Click <strong>Export</strong> → pick a parent folder.</li>
       <li>Plugin creates: <code>{parent}/{base}-output-working-file-{HHMM-DDMMYYYY}/</code></li>
       <li>Inside, two subfolders: <code>output/</code> for JPGs, <code>working-file/</code> for editable PSDs.</li>
-      <li>Each artboard → 1 PSD (full quality, maximize compatibility on) + 1 JPG (quality 8, white matte).</li>
+      <li>Each artboard → 1 PSD (full quality, maximize compatibility on) + 1 JPG (default quality 8 → ~75 in 0–100 scale, white matte).</li>
       <li>JPG width is capped at 3000px; oversized banners are downscaled while preserving aspect ratio.</li>
       <li>All filenames are lowercased and sanitized.</li>
     </ol>
 
-    <h3>3.6 Split to Documents</h3>
+    <h3>3.7 Split to Documents</h3>
     <p>Each artboard becomes its own PSD document (one window per banner size). Useful when you need to hand off individual files for review or upload. After splitting, the <strong>Documents</strong> tab appears and lets you batch-export everything in one click.</p>
 
-    <h3>3.7 Export Layer JSON</h3>
-    <p>Saves a complete, lossless JSON representation of every selected artboard's layer tree. Captured fields per layer:</p>
+    <h3>3.8 Export Layer JSON (banner-cloner-v1 schema)</h3>
+    <p>Saves a complete, lossless JSON representation of every selected artboard's layer tree. The plugin <strong>auto-detects export mode</strong> (single / multi-frame / layer-full) from the document state and labels the JSON accordingly — but you can override via <em>Override auto-detection</em> in Settings.</p>
+    <p>Top-level shape:</p>
+    <pre><code>{
+  "schema": "banner-cloner-v1",
+  "mode": "single" | "multi-frame" | "layer-full",
+  "framePrefix": "F",            // when mode = multi-frame, e.g. "F"/"Step"
+  "exportedAt": "ISO timestamp",
+  "artboards": [
+    {
+      "artboard": "campaign-1200x628-F1",
+      "frame": "F1",             // present when mode = multi-frame
+      "width": 1200,
+      "height": 628,
+      "layers": [ ... ]
+    }
+  ]
+}</code></pre>
+    <p>Captured fields per layer:</p>
     <ul class="dot">
-      <li><strong>Geometry</strong> — bounds, position relative to artboard, size.</li>
+      <li><strong>Geometry</strong> — bounds (top/left/width/height) relative to the artboard, with parent-group offsets accounted for.</li>
       <li><strong>Text</strong> — font family, weight, size, color, line-height, tracking, alignment, text content.</li>
       <li><strong>Fills</strong> — solid color (RGB), gradient (with stops + angle, CSS-direction-friendly).</li>
-      <li><strong>Effects</strong> — drop shadow, inner shadow, outer/inner glow, stroke, gradient overlay.</li>
+      <li><strong>Effects</strong> — drop shadow, inner shadow, outer/inner glow, stroke, gradient overlay (frameFX).</li>
       <li><strong>Border radius</strong> — corner radii on shape layers.</li>
       <li><strong>Transform</strong> — rotation, flip, scale.</li>
       <li><strong>Masks</strong> — vector masks + raster mask gradient analysis (gradient direction, stop colors/opacities).</li>
-      <li><strong>Smart Objects</strong> — original src filename, vector vs raster detection.</li>
+      <li><strong>Smart Objects</strong> — original src filename, vector vs raster detection, original embedded size.</li>
+      <li><strong>clipTo</strong> — sibling layer name a layer is clipped to (clipping mask base).</li>
       <li><strong>Asset filename binding</strong> — if you ran <em>Export Assets</em> first, the JSON's <code>src</code> field points to the actual exported PNG/JPG instead of the raw PSD reference.</li>
     </ul>
+    <p><strong>Auto-rename duplicate layers</strong> (Settings, on by default) — before serializing, the plugin renames duplicate layer names within each artboard so paths stay unique. Required for downstream tools that key on layer names.</p>
 
-    <h3>3.8 Export Assets (per-artboard)</h3>
-    <p>Exports individual layer/group assets across selected artboards. The <strong>Artboard picker</strong> at the top of the Assets tab lets you choose which artboards to scan. After scanning, each detected asset appears as a row with editable size mode, scale, and format.</p>
-    <ul class="dot">
-      <li><strong>Per-asset controls</strong> — cycle through size mode (A/B/C/D), scale (1×/2×/3×), format (PNG/JPG), or rename the export.</li>
-      <li><strong>Search & collapse</strong> — filter the asset list by name, or collapse all rows for a denser view.</li>
-      <li><strong>Duplicate detection</strong> — two assets with the same final filename are flagged in orange so you can rename one before export.</li>
-      <li><strong>Show in PS</strong> — every row has a button that selects that layer in Photoshop.</li>
-      <li><strong>Add Group</strong> — manually add an extra group as one flattened asset (useful when scan missed it).</li>
-      <li><strong>Ignore list</strong> — comma-separated keywords; layer names containing any keyword are skipped.</li>
-      <li><strong>Hidden layers</strong> are skipped automatically.</li>
-      <li><strong>Output structure</strong>:
+    <h3>3.9 Export Assets (per-artboard)</h3>
+    <p>Exports individual layer/group assets across selected artboards. Workflow:</p>
+    <ol class="steps">
+      <li>Open the <strong>Artboard picker</strong> at the top of the Assets tab — search, click <em>All</em>/<em>None</em>, or pick individual artboards. Selection persists per-document via localStorage.</li>
+      <li>Click <strong>Get Images</strong> to scan picked artboards. Each detected asset appears as a row.</li>
+      <li><em>(Optional)</em> Click <strong>+ Add Group</strong> to add a group manually as one flattened asset (useful when scan missed it).</li>
+      <li>Per-asset controls (cycle by clicking):
         <ul class="dot">
-          <li><strong>Default mode</strong> → <code>{picked-folder}/assets-{docname}-{timestamp}/</code></li>
-          <li><strong>Advanced mode (Custom path)</strong> → <code>{path}/{size}/assets/</code> per artboard. The root path must already exist (no auto-create) and must be absolute.</li>
+          <li>Size mode: <strong>A / B / C / D</strong> — see §5 below.</li>
+          <li>Scale: <strong>1× / 2× / 3×</strong> (default 2× outside Advanced mode, 1× inside).</li>
+          <li>Format: <strong>PNG / JPG</strong> (PNG default; JPG uses Advanced JPG quality, default 75).</li>
+          <li>Rename: edit the output filename inline.</li>
+          <li>Show in PS: button selects that layer in Photoshop's Layers panel.</li>
+          <li>Single export: per-row export skips the bulk flow and writes only that asset.</li>
         </ul>
       </li>
-      <li><strong>info-image.html</strong> (Advanced) — generates a gallery HTML at the export root showing every exported asset grouped by size. Quick visual sanity check.</li>
-      <li><strong>"gg-" filter</strong> (Advanced) — only export layers/groups whose names start with <code>gg-</code>. Strips the prefix from the output filename so files come out as <code>logo.png</code> not <code>gg-logo.png</code>.</li>
+      <li><strong>Search &amp; collapse</strong> — filter the asset list by name, or collapse all rows for a denser view.</li>
+      <li><strong>Duplicate detection</strong> — two assets that would write the same final filename are flagged in orange so you can rename one before export.</li>
+      <li><strong>Hidden layers</strong> are skipped automatically.</li>
+      <li><strong>Ignore list</strong> — comma-separated keywords (Settings); layer/group names containing any keyword are skipped during scan.</li>
+      <li>Click <strong>Export Assets</strong> to write everything.</li>
+    </ol>
+    <p><strong>Output structure</strong>:</p>
+    <ul class="dot">
+      <li><strong>Default mode</strong> → <code>{picked-folder}/assets-{docname}-{timestamp}/</code> with one subfolder per artboard.</li>
+      <li><strong>Advanced mode (Custom output path)</strong> → <code>{path}/{size}/assets/</code> per artboard. The root path must already exist (no auto-create) and must be absolute.</li>
     </ul>
+    <p><strong>Advanced options</strong> (Assets tab → tick <em>Advanced options</em>):</p>
+    <ul class="dot">
+      <li><strong>Custom output path</strong> <em>(required when Advanced is on)</em> — must be absolute, must already exist. Validated on submit; field flashes red on error.</li>
+      <li><strong>JPG quality</strong> <em>(required, 0–100)</em> — Default 75. Validated on submit. Maps to internal Photoshop quality 0–12.</li>
+      <li><strong>"gg-" filter</strong> — only export layers/groups whose names start with <code>gg-</code> (case-insensitive). Strips the prefix from the output filename so files come out as <code>logo.png</code> not <code>gg-logo.png</code>.</li>
+      <li><strong>Generate info-image.html</strong> — builds a gallery HTML at the export root after asset export. Quick preview of what was exported, grouped by size.</li>
+    </ul>
+    <p>All Advanced settings are persisted to localStorage so they survive panel reloads.</p>
 
-    <h3>3.9 Apply Rules to Existing</h3>
-    <p>After importing JSON, click <strong>Apply Rules to Existing</strong> in Settings to re-run the layout pipeline on every artboard already in the document. Useful when you've tweaked the JSON and want to update without recloning. Only artboards whose name contains a recognized size suffix are touched.</p>
+    <h3>3.10 Apply Rules to Existing</h3>
+    <p>After importing JSON, click <strong>Apply Rules to Existing</strong> in Settings to re-run the layout pipeline on every artboard already in the document. Useful when you've tweaked the JSON and want to update without re-cloning. Only artboards whose name contains a recognized size suffix (<code>300x250</code> / <code>v2-300x250</code> / <code>F2-300x250</code>) are touched.</p>
 
-    <h3>3.10 Refresh Source</h3>
-    <p>Clicking <strong>Refresh Source</strong> (Artboards tab info card) re-detects the active artboard from the current selection. Use this whenever you change selection in Photoshop mid-session.</p>
+    <h3>3.11 Refresh Source</h3>
+    <p>Clicking <strong>Refresh Source</strong> (Settings tab info card) re-detects the active artboard(s) from the current selection. Use this whenever you change selection in Photoshop mid-session — including when you Cmd/Ctrl-click multiple artboards.</p>
 
-    <h3>3.11 Logs panel</h3>
+    <h3>3.12 Logs panel</h3>
     <p>The bottom panel logs every action with timestamps. Behaviour:</p>
     <ul class="dot">
       <li>Errors get a red highlight + 3-second flash on the header to grab attention.</li>
@@ -213,8 +259,33 @@
       <li><code>[PERF]</code> entries appear when <code>DEBUG_PERF</code> is on — round-trip timings for tuning.</li>
     </ul>
 
-    <!-- ─── Modes ─── -->
-    <h2 id="modes">4. Asset Export Modes (A / B / C / D)</h2>
+    <!-- ─── Export Modes ─── -->
+    <h2 id="export-modes">4. Export-mode Auto-detection</h2>
+    <p>When you click <strong>Export Layer JSON</strong>, the plugin classifies the document into one of three modes — feeding the right hint into <code>banner-cloner-v1.mode</code>. Detection is automatic; override via <em>Settings → Override auto-detection</em>.</p>
+    <table>
+      <thead><tr><th>Mode</th><th>Detected when</th><th>Used by web-ui</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>single</strong></td>
+          <td>1 artboard total in the selection.</td>
+          <td>Base size for smart-pin reflow into all extra sizes.</td>
+        </tr>
+        <tr>
+          <td><strong>multi-frame</strong></td>
+          <td>N artboards, all the <em>same</em> WxH. Frame tokens (e.g. <code>F1</code>/<code>F2</code>/<code>F3</code> or <code>Step1</code>/<code>Step2</code>) are extracted from the trailing alphabetic-prefix segment in each artboard name. <code>framePrefix</code> is set when all frames share the same prefix.</td>
+          <td>Each frame is reflowed independently → output = frames × extra-sizes.</td>
+        </tr>
+        <tr>
+          <td><strong>layer-full</strong></td>
+          <td>N artboards at <em>different</em> sizes (already a full size set).</td>
+          <td>Fed straight through — generator renders as-is, no reflow.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>The detection result is shown live under <em>Settings → Export mode</em> as soon as artboards exist. The override dropdown lets you pick a mode by hand if the auto-detection is wrong (rare).</p>
+
+    <!-- ─── Asset Modes ─── -->
+    <h2 id="asset-modes">5. Asset Export Modes (A / B / C / D)</h2>
     <p>Each asset row in the <em>Assets</em> tab has a <strong>size mode</strong> toggle. Cycle through them by clicking the mode button.</p>
     <table>
       <thead><tr><th>Mode</th><th>What it does</th><th>Best for</th></tr></thead>
@@ -227,7 +298,7 @@
         <tr>
           <td><strong>B — Clip to artboard</strong></td>
           <td>Exports only the visible intersection of the layer with the artboard. Output canvas = visible overlap area.</td>
-          <td>Background images that overflow the artboard — you only want what's actually visible. <em>Forced when Custom output path is set.</em></td>
+          <td>Background images that overflow the artboard — you only want what's actually visible. <em>Forced when Custom output path is set</em> (the per-size folder structure assumes clipped backgrounds).</td>
         </tr>
         <tr>
           <td><strong>C — Trim transparent</strong></td>
@@ -236,88 +307,119 @@
         </tr>
         <tr>
           <td><strong>D — Edit Contents</strong></td>
-          <td>Opens a Smart Object's source content and exports that. Skipped for vector SOs.</td>
+          <td>Opens a Smart Object's source content and exports that. Skipped for vector SOs (logged as "skipped: vector smart object").</td>
           <td>Raster Smart Objects where you want the original embedded resolution rather than the on-canvas size.</td>
         </tr>
       </tbody>
     </table>
-    <p><strong>Scale</strong> options per asset: 1× / 2× / 3× (default 2× outside Advanced mode, 1× inside).</p>
+    <p><strong>Scale</strong> options per asset: <code>1×</code> / <code>2×</code> / <code>3×</code> (default 2× outside Advanced mode, 1× inside).</p>
     <p><strong>Format</strong> options: <code>PNG</code> (default) or <code>JPG</code> (uses the JPG quality from Advanced settings; default 75).</p>
 
     <!-- ─── JSON ─── -->
-    <h2 id="json">5. JSON Formats</h2>
+    <h2 id="json">6. JSON Formats &amp; Schema</h2>
 
-    <h3>5.1 Rules format (canonical)</h3>
+    <h3>6.1 New schema: <code>banner-cloner-v1</code> (output)</h3>
+    <p>Produced by <em>Export Layer JSON</em> in v1.2.0+. Self-describing — explicit <code>mode</code>, <code>framePrefix</code> (when applicable), and per-artboard <code>frame</code> token. Consumable directly by the web-ui generator.</p>
+    <pre><code>{
+  "schema": "banner-cloner-v1",
+  "mode": "multi-frame",
+  "framePrefix": "F",
+  "exportedAt": "2026-05-04T10:00:00.000Z",
+  "artboards": [
+    { "artboard": "campaign-1200x628-F1", "frame": "F1", "width": 1200, "height": 628, "layers": [ ... ] },
+    { "artboard": "campaign-1200x628-F2", "frame": "F2", "width": 1200, "height": 628, "layers": [ ... ] }
+  ]
+}</code></pre>
+
+    <h3>6.2 Rules format (canonical, for import)</h3>
     <p>Authored manually or generated by sister tooling. Shape:</p>
     <ul class="dot">
       <li><code>moduleName</code> — campaign / module label, shown in the Settings info card.</li>
       <li><code>sizes[]</code> — list of <code>{ name, width, height }</code>. Drives the size keys used to look up rules.</li>
-      <li><code>elements[]</code> — per-layer entries with per-size overrides for position, size, font size, color, etc.</li>
+      <li><code>elements[]</code> — per-layer entries with per-size overrides for position, size, font size, color, scale, etc.</li>
     </ul>
 
-    <h3>5.2 Layer-full format (PSD tree)</h3>
-    <p>Output of <em>Export Layer JSON</em> — a deep snapshot of an artboard's layers. Auto-detected on import and converted to rules format. Used internally to:</p>
+    <h3>6.3 Layer-full format (PSD tree, for import)</h3>
+    <p>Output of <em>Export Layer JSON</em>'s <code>layer-full</code> mode (or sister tooling). Auto-detected on import via <code>isLayerFullFormat()</code> and converted to rules format. Used internally to:</p>
     <ul class="dot">
       <li>Round-trip designs through external tools.</li>
       <li>Reuse one master's full layer tree as the spec for all sizes.</li>
       <li>Bind the rule's <code>src</code> to actual exported PNG filenames (after running <em>Export Assets</em>).</li>
     </ul>
 
+    <h3>6.4 Filename / artboard-name conventions</h3>
+    <ul class="dot">
+      <li><strong>Plain size</strong> — <code>300x250</code>: single layout per dim.</li>
+      <li><strong>Variant</strong> — <code>v1-300x600</code>, <code>v2-300x600</code>: multiple alternative layouts per dim.</li>
+      <li><strong>Frame</strong> — <code>F1-300x600</code>, <code>F2-300x600</code> (or <code>Step1-…</code>): step-animation frames per dim.</li>
+      <li><strong>Compound</strong> — <code>campaign-300x600-F2</code>: prefix + dim + frame token. The plugin parses any of these via <code>parseFrameToken()</code> + the variant detection regex.</li>
+    </ul>
+
     <!-- ─── Settings ─── -->
-    <h2 id="settings">6. Settings Reference</h2>
+    <h2 id="settings">7. Settings Reference</h2>
     <table>
-      <thead><tr><th>Setting</th><th>Effect</th></tr></thead>
+      <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
       <tbody>
-        <tr><td><strong>Smart match</strong></td><td>Auto resize, move, and cover-fit content when no JSON rule exists for the size.</td></tr>
-        <tr><td><strong>Append size suffix to name</strong></td><td>Appends <code>-300x250</code>-style suffix to cloned artboard names. Off → just the size.</td></tr>
-        <tr><td><strong>Require GG- prefix</strong></td><td>Layer rules apply only to layers whose names start with <code>GG-</code> (case-insensitive).</td></tr>
-        <tr><td><strong>Background Layer</strong></td><td>Layer/group treated as cover-fill background (default <code>GG-background</code>). Saved per-user.</td></tr>
-        <tr><td><strong>Ignore layers</strong> <em>(Assets)</em></td><td>Comma-separated keywords. Any layer/group whose name contains a keyword is skipped during scan. Persisted in localStorage.</td></tr>
-        <tr><td><strong>Custom output path</strong> <em>(Assets, Advanced — required when Advanced is on)</em></td><td>Override default export folder. Format: <code>{path}/{size}/assets/</code>. Must be absolute and the root must already exist.</td></tr>
-        <tr><td><strong>JPG quality</strong> <em>(Advanced — required)</em></td><td>0–100. Default 75. Validated on save.</td></tr>
-        <tr><td><strong>Only export "gg-" layers</strong> <em>(Advanced)</em></td><td>Filter assets to layers/groups starting with <code>gg-</code>. Strips the prefix from output filenames.</td></tr>
-        <tr><td><strong>Generate info-image.html</strong> <em>(Advanced)</em></td><td>Builds a gallery HTML at the export root after asset export. Quick preview of what was exported.</td></tr>
+        <tr><td><strong>Uniform scale</strong></td><td>Off</td><td>Preserve ratio — bypasses smart match and JSON rules. Bilinear scale of source content into target canvas. Persisted in localStorage.</td></tr>
+        <tr><td><strong>Smart match</strong></td><td>Off</td><td>Auto resize, move, and cover-fit content when no JSON rule exists for the size. Persisted in localStorage.</td></tr>
+        <tr><td><strong>Append size suffix to name</strong></td><td>On</td><td>Appends <code>-300x250</code>-style suffix to cloned artboard names. Off → just the size as the new name. Persisted in localStorage.</td></tr>
+        <tr><td><strong>Require GG- prefix</strong></td><td>Off</td><td>Layer rules and BG detection apply only to layers whose names start with <code>GG-</code> (case-insensitive). Other layers are ignored.</td></tr>
+        <tr><td><strong>Match source frame token</strong></td><td>On</td><td>When source has a frame prefix (<code>...-F2</code>), only target sizes prefixed with the same frame are cloned from that source. Off → all sources clone all targets.</td></tr>
+        <tr><td><strong>Background Layer</strong></td><td><code>GG-background</code></td><td>Layer/group treated as cover-fill background. Saved per-user in localStorage.</td></tr>
+        <tr><td><strong>Auto-rename duplicate layers</strong></td><td>On</td><td>Before exporting JSON, dedupe layer names within each artboard so paths are unique.</td></tr>
+        <tr><td><strong>Override auto-detection</strong> <em>(Export mode)</em></td><td>Off</td><td>Tick to manually pick the JSON export mode (single / multi-frame / layer-full) instead of the auto-detected one. Useful when detection misclassifies edge cases.</td></tr>
+        <tr><td><strong>Ignore layers</strong> <em>(Assets)</em></td><td>—</td><td>Comma-separated keywords. Any layer/group whose name contains a keyword is skipped during scan. Persisted in localStorage.</td></tr>
+        <tr><td><strong>Advanced options</strong> <em>(Assets)</em></td><td>Off</td><td>Reveals Custom output path, JPG quality, gg-filter, info-image.html toggles. State persisted in localStorage.</td></tr>
+        <tr><td><strong>Custom output path</strong> <em>(Assets, Advanced — required when Advanced is on)</em></td><td>—</td><td>Override default export folder. Format: <code>{path}/{size}/assets/</code>. Must be absolute and the root must already exist (no auto-create).</td></tr>
+        <tr><td><strong>JPG quality</strong> <em>(Advanced — required)</em></td><td>75</td><td>0–100. Validated on save. Mapped to Photoshop's 0–12 internal scale at save time.</td></tr>
+        <tr><td><strong>Only export "gg-" layers</strong> <em>(Advanced)</em></td><td>Off</td><td>Filter assets to layers/groups starting with <code>gg-</code>. Strips the prefix from output filenames.</td></tr>
+        <tr><td><strong>Generate info-image.html</strong> <em>(Advanced)</em></td><td>Off</td><td>Builds a gallery HTML at the export root after asset export, with all exports grouped by size. Quick visual sanity check.</td></tr>
       </tbody>
     </table>
 
     <!-- ─── Tips ─── -->
-    <h2 id="tips">7. Tips & Conventions</h2>
+    <h2 id="tips">8. Tips &amp; Conventions</h2>
     <ul class="dot">
       <li>Name your master background group <code>GG-background</code> so it auto-cover-scales without configuration.</li>
       <li>Prefix layers you want governed by rules with <code>GG-</code> (e.g. <code>GG-headline</code>, <code>GG-cta</code>). Combined with <em>Require GG- prefix</em>, this gives you a clean opt-in convention.</li>
-      <li>Sizes are persisted to localStorage, so the input field repopulates on next launch.</li>
+      <li>Sizes are persisted to localStorage, so the input field repopulates on next launch. Toggle states (Uniform / Smart / GG-prefix / Frame-match) are persisted too.</li>
       <li>Use the <strong>Import JSON</strong> feature to apply a campaign-wide rule template across all sizes in one shot. The auto-fill will update the Target Sizes input too.</li>
       <li>If you need 2 layout variants of the same dim (e.g. 300x600 portrait + landscape), use <code>v1-300x600</code> and <code>v2-300x600</code>. Single-variant dims auto-collapse to <code>300x600</code> on import.</li>
-      <li><strong>Refresh Source</strong> if you change selection mid-session — it re-detects the active artboard.</li>
+      <li>For step-animation banners, name your source frames <code>...-F1</code>, <code>...-F2</code>, <code>...-F3</code>. Cmd/Ctrl-click all of them as sources, target sizes prefixed <code>F1-</code> / <code>F2-</code> / <code>F3-</code>, and let <em>Match source frame token</em> route each frame to the right targets.</li>
+      <li><strong>Refresh Source</strong> if you change selection mid-session — it re-detects the active artboard(s).</li>
       <li>For Asset export with <em>Custom output path</em>, run <em>Export Assets</em> <strong>before</strong> <em>Export Layer JSON</em> so the JSON's <code>src</code> fields point at real PNG/JPG filenames instead of <code>.ai</code>/<code>.psd</code> raws.</li>
-      <li>The log panel auto-scrolls; click a log line to copy via the <strong>Copy</strong> button at the top.</li>
+      <li>The log panel auto-scrolls; use the <strong>Copy</strong> button at the top to grab the whole log for sharing in tickets.</li>
+      <li>If the cloned artboards drift in position, click <em>Refresh Source</em> and re-clone — the plugin re-anchors from the rightmost edge of the document.</li>
     </ul>
 
     <!-- ─── Limitations ─── -->
-    <h2 id="limits">8. Known Limitations</h2>
+    <h2 id="limits">9. Known Limitations</h2>
     <div class="callout warn">
       <ul class="dot" style="margin:0;">
         <li>Smart-match auto-layout is best-effort; complex designs may still need manual cleanup.</li>
-        <li>Asset export <em>Mode D</em> (Edit Contents) only works for raster Smart Objects — vector SOs are skipped.</li>
-        <li>Custom output path requires the root folder to <strong>already exist</strong> — no auto-create.</li>
+        <li>Asset export <em>Mode D</em> (Edit Contents) only works for raster Smart Objects — vector SOs are skipped (and logged).</li>
+        <li>Custom output path requires the root folder to <strong>already exist</strong> — no auto-create. Validation flashes the field red if it doesn't.</li>
         <li>JPG export caps width at 3000px (downscaled); PSDs are saved at full resolution.</li>
-        <li>Only Photoshop is supported (UXP). Min host version: <strong>23.0.0</strong>.</li>
-        <li>Photoshop's color descriptor stores green channel as <code>grain</code> in some contexts — readers must check both fields to avoid G=0 magenta artifacts.</li>
+        <li>Only Photoshop is supported (UXP). Min host version: <strong>23.0.0</strong> (manifest v5, apiVersion 2).</li>
+        <li>Photoshop's color descriptor stores green channel as <code>grain</code> in some contexts — readers must check both fields to avoid G=0 magenta artifacts (the plugin's <code>readRGB</code> handles this).</li>
+        <li>Frame-token match needs the source's name to literally contain <code>-F1</code>, <code>-F2</code>, etc. — case-insensitive but the alphabetic prefix must be consistent across frames.</li>
+        <li>Multi-source clone is single-document only; cloning across separate PSDs at once isn't supported.</li>
       </ul>
     </div>
 
     <!-- ─── Install ─── -->
-    <h2 id="install">9. Installation</h2>
+    <h2 id="install">10. Installation</h2>
     <ol class="steps">
       <li>Install the <strong>Adobe UXP Developer Tool</strong> (free download from Adobe).</li>
       <li>In UXP DT, click <strong>Add Plugin</strong> and pick this folder's <code>manifest.json</code>.</li>
       <li>Click <strong>Load</strong>. The panel appears under <code>Plugins ▸ Banner Cloner</code> in Photoshop.</li>
-      <li>The panel docks at the right; minimum size 320×520, preferred 360×760. Resizable up to 1200×2000.</li>
+      <li>The panel docks at the right; minimum size 320×520, preferred 360×760 (docked) / 420×820 (floating). Resizable up to 1200×2000.</li>
+      <li>Plugin id: <code>com.oai.bannercloner.v2</code>. Required permissions: full filesystem, code generation from strings, clipboard read/write.</li>
     </ol>
 
     <!-- Footer -->
     <footer>
-      Banner Cloner v1.1.0 · © 2026 · by <span class="author">Thien Ho</span> · Technical Solution · Gravity Global
+      Banner Cloner v1.2.0 · © 2026 · by <span class="author">Thien Ho</span> · Technical Solution · Gravity Global
       &nbsp;·&nbsp; <a href="readme.vi.html">Tiếng Việt →</a>
     </footer>
   </div>

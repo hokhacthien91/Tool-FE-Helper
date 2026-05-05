@@ -1,3 +1,6 @@
+const PLUGIN_VERSION = "1.0.4-slugify-asset-names";
+console.log(`[BannerCloner] main.js loaded — version=${PLUGIN_VERSION} @ ${new Date().toISOString()}`);
+
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { app, core, action, imaging, constants } = require("photoshop");
@@ -13,11 +16,24 @@ uxp.entrypoints.setup({
 
 const PRESETS = ["300x250","300x600","160x600","728x90","320x50","300x50","970x250","480x320","1080x1080","1080x1920","1920x1080","1080x1440","1080x1350"];
 
-let cloneMode = "artboards"; // "documents" | "artboards"
+let cloneMode = "artboards"; // clone target: "documents" | "artboards"
 
 const GG_PREFIX = "GG-";
 function hasGGPrefix(name) {
   return !!(name && name.toLowerCase().startsWith(GG_PREFIX.toLowerCase()));
+}
+
+// "Require GG- prefix" checkbox gates whether smart match / rule application
+// is restricted to GG- layers. When unchecked, every layer participates.
+// Default to true if the checkbox is not yet rendered (match legacy behavior).
+function isGGPrefixRequired() {
+  return document.getElementById("requireGGPrefix")?.checked !== false;
+}
+
+// Pass-through that respects the checkbox: returns true when the layer should
+// be processed under the current setting.
+function passesGGFilter(name) {
+  return !isGGPrefixRequired() || hasGGPrefix(name);
 }
 
 // Toggle perf timing logs (and extra verification round-trips in setTextFontSize).
@@ -38,6 +54,7 @@ const sourceNameEl = document.getElementById("sourceName");
 const sourceSizeEl = document.getElementById("sourceSize");
 const suffixNameEl = document.getElementById("suffixName");
 const smartMatchEl = document.getElementById("smartMatchEnabled");
+const uniformScaleEl = document.getElementById("uniformScaleEnabled");
 const matchFrameTokenEnabled = document.getElementById("matchFrameTokenEnabled");
 const skipLayerInput = document.getElementById("skipLayerInput");
 const logBox = document.getElementById("logBox");
@@ -151,6 +168,15 @@ function parseSizes(input) {
     .filter(Boolean);
 }
 
+function applySizesChange() {
+  renderPresets();
+  saveTargetSizes();
+  updateSizesCount();
+  // Keep Layer Rules in sync with current sizes — only when Settings panel is mounted,
+  // since renderSizeGroups builds DOM into #sizeGroupsContainer.
+  if (settingsPanel.style.display !== "none") renderSizeGroups();
+}
+
 function renderPresets() {
   presetWrap.innerHTML = "";
   const current = new Set(parseSizes(sizesInput.value).map(s => s.raw));
@@ -162,9 +188,7 @@ function renderPresets() {
       const list = parseSizes(sizesInput.value).map(s => s.raw);
       const next = list.includes(size) ? list.filter(x => x !== size) : [...list, size];
       sizesInput.value = next.join(" ");
-      renderPresets();
-      saveTargetSizes();
-      updateSizesCount();
+      applySizesChange();
     });
     presetWrap.appendChild(chip);
   });
@@ -259,6 +283,26 @@ async function selectLayerById(layerId) {
   }]);
 }
 
+// Clear all per-layer locks (transparent pixels, position, all-lock) so PS
+// will accept a transform on this layer. Smart objects with any lock active
+// reject transform with "Transform is not currently available".
+async function unlockLayerForTransform(layerId) {
+  try {
+    await bp([{
+      _obj: "applyLocking",
+      _target: [{ _ref: "layer", _id: layerId }],
+      layerLocking: {
+        _obj: "layerLocking",
+        protectNone: true
+      },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) {
+    // Layer might already be unlocked, or descriptor doesn't accept locking —
+    // not fatal, transform will just fail and we'll fall through to move-only.
+  }
+}
+
 // ─── Background helpers ───
 
 async function getLayerBounds(layerId) {
@@ -304,6 +348,7 @@ const BG_LAYER_KEY = "bannerCloner.bgLayerName";
 const SIZES_KEY = "bannerCloner.targetSizes";
 const SUFFIX_KEY = "bannerCloner.suffixName";
 const SMART_MATCH_KEY = "bannerCloner.smartMatch";
+const UNIFORM_SCALE_KEY = "bannerCloner.uniformScale";
 
 function loadBgLayerName() {
   try {
@@ -326,6 +371,8 @@ function loadTargetSizes() {
     if (suffix !== null) suffixNameEl.checked = suffix === "1";
     const smart = localStorage.getItem(SMART_MATCH_KEY);
     if (smart !== null) smartMatchEl.checked = smart === "1";
+    const uniform = localStorage.getItem(UNIFORM_SCALE_KEY);
+    if (uniform !== null && uniformScaleEl) uniformScaleEl.checked = uniform === "1";
   } catch (e) {}
 }
 
@@ -344,6 +391,12 @@ function saveSuffixPref() {
 function saveSmartMatchPref() {
   try {
     localStorage.setItem(SMART_MATCH_KEY, smartMatchEl.checked ? "1" : "0");
+  } catch (e) {}
+}
+
+function saveUniformScalePref() {
+  try {
+    localStorage.setItem(UNIFORM_SCALE_KEY, uniformScaleEl?.checked ? "1" : "0");
   } catch (e) {}
 }
 
@@ -611,11 +664,14 @@ function isBgGroup(layer) {
 }
 
 function findBgGroup(parent) {
-  // 1. Exact match with configured bg layer name (must have GG- prefix) — recursive
+  // 1. Exact match with the configured bg layer name (case-insensitive).
+  //    The GG- prefix is NOT required — users may name their bg layer freely
+  //    (e.g. "bg-color"); only `requireGGPrefix` (when checked) enforces it.
+  const requireGG = isGGPrefixRequired();
   function findExact(node) {
     if (!node.layers) return null;
     for (const layer of node.layers) {
-      if (isBgGroup(layer) && hasGGPrefix(layer.name)) return layer;
+      if (isBgGroup(layer) && (!requireGG || hasGGPrefix(layer.name))) return layer;
       const found = findExact(layer);
       if (found) return found;
     }
@@ -624,12 +680,12 @@ function findBgGroup(parent) {
   const exact = findExact(parent);
   if (exact) return exact;
 
-  // 2. Fallback: first GG- layer whose name contains "background" or "bg" — recursive
+  // 2. Fallback: any layer whose name contains "background" or "-bg".
   function findFallback(node) {
     if (!node.layers) return null;
     for (const layer of node.layers) {
-      if (hasGGPrefix(layer.name)) {
-        const n = layer.name.toLowerCase();
+      if (!requireGG || hasGGPrefix(layer.name)) {
+        const n = (layer.name || "").toLowerCase();
         if (n.includes("background") || n.includes("-bg")) {
           log(`[BG] auto-detected: "${layer.name}" (configured "${getBgLayerName()}" not found)`);
           return layer;
@@ -722,7 +778,7 @@ async function captureContentLayout(artboardLayer, srcW, srcH) {
 
   const layout = [];
   for (const child of contentGroup.layers) {
-    if (!hasGGPrefix(child.name)) continue; // Only capture [GG-] layers
+    if (!passesGGFilter(child.name)) continue; // Respect "Require GG- prefix" checkbox
     try {
       // Use getGroupBounds for groups (getLayerBounds on groups returns artboard bounds)
       const bounds = (child.layers && child.layers.length > 0)
@@ -880,8 +936,8 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
   log(`[LAYOUT] Target area: (${canvasLeft},${canvasTop})-(${canvasLeft+canvasW},${canvasTop+canvasH})`);
 
   for (const child of contentGroup.layers) {
-    // Only process [GG-] layers
-    if (!hasGGPrefix(child.name)) {
+    // Respect "Require GG- prefix" checkbox: when unchecked, every layer is processed.
+    if (!passesGGFilter(child.name)) {
       log(`[LAYOUT] "${child.name}": no [GG-] prefix, skip`);
       continue;
     }
@@ -962,11 +1018,75 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
 
 // ─── Fit content layers inside canvas (fallback) ───
 
+// Smart-match counterpart of applyLockGroupRule: scale a *-lock group as a
+// single unit so it fits the canvas (CSS "contain"), then push it inside if
+// it sits outside. Children follow the PS transform automatically — no
+// per-child processing.
+async function fitLockGroup(group, canvasW, canvasH, canvasLeft, canvasTop) {
+  const before = await getGroupBounds(group);
+  if (before.width < 1 || before.height < 1) {
+    log(`[LOCK-FIT] "${group.name}" skip: empty bbox`);
+    return;
+  }
+
+  // Scale-to-fit: pick the smaller axis ratio so the group fits inside the
+  // canvas. Match fitContentLayers' "scale down only" behavior — never
+  // upscale a group that already fits.
+  const sx = canvasW / before.width;
+  const sy = canvasH / before.height;
+  const scale = Math.min(sx, sy, 1);
+
+  if (Math.abs(scale - 1) > 0.01) {
+    log(`[LOCK-FIT] "${group.name}" scale ${(scale * 100).toFixed(1)}% (${Math.round(before.width)}x${Math.round(before.height)} → ${Math.round(before.width * scale)}x${Math.round(before.height * scale)})`);
+    try {
+      await selectLayerById(group.id);
+      await unlockLayerForTransform(group.id);
+      await bpSafe([{
+        _obj: "transform",
+        _target: [{ _ref: "layer", _id: group.id }],
+        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+        width: { _unit: "percentUnit", _value: scale * 100 },
+        height: { _unit: "percentUnit", _value: scale * 100 },
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) {
+      log(`[LOCK-FIT] "${group.name}" scale ERROR: ${e.message} — continuing with move-only`);
+    }
+  }
+
+  // Clamp into canvas — same logic as fitContentLayers leaf clamp.
+  const after = await getGroupBounds(group);
+  const canvasRight = canvasLeft + canvasW;
+  const canvasBottom = canvasTop + canvasH;
+  let dx = 0, dy = 0;
+  if (after.right <= canvasLeft) dx = canvasLeft - after.left + 10;
+  else if (after.left >= canvasRight) dx = (canvasRight - 10) - after.right;
+  else if (after.left < canvasLeft) dx = canvasLeft - after.left;
+
+  if (after.bottom <= canvasTop) dy = canvasTop - after.top + 10;
+  else if (after.top >= canvasBottom) dy = (canvasBottom - 10) - after.bottom;
+  else if (after.top < canvasTop) dy = canvasTop - after.top;
+
+  if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+    log(`[LOCK-FIT] "${group.name}" move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+    try {
+      await moveGroupChildren(group, dx, dy);
+    } catch (e) {
+      log(`[LOCK-FIT] "${group.name}" move ERROR: ${e.message}`);
+    }
+  }
+}
+
 async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg, ruleNames) {
   originX = originX || 0;
   originY = originY || 0;
-  // Collect all leaf layers that are NOT inside bg group (and optionally not in content group)
+  // Collect leaves (individual layers to scale/clamp) + lock-groups (atomic transforms).
+  // A *-lock group is treated as a single unit: its whole bbox is fit-and-clamped,
+  // and recursion stops at the group so children are NOT collected as leaves.
+  const requireGG = isGGPrefixRequired();
   const leaves = [];
+  const lockGroups = [];
   function walk(layer, insideRuledGroup, insideGG) {
     if (isBgGroup(layer)) return;
     if (skipContentBg && layer.name) {
@@ -978,19 +1098,40 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
     if (isRuled) return;
     // Track [GG-] scope: layer has prefix or is inside a [GG-] group
     const inGG = insideGG || hasGGPrefix(layer.name);
+    const passesFilter = !requireGG || inGG;
+
+    // Lock group: atomic transform — handle whole group, do NOT descend.
+    // The GG-prefix gate applies to lock groups too (per user spec): when the
+    // checkbox is on, only GG- lock groups participate.
+    if (passesFilter && isLockGroupName(layer.name) && layer.layers && layer.layers.length > 0) {
+      lockGroups.push(layer);
+      return;
+    }
+
     if (layer.layers && layer.layers.length > 0) {
       for (const child of layer.layers) walk(child, isRuled, inGG);
     } else {
-      if (inGG) leaves.push(layer); // Only collect [GG-] layers
+      if (passesFilter) leaves.push(layer);
     }
   }
   for (const layer of parent.layers) walk(layer, false, false);
 
-  
   const canvasLeft = originX;
   const canvasRight = originX + canvasW;
   const canvasTop = originY;
   const canvasBottom = originY + canvasH;
+
+  // Lock groups first — atomic transform (scale uniform + clamp), children
+  // ride along with the parent transform. Done before leaves so any leaf
+  // accidentally collected from a lock-group sibling won't double-process.
+  for (const group of lockGroups) {
+    try {
+      log(`[LOCK-FIT] "${group.name}" (id:${group.id}) atomic fit-and-clamp`);
+      await fitLockGroup(group, canvasW, canvasH, canvasLeft, canvasTop);
+    } catch (e) {
+      log(`[LOCK-FIT] "${group.name}" ERROR: ${e.message}`);
+    }
+  }
 
   for (const layer of leaves) {
     try {
@@ -1003,10 +1144,13 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
 
       await selectLayerById(layer.id);
 
-      // Scale down if wider than canvas
+      // Scale down if wider than canvas. If transform fails (e.g. PS rejects
+      // smart objects with warp state, or layer is locked), continue with
+      // move-only — better to leave a too-large layer than to drop it entirely.
       if (bounds.width > canvasW) {
         const scale = canvasW / bounds.width;
         log(`[FIT]   transform: scale ${(scale * 100).toFixed(1)}%`);
+        await unlockLayerForTransform(layer.id);
         try {
           await bpSafe([{
             _obj: "transform",
@@ -1018,7 +1162,9 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
             _options: { dialogOptions: "dontDisplay" }
           }]);
           log(`[FIT]   transform OK`);
-        } catch (e) { log(`[FIT]   transform ERROR: ${e.message}`); continue; }
+        } catch (e) {
+          log(`[FIT]   transform ERROR: ${e.message} — continuing with move-only`);
+        }
       }
 
       // Re-read bounds and move into canvas if outside
@@ -1246,6 +1392,110 @@ function getAncestorGroupOffset(layer, rules) {
   return { offX, offY, trail, chain };
 }
 
+// Group-name suffix that opts the group into "atomic transform" mode:
+// the whole group is moved + scaled uniformly (Shift-drag in PS) and child
+// rules are ignored except for `hidden: true`. Matches "BG-lock", "BG-lock 2",
+// "BG-lock 3" (sibling-dup suffix added by our auto-rename pass).
+function isLockGroupName(name) {
+  return /-lock(\s+\d+)?$/.test(String(name || ""));
+}
+
+// Apply a *-lock group rule: scale the group uniformly to the rule's
+// target bbox (whichever axis fits — PS Shift-drag style), then move it
+// to the rule's (left, top). Children follow the PS transform automatically
+// — no per-child rule processing needed (caller adds the group id to
+// matchedGroupIds so child-rule iteration skips them).
+async function applyLockGroupRule(layer, rule, originX, originY) {
+  // Read group's CURRENT bounds (after any prior canvas crop / resize).
+  const before = await getGroupBounds(layer);
+  if (before.width < 1 || before.height < 1) {
+    log(`[LOCK] "${layer.name}" skip: source bbox too small (${before.width}x${before.height})`);
+    return;
+  }
+
+  // Resolve target W/H from rule. Same precedence as regular rules:
+  // raw (width/height) wins over element (widthElement/heightElement).
+  const hasRawW = rule._widthRaw !== undefined;
+  const hasRawH = rule._heightRaw !== undefined;
+  const hasElemW = rule._widthElement !== undefined;
+  const hasElemH = rule._heightElement !== undefined;
+  let targetW, targetH;
+  if (hasRawW || hasRawH) {
+    targetW = hasRawW ? rule._widthRaw : undefined;
+    targetH = hasRawH ? rule._heightRaw : undefined;
+  } else {
+    targetW = hasElemW ? rule._widthElement : undefined;
+    targetH = hasElemH ? rule._heightElement : undefined;
+  }
+
+  // Compute uniform scale. If rule has both W and H, pick min(scaleX, scaleY)
+  // so the group fits inside the target bbox without overflow (CSS "contain").
+  // Warn if the two scales disagree — that means JSON has non-uniform target,
+  // which Storybook should never produce for *-lock groups.
+  let scale = 1;
+  if (targetW !== undefined && targetH !== undefined) {
+    const sx = targetW / before.width;
+    const sy = targetH / before.height;
+    if (Math.abs(sx - sy) > 0.01) {
+      log(`[LOCK] "${layer.name}" warning: aspect mismatch (scaleX=${sx.toFixed(3)}, scaleY=${sy.toFixed(3)}); using min for uniform scale`);
+    }
+    scale = Math.min(sx, sy);
+  } else if (targetW !== undefined) {
+    scale = targetW / before.width;
+  } else if (targetH !== undefined) {
+    scale = targetH / before.height;
+  }
+  // else: no W/H → scale=1 (move-only)
+
+  if (!isFinite(scale) || scale <= 0) {
+    log(`[LOCK] "${layer.name}" skip: invalid scale ${scale}`);
+    return;
+  }
+
+  // Apply uniform scale to the group. PS will scale all descendant layers
+  // around the group's geometric center — that preserves the relative
+  // layout exactly the way Shift-drag in PS does.
+  if (Math.abs(scale - 1) > 0.01) {
+    log(`[LOCK] "${layer.name}" scaling uniform ${(scale * 100).toFixed(1)}% (${Math.round(before.width)}x${Math.round(before.height)} → ${Math.round(before.width * scale)}x${Math.round(before.height * scale)})`);
+    try {
+      await selectLayerById(layer.id);
+      await bpSafe([{
+        _obj: "transform",
+        _target: [{ _ref: "layer", _id: layer.id }],
+        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+        width: { _unit: "percentUnit", _value: scale * 100 },
+        height: { _unit: "percentUnit", _value: scale * 100 },
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) {
+      log(`[LOCK] "${layer.name}" scale ERROR: ${e.message}`);
+    }
+  } else {
+    log(`[LOCK] "${layer.name}" skip scale (already at target size)`);
+  }
+
+  // Move group to (originX + rule.left, originY + rule.top). Read bbox
+  // AFTER scale so we move based on the new top-left.
+  const afterScale = await getGroupBounds(layer);
+  const ruleLeft = rule.left !== "" && rule.left !== undefined ? parseFloat(rule.left) : null;
+  const ruleTop = rule.top !== "" && rule.top !== undefined ? parseFloat(rule.top) : null;
+  if (ruleLeft !== null || ruleTop !== null) {
+    const targetLeft = ruleLeft !== null ? originX + ruleLeft : afterScale.left;
+    const targetTop = ruleTop !== null ? originY + ruleTop : afterScale.top;
+    const dx = targetLeft - afterScale.left;
+    const dy = targetTop - afterScale.top;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      log(`[LOCK] "${layer.name}" move dx=${Math.round(dx)} dy=${Math.round(dy)} → (${Math.round(targetLeft)},${Math.round(targetTop)})`);
+      try {
+        await moveGroupChildren(layer, dx, dy);
+      } catch (e) {
+        log(`[LOCK] "${layer.name}" move ERROR: ${e.message}`);
+      }
+    }
+  }
+}
+
 async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, originX, originY, originalBounds, srcW, srcH) {
   // Pre-compute scale from JSON using PSD source size as base
   const baseSize = (srcW && srcH) ? findBaseSizeFromJson(srcW, srcH) : null;
@@ -1264,8 +1514,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
     // Background layer: let JSON rule handle it (scaleBgCover is skipped when JSON rules exist)
 
     // Safety: only apply rules to [GG-] layers (when checkbox is checked)
-    const requireGG = document.getElementById("requireGGPrefix")?.checked !== false;
-    if (requireGG && !hasGGPrefix(rule.name)) {
+    if (!passesGGFilter(rule.name)) {
       log(`[RULE] "${rule.name}": no [GG-] prefix, skip`);
       continue;
     }
@@ -1301,12 +1550,52 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       // Skip if this layer is a child of an already-matched group
       let parent = layer.parent;
       let skipThis = false;
+      let parentIsLock = false;
       while (parent) {
-        if (matchedGroupIds.has(parent.id)) { skipThis = true; break; }
+        if (matchedGroupIds.has(parent.id)) {
+          skipThis = true;
+          // If the matched ancestor is a *-lock group, the child rule is
+          // intentionally muted (only `hidden` survives below) — track it
+          // separately so we don't log the generic "parent has rule" line.
+          if (isLockGroupName(parent.name)) parentIsLock = true;
+          break;
+        }
         parent = parent.parent;
       }
       if (skipThis) {
-        log(`[RULE] "${layer.name}": skipped (parent group already has rule)`);
+        // Even when the parent is a *-lock group, we still honor the child's
+        // `hidden` flag (per spec: child rules are show/hide only).
+        if (parentIsLock && rule.hidden !== undefined) {
+          try {
+            const v = !(rule.hidden === true || rule.hidden === "true" || rule.hidden === 1);
+            await selectLayerById(layer.id);
+            await bp([{
+              _obj: "set",
+              _target: [{ _ref: "layer", _id: layer.id }],
+              to: { _obj: "layer", visible: v },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            log(`[LOCK]   child "${layer.name}" visible=${v} (other rules ignored under lock-parent)`);
+          } catch (e) {
+            log(`[LOCK]   child "${layer.name}" hidden-set ERROR: ${e.message}`);
+          }
+        } else {
+          log(`[RULE] "${layer.name}": skipped (parent group already has rule)`);
+        }
+        continue;
+      }
+
+      // *-lock group: atomic transform path. Scale uniform + move the
+      // whole group, then mark it so all child rules are skipped (except
+      // `hidden`, handled in the skipThis branch above for the next iters).
+      if (isLockGroupName(layer.name) && layer.layers && layer.layers.length > 0) {
+        log(`[LOCK] "${layer.name}" (id:${layer.id}) atomic transform for ${targetSizeKey}`);
+        matchedGroupIds.add(layer.id);
+        try {
+          await applyLockGroupRule(layer, rule, originX, originY);
+        } catch (e) {
+          log(`[LOCK] "${layer.name}" ERROR: ${e.message}`);
+        }
         continue;
       }
 
@@ -1767,12 +2056,48 @@ async function cloneAsArtboards() {
     }, { commandName: "Banner Cloner - Clone Artboards" });
     log(`[PERF] cloneAsArtboards total: ${Math.round(perfNow() - tTotal)}ms for ${parseSizes(sizesInput.value).length} target(s)`);
   } catch (e) {
-    log("Clone error: " + e.message);
+    // Surface the full error info — `e.message` alone is sometimes
+    // undefined (PS throws plain strings or Error-like objects), which
+    // gives the unhelpful "Clone error: undefined" line.
+    const msg = (e && (e.message || e.toString())) || String(e);
+    const stack = e && e.stack ? e.stack : "(no stack)";
+    log("Clone error: " + msg);
+    log("Clone error stack: " + stack);
   } finally {
     hideProgress();
     cloneBtn.disabled = false;
     cloneBtn.textContent = "Clone Artboards";
     updateActionButtonsVisibility().catch(() => {});
+  }
+}
+
+// Diagnostic helper — log the full root-layer state of a doc with each
+// layer's id, name, kind, isArtboard flag, and bounds. Not called in
+// the normal flow; sprinkle `await snapshotDoc(tempDoc, "label")` calls
+// when you need to see the layer tree at a specific step (e.g. when
+// debugging a new "make artboardSection" failure mode).
+async function snapshotDoc(doc, label) {
+  if (!doc || !doc.layers) {
+    log(`[SNAPSHOT ${label}] no doc/layers`);
+    return;
+  }
+  log(`[SNAPSHOT ${label}] ${doc.layers.length} root layer(s):`);
+  for (let i = 0; i < doc.layers.length; i++) {
+    const l = doc.layers[i];
+    let isArtb = "?";
+    let rect = "";
+    let abRect = "";
+    try {
+      const d = await getLayerDescriptor(l.id);
+      isArtb = !!(d.artboardEnabled || d.artboard);
+      const fmt = v => v && typeof v === "object" && "_value" in v ? v._value : v;
+      const b = d.bounds;
+      if (b) rect = `bounds=(L${fmt(b.left)},T${fmt(b.top)},R${fmt(b.right)},B${fmt(b.bottom)})`;
+      const ar = d.artboard?.artboardRect;
+      if (ar) abRect = `artbRect=(L${fmt(ar.left)},T${fmt(ar.top)},R${fmt(ar.right)},B${fmt(ar.bottom)})`;
+    } catch (e) { isArtb = `err:${e.message}`; }
+    const childCount = l.layers ? l.layers.length : 0;
+    log(`[SNAPSHOT ${label}]   [${i}] id=${l.id} name="${l.name}" kind=${l.kind} isArtboard=${isArtb} children=${childCount} ${rect} ${abRect}`);
   }
 }
 
@@ -1929,6 +2254,48 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         }]);
         const tempDoc = app.activeDocument;
 
+        // Uniform-scale mode: shrink the entire doc (image + all layers) by the
+        // contain ratio, THEN resize canvas to the target. This gives a faithful
+        // miniature of the source — same composition, just smaller — and bypasses
+        // smart match / JSON rules entirely. Aspect mismatch >30% logs a warning
+        // because the result will have large empty bands on the off-axis.
+        const uniformEnabled = uniformScaleEl?.checked === true;
+        if (uniformEnabled) {
+          // Hybrid cover/contain. When source vs target aspect is close (≤3x
+          // axis ratio), use COVER — fill the canvas, crop the off-axis (e.g.
+          // 1080x1350 → 1080x1920 zooms 1.42x to fill height, crops a little
+          // width). When aspect is far apart (>3x), cover would zoom 10x+ and
+          // discard most content, so we fall back to CONTAIN — the artwork
+          // fits entirely inside the canvas with empty bands on the off-axis
+          // (e.g. 600x100 → 1920x1080 scales 3.2x to fill width, height ends
+          // up 320 with letterbox top/bottom).
+          //
+          // Multi-frame source workflow: the template doc still carries the
+          // original sourceDoc canvas (e.g. 600x354 holding F1/F2/F3 stacked).
+          // imageSize would scale the WHOLE doc, but canvasSize anchor=center
+          // afterwards would crop to wrong rows. Pre-crop the doc canvas to
+          // the source artboard rect so imageSize only sees the artboard area.
+          await cropCanvasTo(srcRect.left, srcRect.top, srcRect.right, srcRect.bottom);
+          log(`[UNIFORM] pre-crop doc to artboard rect (${srcRect.left},${srcRect.top})-(${srcRect.right},${srcRect.bottom}) = ${srcRect.width}x${srcRect.height}`);
+
+          const sx = target.width / srcRect.width;
+          const sy = target.height / srcRect.height;
+          const axisRatio = Math.max(sx, sy) / Math.min(sx, sy);
+          const useCover = axisRatio <= 3;
+          const scale = useCover ? Math.max(sx, sy) : Math.min(sx, sy);
+          const fillAxis = (scale === sx) ? "width" : "height";
+          const aspectSrc = srcRect.width / srcRect.height;
+          const aspectTgt = target.width / target.height;
+          const aspectDelta = Math.abs(aspectSrc - aspectTgt) / aspectSrc;
+          if (!useCover) {
+            log(`[UNIFORM] aspect ratio ${axisRatio.toFixed(2)}x — using CONTAIN (cover would zoom ${Math.max(sx, sy).toFixed(2)}x and crop most content). Result will have empty bands on the off-axis.`);
+          } else if (aspectDelta > 0.3) {
+            log(`[UNIFORM] WARNING: aspect mismatch ${(aspectDelta * 100).toFixed(0)}% (source ${aspectSrc.toFixed(2)}:1 → target ${aspectTgt.toFixed(2)}:1). Heavy crop on the off-axis — important content near edges may be lost.`);
+          }
+          log(`[UNIFORM] mode=${useCover ? "cover" : "contain"} scale=${scale.toFixed(4)} fill-axis=${fillAxis} (${srcRect.width}x${srcRect.height} → ${Math.round(srcRect.width * scale)}x${Math.round(srcRect.height * scale)} inside ${target.width}x${target.height})`);
+          await resizeImage(Math.round(srcRect.width * scale), Math.round(srcRect.height * scale), true);
+        }
+
         // 4. Resize canvas to target size
         await bp([{
           _obj: "canvasSize",
@@ -1948,10 +2315,14 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           }
         } catch(e) {}
 
-        // Decide which layout pipeline to run
-        const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
-        const smartEnabled = smartMatchEl.checked;
-        log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
+        // Uniform mode owns the layout — skip smart match and JSON rules.
+        const hasRules = !uniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
+        const smartEnabled = !uniformEnabled && smartMatchEl.checked;
+        if (uniformEnabled) {
+          log(`Mode: uniform scale (smart match & JSON rules skipped)`);
+        } else {
+          log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
+        }
 
         // 5. Scale background — only when NO JSON rules (smart match fallback)
         // When JSON rules exist, applyLayerRules handles bg children with precise scale/position
@@ -1986,6 +2357,61 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           perfLog(`applyLayerRules ${target.raw}`, tRules);
         }
 
+        // CLEAN-UP before make: delete layers that ended up FULLY OUTSIDE
+        // the canvas after applyLayerRules. Such layers (typically ones
+        // without a JSON rule, sitting at their original source position)
+        // expand `make artboardSection`'s union-bounds calculation, which
+        // makes PS guess wrong about where the artboardRect should sit
+        // (it picks the densest content cluster instead of (0,0,W,H)),
+        // leaving an orphan layer at root and an artboard at the wrong
+        // position. Discovered via F2 case: "MFB logo" at left=-431
+        // shifted artboardRect to (600,0,900,600) instead of (0,0,300,600).
+        //
+        // Uniform mode is exempt — its layers are deliberately offscreen as
+        // part of the cover/contain crop, and the user expects every layer
+        // preserved (only the canvas changes, the artwork is intact).
+        if (!uniformEnabled) try {
+          const canvasW = target.width;
+          const canvasH = target.height;
+          const orphans = [];
+          // Snapshot ids first — iterating tempDoc.layers while we modify
+          // the doc can cause stale references. Re-fetch by id later.
+          const rootIds = tempDoc.layers.map(l => ({ id: l.id, name: l.name }));
+          for (const ref of rootIds) {
+            try {
+              const d = await getLayerDescriptor(ref.id);
+              if (d.artboardEnabled || d.artboard) continue;
+              const b = d.bounds;
+              if (!b) continue;
+              const fmt = v => (v && typeof v === "object" && "_value" in v) ? Number(v._value) : Number(v);
+              const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+              if (![left, top, right, bottom].every(Number.isFinite)) continue;
+              if (right <= 0 || left >= canvasW || bottom <= 0 || top >= canvasH) {
+                orphans.push({ id: ref.id, name: ref.name, boundsStr: `(L${left},T${top},R${right},B${bottom})` });
+              }
+            } catch (e) { /* skip */ }
+          }
+          if (orphans.length) {
+            log(`[CLEANUP] Deleting ${orphans.length} orphan layer(s) outside canvas ${canvasW}x${canvasH}`);
+            for (const o of orphans) {
+              try {
+                await selectLayerById(o.id);
+                await bp([{
+                  _obj: "delete",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                log(`[CLEANUP]   deleted "${o.name}" ${o.boundsStr}`);
+              } catch (e) {
+                log(`[CLEANUP]   delete failed for "${o.name}": ${e.message || e}`);
+              }
+            }
+          }
+        } catch (e) {
+          log(`[CLEANUP] FATAL: ${e.message || e}`);
+          throw e;
+        }
+
         // 7. Wrap all layers into an artboard
         await bp([{
           _obj: "select",
@@ -2011,6 +2437,7 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           },
           _options: { dialogOptions: "dontDisplay" }
         }]);
+
         let abLayer = tempDoc.layers[0];
         if (abLayer) abLayer.name = newName;
         // Verify the wrap actually produced an artboard, not a plain group/
@@ -2038,17 +2465,41 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         // built fresh and content is moved in via deterministic UXP DOM
         // calls — no batchPlay selection state to misread.
         if (!wrapOk) {
-          log(`[WRAP-FAIL] Falling back: reuse existing artboard, just rename + resize`);
+          log(`[WRAP-FAIL] Falling back: delete ghost + retry make artboardSection`);
           try {
-            // PS auto-creates "Artboard 1" during canvasSize when the source
-            // has no artboards at root. That artboard ALREADY contains all
-            // the content layers — we don't need to make a new one. Just
-            // find it, rename, and override its rect to match the target.
-            //
-            // The original `abLayer` (tempDoc.layers[0]) is the renamed
-            // ghost from our failed `make`. The REAL artboard is somewhere
-            // deeper in tempDoc.layers. Scan all root layers for any with
-            // artboardEnabled.
+            // Why: when `make artboardSection` fails silently (no real artboard
+            // in tempDoc), it leaves a ghost layer at top of stack — kind
+            // is smartObject/solidColor/etc, NOT artboardSection. That ghost
+            // blocks subsequent `make` calls. Solution: delete ghost(s) first,
+            // then retry the proper select-all + make.
+
+            // Step 1: delete every root-level layer that is NOT an artboard.
+            // The original content was wrapped into the doc's auto-created
+            // "Artboard 1" by canvasSize, but the failed `make` left an
+            // empty pretender on top — that pretender is what we delete.
+            const ghosts = [];
+            for (const l of [...tempDoc.layers]) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const isArtb2 = !!(d.artboardEnabled || d.artboard);
+                if (!isArtb2) ghosts.push(l);
+              } catch (e) { /* skip */ }
+            }
+            for (const g of ghosts) {
+              try {
+                await selectLayerById(g.id);
+                await bp([{
+                  _obj: "delete",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              } catch (e) {
+                try { g.delete(); } catch (e2) { /* ignore */ }
+              }
+            }
+            if (ghosts.length) log(`[WRAP-FAIL]   deleted ${ghosts.length} ghost layer(s)`);
+
+            // Step 2: find the real artboard PS auto-created during canvasSize.
             let realArtb = null;
             for (const l of tempDoc.layers) {
               try {
@@ -2056,39 +2507,17 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
                 if (d.artboardEnabled || d.artboard) { realArtb = l; break; }
               } catch (e) { /* skip */ }
             }
-            if (!realArtb) throw new Error("no existing artboard in tempDoc to reuse");
+            if (!realArtb) throw new Error("no artboard found in tempDoc after ghost-cleanup");
 
-            // Move any root-level non-artboard layers (the ghost from the
-            // failed make + stragglers) INTO the real artboard so they
-            // don't pollute the wrap.
-            const { constants } = require("photoshop");
-            const stragglers = tempDoc.layers.filter(l => l.id !== realArtb.id);
-            for (const s of stragglers) {
-              try {
-                s.move(realArtb, constants.ElementPlacement.PLACEINSIDE);
-              } catch (e) {
-                // If move fails (e.g. ghost smart object refusing reparent),
-                // try delete-via-DOM as last resort.
-                try { s.delete(); }
-                catch (e2) { log(`[WRAP-FAIL]   couldn't move/delete "${s.name}": ${e.message}`); }
-              }
-            }
-
-            // Override artboardRect to the desired target size.
+            // Step 3: resize the real artboard to target size via editArtboardEvent.
             await selectLayerById(realArtb.id);
             await bp([{
-              _obj: "set",
+              _obj: "editArtboardEvent",
               _target: [{ _ref: "layer", _id: realArtb.id }],
-              to: {
-                _obj: "layer",
-                artboard: {
-                  _obj: "artboard",
-                  artboardRect: {
-                    _obj: "classFloatRect",
-                    top: 0, left: 0,
-                    bottom: target.height, right: target.width
-                  }
-                }
+              artboardRect: {
+                _obj: "classFloatRect",
+                top: 0, left: 0,
+                bottom: target.height, right: target.width
               },
               _options: { dialogOptions: "dontDisplay" }
             }]);
@@ -2868,15 +3297,20 @@ const sizeGroupsContainer = document.getElementById("sizeGroupsContainer");
 let layerRules = {};
 const expandedSizes = new Set(); // size keys that are explicitly expanded (default: collapsed)
 
+// Layer rules are session-only — NOT persisted to localStorage.
+// Rationale: stale rules surviving across sessions caused clone bugs where
+// sizes without an explicit rule still entered the JSON-rules code path
+// (with undefined coordinates) and dropped layers. Users now must Import
+// JSON each session if they want rule-based clones.
 function loadLayerRules() {
-  try {
-    const raw = localStorage.getItem("bannerCloner_layerRules");
-    if (raw) layerRules = JSON.parse(raw);
-  } catch (e) { layerRules = {}; }
+  layerRules = {};
+  // Clear any pre-existing persisted rules from older builds so they don't
+  // get re-loaded if persistence is ever re-enabled.
+  try { localStorage.removeItem("bannerCloner_layerRules"); } catch (e) {}
 }
 
 function saveLayerRules() {
-  localStorage.setItem("bannerCloner_layerRules", JSON.stringify(layerRules));
+  // No-op — see loadLayerRules. Kept as a stub so existing callsites compile.
 }
 
 function getRulesForSize(sizeKey) {
@@ -4522,6 +4956,28 @@ async function scanArtboardImages() {
     if (!v.ok) { v.errors.forEach(e => log(`[ASSETS] ${e}`)); log("[ASSETS] Fill required fields before Get Images."); return; }
     const artboards = await resolveSelectedArtboards();
     scannedArtboards = artboards;
+
+    // Auto-rename duplicate layer names per artboard before scanning so asset
+    // exportNames are unique on capture (and stay in sync with Export Layer JSON).
+    const autoRename = autoRenameDupsEnabled?.checked !== false;
+    if (autoRename) {
+      try {
+        let totalRenamed = 0;
+        await core.executeAsModal(async () => {
+          for (const ab of artboards) {
+            const n = await renameDuplicateLayersInArtboard(ab.layer);
+            if (n > 0) {
+              log(`[ASSETS] Renamed ${n} duplicate layer name(s) in "${ab.name}"`);
+              totalRenamed += n;
+            }
+          }
+        }, { commandName: "Banner Cloner — Rename Duplicate Layers" });
+        if (totalRenamed === 0) log(`[ASSETS] No duplicate layer names found`);
+      } catch (e) {
+        log(`[ASSETS] Rename pass failed: ${e.message}`);
+      }
+    }
+
     log(`[ASSETS] Scanning ${artboards.length} artboard(s)`);
 
     const ignoreKws = getIgnoreKeywords();
@@ -4721,9 +5177,22 @@ function hideCustomTooltip() {
   if (_tooltipEl) _tooltipEl.style.display = "none";
 }
 
+// Default-mode slug: lowercase, ASCII letters/digits/dashes/underscores only.
+// Strips parentheses, punctuation, etc. so "Place your design here (Double-click to edit)"
+// becomes "place-your-design-here-double-click-to-edit".
+function slugifyAssetName(raw) {
+  return (raw || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-") // any run of non-allowed chars → single dash
+    .replace(/-+/g, "-")            // collapse repeated dashes
+    .replace(/^-+|-+$/g, "");       // trim leading/trailing dashes
+}
+
 function getAssetFilenameKey(asset) {
-  const raw = (asset.exportName || "").replace(/[<>:"/\\|?*]/g, "_");
-  const safeName = isAdvancedEnabled() ? raw : raw.replace(/\s+/g, "-").toLowerCase();
+  const raw = asset.exportName || "";
+  const safeName = isAdvancedEnabled()
+    ? raw.replace(/[<>:"/\\|?*]/g, "_")
+    : slugifyAssetName(raw);
   const ext = asset.type === "JPG" ? "jpg" : "png";
   return `${safeName}.${ext}`;
 }
@@ -5228,10 +5697,10 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAsset
         // Filename
         // Advanced mode: keep filename identical to PSD layer name
         //   (only strip illegal filesystem chars; preserve case, spaces, underscores).
-        // Default mode: legacy behavior — replace spaces with "-", lowercase all.
+        // Default mode: lowercase ASCII slug — strips parens/punctuation, gaps → "-".
         const safeName = isAdvancedEnabled()
           ? asset.exportName.replace(/[<>:"/\\|?*]/g, "_")
-          : asset.exportName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").toLowerCase();
+          : slugifyAssetName(asset.exportName);
         const extLower = asset.type === "JPG" ? "jpg" : "png";
         const filename = `${safeName}.${extLower}`;
 
@@ -5312,8 +5781,10 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAsset
         log(`[DEBUG] artboardRect: left=${asset.artboardRect.left} top=${asset.artboardRect.top} w=${asset.artboardRect.width} h=${asset.artboardRect.height}`);
 
         // Create new transparent document with target dimensions
+        // Force resolution=72 so distanceUnit (points) maps 1:1 to pixels — avoids
+        // PS scaling temp doc when source doc is at 300 DPI.
         const tempDocName = "__asset_temp_" + Date.now() + "__";
-        const sourceRes = sourceDoc.resolution || 72;
+        const sourceRes = 72;
         log(`[DEBUG] Creating temp doc: ${tempDocName}, ${targetRect.width}x${targetRect.height}@${sourceRes}dpi`);
         await bp([{
           _obj: "make",
@@ -5985,30 +6456,27 @@ if (assetToggleAllBtn) {
 const mainContent = document.querySelectorAll(".app > .section:not(.shared-section), .app > #splitSection");
 
 function switchMode(mode) {
-  cloneMode = (mode === "settings" || mode === "exportAssets") ? cloneMode : mode;
+  // cloneMode is the runtime clone target (documents | artboards), independent of UI tab.
+  // Tab buttons only control which panel is visible.
+  if (mode === "documents" || mode === "artboards") cloneMode = mode;
   tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
 
   const targetSizesSection = document.getElementById("targetSizesSection");
 
-  if (mode === "settings") {
-    mainContent.forEach(el => el.style.display = "none");
-    settingsPanel.style.display = "block";
-    exportAssetsPanel.style.display = "none";
-    if (targetSizesSection) targetSizesSection.style.display = "";
-    renderSizeGroups();
-    // Settings tab hosts "Export Layer JSON" — load picker + refresh mode hint
-    ensureArtboardPickerLoaded().then(() => refreshExportModeUI()).catch(e => log(`[PICKER] ${e.message}`));
-  } else if (mode === "exportAssets") {
+  if (mode === "exportAssets") {
     mainContent.forEach(el => el.style.display = "none");
     settingsPanel.style.display = "none";
     exportAssetsPanel.style.display = "block";
     if (targetSizesSection) targetSizesSection.style.display = "none";
     ensureArtboardPickerLoaded().catch(e => log(`[PICKER] ${e.message}`));
   } else {
-    mainContent.forEach(el => el.style.display = "");
-    settingsPanel.style.display = "none";
+    // Default tab — Settings (also handles legacy "documents"/"artboards" calls)
+    mainContent.forEach(el => el.style.display = "none");
+    settingsPanel.style.display = "block";
     exportAssetsPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "";
+    renderSizeGroups();
+    ensureArtboardPickerLoaded().then(() => refreshExportModeUI()).catch(e => log(`[PICKER] ${e.message}`));
   }
   // Action bar (Clone/Export/Split) is global — visibility driven by artboards count, not tab
   updateActionButtonsVisibility().catch(() => {});
@@ -6044,9 +6512,10 @@ try {
   if (localStorage.getItem("bannerCloner.logCollapsed") === "1") logBox.classList.add("collapsed");
 } catch (e) {}
 
-sizesInput.addEventListener("input", () => { renderPresets(); saveTargetSizes(); updateSizesCount(); });
+sizesInput.addEventListener("input", applySizesChange);
 suffixNameEl.addEventListener("change", saveSuffixPref);
 smartMatchEl.addEventListener("change", saveSmartMatchPref);
+uniformScaleEl?.addEventListener("change", saveUniformScalePref);
 refreshBtn.addEventListener("click", refreshSource);
 cloneBtn.addEventListener("click", () => {
   if (cloneMode === "artboards") cloneAsArtboards();
@@ -6064,5 +6533,6 @@ document.addEventListener("DOMContentLoaded", () => {
   renderPresets();
   updateSizesCount();
   updateJsonStatus();
+  switchMode("settings");
   setTimeout(refreshSource, 150);
 });
