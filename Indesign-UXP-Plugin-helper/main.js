@@ -667,8 +667,10 @@ function renderLogos() {
     });
   });
 
-  const totalFull = items.reduce((s, it) => s + (it.squareFull || 0), 0);
-  const totalVis  = items.reduce((s, it) => s + (it.squareVis || 0), 0);
+  // Sum the displayed (rounded) per-logo squares so the panel total equals
+  // what the user gets adding the visible numbers — matches the report.
+  const totalFull = items.reduce((s, it) => s + roundTo(it.squareFull || 0, AREA_DECIMALS), 0);
+  const totalVis  = items.reduce((s, it) => s + roundTo(it.squareVis  || 0, AREA_DECIMALS), 0);
 
   // Per-page balancer: each page's logos sum to exactly 100%. The logo
   // flagged with isBalancer absorbs the rounding residual; fallback is the
@@ -682,8 +684,10 @@ function renderLogos() {
   });
   pageGroups.forEach(group => {
     const bIdx = group.findIndex(it => it.logo && it.logo.isBalancer);
-    const pctsFull = balancePercents(group.map(it => it.squareFull || 0), bIdx);
-    const pctsVis  = balancePercents(group.map(it => it.squareVis  || 0), bIdx);
+    // Percent from displayed (rounded) squares so manual sum of the visible
+    // Square column matches the visible % column.
+    const pctsFull = balancePercents(group.map(it => roundTo(it.squareFull || 0, AREA_DECIMALS)), bIdx);
+    const pctsVis  = balancePercents(group.map(it => roundTo(it.squareVis  || 0, AREA_DECIMALS)), bIdx);
     group.forEach((it, i) => {
       it.pctFull = pctsFull[i];
       it.pctVis  = pctsVis[i];
@@ -746,14 +750,10 @@ function renderOneLogoItem(it, list, unit) {
     // Dimensions: full precision, no rounding
     const wFullStr = formatDim(it.wFull);
     const hFullStr = formatDim(it.hFull);
-    const wVisStr  = formatDim(it.wVis);
-    const hVisStr  = formatDim(it.hVis);
 
     // Squares: AREA_DECIMALS. % is per-page balanced to sum 100, PCT_DECIMALS.
     const sqFullStr = formatNumber(it.squareFull, AREA_DECIMALS);
-    const sqVisStr  = formatNumber(it.squareVis, AREA_DECIMALS);
     const pctFullStr = formatNumber(it.pctFull || 0, PCT_DECIMALS);
-    const pctVisStr  = formatNumber(it.pctVis  || 0, PCT_DECIMALS);
 
     const clientOptions = settings.clients.map(c =>
       `<option value="${escapeHtml(c.id)}"${c.id === it.logo.clientId ? " selected" : ""}>${clientOptionLabel(c)}</option>`
@@ -763,13 +763,6 @@ function renderOneLogoItem(it, list, unit) {
     const balancerChecked = isBalancer ? " checked" : "";
     const balancerActive = isBalancer ? " is-active" : "";
     const balancerTitle = "Absorbs rounding residual so page % sums to 100";
-
-    const visibleBlock = m.clipped
-      ? `<div class="logo-row-sub">
-           <span class="logo-tag">Visible:</span> ${wVisStr} × ${hVisStr} ${unit}
-           · Square <strong>${sqVisStr}</strong> · <strong>${pctVisStr}%</strong>
-         </div>`
-      : "";
 
     let itemName = "";
     let itemPath = "";
@@ -813,7 +806,6 @@ function renderOneLogoItem(it, list, unit) {
           <input type="checkbox" data-act="balancer" data-idx="${it.idx}"${balancerChecked} />
           <span>Balancer ⚖ — absorbs rounding residual</span>
         </label>
-        ${visibleBlock}
         <div class="logo-actions">
           <button data-act="up"     data-idx="${it.idx}" title="Move up">↑</button>
           <button data-act="down"   data-idx="${it.idx}" title="Move down">↓</button>
@@ -856,14 +848,7 @@ function updateTotals(doc, items, totalFull, totalVis) {
     return;
   }
   const unit = resolveDisplayUnit(doc);
-  const anyClipped = items.some(i => !i.missing && i.metrics && i.metrics.clipped);
-  const fullStr = `${formatNumber(totalFull, AREA_DECIMALS)} ${unit}²`;
-  if (anyClipped) {
-    const visStr = `${formatNumber(totalVis, AREA_DECIMALS)} ${unit}²`;
-    $("#totalArea").innerHTML = `Full <strong>${fullStr}</strong> · Visible <strong>${visStr}</strong>`;
-  } else {
-    $("#totalArea").textContent = fullStr;
-  }
+  $("#totalArea").textContent = `${formatNumber(totalFull, AREA_DECIMALS)} ${unit}²`;
 }
 
 function escapeHtml(s) {
@@ -1203,11 +1188,11 @@ function buildReportData(doc, pageIdx) {
       if (!pageName && m.pageName) pageName = m.pageName;
       const client = getClientForLogo(logo);
       const ratio = client ? client.ratio : 1;
-      const wFull = ptToUnit(m.frameW, unit);
-      const hFull = ptToUnit(m.frameH, unit);
+      const wFull = roundTo(ptToUnit(m.frameW, unit), 4);
+      const hFull = roundTo(ptToUnit(m.frameH, unit), 4);
       const square = wFull * hFull * ratio;
       rows.push({ logo, label: logo.label, square, pageIndex: m.pageIndex });
-      grandTotal += square;
+      grandTotal += roundTo(square, AREA_DECIMALS);
     });
   });
 
@@ -1223,7 +1208,7 @@ function buildReportData(doc, pageIdx) {
   pageMap.forEach(indices => {
     const group = indices.map(i => rows[i]);
     const bIdx = group.findIndex(r => r.logo && r.logo.isBalancer);
-    const pcts = balancePercents(group.map(r => r.square), bIdx);
+    const pcts = balancePercents(group.map(r => roundTo(r.square, AREA_DECIMALS)), bIdx);
     indices.forEach((ri, gi) => { pctByRow[ri] = pcts[gi]; });
   });
 
@@ -1454,9 +1439,7 @@ function exportCsv() {
   const unit = resolveDisplayUnit(doc);
   const rows = [
     ["Label", "Client", "Ratio", "Page",
-     `W_full(${unit})`, `H_full(${unit})`, `Square_full(${unit}²)`, "%_full",
-     `W_visible(${unit})`, `H_visible(${unit})`, `Square_visible(${unit}²)`, "%_visible",
-     "Clipped"]
+     `W(${unit})`, `H(${unit})`, `Square(${unit}²)`, "%"]
   ];
 
   const computed = [];
@@ -1469,18 +1452,16 @@ function exportCsv() {
       const ratio = client ? client.ratio : 1;
       const wFull = roundTo(ptToUnit(m.frameW, unit), 4);
       const hFull = roundTo(ptToUnit(m.frameH, unit), 4);
-      const wVis  = roundTo(ptToUnit(m.visibleW, unit), 4);
-      const hVis  = roundTo(ptToUnit(m.visibleH, unit), 4);
       const squareFull = wFull * hFull * ratio;
-      const squareVis  = wVis * hVis * ratio;
-      computed.push({ logo, m, client, ratio, wFull, hFull, wVis, hVis, squareFull, squareVis });
+      computed.push({ logo, m, client, ratio, wFull, hFull, squareFull });
     });
   });
 
-  const totalFull = computed.reduce((s, c) => s + c.squareFull, 0);
-  const totalVis  = computed.reduce((s, c) => s + c.squareVis, 0);
+  // Sum displayed (rounded) per-row squares so the TOTAL row equals the sum
+  // of the Square column the user sees in the CSV.
+  const totalFull = computed.reduce((s, c) => s + roundTo(c.squareFull, AREA_DECIMALS), 0);
 
-  // Per-page balancer so %_full / %_visible columns sum to 100 per page.
+  // Per-page balancer so the % column sums to 100 per page.
   const byPage = new Map();
   computed.forEach((c, i) => {
     const p = c.m.pageIndex;
@@ -1490,12 +1471,8 @@ function exportCsv() {
   byPage.forEach(indices => {
     const group = indices.map(i => computed[i]);
     const bIdx = group.findIndex(c => c.logo && c.logo.isBalancer);
-    const pctsF = balancePercents(group.map(c => c.squareFull), bIdx);
-    const pctsV = balancePercents(group.map(c => c.squareVis),  bIdx);
-    indices.forEach((ci, gi) => {
-      computed[ci].pctFull = pctsF[gi];
-      computed[ci].pctVis  = pctsV[gi];
-    });
+    const pctsF = balancePercents(group.map(c => roundTo(c.squareFull, AREA_DECIMALS)), bIdx);
+    indices.forEach((ci, gi) => { computed[ci].pctFull = pctsF[gi]; });
   });
 
   computed.forEach(c => {
@@ -1507,16 +1484,11 @@ function exportCsv() {
       formatDim(c.wFull),
       formatDim(c.hFull),
       formatNumber(c.squareFull, AREA_DECIMALS),
-      formatNumber(c.pctFull || 0, PCT_DECIMALS),
-      formatDim(c.wVis),
-      formatDim(c.hVis),
-      formatNumber(c.squareVis, AREA_DECIMALS),
-      formatNumber(c.pctVis || 0, PCT_DECIMALS),
-      c.m.clipped ? "yes" : "no"
+      formatNumber(c.pctFull || 0, PCT_DECIMALS)
     ]);
   });
   rows.push([]);
-  rows.push(["TOTAL", "", "", "", "", "", formatNumber(totalFull, AREA_DECIMALS), "100", "", "", formatNumber(totalVis, AREA_DECIMALS), "100", ""]);
+  rows.push(["TOTAL", "", "", "", "", "", formatNumber(totalFull, AREA_DECIMALS), "100"]);
 
   const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
   navigator.clipboard.writeText(csv).then(
