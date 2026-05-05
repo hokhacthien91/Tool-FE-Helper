@@ -40,6 +40,7 @@
     <div class="section info-card">
       <div><strong>Source:</strong> <span id="sourceName">-</span></div>
       <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
+      <div class="hint">Tip: Cmd/Ctrl-click trong Layers panel để chọn nhiều artboard nguồn (vd F1, F2, F3) → mỗi artboard sẽ được clone ra đủ tập sizes.</div>
       <div id="jsonStatus" class="json-status">No JSON imported</div>
       <button id="refreshBtn" class="link-btn">Refresh Source</button>
     </div>
@@ -106,6 +107,7 @@
         <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
         <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
         <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" /> <span>Require GG- prefix for layer rules</span></label>
+        <label class="checkbox-row"><input id="matchFrameTokenEnabled" type="checkbox" checked /> <span>Match source frame token (e.g. "...-F2" source → only "F2-*" targets)</span></label>
       </div>
 
       <div class="section">
@@ -119,6 +121,21 @@
         <div class="hint">Auto-synced from Target Sizes. Import JSON to populate all rules.</div>
       </div>
 
+      <div class="section" id="exportModeSection" style="display:none;">
+        <label class="label">Export mode</label>
+        <div class="hint" id="exportModeDetected">-</div>
+        <label class="checkbox-row"><input id="exportModeOverrideEnabled" type="checkbox" /> <span>Override auto-detection</span></label>
+        <div id="exportModeOverridePanel" style="display:none; margin-top:6px;">
+          <select id="exportModeOverrideSelect" style="width:100%; padding:6px; background:#222; color:#ccc; border:1px solid #444; border-radius:4px;">
+            <option value="single">single — 1 base size, will reflow to other sizes</option>
+            <option value="multi-frame">multi-frame — N frames same size (F1/F2/...) </option>
+            <option value="layer-full">layer-full — N artboards already reflowed</option>
+          </select>
+        </div>
+      </div>
+      <div class="section">
+        <label class="checkbox-row"><input id="autoRenameDupsEnabled" type="checkbox" checked /> <span>Auto-rename duplicate layers before export (within each artboard)</span></label>
+      </div>
       <div class="section btn-row">
         <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
         <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
@@ -146,7 +163,7 @@
     </div>
 
     <footer class="app-footer">
-      <div class="footer-title">Banner Cloner <span class="footer-version">v1.1.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
+      <div class="footer-title">Banner Cloner <span class="footer-version">v1.2.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
       <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
     </footer>
   </div>

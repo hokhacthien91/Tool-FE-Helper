@@ -569,6 +569,10 @@ button.full { width: 100%; }
 .asset-size-badge {
   flex-shrink: 0;
   margin-left: 6px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: rgba(100, 150, 200, 0.15);
   border: 1px solid #3a5b77;
   color: #7cb3e8;

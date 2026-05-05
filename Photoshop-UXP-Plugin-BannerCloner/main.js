@@ -38,6 +38,7 @@ const sourceNameEl = document.getElementById("sourceName");
 const sourceSizeEl = document.getElementById("sourceSize");
 const suffixNameEl = document.getElementById("suffixName");
 const smartMatchEl = document.getElementById("smartMatchEnabled");
+const matchFrameTokenEnabled = document.getElementById("matchFrameTokenEnabled");
 const skipLayerInput = document.getElementById("skipLayerInput");
 const logBox = document.getElementById("logBox");
 const exportBtn = document.getElementById("exportBtn");
@@ -138,8 +139,12 @@ function parseSizes(input) {
     .map(s => s.trim())
     .filter(Boolean)
     .map(token => {
-      // Accept "300x600" (plain) or "v2-300x600" (variant-prefixed) tokens.
-      const m = token.match(/^(?:(v\d+)-)?(\d+)x(\d+)$/i);
+      // Accept "300x600" (plain), "v2-300x600" (variant), "F1-300x600" (frame),
+      // or any "<prefix>-300x600" — the JSON exporter uses F-tokens for
+      // multi-frame mode and may use other prefixes in the future. Capture
+      // whatever prefix is there so dedupSingleVariants / downstream code
+      // can still see it via the `variant` field.
+      const m = token.match(/^(?:([A-Za-z]\w*)-)?(\d+)x(\d+)$/);
       if (!m) return null;
       return { raw: token, variant: m[1] || null, width: Number(m[2]), height: Number(m[3]) };
     })
@@ -166,9 +171,19 @@ function renderPresets() {
 }
 
 function stripSizeSuffix(name) {
-  // Strip optional variant prefix + dim suffix, e.g. "_v2-300x600" or "_300x600".
-  const m = name.match(/([-_ ])(?:v\d+-)?\d+x\d+$/i);
-  return { base: name.replace(/[-_ ](?:v\d+-)?\d+x\d+$/i, ""), sep: m ? m[1] : "_" };
+  // Find a size token (e.g. "300x600", optionally preceded by "v2-") anywhere
+  // in the name. We support two layouts:
+  //   1) "<base><sep><size>"             → name ends with size  (legacy)
+  //   2) "<base><sep><size><tail>"       → size in middle, e.g. "...-300x600-F1"
+  // For (2) we keep `tail` so callers can rebuild "<base><sep><newSize><tail>"
+  // — otherwise frame suffixes like "-F1/-F2/-F3" get pushed to the end and
+  // collide (you'd end up with names like "...-300x50-F1_300x600").
+  const m = name.match(/([-_ ])(?:[A-Za-z]\w*-)?(\d+x\d+)([-_ ][A-Za-z0-9]+|$)/i);
+  if (!m) return { base: name, sep: "_", tail: "" };
+  const sep = m[1];
+  const tail = m[3] || "";
+  const base = name.slice(0, m.index);
+  return { base, sep, tail };
 }
 
 // ─── Photoshop helpers ───
@@ -199,23 +214,40 @@ async function getLayerDescriptor(layerId) {
 }
 
 async function resolveSelectedArtboard() {
+  const list = await resolveSelectedArtboardsMulti();
+  return list[0];
+}
+
+// Resolve ALL selected source artboards (Cmd-click multi-select).
+// Walks each activeLayer up to its top-level artboard parent, dedupes by id,
+// preserves selection order. Returns 1+ artboards or throws.
+async function resolveSelectedArtboardsMulti() {
   const doc = app.activeDocument;
-  const activeLayer = doc?.activeLayers?.[0];
-  if (!activeLayer) throw new Error("Please select a source artboard.");
-  let current = activeLayer;
-  while (current && current.parent && current.parent !== doc) {
-    current = current.parent;
+  const active = doc?.activeLayers || [];
+  if (!active.length) throw new Error("Please select a source artboard.");
+
+  const seen = new Set();
+  const out = [];
+  for (const layer of active) {
+    let current = layer;
+    while (current && current.parent && current.parent !== doc) {
+      current = current.parent;
+    }
+    if (!current || seen.has(current.id)) continue;
+    seen.add(current.id);
+    const layerDesc = await getLayerDescriptor(current.id);
+    const rect = layerDesc.artboard?.artboardRect || layerDesc.bounds;
+    if (!rect) continue;
+    out.push({
+      id: current.id,
+      name: current.name,
+      layer: current,
+      rect: rect,
+      size: rectSize(rect)
+    });
   }
-  const layerDesc = await getLayerDescriptor(current.id);
-  const rect = layerDesc.artboard?.artboardRect || layerDesc.bounds;
-  if (!rect) throw new Error("Cannot read artboard rect.");
-  return {
-    id: current.id,
-    name: current.name,
-    layer: current,
-    rect: rect,
-    size: rectSize(rect)
-  };
+  if (!out.length) throw new Error("Cannot read artboard rect for selection.");
+  return out;
 }
 
 async function selectLayerById(layerId) {
@@ -1111,6 +1143,51 @@ function findLayersByName(parent, targetName) {
   return results;
 }
 
+// Walk a slash-separated path like "Can2/Image/Can" through the PSD layer tree.
+// Sibling-dup suffix " 2", " 3" matches the Nth occurrence of `name` at that
+// level (1-based, where N=1 is implicit and unsuffixed).
+// Returns [] if not resolvable, or [layer] when found. Path-aware so layers
+// sharing a display name across different parent groups stay distinct.
+function findLayerByPath(parent, pathStr) {
+  if (!pathStr || typeof pathStr !== "string") return [];
+  const segments = pathStr.split("/").map(s => s.trim()).filter(Boolean);
+  if (!segments.length) return [];
+
+  let level = parent.layers || [];
+  let current = null;
+  for (const seg of segments) {
+    // Real PSD layer names can legitimately end in a number ("Layer 16",
+    // "20  26"), so the sibling-dup suffix " 2"/" 3"/... is ambiguous in
+    // isolation. Resolution order:
+    //   1. Try the segment as a literal layer name (1st occurrence).
+    //   2. If that fails AND the segment ends with " <N>" (N>=2), strip the
+    //      suffix and pick the Nth same-named sibling.
+    const segLc = normalizeName(seg);
+    let match = null;
+    for (const layer of level) {
+      if (layer.name && normalizeName(layer.name) === segLc) { match = layer; break; }
+    }
+    if (!match) {
+      const m = seg.match(/^(.+?)\s+(\d+)$/);
+      if (m && Number(m[2]) >= 2) {
+        const baseLc = normalizeName(m[1]);
+        const idx = Number(m[2]);
+        let count = 0;
+        for (const layer of level) {
+          if (layer.name && normalizeName(layer.name) === baseLc) {
+            count++;
+            if (count === idx) { match = layer; break; }
+          }
+        }
+      }
+    }
+    if (!match) return [];
+    current = match;
+    level = match.layers || [];
+  }
+  return current ? [current] : [];
+}
+
 // JSON rules from web have child positions RELATIVE to parent group.
 // In PSD, all positions are absolute (canvas coords). So we need to sum
 // up all ancestor groups' rules (top/left) to get the absolute target.
@@ -1118,25 +1195,53 @@ function getAncestorGroupOffset(layer, rules) {
   let offX = 0, offY = 0;
   const trail = [];
   const chain = [];
-  let parent = layer.parent;
-  while (parent) {
-    if (parent.name) {
-      chain.push(parent.name);
-      const pn = normalizeName(parent.name);
-      const parentRule = rules.find(r => r.name && normalizeName(r.name) === pn);
-      if (parentRule) {
-        const pl = parentRule.left !== "" && parentRule.left !== undefined ? parseFloat(parentRule.left) : 0;
-        const pt = parentRule.top !== "" && parentRule.top !== undefined ? parseFloat(parentRule.top) : 0;
-        offX += isNaN(pl) ? 0 : pl;
-        offY += isNaN(pt) ? 0 : pt;
-        trail.push(`${parent.name}(+${pl},+${pt})`);
-      } else {
-        trail.push(`${parent.name}(no-rule)`);
+
+  // Build PSD parent chain root→leaf so we can compute each ancestor's full
+  // path key ("Can2/Image") for path-aware rule lookup. Sibling-dup suffix
+  // ("Image 2") is computed by counting earlier siblings sharing the same name.
+  const ancestors = [];
+  let p = layer.parent;
+  while (p) { ancestors.unshift(p); p = p.parent; }
+
+  let pathSoFar = "";
+  for (let i = 0; i < ancestors.length; i++) {
+    const parent = ancestors[i];
+    if (!parent.name) { chain.push("<root>"); continue; }
+    chain.push(parent.name);
+
+    // Find this ancestor's sibling index among same-named siblings under its
+    // own parent. Index is 1-based; first match has no suffix.
+    let segment = parent.name;
+    const grandparent = parent.parent;
+    if (grandparent && grandparent.layers) {
+      let count = 0;
+      for (const sib of grandparent.layers) {
+        if (sib.name === parent.name) {
+          count++;
+          if (sib.id === parent.id) {
+            if (count > 1) segment = `${parent.name} ${count}`;
+            break;
+          }
+        }
       }
-    } else {
-      chain.push("<root>");
     }
-    parent = parent.parent;
+    pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
+
+    // Path-mode: match rule by full path. Fall back to bare-name match so
+    // legacy JSON (without "/" in keys) still works.
+    const pathLc = normalizeName(pathSoFar);
+    const nameLc = normalizeName(parent.name);
+    const parentRule = rules.find(r => r.name && normalizeName(r.name) === pathLc)
+      || rules.find(r => r.name && !r.name.includes("/") && normalizeName(r.name) === nameLc);
+    if (parentRule) {
+      const pl = parentRule.left !== "" && parentRule.left !== undefined ? parseFloat(parentRule.left) : 0;
+      const pt = parentRule.top !== "" && parentRule.top !== undefined ? parseFloat(parentRule.top) : 0;
+      offX += isNaN(pl) ? 0 : pl;
+      offY += isNaN(pt) ? 0 : pt;
+      trail.push(`${parent.name}(+${pl},+${pt})`);
+    } else {
+      trail.push(`${parent.name}(no-rule)`);
+    }
   }
   return { offX, offY, trail, chain };
 }
@@ -1165,15 +1270,31 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       continue;
     }
 
-    const allLayers = findLayersByName(docOrArtboard, rule.name);
+    // Path-mode when key contains "/" (e.g. "Can2/Image/Can") OR ends with a
+    // sibling-dup suffix " 2"/" 3"/... (e.g. "Shape 1 2"). Both cases walk
+    // findLayerByPath which knows how to disambiguate dup-named siblings.
+    // Bare names fall back to legacy name-only search for backwards compat.
+    const ruleName = typeof rule.name === "string" ? rule.name : "";
+    const hasPathSep = ruleName.includes("/");
+    const hasSibSuffix = /\s+\d+$/.test(ruleName) && Number(ruleName.match(/\s+(\d+)$/)[1]) >= 2;
+    const isPathKey = hasPathSep || hasSibSuffix;
+    let allLayers = isPathKey
+      ? findLayerByPath(docOrArtboard, ruleName)
+      : findLayersByName(docOrArtboard, ruleName);
+    // If path-mode whiffs (rare: name clash where literal+suffix both fail),
+    // fall back to legacy search so legitimate matches aren't silently dropped.
+    if (isPathKey && !allLayers.length) {
+      allLayers = findLayersByName(docOrArtboard, ruleName);
+    }
     if (!allLayers.length) {
-      log(`[RULE] "${rule.name}": not found, skip`);
+      log(`[RULE] "${ruleName}": not found, skip`);
       continue;
     }
-    // Only apply to first matching layer (avoid duplicates)
+    // Only apply to first matching layer (avoid duplicates). For path-mode
+    // there's at most one match by construction, so this is a no-op there.
     const layers = [allLayers[0]];
-    if (allLayers.length > 1) {
-      log(`[RULE] "${rule.name}": found ${allLayers.length} layers, applying only to first (id:${allLayers[0].id})`);
+    if (!isPathKey && allLayers.length > 1) {
+      log(`[RULE] "${ruleName}": found ${allLayers.length} layers, applying only to first (id:${allLayers[0].id})`);
     }
 
     for (const layer of layers) {
@@ -1511,21 +1632,14 @@ async function cloneAsArtboards() {
   const tTotal = perfNow();
   try {
     await core.executeAsModal(async () => {
-      const source = await resolveSelectedArtboard();
-      const { base: baseName, sep: baseSep } = stripSizeSuffix(source.name);
-      const srcRect = source.size;
+      const sources = await resolveSelectedArtboardsMulti();
       const sourceDoc = app.activeDocument;
-      const srcBounds = await getLayerBounds(source.id);
-      log(`Source artboard: ${source.name} (${srcRect.width}x${srcRect.height})`);
-      log(`[POS] source artboardRect=(${srcRect.left},${srcRect.top},${srcRect.right},${srcRect.bottom})`);
-      log(`[POS] source bounds=(${srcBounds.left},${srcBounds.top},${srcBounds.right},${srcBounds.bottom})`);
+      log(`Sources selected: ${sources.length} (${sources.map(s => s.name).join(", ")})`);
 
-      // Capture content layout from source artboard
-      const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
-      if (sourceLayout) log(`[LAYOUT] Captured ${sourceLayout.length} content groups from source`);
-
-      // Find the rightmost edge of all existing artboards
-      let maxRight = srcRect.right;
+      // Find the rightmost edge of all existing artboards once — every source
+      // row starts its targets at this X so the new grid sits to the right of
+      // the existing artboards instead of overlapping them.
+      let maxRight = -Infinity;
       for (const layer of sourceDoc.layers) {
         try {
           const desc = await getLayerDescriptor(layer.id);
@@ -1535,7 +1649,162 @@ async function cloneAsArtboards() {
           }
         } catch (e) { /* skip */ }
       }
-      let nextX = maxRight + 80;
+      if (!isFinite(maxRight)) maxRight = sources[0].size.right;
+      const rowStartX = maxRight + 80;
+
+      // Each source becomes its own row in the grid. Rows are spaced by the
+      // tallest target height (+ gap) — using the source's own Y would make
+      // tall targets (e.g. 300x600) overlap when sources are stacked closely
+      // (e.g. three 300x50 sources sit only ~50px apart).
+      const ROW_GAP = 80;
+      const maxTargetH = targets.reduce((m, t) => Math.max(m, t.height), 0);
+      const rowHeight = maxTargetH + ROW_GAP;
+      // Anchor the first row to the topmost source so the grid starts at a
+      // predictable Y. Using min of source tops keeps it visually close.
+      const gridStartY = sources.reduce((m, s) => Math.min(m, s.size.top), Infinity);
+
+      log(`[GRID] sources=${sources.length} targets=${targets.length}`);
+      log(`[GRID] maxRight=${maxRight} → rowStartX=${rowStartX}`);
+      log(`[GRID] maxTargetH=${maxTargetH} rowHeight=${rowHeight} gridStartY=${gridStartY}`);
+      sources.forEach((s, i) => {
+        log(`[GRID]   src[${i}] "${s.name}" rect=(L${s.size.left},T${s.size.top},R${s.size.right},B${s.size.bottom}) ${s.size.width}x${s.size.height}`);
+      });
+
+      // Frame-token matching: when a source name carries a frame prefix
+      // (e.g. "...-F2"), filter the target list to entries with the SAME
+      // prefix (e.g. "F2-300x600"). This avoids the cross-product blowup
+      // when the user has 3 source frames and N targets per frame — they
+      // really want F1→F1, F2→F2, F3→F3, not 3×N.
+      // Sources without a frame token clone all targets (legacy behavior).
+      const frameMatchEnabled = matchFrameTokenEnabled?.checked !== false;
+      function extractFrameToken(name) {
+        // Match a -F<digits> token anywhere in the name. Anchor on a leading
+        // separator and trailing word-boundary so "Animated-600x100-F2"
+        // returns "F2" but "Footer" returns null.
+        const m = String(name || "").match(/[-_ ](F\d+)(?:[-_ ]|$)/);
+        return m ? m[1] : null;
+      }
+
+      // Pre-compute filtered target set per source so progress totals are
+      // accurate (don't count targets we'll skip).
+      const targetsPerSource = sources.map(s => {
+        if (!frameMatchEnabled) return targets;
+        const tok = extractFrameToken(s.name);
+        if (!tok) return targets;
+        const filtered = targets.filter(t => t.variant === tok);
+        // If filter eliminates everything, fall back to all targets so the
+        // user isn't silently left with no clones for this source.
+        return filtered.length ? filtered : targets;
+      });
+      const totalProgressMax = targetsPerSource.reduce((sum, t) => sum + t.length, 0);
+      let totalProgressDone = 0;
+
+      // Snapshot every source's original artboardRect — Photoshop will push
+      // sources around as we duplicate artboards in/out, and the helper
+      // restores each source to its original spot after running. Once all
+      // sources are processed we re-restore (a 2nd pass) to undo any drift
+      // caused by *later* sources.
+      const originalRects = sources.map(s => ({ left: s.size.left, top: s.size.top }));
+
+      for (let si = 0; si < sources.length; si++) {
+        const source = sources[si];
+        const srcTargets = targetsPerSource[si];
+        const rowY = gridStartY + si * rowHeight;
+        if (srcTargets.length !== targets.length) {
+          const tok = extractFrameToken(source.name);
+          log(`=== Source ${si + 1}/${sources.length}: ${source.name} → rowY=${rowY} (frame=${tok}, ${srcTargets.length}/${targets.length} targets) ===`);
+        } else {
+          log(`=== Source ${si + 1}/${sources.length}: ${source.name} → rowY=${rowY} ===`);
+        }
+        if (!srcTargets.length) {
+          log(`  Skip: no matching targets for this source`);
+          continue;
+        }
+        await cloneOneSourceAsArtboards({
+          source,
+          originalRect: originalRects[si],
+          targets: srcTargets,
+          sourceDoc,
+          rowStartX,
+          rowY,
+          progressBase: totalProgressDone,
+          progressMax: totalProgressMax,
+        });
+        totalProgressDone += srcTargets.length;
+      }
+
+      // Final pass: restore every source to its original location. After
+      // source N runs, sources N+1..end may have drifted again because they
+      // weren't touched by the per-source restore inside the helper.
+      log(`[POS] Final pass: restoring all sources to original positions`);
+      for (let si = 0; si < sources.length; si++) {
+        const s = sources[si];
+        const orig = originalRects[si];
+        try {
+          const desc = await getLayerDescriptor(s.id);
+          const cur = rectSize(desc.artboard?.artboardRect || desc.bounds);
+          const dx = orig.left - cur.left;
+          const dy = orig.top - cur.top;
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            log(`[POS] "${s.name}" drift=(${Math.round(dx)},${Math.round(dy)}) → restoring`);
+            await selectLayerById(s.id);
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: s.id }],
+              to: {
+                _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
+                vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          }
+        } catch (e) { log(`[POS] restore "${s.name}" skipped: ${e.message}`); }
+      }
+
+      log("=== Clone complete ===");
+      log(`${sources.length * targets.length} artboard(s) created in same document.`);
+    }, { commandName: "Banner Cloner - Clone Artboards" });
+    log(`[PERF] cloneAsArtboards total: ${Math.round(perfNow() - tTotal)}ms for ${parseSizes(sizesInput.value).length} target(s)`);
+  } catch (e) {
+    log("Clone error: " + e.message);
+  } finally {
+    hideProgress();
+    cloneBtn.disabled = false;
+    cloneBtn.textContent = "Clone Artboards";
+    updateActionButtonsVisibility().catch(() => {});
+  }
+}
+
+// Process a single source artboard: build template doc, loop targets, place
+// new artboards in a row at (rowStartX, rowY). rowY is computed by the caller
+// to space rows by the tallest target so they don't overlap.
+async function cloneOneSourceAsArtboards({ source, originalRect, targets, sourceDoc, rowStartX, rowY, progressBase, progressMax }) {
+      const { base: baseName, sep: baseSep, tail: baseTail } = stripSizeSuffix(source.name);
+      // Make sure we read source bounds from the source doc — by the 2nd+
+      // source iteration the active doc may have drifted to a clone.
+      await bp([{
+        _obj: "select",
+        _target: [{ _ref: "document", _id: sourceDoc.id }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      // Re-read the source's CURRENT rect — by the 2nd+ iteration the source
+      // may have been pushed down by Photoshop after duplicating artboards
+      // back from the temp doc. Using cached `source.size` here would point
+      // the drift-restore step at the wrong Y, so the source ends up shifted
+      // each time and subsequent sources read stale positions.
+      const srcDescNow = await getLayerDescriptor(source.id);
+      const srcRect = rectSize(srcDescNow.artboard?.artboardRect || srcDescNow.bounds);
+      const srcBounds = rectSize(srcDescNow.bounds);
+      log(`Source artboard: ${source.name} (${srcRect.width}x${srcRect.height}) rowY-passed=${rowY}`);
+      log(`[POS] source artboardRect=(${srcRect.left},${srcRect.top},${srcRect.right},${srcRect.bottom})`);
+      log(`[POS] source bounds=(${srcBounds.left},${srcBounds.top},${srcBounds.right},${srcBounds.bottom})`);
+
+      // Capture content layout from source artboard
+      const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
+      if (sourceLayout) log(`[LAYOUT] Captured ${sourceLayout.length} content groups from source`);
+
+      let nextX = rowStartX;
 
       // Create a clean template doc from original source (before any clones are added)
       await bp([{
@@ -1552,19 +1821,31 @@ async function cloneAsArtboards() {
       const templateDoc = app.activeDocument;
       const templateDocId = templateDoc.id;
 
-      // Flatten template: keep only selected artboard, delete others with children
+      // Flatten template: keep ONLY the selected artboard. Delete:
+      //   - all other artboards (and their subtrees)
+      //   - all root-level layers that aren't artboards (stray layers like
+      //     "Rectangle 4", "Screenshot ...", or any group sitting outside an
+      //     artboard). Without this, those strays survive the canvas crop
+      //     and end up wrapped into the new artboard later — which makes
+      //     `make artboardSection` produce a degenerate / non-artboard top
+      //     layer because the merged selection rect is wrong.
       const tFlatten = perfNow();
       const abToDelete = [];
       let abToFlatten = null;
       for (const layer of [...templateDoc.layers]) {
         try {
           const desc = await getLayerDescriptor(layer.id);
-          if (desc.artboardEnabled || desc.artboard) {
+          const isArtb = !!(desc.artboardEnabled || desc.artboard);
+          if (isArtb) {
             if (layer.name === source.name) {
               abToFlatten = layer;
             } else {
               abToDelete.push(layer);
             }
+          } else {
+            // Root-level non-artboard layer — delete it (it's noise that the
+            // user has hidden in the source PSD but still lives in the file).
+            abToDelete.push(layer);
           }
         } catch (e) { /* skip */ }
       }
@@ -1629,10 +1910,10 @@ async function cloneAsArtboards() {
 
       for (let ti = 0; ti < targets.length; ti++) {
         const target = targets[ti];
-        setProgress(ti + 1, targets.length, target.raw);
+        setProgress(progressBase + ti + 1, progressMax, `${source.name} → ${target.raw}`);
         log(`--- Clone ${target.raw} ---`);
         const tTarget = perfNow();
-        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}` : target.raw;
+        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}${baseTail}` : target.raw;
 
         // 1. Switch to template doc and duplicate it → temp doc
         await bp([{
@@ -1730,9 +2011,112 @@ async function cloneAsArtboards() {
           },
           _options: { dialogOptions: "dontDisplay" }
         }]);
-        const abLayer = tempDoc.layers[0];
+        let abLayer = tempDoc.layers[0];
         if (abLayer) abLayer.name = newName;
-        log(`Artboard created in temp doc: ${newName}`);
+        // Verify the wrap actually produced an artboard, not a plain group/
+        // layer. If `make artboardSection` silently failed (it can when the
+        // selection is empty or the target rect is degenerate), abLayer ends
+        // up being some other top-level layer.
+        let wrapOk = false;
+        try {
+          const verifyDesc = await getLayerDescriptor(abLayer.id);
+          wrapOk = !!(verifyDesc.artboardEnabled || verifyDesc.artboard);
+          const r = verifyDesc.artboard?.artboardRect || verifyDesc.bounds;
+          // Rect values may be descriptor objects {_unit, _value} — extract _value
+          // for human-readable log; fall back to "?" if absent.
+          const fmt = v => v && typeof v === "object" && "_value" in v ? v._value : v;
+          log(`Artboard created in temp doc: ${newName} (kind=${abLayer.kind}, isArtboard=${wrapOk}, rect=(L${fmt(r?.left)},T${fmt(r?.top)},R${fmt(r?.right)},B${fmt(r?.bottom)}))`);
+        } catch (e) {
+          log(`Artboard verify error: ${e.message}`);
+        }
+
+        // Fallback: manual wrap. `make artboardSection` can fail silently
+        // when the selection has too few layers or the rect is degenerate.
+        // Strategy: create a NEW empty artboard with the correct rect, then
+        // move all existing content layers INTO it. This bypasses every
+        // Photoshop selection/grouping quirk because the new artboard is
+        // built fresh and content is moved in via deterministic UXP DOM
+        // calls — no batchPlay selection state to misread.
+        if (!wrapOk) {
+          log(`[WRAP-FAIL] Falling back: reuse existing artboard, just rename + resize`);
+          try {
+            // PS auto-creates "Artboard 1" during canvasSize when the source
+            // has no artboards at root. That artboard ALREADY contains all
+            // the content layers — we don't need to make a new one. Just
+            // find it, rename, and override its rect to match the target.
+            //
+            // The original `abLayer` (tempDoc.layers[0]) is the renamed
+            // ghost from our failed `make`. The REAL artboard is somewhere
+            // deeper in tempDoc.layers. Scan all root layers for any with
+            // artboardEnabled.
+            let realArtb = null;
+            for (const l of tempDoc.layers) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                if (d.artboardEnabled || d.artboard) { realArtb = l; break; }
+              } catch (e) { /* skip */ }
+            }
+            if (!realArtb) throw new Error("no existing artboard in tempDoc to reuse");
+
+            // Move any root-level non-artboard layers (the ghost from the
+            // failed make + stragglers) INTO the real artboard so they
+            // don't pollute the wrap.
+            const { constants } = require("photoshop");
+            const stragglers = tempDoc.layers.filter(l => l.id !== realArtb.id);
+            for (const s of stragglers) {
+              try {
+                s.move(realArtb, constants.ElementPlacement.PLACEINSIDE);
+              } catch (e) {
+                // If move fails (e.g. ghost smart object refusing reparent),
+                // try delete-via-DOM as last resort.
+                try { s.delete(); }
+                catch (e2) { log(`[WRAP-FAIL]   couldn't move/delete "${s.name}": ${e.message}`); }
+              }
+            }
+
+            // Override artboardRect to the desired target size.
+            await selectLayerById(realArtb.id);
+            await bp([{
+              _obj: "set",
+              _target: [{ _ref: "layer", _id: realArtb.id }],
+              to: {
+                _obj: "layer",
+                artboard: {
+                  _obj: "artboard",
+                  artboardRect: {
+                    _obj: "classFloatRect",
+                    top: 0, left: 0,
+                    bottom: target.height, right: target.width
+                  }
+                }
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+
+            try { realArtb.name = newName; } catch (e) { /* ignore */ }
+            const desc2 = await getLayerDescriptor(realArtb.id);
+            const ok2 = !!(desc2.artboardEnabled || desc2.artboard);
+            log(`[WRAP-FAIL] Reused artboard: isArtboard=${ok2}, name=${realArtb.name}, children=${realArtb.layers?.length || 0}`);
+            abLayer = realArtb;
+          } catch (e) {
+            log(`[WRAP-FAIL] Fallback failed: ${e.message}`);
+          }
+        }
+
+        // Snapshot the FULL descendant id set in sourceDoc before duplicate.
+        // Tree-wide (not just root) so the post-duplicate id-diff doesn't
+        // false-match a layer deep inside an existing group whose id happens
+        // to differ. We also restrict the post-search to artboards only —
+        // duplicating an artboard from another doc creates exactly one new
+        // artboard, plus a bunch of child layers we don't care about.
+        const beforeIds = new Set();
+        function collectAllIds(layers, into) {
+          for (const l of layers || []) {
+            into.add(l.id);
+            if (l.layers && l.layers.length) collectAllIds(l.layers, into);
+          }
+        }
+        collectAllIds(sourceDoc.layers, beforeIds);
 
         // 8. Duplicate artboard back to source doc
         await selectLayerById(abLayer.id);
@@ -1758,22 +2142,95 @@ async function cloneAsArtboards() {
           _options: { dialogOptions: "dontDisplay" }
         }]);
 
-        // Select the topmost layer (the newly duplicated artboard)
-        await bp([{
-          _obj: "select",
-          _target: [{ _ref: "layer", _enum: "ordinal", _value: "front" }],
-          makeVisible: false,
-          _options: { dialogOptions: "dontDisplay" }
-        }]);
-        const newAb = app.activeDocument.activeLayers[0];
+        // Find the newly-inserted ARTBOARD anywhere in the tree (not just
+        // root). When the source doc had a layer selected inside a group
+        // before paste, Photoshop nests the artboard INSIDE that group/
+        // artboard — so it doesn't appear at root. Walk the full tree to
+        // locate it. Match strategy:
+        //   1. Find layer by exact name (newName) — most reliable: the
+        //      artboard we just renamed has a unique name in the doc.
+        //   2. Fallback: id-diff against the full pre-duplicate snapshot,
+        //      but ONLY accept artboard-kind hits (skip rename-induced id
+        //      churn on non-artboard layers).
+        function findInTree(layers, predicate) {
+          for (const l of layers || []) {
+            if (predicate(l)) return l;
+            if (l.layers && l.layers.length) {
+              const hit = findInTree(l.layers, predicate);
+              if (hit) return hit;
+            }
+          }
+          return null;
+        }
+        async function isArtboardLayer(l) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            return !!(d && (d.artboardEnabled || d.artboard));
+          } catch (e) { return false; }
+        }
+        let newAb = findInTree(sourceDoc.layers, l => l.name === newName);
+        if (!newAb) {
+          // Tree-wide id-diff fallback. Collect candidates first, then
+          // confirm artboard-kind on each (avoid matching a freshly-renamed
+          // child layer whose id changed).
+          const candidates = [];
+          (function walk(layers) {
+            for (const l of layers || []) {
+              if (!beforeIds.has(l.id)) candidates.push(l);
+              if (l.layers && l.layers.length) walk(l.layers);
+            }
+          })(sourceDoc.layers);
+          for (const c of candidates) {
+            if (await isArtboardLayer(c)) { newAb = c; break; }
+          }
+        }
+
+        // If artboard ended up nested (parent !== document), unnest it.
+        //
+        // `_obj: "move"` with `_value: "back"` only reorders within the
+        // current parent — it doesn't escape the parent. Use UXP DOM
+        // `layer.move(targetLayer, ElementPlacement.PLACEAFTER)` instead,
+        // pointing at a root-level layer as the placement reference. This
+        // lifts the layer out of its current parent and drops it next to
+        // the reference at root level.
+        if (newAb && newAb.parent && newAb.parent !== sourceDoc) {
+          log(`[POS] "${newAb.name}" nested under "${newAb.parent.name}" → unnesting to root`);
+          try {
+            // Find any sibling at root that we can place AFTER (so the new
+            // artboard ends up at root). Prefer a non-artboard so the new
+            // artboard doesn't accidentally become child of a sibling artboard.
+            let placementRef = null;
+            for (const l of sourceDoc.layers) {
+              if (l.id !== newAb.id) { placementRef = l; break; }
+            }
+            if (!placementRef) throw new Error("no root sibling to place after");
+            const { constants } = require("photoshop");
+            // PLACEBEFORE puts the layer ABOVE the reference in the stack
+            // (visually higher). PLACEAFTER would put it below. Either is
+            // fine for unnesting — the move() call moves the layer to the
+            // reference's parent, which is the root document.
+            newAb.move(placementRef, constants.ElementPlacement.PLACEBEFORE);
+            // Re-resolve to refresh JS handle's parent reference.
+            newAb = findInTree(sourceDoc.layers, l => l.id === newAb.id) || newAb;
+            const parentName = newAb.parent === sourceDoc ? "<root>" : (newAb.parent?.name || "<unknown>");
+            log(`[POS] "${newAb.name}" after unnest: parent=${parentName}`);
+          } catch (e) {
+            log(`[POS] unnest failed: ${e.message}`);
+          }
+        }
+        if (newAb) {
+          await selectLayerById(newAb.id);
+        }
         if (newAb) {
           const abDesc = await getLayerDescriptor(newAb.id);
           const abRect = rectSize(abDesc.artboard?.artboardRect || abDesc.bounds);
           const abBounds = rectSize(abDesc.bounds);
-          log(`[POS] "${newAb.name}" artboardRect=(${abRect.left},${abRect.top}) bounds=(${abBounds.left},${abBounds.top})`);
+          log(`[POS] "${newAb.name}" beforeMove artboardRect=(L${abRect.left},T${abRect.top},R${abRect.right},B${abRect.bottom}) bounds=(L${abBounds.left},T${abBounds.top},R${abBounds.right},B${abBounds.bottom})`);
+          const targetY = rowY != null ? rowY : srcBounds.top;
           const moveX = nextX - abBounds.left;
-          const moveY = srcBounds.top - abBounds.top;
-          log(`[POS] "${newAb.name}" target=(${nextX},${srcBounds.top}) move=(${Math.round(moveX)},${Math.round(moveY)})`);
+          const moveY = targetY - abBounds.top;
+          log(`[POS] "${newAb.name}" rowY=${rowY} (passed in) → targetY=${targetY}, nextX=${nextX}`);
+          log(`[POS] "${newAb.name}" target=(${nextX},${targetY}) move=(${Math.round(moveX)},${Math.round(moveY)})`);
           if (Math.abs(moveX) > 0.5 || Math.abs(moveY) > 0.5) {
             await bp([{
               _obj: "move",
@@ -1786,9 +2243,17 @@ async function cloneAsArtboards() {
               _options: { dialogOptions: "dontDisplay" }
             }]);
           }
-          // Verify after move
-          const afterBounds = await getLayerBounds(newAb.id);
-          log(`[POS] "${newAb.name}" afterBounds=(${afterBounds.left},${afterBounds.top}) expected=(${nextX},${srcBounds.top})`);
+          // Verify after move — use artboardRect (not bounds) since bounds
+          // may be reduced if content doesn't fill the artboard.
+          const afterDesc = await getLayerDescriptor(newAb.id);
+          const afterRect = rectSize(afterDesc.artboard?.artboardRect || afterDesc.bounds);
+          const afterBounds = rectSize(afterDesc.bounds);
+          log(`[POS] "${newAb.name}" afterMove artboardRect=(L${afterRect.left},T${afterRect.top},R${afterRect.right},B${afterRect.bottom}) bounds=(L${afterBounds.left},T${afterBounds.top}) expected=(${nextX},${targetY})`);
+          const dxAct = afterRect.left - nextX;
+          const dyAct = afterRect.top - targetY;
+          if (Math.abs(dxAct) > 1 || Math.abs(dyAct) > 1) {
+            log(`[POS] !! "${newAb.name}" DRIFT after move: dx=${Math.round(dxAct)} dy=${Math.round(dyAct)}`);
+          }
         }
 
         nextX += target.width + 80;
@@ -1816,13 +2281,15 @@ async function cloneAsArtboards() {
         _options: { dialogOptions: "dontDisplay" }
       }]);
 
-      // Restore source artboard if it drifted during cloning
+      // Restore source artboard to its ORIGINAL position (not the position
+      // we re-read at the top of this helper — that may already be drifted).
+      const restoreTarget = originalRect || { left: srcRect.left, top: srcRect.top };
       const finalSrcDesc = await getLayerDescriptor(source.id);
       const finalSrcRect = rectSize(finalSrcDesc.artboard?.artboardRect || finalSrcDesc.bounds);
-      const driftX = srcRect.left - finalSrcRect.left;
-      const driftY = srcRect.top - finalSrcRect.top;
+      const driftX = restoreTarget.left - finalSrcRect.left;
+      const driftY = restoreTarget.top - finalSrcRect.top;
       if (Math.abs(driftX) > 0.5 || Math.abs(driftY) > 0.5) {
-        log(`[POS] Source drifted to (${finalSrcRect.left},${finalSrcRect.top}). Restoring to (${srcRect.left},${srcRect.top})...`);
+        log(`[POS] Source drifted to (${finalSrcRect.left},${finalSrcRect.top}). Restoring to (${restoreTarget.left},${restoreTarget.top})...`);
         await selectLayerById(source.id);
         await bp([{
           _obj: "move",
@@ -1836,18 +2303,6 @@ async function cloneAsArtboards() {
         }]);
         log(`[POS] Source restored.`);
       }
-      log("=== Clone complete ===");
-      log(`${targets.length} artboard(s) created in same document.`);
-    }, { commandName: "Banner Cloner - Clone Artboards" });
-    log(`[PERF] cloneAsArtboards total: ${Math.round(perfNow() - tTotal)}ms for ${targets.length} target(s)`);
-  } catch (e) {
-    log("Clone error: " + e.message);
-  } finally {
-    hideProgress();
-    cloneBtn.disabled = false;
-    cloneBtn.textContent = "Clone Artboards";
-    updateActionButtonsVisibility().catch(() => {});
-  }
 }
 
 // ─── Clone: each size → new document ───
@@ -1866,13 +2321,50 @@ async function cloneAll() {
       const sourceDoc = app.activeDocument;
       if (!sourceDoc) throw new Error("No document is currently open.");
 
-      // Resolve selected artboard to use its name and size
-      let selectedAb = null;
-      try { selectedAb = await resolveSelectedArtboard(); } catch (e) { /* no artboard selected */ }
+      // Resolve selected artboards (1+). If none selected we still allow a
+      // fallback: treat the whole document as a single anonymous source.
+      let sources = [];
+      try {
+        sources = await resolveSelectedArtboardsMulti();
+      } catch (e) {
+        sources = [null]; // sentinel for "no artboard, use whole doc"
+      }
+      log(`Sources selected: ${sources.length}${sources[0] ? ` (${sources.map(s => s.name).join(", ")})` : " (whole document)"}`);
 
+      let totalDone = 0;
+      const totalMax = sources.length * targets.length;
+      for (let si = 0; si < sources.length; si++) {
+        const selectedAb = sources[si];
+        if (selectedAb) log(`=== Source ${si + 1}/${sources.length}: ${selectedAb.name} ===`);
+        await cloneOneSourceAsDocs({
+          selectedAb,
+          targets,
+          sourceDoc,
+          progressBase: totalDone,
+          progressMax: totalMax,
+        });
+        totalDone += targets.length;
+      }
+
+      log("=== Clone complete ===");
+      log(`${totalMax} document(s) created. Adjust content, then Export.`);
+    }, { commandName: "Banner Cloner - Clone" });
+  } catch (e) {
+    log("Clone error: " + e.message);
+  } finally {
+    hideProgress();
+    cloneBtn.disabled = false;
+    cloneBtn.textContent = "Clone Artboards";
+    updateActionButtonsVisibility().catch(() => {});
+  }
+}
+
+// Build template doc from one source artboard, then duplicate-and-resize per
+// target size. Each target becomes its own new document.
+async function cloneOneSourceAsDocs({ selectedAb, targets, sourceDoc, progressBase, progressMax }) {
       const srcW = selectedAb ? selectedAb.size.width : sourceDoc.width;
       const srcH = selectedAb ? selectedAb.size.height : sourceDoc.height;
-      const { base: baseName, sep: baseSep } = selectedAb
+      const { base: baseName, sep: baseSep, tail: baseTail } = selectedAb
         ? stripSizeSuffix(selectedAb.name)
         : stripSizeSuffix(sourceDoc.title.replace(/\.(psd|jpg|jpeg|png|tif|tiff|gif|bmp)$/i, ""));
       log(`Source: ${selectedAb ? selectedAb.name : sourceDoc.title} (${srcW}x${srcH})`);
@@ -1882,6 +2374,14 @@ async function cloneAll() {
         ? await captureContentLayout(selectedAb.layer, srcW, srcH)
         : null;
       if (sourceLayout) log(`[LAYOUT] Captured ${sourceLayout.length} content groups from source`);
+
+      // Switch to source doc before duplicating (active doc may have drifted
+      // to a previously-created clone if this is the 2nd+ source iteration)
+      await bp([{
+        _obj: "select",
+        _target: [{ _ref: "document", _id: sourceDoc.id }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
 
       // Create a clean template doc with only the selected artboard's content
       await bp([{
@@ -1968,9 +2468,9 @@ async function cloneAll() {
 
       for (let ti = 0; ti < targets.length; ti++) {
         const target = targets[ti];
-        setProgress(ti + 1, targets.length, target.raw);
+        setProgress(progressBase + ti + 1, progressMax, `${baseName} → ${target.raw}`);
         log(`--- Clone ${target.raw} ---`);
-        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}` : target.raw;
+        const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}${baseTail}` : target.raw;
 
         // 1. Switch to template doc and duplicate it
         await bp([{
@@ -2094,18 +2594,6 @@ async function cloneAll() {
           _options: { dialogOptions: "dontDisplay" }
         }]);
       } catch (e) { /* template may already be closed */ }
-
-      log("=== Clone complete ===");
-      log(`${targets.length} document(s) created. Adjust content, then Export.`);
-    }, { commandName: "Banner Cloner - Clone" });
-  } catch (e) {
-    log("Clone error: " + e.message);
-  } finally {
-    hideProgress();
-    cloneBtn.disabled = false;
-    cloneBtn.textContent = "Clone Artboards";
-    updateActionButtonsVisibility().catch(() => {});
-  }
 }
 
 // ─── Export all documents as JPG + PSD into structured folder ───
@@ -2320,10 +2808,19 @@ async function splitToDocuments() {
 
 async function refreshSource() {
   try {
-    const source = await resolveSelectedArtboard();
-    sourceNameEl.textContent = source.name;
-    sourceSizeEl.textContent = `${source.size.width}x${source.size.height}`;
-    log(`Source: ${source.name} (${source.size.width}x${source.size.height})`);
+    const sources = await resolveSelectedArtboardsMulti();
+    if (sources.length === 1) {
+      const s = sources[0];
+      sourceNameEl.textContent = s.name;
+      sourceSizeEl.textContent = `${s.size.width}x${s.size.height}`;
+      log(`Source: ${s.name} (${s.size.width}x${s.size.height})`);
+    } else {
+      sourceNameEl.textContent = `${sources.length} artboards`;
+      // Show distinct sizes (usually all the same when cloning frames)
+      const sizes = [...new Set(sources.map(s => `${s.size.width}x${s.size.height}`))];
+      sourceSizeEl.textContent = sizes.join(", ");
+      log(`Sources (${sources.length}): ${sources.map(s => s.name).join(", ")}`);
+    }
   } catch (e) {
     sourceNameEl.textContent = "-";
     sourceSizeEl.textContent = "-";
@@ -2689,8 +3186,12 @@ function angleToCssDirection(angle) {
   return map[nearest] || "to bottom";
 }
 
-function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY = 0) {
+function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY = 0, parentPath = "", siblingCounts = null) {
   if (!Array.isArray(layers)) return;
+  // Track sibling-name occurrences AT THIS LEVEL so dups get " 2", " 3", ... suffix.
+  // Each recursive call gets its own siblingCounts (children of different parents
+  // with same display name don't share a counter — that's handled by parentPath).
+  const sibCounts = siblingCounts || new Map();
   for (const layer of layers) {
     const name = layer && layer.name;
     const b = layer.bounds || {};
@@ -2700,6 +3201,16 @@ function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY =
     const relTop = (typeof b.top === "number") ? b.top - parentOffsetY : undefined;
     const relLeft = (typeof b.left === "number") ? b.left - parentOffsetX : undefined;
 
+    // Compute path-aware key: "Can2/Image/Can". Sibling dups (same parent + same
+    // display name) get " 2", " 3", ... suffix in encounter order.
+    let pathKey = null;
+    if (name) {
+      const seen = sibCounts.get(name) || 0;
+      sibCounts.set(name, seen + 1);
+      const segment = seen > 0 ? `${name} ${seen + 1}` : name;
+      pathKey = parentPath ? `${parentPath}/${segment}` : segment;
+    }
+
     // Recurse into children FIRST (bottom-up insertion). The plugin's applyLayerRules
     // skips any layer whose parent group already had a rule applied, so children must
     // appear in the rules dict BEFORE their parent group — otherwise the group runs
@@ -2707,10 +3218,10 @@ function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY =
     if (layer && Array.isArray(layer.children)) {
       const childOffsetX = (typeof b.left === "number") ? b.left : parentOffsetX;
       const childOffsetY = (typeof b.top === "number") ? b.top : parentOffsetY;
-      flattenLayersToElements(layer.children, out, childOffsetX, childOffsetY);
+      flattenLayersToElements(layer.children, out, childOffsetX, childOffsetY, pathKey || parentPath, new Map());
     }
 
-    if (name && !out[name]) {  // skip duplicates — first-wins to preserve outer-most layer
+    if (pathKey && !out[pathKey]) {  // path-keyed: siblings with dup names already disambiguated above
       const elem = {};
       if (relTop !== undefined) elem.top = `${relTop}px`;
       if (relLeft !== undefined) elem.left = `${relLeft}px`;
@@ -2736,7 +3247,7 @@ function flattenLayersToElements(layers, out, parentOffsetX = 0, parentOffsetY =
       if (layer.mask && typeof layer.mask.angle === "number") {
         elem.direction = angleToCssDirection(layer.mask.angle);
       }
-      out[name] = elem;
+      out[pathKey] = elem;
     }
   }
 }
@@ -2745,14 +3256,15 @@ function convertLayerFullToRules(artboards) {
   const sizes = artboards.map(ab => {
     const elements = {};
     flattenLayersToElements(ab.layers, elements);
-    // Extract size token from artboard name; supports plain (300x600) or variant (v1-300x600)
-    const m = String(ab.artboard || "").match(/((?:v\d+-)?\d+x\d+)$/i);
+    // Extract size token from artboard name; supports plain (300x600),
+    // variant (v1-300x600), frame (F1-300x600), or any "<prefix>-300x600".
+    const m = String(ab.artboard || "").match(/((?:[A-Za-z]\w*-)?\d+x\d+)$/);
     const name = m ? m[1] : `${ab.width}x${ab.height}`;
     return { name, width: ab.width, height: ab.height, elements };
   });
   // Derive moduleName by stripping the trailing size token from the first artboard
   const firstName = String(artboards[0]?.artboard || "imported");
-  const moduleName = firstName.replace(/[-_ ](?:v\d+-)?\d+x\d+$/i, "") || "imported";
+  const moduleName = firstName.replace(/[-_ ](?:[A-Za-z]\w*-)?\d+x\d+$/, "") || "imported";
   return { moduleName, sizes };
 }
 
@@ -2827,7 +3339,7 @@ function parseJsonToRules(json) {
 function dedupSingleVariants(rules, json) {
   const byDim = new Map();
   for (const key of Object.keys(rules)) {
-    const m = key.match(/^(?:v\d+-)?(\d+x\d+)$/i);
+    const m = key.match(/^(?:[A-Za-z]\w*-)?(\d+x\d+)$/);
     if (!m) continue;
     const dim = m[1];
     if (!byDim.has(dim)) byDim.set(dim, []);
@@ -2951,9 +3463,10 @@ async function applyRulesToExisting() {
       let applied = 0;
       for (let i = 0; i < artboards.length; i++) {
         const ab = artboards[i];
-        // Extract size key from artboard name. Variant-aware so names like
-        // "Banner_v2-300x600" map to rules keyed "v2-300x600" (not "300x600").
-        const sizeMatch = ab.name.match(/((?:v\d+-)?\d+x\d+)/i);
+        // Extract size key from artboard name. Prefix-aware so names like
+        // "Banner_v2-300x600" or "Banner_F1-300x600" map to rules keyed
+        // "v2-300x600" / "F1-300x600" (not bare "300x600").
+        const sizeMatch = ab.name.match(/((?:[A-Za-z]\w*-)?\d+x\d+)/);
         const sizeKey = sizeMatch ? sizeMatch[1] : `${ab.size.width}x${ab.size.height}`;
 
         const rules = layerRules[sizeKey];
@@ -2987,6 +3500,78 @@ applyRulesBtn.addEventListener("click", applyRulesToExisting);
 // ─── Export Layer JSON ───
 
 const exportLayerJsonBtn = document.getElementById("exportLayerJsonBtn");
+const exportModeSection = document.getElementById("exportModeSection");
+const exportModeDetected = document.getElementById("exportModeDetected");
+const exportModeOverrideEnabled = document.getElementById("exportModeOverrideEnabled");
+const exportModeOverridePanel = document.getElementById("exportModeOverridePanel");
+const exportModeOverrideSelect = document.getElementById("exportModeOverrideSelect");
+const autoRenameDupsEnabled = document.getElementById("autoRenameDupsEnabled");
+
+// Parse a frame/version token out of an artboard name. Looks for the part
+// AFTER a "WxH" size token. Returns { token, prefix } where prefix is the
+// alphabetic prefix shared across frames (e.g. "F" for "F1/F2/F3", "Step"
+// for "Step1/Step2"). Returns { token: null } if no frame suffix found.
+function parseFrameToken(name) {
+  // Match: <anything>(sep)(WxH)(sep)(token)
+  // sep = - _ space. token = alphanumeric+ at end.
+  const m = /[-_ ]\d+x\d+[-_ ]([A-Za-z0-9]+)$/i.exec(name || "");
+  if (!m) return { token: null, prefix: null };
+  const token = m[1];
+  // Extract alphabetic prefix (e.g. "F" from "F1", "Step" from "Step1")
+  const pm = /^([A-Za-z]+)\d*$/.exec(token);
+  return { token, prefix: pm ? pm[1] : token };
+}
+
+// Auto-detect export mode given the currently-selected artboards.
+//   single      → 1 artboard
+//   multi-frame → N artboards, all same WxH, all have a frame token in name
+//   layer-full  → N artboards with mixed sizes
+//
+// Returns { mode, reason, framePrefix } so the UI can explain its choice.
+function detectExportMode(artboards) {
+  if (!artboards || !artboards.length) return { mode: "single", reason: "no artboards selected" };
+  if (artboards.length === 1) return { mode: "single", reason: "1 artboard selected" };
+
+  const sizeKeys = new Set(artboards.map(a => `${a.size.width}x${a.size.height}`));
+  if (sizeKeys.size > 1) {
+    return { mode: "layer-full", reason: `${artboards.length} artboards across ${sizeKeys.size} different sizes` };
+  }
+
+  // All same size — check for frame tokens
+  const tokens = artboards.map(a => parseFrameToken(a.name));
+  const allHaveToken = tokens.every(t => t.token);
+  if (allHaveToken) {
+    const prefixes = new Set(tokens.map(t => t.prefix));
+    const framePrefix = prefixes.size === 1 ? [...prefixes][0] : null;
+    return {
+      mode: "multi-frame",
+      reason: `${artboards.length} artboards, same size, frame tokens: ${tokens.map(t => t.token).join(", ")}`,
+      framePrefix,
+    };
+  }
+
+  // Same size but no frame tokens — ambiguous, treat as multi-frame anyway
+  return { mode: "multi-frame", reason: `${artboards.length} artboards, same size, no frame tokens (will use index)` };
+}
+
+// Refresh the Export Mode UI hint based on current selection.
+async function refreshExportModeUI() {
+  try {
+    const artboards = await resolveSelectedArtboards();
+    const detected = detectExportMode(artboards);
+    exportModeSection.style.display = "";
+    exportModeDetected.innerHTML = `<strong>Auto-detected: ${detected.mode}</strong> — ${detected.reason}`;
+    if (!exportModeOverrideEnabled.checked) {
+      exportModeOverrideSelect.value = detected.mode;
+    }
+  } catch (e) {
+    exportModeSection.style.display = "none";
+  }
+}
+
+exportModeOverrideEnabled.addEventListener("change", () => {
+  exportModeOverridePanel.style.display = exportModeOverrideEnabled.checked ? "" : "none";
+});
 
 // Photoshop color descriptor quirk: green channel is stored under `grain` in
 // some contexts (textStyle.color, layer effects), as `green` in others.
@@ -3524,6 +4109,62 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
   return result;
 }
 
+// Rename duplicate layer names within ONE artboard (entire descendant tree).
+// Scope is per-artboard so the same name across different artboards stays
+// untouched — that's intentional, since downstream tools key by artboard ID
+// and only collide within a single tree.
+//
+// Walks the artboard's full descendant tree in document order. The 1st layer
+// keeps its original name; the 2nd same-named layer becomes "Name 2", 3rd
+// becomes "Name 3", etc. Returns count of renamed layers.
+//
+// UXP layer.name is a direct setter — Photoshop captures all renames into a
+// single Edit > Undo step when called from inside one executeAsModal scope.
+async function renameDuplicateLayersInArtboard(artboardLayer) {
+  if (!artboardLayer || !artboardLayer.layers) return 0;
+  const seen = new Map(); // base-name → count of times seen so far
+  let renamed = 0;
+  // Capture the descendant set up-front. Mutating layer.name does NOT change
+  // tree structure, so a depth-first snapshot is safe to iterate.
+  const stack = [...artboardLayer.layers];
+  const queue = [];
+  while (stack.length) {
+    const l = stack.shift();
+    if (!l) continue;
+    queue.push(l);
+    if (l.layers && l.layers.length) {
+      // Descend in document order: prepend children so they're visited next.
+      stack.unshift(...l.layers);
+    }
+  }
+  for (const layer of queue) {
+    const name = layer.name;
+    if (!name) continue;
+    const count = (seen.get(name) || 0) + 1;
+    seen.set(name, count);
+    if (count >= 2) {
+      const newName = `${name} ${count}`;
+      // Don't clobber a name that already happens to exist (rare: user has
+      // "Shape 1" + "Shape 1 2" by hand — the auto-generated suffix would
+      // collide). Bump until we find a free slot.
+      let bump = count;
+      let candidate = newName;
+      while (seen.has(candidate)) {
+        bump++;
+        candidate = `${name} ${bump}`;
+      }
+      try {
+        layer.name = candidate;
+        seen.set(candidate, 1);
+        renamed++;
+      } catch (e) {
+        log(`[RENAME] Failed to rename "${name}" → "${candidate}": ${e.message}`);
+      }
+    }
+  }
+  return renamed;
+}
+
 async function collectChildrenInfo(layers, artLeft, artTop) {
   const descs = [];
   for (const lyr of layers) {
@@ -3687,22 +4328,77 @@ async function exportLayerJson() {
     const artboards = await resolveSelectedArtboards();
     log(`[EXPORT JSON] Exporting ${artboards.length} artboard(s)`);
 
+    // Decide export mode: auto-detect, but honor the user's override checkbox.
+    const detected = detectExportMode(artboards);
+    const mode = exportModeOverrideEnabled.checked
+      ? exportModeOverrideSelect.value
+      : detected.mode;
+    log(`[EXPORT JSON] Mode: ${mode} (${exportModeOverrideEnabled.checked ? "manual override" : "auto-detected"})`);
+
+    // Auto-rename duplicate layer names within each artboard before reading,
+    // so the exported JSON has unique keys per artboard. Off-by-default would
+    // surprise users hitting dup-name bugs, so the checkbox defaults to ON.
+    //
+    // UXP requires layer.name = ... to run inside executeAsModal; otherwise
+    // Photoshop rejects it as "saveDocumentSelection may modify the state".
+    // Wrap the entire rename pass in one modal scope so all renames collapse
+    // into a single Edit > Undo step.
+    const autoRename = autoRenameDupsEnabled?.checked !== false;
+    if (autoRename) {
+      try {
+        await core.executeAsModal(async () => {
+          for (const ab of artboards) {
+            const n = await renameDuplicateLayersInArtboard(ab.layer);
+            if (n > 0) log(`[EXPORT JSON]   Renamed ${n} duplicate layer name(s) in "${ab.name}"`);
+          }
+        }, { commandName: "Banner Cloner — Rename Duplicate Layers" });
+      } catch (e) {
+        log(`[EXPORT JSON] Rename pass failed: ${e.message}`);
+      }
+    }
+
     const allArtboards = [];
     for (let i = 0; i < artboards.length; i++) {
       const ab = artboards[i];
       log(`[EXPORT JSON] Reading ${i + 1}/${artboards.length}: ${ab.name} (${ab.size.width}x${ab.size.height})`);
 
       const layers = await collectChildrenInfo(ab.layer.layers, ab.size.left, ab.size.top);
+      const frameInfo = parseFrameToken(ab.name);
 
       allArtboards.push({
         artboard: ab.name,
+        // Frame token enables downstream tools to render N versions per size.
+        // Falls back to index-based ("frame-0", "frame-1") when name has no
+        // recognizable suffix, so multi-frame mode still works.
+        frame: frameInfo.token || `frame-${i}`,
         width: ab.size.width,
         height: ab.size.height,
         layers: layers
       });
     }
 
-    const json = allArtboards.length === 1 ? allArtboards[0] : allArtboards;
+    // Output shape:
+    //   single (1 artboard) → bare object (legacy format, backward compatible)
+    //   multi-frame / layer-full → wrapper object with schema marker, so
+    //     downstream tools can distinguish the two cases without heuristics
+    let json;
+    if (mode === "single" || allArtboards.length === 1) {
+      // Strip frame field for single — it's not meaningful with one artboard.
+      const { frame, ...rest } = allArtboards[0];
+      json = rest;
+    } else {
+      // Pick the most common frame prefix for the manifest (e.g. "F" if
+      // tokens are F1/F2/F3). Helps downstream UI label the dimension.
+      const prefixes = allArtboards.map(a => parseFrameToken(a.artboard).prefix).filter(Boolean);
+      const framePrefix = prefixes.length ? prefixes[0] : null;
+      json = {
+        schema: "banner-cloner-v1",
+        mode,                     // "multi-frame" | "layer-full"
+        frameToken: framePrefix,  // shared prefix or null
+        artboards: allArtboards,
+      };
+    }
+
     const fileName = allArtboards.length === 1
       ? allArtboards[0].artboard + "_layers.json"
       : doc.name.replace(/\.[^.]+$/, "") + "_layers.json";
@@ -3712,7 +4408,7 @@ async function exportLayerJson() {
     if (!file) { log("[EXPORT JSON] Cancelled."); return; }
 
     await file.write(JSON.stringify(json, null, 2));
-    log(`[EXPORT JSON] Saved ${allArtboards.length} artboard(s) to: ${file.name}`);
+    log(`[EXPORT JSON] Saved ${allArtboards.length} artboard(s) (mode=${mode}) to: ${file.name}`);
   } catch (e) {
     log(`[EXPORT JSON] Error: ${e.message}`);
   }
@@ -5214,6 +5910,9 @@ function renderArtboardPicker() {
       else artboardPickerSelected.delete(item.id);
       saveArtboardPickSelection();
       artboardPickerCount.textContent = `${artboardPickerSelected.size}/${artboardPickerItems.length}`;
+      // Recompute the export-mode hint so the user sees what mode the JSON
+      // export will use BEFORE clicking Export Layer JSON.
+      refreshExportModeUI().catch(() => {});
     });
 
     const info = document.createElement("div");
@@ -5297,6 +5996,8 @@ function switchMode(mode) {
     exportAssetsPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "";
     renderSizeGroups();
+    // Settings tab hosts "Export Layer JSON" — load picker + refresh mode hint
+    ensureArtboardPickerLoaded().then(() => refreshExportModeUI()).catch(e => log(`[PICKER] ${e.message}`));
   } else if (mode === "exportAssets") {
     mainContent.forEach(el => el.style.display = "none");
     settingsPanel.style.display = "none";
