@@ -605,14 +605,27 @@ async function resizeShapeLayer(layer, targetW, targetH) {
     return;
   }
   log(`[RESIZE]   scale: X=${(scaleX*100).toFixed(1)}% Y=${(scaleY*100).toFixed(1)}%`);
+  // Min-scale guard. Photoshop's Transform command rejects extreme scale
+  // factors on groups and certain layer kinds — the symptom is a popup
+  // "The command Transform is not currently available." We've seen it fire
+  // when scaleY drops to ~2% (e.g. resizing a 600px-tall group down to 25px).
+  // Clamp the smaller axis up to 5%; the layer will overshoot the target on
+  // that axis but stay valid, which is preferable to bailing out entirely.
+  const MIN_SCALE = 0.05;
+  let sX = scaleX, sY = scaleY;
+  if (sX < MIN_SCALE || sY < MIN_SCALE) {
+    log(`[RESIZE]   clamp: scale axis below ${MIN_SCALE*100}% — clamping (X=${sX.toFixed(3)} Y=${sY.toFixed(3)} → ${Math.max(sX,MIN_SCALE).toFixed(3)} ${Math.max(sY,MIN_SCALE).toFixed(3)})`);
+    sX = Math.max(sX, MIN_SCALE);
+    sY = Math.max(sY, MIN_SCALE);
+  }
   await selectLayerById(layer.id);
   try {
     await bpSafe([{
       _obj: "transform",
       _target: [{ _ref: "layer", _id: layer.id }],
       freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-      width: { _unit: "percentUnit", _value: scaleX * 100 },
-      height: { _unit: "percentUnit", _value: scaleY * 100 },
+      width: { _unit: "percentUnit", _value: sX * 100 },
+      height: { _unit: "percentUnit", _value: sY * 100 },
       interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
       _options: { dialogOptions: "dontDisplay" }
     }]);
@@ -1606,6 +1619,22 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
       try {
         log(`[RULE] "${layer.name}" (id:${layer.id}) applying rule for ${targetSizeKey}`);
 
+        // DIAG: snapshot full layer parent chain for this rule's target layer
+        // RIGHT BEFORE we transform/move it. Compare against expected chain
+        // (e.g. should be "content" group, not "<root>") to spot mid-loop
+        // PS evictions caused by previous rules' moves.
+        try {
+          const chain = [];
+          let p = layer.parent;
+          let safety = 10;
+          while (p && safety-- > 0) {
+            chain.push(`"${p.name || "<unnamed>"}" (id:${p.id})`);
+            if (!p.parent || p.parent === p) break;
+            p = p.parent;
+          }
+          log(`[CHAIN-DIAG] "${layer.name}" id=${layer.id} parent chain: ${chain.length ? chain.join(" → ") : "<root>"}`);
+        } catch (e) { /* skip */ }
+
         // ─── NEW: Direct sizing approach ───
         // For text: set fontSize directly (no compound scaling)
         // For shape (CTA bg): resize by widthElement × heightElement (non-uniform)
@@ -1663,7 +1692,13 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         // Only W → uniform scale (logo)
         const nonTextLeaves = shapes.concat(images).concat(others.filter(o => !isTextLayer(o)));
         // Group rules must NOT cascade width/height onto children — each child has its own rule.
-        const isGroupRule = layer.layers && layer.layers.length > 0;
+        // Use the layer's kind, not children count: a group whose children
+        // have all been moved out (e.g. earlier per-child rules already
+        // re-positioned them outside the group bounds) still has kind=group
+        // and must NOT be resize-treated as a leaf, otherwise PS rejects
+        // the transform with "Transform not currently available".
+        const isGroupKind = layer.kind === "group" || (layer.layers && layer.layers.length > 0);
+        const isGroupRule = isGroupKind;
         if (isGroupRule && (targetW || targetH)) {
           log(`[RULE]   group rule: skip width/height for ${nonTextLeaves.length} child leaves (children have own rules)`);
         }
@@ -1707,7 +1742,10 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           }
 
           if (!isNaN(scaleVal) && scaleVal > 0 && Math.abs(scaleVal - 1) > 0.01) {
-            const isGroupForScale = layer.layers && layer.layers.length > 0;
+            // Use kind=group OR has-children: same reasoning as isGroupRule
+            // above — empty groups (children moved out by earlier rules) still
+            // must not be transformed as if they were leaves.
+            const isGroupForScale = layer.kind === "group" || (layer.layers && layer.layers.length > 0);
             if (isGroupForScale) {
               // Group rules are independent of children — children have own rules.
               log(`[RULE]   group rule: skip scale (children have own rules)`);
@@ -1751,7 +1789,34 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
 
         // JSON positions are relative to parent group (web convention).
         // Accumulate ancestor group offsets so child ends at correct absolute canvas position.
-        const { offX: ancOffX, offY: ancOffY, trail: ancTrail, chain: ancChain } = getAncestorGroupOffset(layer, rules);
+        //
+        // FIX (Hướng 1): re-fetch the layer object from the doc tree by id
+        // before reading its parent chain. UXP `Layer.parent` references can
+        // go stale after `transform`/`resize` because PS may temporarily
+        // evict the layer to root level, and the cached `layer.parent` then
+        // points at the obsolete parent (or `<root>`). Walking the doc tree
+        // by id returns a fresh handle whose `.parent` reflects the layer's
+        // actual current home.
+        let freshLayer = layer;
+        try {
+          const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+          if (docHandle) {
+            function findById(layers, targetId) {
+              for (const l of layers || []) {
+                if (l.id === targetId) return l;
+                if (l.layers && l.layers.length) {
+                  const hit = findById(l.layers, targetId);
+                  if (hit) return hit;
+                }
+              }
+              return null;
+            }
+            const found = findById(docHandle.layers, layer.id);
+            if (found) freshLayer = found;
+          }
+        } catch (e) { /* fall back to original layer ref */ }
+
+        const { offX: ancOffX, offY: ancOffY, trail: ancTrail, chain: ancChain } = getAncestorGroupOffset(freshLayer, rules);
         log(`[PARENT] "${layer.name}" PS chain: ${ancChain.length ? ancChain.join(" → ") : "(root)"}`);
         log(`[PARENT]   ancestor offset total: dx+${ancOffX} dy+${ancOffY}${ancTrail.length ? " via " + ancTrail.join(" → ") : " (no matching rules)"}`);
 
@@ -1785,6 +1850,18 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
             const expectedLeft = Math.round(bounds.left + dx);
             const expectedTop = Math.round(bounds.top + dy);
             log(`[POS-DEBUG] "${layer.name}" BEFORE move: left=${Math.round(bounds.left)} top=${Math.round(bounds.top)} → expected: left=${expectedLeft} top=${expectedTop}`);
+
+            // DIAG: snapshot parent + sibling layers state BEFORE move so we
+            // can correlate any structural drift (PS auto-evicts layers when
+            // their bounds fall outside the artboard rect, and side-effects
+            // can ripple through the layer panel — we want to see this).
+            try {
+              const parentName = layer.parent === layer.parent?.parent ? "<root>" : (layer.parent?.name || "<unknown>");
+              const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+              const rootCount = docHandle ? docHandle.layers.length : -1;
+              log(`[MOVE-DIAG] "${layer.name}" id=${layer.id} parent="${parentName}" rootCount=${rootCount} BEFORE move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+            } catch (e) { /* skip */ }
+
             await selectLayerById(layer.id);
             await bpSafe([{
               _obj: "move",
@@ -1801,6 +1878,63 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
             const deltaT = Math.round(afterMove.top) - expectedTop;
             const ok = Math.abs(deltaL) <= 1 && Math.abs(deltaT) <= 1 ? "OK" : "DRIFT";
             log(`[POS-DEBUG] "${layer.name}" AFTER move:  left=${Math.round(afterMove.left)} top=${Math.round(afterMove.top)} | drift: dL=${deltaL} dT=${deltaT} ${ok}`);
+
+            // DIAG: snapshot AFTER move — did parent change? did root layer
+            // count change (= someone got evicted to root)? Also dump current
+            // bounds/parent of every artboard in the doc to spot artboard
+            // drift caused by a layer move.
+            try {
+              const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+              if (docHandle) {
+                const rootCountAfter = docHandle.layers.length;
+                // Re-read parent (UXP layer.parent may not auto-update; refetch by id)
+                let parentNameAfter = "<unknown>";
+                try {
+                  for (const r of docHandle.layers) {
+                    if (r.id === layer.id) { parentNameAfter = "<root>"; break; }
+                    function walk(p) {
+                      for (const c of p.layers || []) {
+                        if (c.id === layer.id) { parentNameAfter = p.name || "<root>"; return true; }
+                        if (c.layers && c.layers.length && walk(c)) return true;
+                      }
+                      return false;
+                    }
+                    if (walk(r)) break;
+                  }
+                } catch (e) { /* skip */ }
+                log(`[MOVE-DIAG] "${layer.name}" AFTER move: parent="${parentNameAfter}" rootCount=${rootCountAfter}`);
+                // List every artboard at root + its rect — confirms whether
+                // an unrelated artboard (e.g. the source) got pushed around.
+                for (const r of docHandle.layers) {
+                  try {
+                    const rd = await getLayerDescriptor(r.id);
+                    const isAb = !!(rd.artboardEnabled || rd.artboard);
+                    if (isAb) {
+                      const ar = rectSize(rd.artboard?.artboardRect || rd.bounds);
+                      log(`[MOVE-DIAG]   artboard "${r.name}" id=${r.id} rect=(L${ar.left},T${ar.top},R${ar.right},B${ar.bottom}) ${ar.width}x${ar.height}`);
+                    }
+                  } catch (e) { /* skip */ }
+                }
+                // Dump every root layer (and its first-level children) so we
+                // can see when a non-artboard layer ends up at the root level
+                // (PS evicting children when their bounds fall outside parent).
+                log(`[MOVE-DIAG]   doc root layers (full):`);
+                for (const r of docHandle.layers) {
+                  log(`[MOVE-DIAG]     [root] "${r.name}" id=${r.id} kind=${r.kind} children=${r.layers?.length || 0}`);
+                  if (r.layers && r.layers.length) {
+                    for (const c of r.layers) {
+                      log(`[MOVE-DIAG]       [child] "${c.name}" id=${c.id} kind=${c.kind} children=${c.layers?.length || 0}`);
+                      if (c.layers && c.layers.length) {
+                        for (const gc of c.layers) {
+                          log(`[MOVE-DIAG]         [grandchild] "${gc.name}" id=${gc.id} kind=${gc.kind}`);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (e) { /* skip */ }
+
             log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
           }
         }
@@ -2009,9 +2143,8 @@ async function cloneAsArtboards() {
           log(`  Skip: no matching targets for this source`);
           continue;
         }
-        await cloneOneSourceAsArtboards({
+        await cloneOneSourceAsArtboardsV2({
           source,
-          originalRect: originalRects[si],
           targets: srcTargets,
           sourceDoc,
           rowStartX,
@@ -2098,6 +2231,863 @@ async function snapshotDoc(doc, label) {
     } catch (e) { isArtb = `err:${e.message}`; }
     const childCount = l.layers ? l.layers.length : 0;
     log(`[SNAPSHOT ${label}]   [${i}] id=${l.id} name="${l.name}" kind=${l.kind} isArtboard=${isArtb} children=${childCount} ${rect} ${abRect}`);
+  }
+}
+
+// V2 — TEST FLOW: skip tempDoc + make artboardSection entirely.
+// Duplicate the source artboard directly in sourceDoc (which always produces
+// a clean artboard), then resize its artboardRect to the target size centered
+// around the artboard's center. Layout rules / smart match / uniform mode are
+// intentionally skipped in this version — first goal is to confirm the new
+// artboard is created cleanly at the right size and position.
+async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStartX, rowY, progressBase, progressMax }) {
+  const { base: baseName, sep: baseSep, tail: baseTail } = stripSizeSuffix(source.name);
+
+  // Make sure we operate on the source doc (the previous source iteration
+  // may have left activeDocument pointing at a clone).
+  await bp([{
+    _obj: "select",
+    _target: [{ _ref: "document", _id: sourceDoc.id }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+
+  // Re-read current rect of the source artboard (it may have drifted).
+  const srcDescNow = await getLayerDescriptor(source.id);
+  const srcRect = rectSize(srcDescNow.artboard?.artboardRect || srcDescNow.bounds);
+  log(`[V2] Source artboard: ${source.name} (${srcRect.width}x${srcRect.height}) at (${srcRect.left},${srcRect.top})`);
+  log(`[V2] rowStartX=${rowStartX} rowY=${rowY} targets=${targets.length}`);
+
+  // Capture content layout from source artboard ONCE (used by smartLayoutContent).
+  const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
+  if (sourceLayout) log(`[V2] [LAYOUT] Captured ${sourceLayout.length} content groups from source`);
+
+  // Capture original bounds ONCE on the source artboard (used by applyLayerRules).
+  // V1 captured on a tempDoc; V2 captures on the source artboard layer directly
+  // since name-keyed bounds are stable across artboards with the same children.
+  const anyRules = targets.some(t => layerRules[t.raw] && layerRules[t.raw].length > 0);
+  let sourceOrigBounds = null;
+  if (anyRules) {
+    const tCap = perfNow();
+    sourceOrigBounds = await captureOriginalBounds(source.layer);
+    const keyCount = Object.keys(sourceOrigBounds || {}).length;
+    log(`[V2] [PERF] captureOriginalBounds (source, once): ${Math.round(perfNow() - tCap)}ms, ${keyCount} entries`);
+  }
+
+  let nextX = rowStartX;
+
+  for (let ti = 0; ti < targets.length; ti++) {
+    const target = targets[ti];
+    setProgress(progressBase + ti + 1, progressMax, `${source.name} → ${target.raw}`);
+    log(`[V2] --- Clone ${target.raw} ---`);
+    const tTarget = perfNow();
+    const newName = suffixNameEl.checked ? `${baseName}${baseSep}${target.raw}${baseTail}` : target.raw;
+
+    // DIAG: snapshot source artboard state BEFORE duplicate so we can see
+    // if previous iterations have polluted it (children stolen, layers
+    // moved out of artboard etc.).
+    try {
+      const srcDescPre = await getLayerDescriptor(source.id);
+      const srcChildren = source.layer?.layers || [];
+      log(`[V2-DIAG] Source artboard "${source.name}" pre-dup: id=${source.id} children=${srcChildren.length}, sourceDoc root layers=${sourceDoc.layers.length}`);
+      // List source children to compare across iterations.
+      for (const c of srcChildren) {
+        log(`[V2-DIAG]   src child: "${c.name}" id=${c.id} kind=${c.kind}`);
+      }
+    } catch (e) { log(`[V2-DIAG] source pre-dup probe failed: ${e.message}`); }
+
+    // Snapshot existing root layer ids so we can find the freshly-duplicated
+    // artboard by id-diff after duplicate.
+    const beforeIds = new Set();
+    function collectRootIds(layers, into) {
+      for (const l of layers || []) into.add(l.id);
+    }
+    collectRootIds(sourceDoc.layers, beforeIds);
+
+    // Duplicate the source artboard within the same doc. PS produces a real
+    // artboard (kind=artboardSection, artboardEnabled=true) every time —
+    // this bypasses the `make artboardSection` bug entirely.
+    await selectLayerById(source.id);
+    await bp([{
+      _obj: "duplicate",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+
+    // Find the new artboard at the root of sourceDoc by id-diff.
+    let newAb = null;
+    for (const l of sourceDoc.layers) {
+      if (!beforeIds.has(l.id)) {
+        try {
+          const d = await getLayerDescriptor(l.id);
+          if (d.artboardEnabled || d.artboard) { newAb = l; break; }
+        } catch (e) { /* skip */ }
+      }
+    }
+    if (!newAb) {
+      log(`[V2] ERROR: could not find duplicated artboard after duplicate`);
+      continue;
+    }
+    log(`[V2] Duplicated artboard id=${newAb.id} name="${newAb.name}"`);
+
+    // Rename the new artboard.
+    try { newAb.name = newName; } catch (e) { /* ignore */ }
+
+    // Snapshot DEEP parent mapping of every descendant of the new artboard
+    // BEFORE resize. PS auto-evicts children whose top-left falls outside
+    // the new artboardRect when we shrink the rect — they end up at root.
+    // We need to re-parent them back into their ORIGINAL parent group (not
+    // the artboard root), so layer panel structure + JSON path-mode rule
+    // lookup ("content/Member FDIC") still work.
+    const childIdsBeforeResize = (newAb.layers || []).map(l => l.id);
+    // parentMap: descendantId → { parentId, index } where index is the
+    // layer's position in its parent's children array (top → bottom in z-order).
+    // We need index to restore z-order after re-parenting orphans, since
+    // PLACEINSIDE always puts the layer at top of the destination.
+    const parentMap = new Map();
+    function buildParentMap(parent) {
+      const layers = parent.layers || [];
+      for (let i = 0; i < layers.length; i++) {
+        const c = layers[i];
+        parentMap.set(c.id, { parentId: parent.id, index: i });
+        if (c.layers && c.layers.length) buildParentMap(c);
+      }
+    }
+    buildParentMap(newAb);
+    log(`[V2] Snapshot ${childIdsBeforeResize.length} top-level children + ${parentMap.size} total descendants with parent+index mapping`);
+
+    // Helper: re-parent any descendant that escaped newAb back into its
+    // original parent group. Idempotent — call after any step that may
+    // trigger PS eviction (resize, expand, transforms, shrink).
+    async function runReparent(label) {
+      try {
+        const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+        if (!docHandle) return;
+        const currentDescIds = new Set();
+        function collectDesc(parent) {
+          for (const c of parent.layers || []) {
+            currentDescIds.add(c.id);
+            if (c.layers && c.layers.length) collectDesc(c);
+          }
+        }
+        collectDesc(newAb);
+        function findById(layers, id) {
+          for (const l of layers || []) {
+            if (l.id === id) return l;
+            if (l.layers && l.layers.length) {
+              const hit = findById(l.layers, id);
+              if (hit) return hit;
+            }
+          }
+          return null;
+        }
+        const orphans = [];
+        for (const [descId, info] of parentMap.entries()) {
+          if (currentDescIds.has(descId)) continue;
+          const layer = findById(docHandle.layers, descId);
+          if (layer) orphans.push({ layer, originalParentId: info.parentId, originalIndex: info.index });
+        }
+        if (!orphans.length) return;
+        const { constants } = require("photoshop");
+        function getDepth(parentId) {
+          let d = 0, p = parentId;
+          while (p && p !== newAb.id && d < 20) {
+            const pinfo = parentMap.get(p);
+            if (!pinfo) break;
+            p = pinfo.parentId;
+            d++;
+          }
+          return d;
+        }
+        orphans.sort((a, b) => {
+          const da = getDepth(a.originalParentId);
+          const db = getDepth(b.originalParentId);
+          if (da !== db) return da - db;
+          if (a.originalParentId !== b.originalParentId) return a.originalParentId - b.originalParentId;
+          return b.originalIndex - a.originalIndex;
+        });
+        log(`[V2-REPARENT-${label}] ${orphans.length} orphan(s) to re-parent`);
+        for (const o of orphans) {
+          try {
+            const originalParent = findById(docHandle.layers, o.originalParentId);
+            if (originalParent && originalParent.id !== newAb.id) {
+              o.layer.move(originalParent, constants.ElementPlacement.PLACEINSIDE);
+              log(`[V2-REPARENT-${label}]   "${o.layer.name}" → inside "${originalParent.name}"`);
+            } else {
+              o.layer.move(newAb, constants.ElementPlacement.PLACEINSIDE);
+              log(`[V2-REPARENT-${label}]   "${o.layer.name}" → inside artboard`);
+            }
+          } catch (e) {
+            log(`[V2-REPARENT-${label}]   "${o.layer.name}" failed: ${e.message}`);
+          }
+        }
+      } catch (e) {
+        log(`[V2-REPARENT-${label}] step failed: ${e.message}`);
+      }
+    }
+
+    // STEP B PROBE: skip resize entirely, just verify artboard state stays
+    // intact after duplicate. This isolates whether `editArtboardEvent` or
+    // the duplicate itself is what un-artboards the layer.
+    const dupDesc = await getLayerDescriptor(newAb.id);
+    const dupOk = !!(dupDesc.artboardEnabled || dupDesc.artboard);
+    const dupRect = rectSize(dupDesc.artboard?.artboardRect || dupDesc.bounds);
+    log(`[V2] After duplicate (no resize): isArtboard=${dupOk} artboardEnabled=${dupDesc.artboardEnabled} rect=(L${dupRect.left},T${dupRect.top},R${dupRect.right},B${dupRect.bottom}) ${dupRect.width}x${dupRect.height}`);
+
+    // Move artboard to grid position (nextX, rowY) using the duplicate's
+    // current rect — keep size unchanged for now (will be 300x600, not the
+    // target 480x320, but we verify move doesn't break the artboard first).
+    const verifyRect = dupRect;
+    const moveX = nextX - verifyRect.left;
+    const moveY = rowY - verifyRect.top;
+    if (Math.abs(moveX) > 0.5 || Math.abs(moveY) > 0.5) {
+      await bp([{
+        _obj: "move",
+        _target: [{ _ref: "layer", _id: newAb.id }],
+        to: {
+          _obj: "offset",
+          horizontal: { _unit: "pixelsUnit", _value: Math.round(moveX) },
+          vertical: { _unit: "pixelsUnit", _value: Math.round(moveY) }
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      log(`[V2] Moved to grid: target=(${nextX},${rowY}) move=(${Math.round(moveX)},${Math.round(moveY)})`);
+
+      // Verify artboard state survived the move.
+      const afterMoveDesc = await getLayerDescriptor(newAb.id);
+      const afterMoveOk = !!(afterMoveDesc.artboardEnabled || afterMoveDesc.artboard);
+      const afterMoveRect = rectSize(afterMoveDesc.artboard?.artboardRect || afterMoveDesc.bounds);
+      log(`[V2] After move: isArtboard=${afterMoveOk} artboardEnabled=${afterMoveDesc.artboardEnabled} rect=(L${afterMoveRect.left},T${afterMoveRect.top},R${afterMoveRect.right},B${afterMoveRect.bottom}) ${afterMoveRect.width}x${afterMoveRect.height}`);
+    }
+
+    // STEP A PROBE: try resizing the artboardRect via different APIs to
+    // find one that doesn't destroy the artboard. Probe runs ON the real
+    // target artboard — if the chosen API works, the artboard ends up at
+    // the correct target size; if it fails, the log tells us which API to
+    // try next (and the artboard may end up broken — re-run after switching
+    // API). We probe ONE API per run; flip RESIZE_API constant to test next.
+    const RESIZE_API = "editArtboardEvent_nested"; // options: ..., "editArtboardEvent_nested"
+    // Re-read rect (afterMoveRect is scoped inside the move if-block).
+    const preResizeDesc = await getLayerDescriptor(newAb.id);
+    const tgtRect = rectSize(preResizeDesc.artboard?.artboardRect || preResizeDesc.bounds);
+    // New rect anchored at current top-left, sized to target.
+    const probeLeft = tgtRect.left;
+    const probeTop = tgtRect.top;
+    const probeRight = tgtRect.left + target.width;
+    const probeBottom = tgtRect.top + target.height;
+    log(`[V2-RESIZE] api=${RESIZE_API} from ${tgtRect.width}x${tgtRect.height} → ${target.width}x${target.height} rect=(${probeLeft},${probeTop},${probeRight},${probeBottom})`);
+
+    try {
+      await selectLayerById(newAb.id);
+      if (RESIZE_API === "set_artboard") {
+        // API #1: set the artboard property descriptor on the layer.
+        await bp([{
+          _obj: "set",
+          _target: [{ _ref: "layer", _id: newAb.id }],
+          to: {
+            _obj: "layer",
+            artboard: {
+              _obj: "artboard",
+              artboardRect: {
+                _obj: "classFloatRect",
+                top: probeTop, left: probeLeft,
+                bottom: probeBottom, right: probeRight
+              }
+            }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "set_layer_artboard") {
+        // API #2: set layer with artboardEnabled flag + rect together.
+        await bp([{
+          _obj: "set",
+          _target: [{ _ref: "layer", _id: newAb.id }],
+          to: {
+            _obj: "layer",
+            artboardEnabled: true,
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: probeTop, left: probeLeft,
+              bottom: probeBottom, right: probeRight
+            }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "editArtboardEvent_keep_topleft") {
+        // API #3: editArtboardEvent but anchored at current top-left (not 0,0).
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "layer", _id: newAb.id }],
+          artboardRect: {
+            _obj: "classFloatRect",
+            top: probeTop, left: probeLeft,
+            bottom: probeBottom, right: probeRight
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "editArtboardEvent_artboardSection_ref") {
+        // API #4: editArtboardEvent with _ref:"artboardSection" instead of "layer".
+        // PS history shows "Edit Artboard" event — the manual workflow targets
+        // the artboard via its artboardSection class, not via a layer ref.
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "artboardSection", _enum: "ordinal", _value: "targetEnum" }],
+          artboardRect: {
+            _obj: "classFloatRect",
+            top: probeTop, left: probeLeft,
+            bottom: probeBottom, right: probeRight
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "set_artboardSection_ref") {
+        // API #5: set with _ref:"artboardSection" + artboard.artboardRect.
+        await bp([{
+          _obj: "set",
+          _target: [{ _ref: "artboardSection", _enum: "ordinal", _value: "targetEnum" }],
+          to: {
+            _obj: "artboard",
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: probeTop, left: probeLeft,
+              bottom: probeBottom, right: probeRight
+            }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "set_artboard_ref") {
+        // API #7: per UXP docs — _ref:"artboard" (NOT "artboardSection"), with
+        // _obj:"artboard" wrapper around artboardRect. Documented BatchPlay
+        // form for resizing a specific artboard in PS 2025 / UXP.
+        await bp([{
+          _obj: "set",
+          _target: [{ _ref: "artboard", _enum: "ordinal", _value: "targetEnum" }],
+          to: {
+            _obj: "artboard",
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: probeTop, left: probeLeft,
+              bottom: probeBottom, right: probeRight
+            }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "editArtboardEvent_nested") {
+        // API #9: per Stephen Marsh's working ExtendScript on Adobe forum.
+        // Critical insight: artboardRect must be NESTED inside an `artboard`
+        // object, NOT placed at the top level. Previous APIs flat-mounted
+        // artboardRect → PS treated as a raw rect change → un-artboarded.
+        // Full descriptor includes guideIDs, artboardPresetName, color,
+        // artboardBackgroundType — all wrapped inside `artboard`.
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          artboard: {
+            _obj: "artboard",
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: probeTop, left: probeLeft,
+              bottom: probeBottom, right: probeRight
+            },
+            guideIDs: [],
+            artboardPresetName: "Custom",
+            color: {
+              _obj: "RGBColor",
+              red: 255,
+              grain: 255,
+              blue: 255
+            },
+            artboardBackgroundType: 1
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } else if (RESIZE_API === "doc_resizeCanvas") {
+        // API #8: high-level UXP — doc.resizeCanvas(width, height). Per docs
+        // this resizes the artboard's bounding box when called on a document
+        // whose active layer is an artboard. We ensure the new artboard is
+        // selected (already done above by selectLayerById) before calling.
+        await sourceDoc.resizeCanvas(target.width, target.height);
+      } else if (RESIZE_API === "editArtboardEvent_full") {
+        // API #6: editArtboardEvent with the FULL descriptor PS uses in
+        // the manual workflow (per ScriptingListener log):
+        //   - Artboard: enum "artboard"
+        //   - Artboard Rect: classRectangle (NOT classFloatRect)
+        //   - changeSizes: child count — tells PS to keep children intact
+        // Without these fields, PS treats it as a "raw rect change" and
+        // un-artboards the layer (children union expands the bounds).
+        // (Skipping `color` because it's optional + RGB key names are
+        // historically quirky — `grain` for green broke things.)
+        const childCount = newAb.layers?.length || 0;
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "artboardSection", _enum: "ordinal", _value: "targetEnum" }],
+          artboard: { _enum: "artboard", _value: "artboard" },
+          artboardRect: {
+            _obj: "classRectangle",
+            top: probeTop, left: probeLeft,
+            bottom: probeBottom, right: probeRight
+          },
+          changeSizes: childCount,
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      }
+
+      const afterResizeDesc = await getLayerDescriptor(newAb.id);
+      const afterResizeOk = !!(afterResizeDesc.artboardEnabled || afterResizeDesc.artboard);
+      const afterResizeRect = rectSize(afterResizeDesc.artboard?.artboardRect || afterResizeDesc.bounds);
+      log(`[V2-RESIZE] After ${RESIZE_API}: isArtboard=${afterResizeOk} artboardEnabled=${afterResizeDesc.artboardEnabled} rect=(L${afterResizeRect.left},T${afterResizeRect.top},R${afterResizeRect.right},B${afterResizeRect.bottom}) ${afterResizeRect.width}x${afterResizeRect.height}`);
+      if (!afterResizeOk) log(`[V2-RESIZE] !! API "${RESIZE_API}" DESTROYED the artboard — try a different API`);
+      else if (afterResizeRect.width !== target.width || afterResizeRect.height !== target.height) {
+        log(`[V2-RESIZE] !! API "${RESIZE_API}" preserved artboard but did NOT resize (still ${afterResizeRect.width}x${afterResizeRect.height})`);
+      } else {
+        log(`[V2-RESIZE] ✓ API "${RESIZE_API}" works — artboard preserved + resized to ${target.width}x${target.height}`);
+      }
+    } catch (e) {
+      log(`[V2-RESIZE] API "${RESIZE_API}" threw: ${e.message}`);
+    }
+
+    // RE-PARENT orphan children after resizing artboardRect (PS evicts
+    // children outside new rect). Helper handles all logic — depth-aware
+    // sort, original-parent lookup, z-order preservation.
+    await runReparent("POST-RESIZE");
+
+    // STRIP " copy"/" copy N" suffix from descendant layer names. PS
+    // auto-renames layers when duplicating an artboard inside the same doc
+    // ("BG" → "BG copy" → "BG copy 2" ...) to avoid name collisions. JSON
+    // rules and findLayerByPath/findLayersByName look up children by their
+    // ORIGINAL names — without stripping, every rule fails with "not found"
+    // (rule says "BG" but layer is "BG copy 7"). We rename in-place; the
+    // user-facing artboard panel will show clean names matching the source.
+    try {
+      let renamed = 0;
+      async function stripSuffixTree(parent) {
+        for (const l of parent.layers || []) {
+          // Match trailing " copy" or " copy N" (one or more spaces, "copy",
+          // optional " N"). Anchored at end of string.
+          const m = String(l.name || "").match(/^(.+?)(?:\s+copy(?:\s+\d+)?)+$/);
+          if (m && m[1] && m[1] !== l.name) {
+            try { l.name = m[1]; renamed++; } catch (e) { /* ignore */ }
+          }
+          if (l.layers && l.layers.length) await stripSuffixTree(l);
+        }
+      }
+      await stripSuffixTree(newAb);
+      if (renamed) log(`[V2] Stripped " copy" suffix from ${renamed} descendant layer name(s)`);
+    } catch (e) {
+      log(`[V2] strip-suffix step failed: ${e.message}`);
+    }
+
+    // ─── Wire V1 layout rules: smart match + JSON rules ──────────────────
+    // Re-read the artboard rect after resize/re-parent — we'll pass its
+    // top-left as originX/originY so smart/JSON-rules functions can place
+    // children relative to the new artboard's position in sourceDoc canvas
+    // (V1 ran in tempDoc where origin was always 0,0).
+    let abRectAfter;
+    try {
+      const dAfter = await getLayerDescriptor(newAb.id);
+      abRectAfter = rectSize(dAfter.artboard?.artboardRect || dAfter.bounds);
+    } catch (e) { abRectAfter = null; }
+
+    if (abRectAfter && (abRectAfter.width === target.width && abRectAfter.height === target.height)) {
+      const uniformEnabled = uniformScaleEl?.checked === true;
+      const hasRules = !uniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
+      const smartEnabled = !uniformEnabled && smartMatchEl.checked;
+
+      // FIX (Option 6): expand artboard rect to a HUGE size before applying
+      // rules. PS evicts children when their bounds fall outside the
+      // artboard rect — making the rect huge means every transform/move
+      // stays within rect, so no eviction. After rules finish, shrink the
+      // artboard rect back to the real target size; layers should already be
+      // at their final positions (within target rect per the rules), so no
+      // eviction at shrink either.
+      // Expand artboard for ANY mode that scales/moves layers (uniform, smart,
+      // or JSON rules). All of them benefit from the no-eviction zone.
+      // EXCEPT: when target is LARGER than source on both axes — source
+      // layers are already inside target rect, no eviction risk, skip expand
+      // to avoid the side effects (PS coord auto-shift, source artboard drift).
+      const targetCoversSource = target.width >= srcRect.width && target.height >= srcRect.height;
+      const willRunRules = (uniformEnabled || hasRules || smartEnabled) && !targetCoversSource;
+      if (targetCoversSource && (uniformEnabled || hasRules || smartEnabled)) {
+        log(`[V2] target (${target.width}x${target.height}) >= source (${srcRect.width}x${srcRect.height}) on both axes — skipping expand (no eviction risk)`);
+      }
+      let savedGridLeft = abRectAfter.left;
+      let savedGridTop = abRectAfter.top;
+      // Keep the ORIGINAL grid position too — savedGridLeft/Top may get
+      // adjusted after expand if PS auto-shifts coords; we need the original
+      // values to move the artboard back to its real grid spot at the end.
+      const origGridLeft = abRectAfter.left;
+      const origGridTop = abRectAfter.top;
+      let artboardExpanded = false;
+      // HUGE buffer: scale with the larger of source / target so the expanded
+      // rect always comfortably exceeds both. Min 1500 buffer per side.
+      const HUGE = Math.max(1500, Math.max(srcRect.width, target.width), Math.max(srcRect.height, target.height));
+      if (willRunRules) {
+        try {
+          await selectLayerById(newAb.id);
+          // Keep top-left fixed at saved grid position so rules use the
+          // same origin as target. Only expand bottom/right + a HUGE buffer
+          // to top/left for layers with negative-position rules.
+          await bp([{
+            _obj: "editArtboardEvent",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            artboard: {
+              _obj: "artboard",
+              artboardRect: {
+                _obj: "classFloatRect",
+                top: savedGridTop - HUGE,
+                left: savedGridLeft - HUGE,
+                bottom: savedGridTop + HUGE,
+                right: savedGridLeft + HUGE
+              },
+              guideIDs: [],
+              artboardPresetName: "Custom",
+              color: { _obj: "RGBColor", red: 255, grain: 255, blue: 255 },
+              artboardBackgroundType: 1
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          // Verify expand
+          const dExp = await getLayerDescriptor(newAb.id);
+          const expRect = rectSize(dExp.artboard?.artboardRect || dExp.bounds);
+          const isStillArtb = !!(dExp.artboardEnabled || dExp.artboard);
+          log(`[V2] Expanded artboard for rules: isArtboard=${isStillArtb} rect=(L${expRect.left},T${expRect.top},R${expRect.right},B${expRect.bottom}) ${expRect.width}x${expRect.height}`);
+          // Guard: rect must be noticeably bigger than target to count as
+          // "expanded" (we asked for HUGE on each side; allow some slack).
+          if (isStillArtb && expRect.width > target.width + 500 && expRect.height > target.height + 500) {
+            artboardExpanded = true;
+            // PS may shift the rect when we request negative coords — it auto-
+            // adjusts so top-left is non-negative. We requested
+            // (savedGridLeft-HUGE, savedGridTop-HUGE); PS may have moved the
+            // rect to (0+something, 0+something). Compute the shift delta and
+            // adjust savedGridLeft/Top so rules see the artboard at its actual
+            // current position.
+            const requestedTop = savedGridTop - HUGE;
+            const requestedLeft = savedGridLeft - HUGE;
+            const shiftX = expRect.left - requestedLeft;
+            const shiftY = expRect.top - requestedTop;
+            if (shiftX !== 0 || shiftY !== 0) {
+              log(`[V2] PS auto-shifted rect by (${shiftX},${shiftY}) — adjusting saved grid origin`);
+              savedGridLeft += shiftX;
+              savedGridTop += shiftY;
+            }
+            log(`[V2] Adjusted saved grid origin → (${savedGridLeft},${savedGridTop})`);
+            abRectAfter = expRect;
+          } else {
+            log(`[V2] WARNING: artboard expand didn't take effect — proceeding with target rect`);
+          }
+        } catch (e) {
+          log(`[V2] artboard expand failed: ${e.message}`);
+        }
+      }
+
+      if (uniformEnabled) {
+        // Uniform mode (V2 implementation): always CONTAIN — pick the
+        // smaller axis ratio so the entire source fits inside the target
+        // rect. Empty bands appear on the off-axis when aspects differ.
+        // (V1 used cover/contain auto based on axis ratio; user prefers
+        // pure contain so nothing gets cropped.)
+        const sx = target.width / srcRect.width;
+        const sy = target.height / srcRect.height;
+        const scale = Math.min(sx, sy);
+        const aspectSrc = srcRect.width / srcRect.height;
+        const aspectTgt = target.width / target.height;
+        const aspectDelta = Math.abs(aspectSrc - aspectTgt) / aspectSrc;
+        if (aspectDelta > 0.05) {
+          log(`[V2-UNIFORM] aspect mismatch ${(aspectDelta * 100).toFixed(0)}% (source ${aspectSrc.toFixed(2)}:1 → target ${aspectTgt.toFixed(2)}:1). Empty bands on the off-axis.`);
+        }
+        log(`[V2-UNIFORM] mode=contain scale=${scale.toFixed(4)} fill-axis=${(scale === sx) ? "width" : "height"} (${srcRect.width}x${srcRect.height} → ${Math.round(srcRect.width * scale)}x${Math.round(srcRect.height * scale)} inside ${target.width}x${target.height})`);
+
+        // Source artboard's CENTER in canvas coords (using shifted origin
+        // because expand may have auto-shifted). After expand, the artboard
+        // top-left = (savedGridLeft, savedGridTop), and the pre-expand size
+        // was source size — so the source center maps to:
+        const srcCenterX = savedGridLeft + srcRect.width / 2;
+        const srcCenterY = savedGridTop + srcRect.height / 2;
+        // Target center (where everything should re-anchor):
+        const tgtCenterX = savedGridLeft + target.width / 2;
+        const tgtCenterY = savedGridTop + target.height / 2;
+        log(`[V2-UNIFORM] srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
+
+        // Walk every leaf descendant and apply: scale + reposition.
+        // For each leaf: new position = tgtCenter + (oldPos - srcCenter) * scale
+        const tUniform = perfNow();
+        async function uniformWalk(parent) {
+          const layers = parent.layers || [];
+          for (const l of layers) {
+            // Recurse into groups (we scale individual leaves, not groups).
+            if (l.layers && l.layers.length > 0) {
+              await uniformWalk(l);
+              continue;
+            }
+            // Leaf — read bounds, compute new center, scale + move.
+            try {
+              const d = await getLayerDescriptor(l.id);
+              const b = d.bounds;
+              if (!b) continue;
+              const fmt = v => (v && typeof v === "object" && "_value" in v) ? Number(v._value) : Number(v);
+              const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+              if (![left, top, right, bottom].every(Number.isFinite)) continue;
+              const w = right - left;
+              const h = bottom - top;
+              if (w < 1 || h < 1) continue;
+              const cx = (left + right) / 2;
+              const cy = (top + bottom) / 2;
+              // New center = target center + (old center - source center) * scale
+              const newCx = tgtCenterX + (cx - srcCenterX) * scale;
+              const newCy = tgtCenterY + (cy - srcCenterY) * scale;
+              const newW = w * scale;
+              const newH = h * scale;
+              const newLeft = newCx - newW / 2;
+              const newTop = newCy - newH / 2;
+
+              // Scale unless adjustment fill (no vectorMask) — those throw
+              // "initial bounding rectangle is empty" on transform.
+              let canScale = true;
+              const isAdjustmentFillKind = l.kind === "solidColor" || l.kind === "solidFill"
+                || l.kind === "gradientFill" || l.kind === "pattern";
+              if (isAdjustmentFillKind) {
+                let hasVectorMask = false;
+                try {
+                  hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+                } catch (e) { /* assume no mask */ }
+                if (!hasVectorMask) {
+                  canScale = false;
+                  log(`[V2-UNIFORM]   "${l.name}" skip scale (adjustment fill, no vectorMask)`);
+                }
+              }
+              if (canScale && Math.abs(scale - 1) > 0.005) {
+                try {
+                  await scaleLayerUniform(l, scale);
+                } catch (e) {
+                  log(`[V2-UNIFORM]   "${l.name}" scale failed: ${e.message} — skipping`);
+                  canScale = false;
+                }
+              }
+              // Re-read bounds after scale to get accurate dx/dy.
+              const dAfter = await getLayerDescriptor(l.id);
+              const ba = dAfter.bounds || {};
+              const al = fmt(ba.left), at = fmt(ba.top);
+              const dx = Math.round(newLeft - al);
+              const dy = Math.round(newTop - at);
+              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                await selectLayerById(l.id);
+                await bp([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _id: l.id }],
+                  to: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: dx },
+                    vertical: { _unit: "pixelsUnit", _value: dy }
+                  },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              }
+              log(`[V2-UNIFORM]   "${l.name}" ${Math.round(w)}x${Math.round(h)} @ (${Math.round(left)},${Math.round(top)}) → ${Math.round(newW)}x${Math.round(newH)} @ (${Math.round(newLeft)},${Math.round(newTop)})`);
+            } catch (e) {
+              log(`[V2-UNIFORM]   "${l.name}" ERROR: ${e.message}`);
+            }
+          }
+        }
+        try {
+          await uniformWalk(newAb);
+        } catch (e) {
+          log(`[V2-UNIFORM] walk failed: ${e.message}`);
+        }
+        perfLog(`[V2-UNIFORM] applied ${target.raw}`, tUniform);
+        await runReparent("POST-UNIFORM");
+      } else {
+        log(`[V2] Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
+      }
+
+      // Smart match — scale background + reposition content groups.
+      // Skips layers that have JSON rules so applyLayerRules can take over.
+      if (smartEnabled) {
+        // BG cover scaling (only when no JSON rules — applyLayerRules
+        // handles bg with explicit scale/position when rules exist).
+        if (!hasRules) {
+          const bgGroup = findBgGroup(newAb);
+          if (bgGroup) {
+            try {
+              log(`[V2] BG: "${bgGroup.name}" → cover (smart match)`);
+              await scaleBgCover(bgGroup, target.width, target.height);
+            } catch (e) { log(`[V2] BG scale skipped: ${e.message}`); }
+          }
+        }
+        const tSmart = perfNow();
+        try {
+          await smartLayoutContent(newAb, srcRect.width, srcRect.height, target.width, target.height, savedGridLeft, savedGridTop, sourceLayout, target.raw);
+        } catch (e) { log(`[V2] smartLayoutContent skipped: ${e.message}`); }
+        perfLog(`[V2] smartLayoutContent ${target.raw}`, tSmart);
+        await runReparent("POST-SMART");
+
+        // DIAG: dump tree state AFTER smart match to see which layers got
+        // evicted to root by smartLayoutContent's moves (PS often evicts a
+        // child group's leaf when it's moved across the artboard rect).
+        try {
+          log(`[V2-SMART] Tree dump AFTER smartLayoutContent:`);
+          async function dumpAfterSmart(parent, depth) {
+            const indent = "  ".repeat(depth);
+            for (const l of parent.layers || []) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const fmt = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+                const b = d.bounds || {};
+                const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+                log(`[V2-SMART]   ${indent}"${l.name}" id=${l.id} kind=${l.kind} bounds=(${left},${top},${right},${bottom}) ${right - left}x${bottom - top}`);
+              } catch (e) { /* skip */ }
+              if (l.layers && l.layers.length) await dumpAfterSmart(l, depth + 1);
+            }
+          }
+          await dumpAfterSmart(newAb, 0);
+          // Also list root layers — orphans show up here.
+          const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+          if (docHandle) {
+            const rootNames = docHandle.layers.filter(l => l.id !== newAb.id).map(l => `"${l.name}"(id=${l.id} kind=${l.kind})`).join(", ");
+            log(`[V2-SMART] doc root siblings of newAb: ${rootNames || "(none)"}`);
+          }
+        } catch (e) { log(`[V2-SMART] dump failed: ${e.message}`); }
+      }
+
+      // JSON rules — highest priority, runs after smart match.
+      if (hasRules) {
+        // PRE-RULES LOG: snapshot rule count, capture layer state inside the
+        // new artboard, and confirm origin/canvas params match expectation.
+        // V1 ran in tempDoc (origin 0,0); V2 runs in sourceDoc (origin = artboard
+        // top-left in sourceDoc canvas) — this is the critical difference.
+        try {
+          const ruleArr = layerRules[target.raw] || [];
+          log(`[V2-RULES] ─────────────────────────────────────────────`);
+          log(`[V2-RULES] Pre-apply: targetKey="${target.raw}" rules=${ruleArr.length}`);
+          log(`[V2-RULES]   canvas=${target.width}x${target.height} origin=(${abRectAfter.left},${abRectAfter.top}) [origin should equal artboard top-left in sourceDoc]`);
+          log(`[V2-RULES]   srcSize=${srcRect.width}x${srcRect.height} sourceOrigBounds entries=${Object.keys(sourceOrigBounds || {}).length}`);
+          // Walk newAb tree and dump every layer's name + bounds (canvas-absolute).
+          // This shows where layers physically sit before applyLayerRules moves them.
+          async function dumpTree(parent, depth) {
+            const layers = parent.layers || [];
+            for (const l of layers) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const fmt = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+                const b = d.bounds || {};
+                const bnf = d.boundsNoEffects || {};
+                const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+                const lnf = fmt(bnf.left), tnf = fmt(bnf.top), rnf = fmt(bnf.right), bnfBot = fmt(bnf.bottom);
+                const indent = "  ".repeat(depth);
+                log(`[V2-RULES]   ${indent}"${l.name}" id=${l.id} kind=${l.kind} bounds=(${left},${top},${right},${bottom}) ${right - left}x${bottom - top}` + (Number.isFinite(lnf) ? ` boundsNoFx=(${lnf},${tnf},${rnf},${bnfBot}) ${rnf - lnf}x${bnfBot - tnf}` : ""));
+              } catch (e) { /* skip */ }
+              if (l.layers && l.layers.length) await dumpTree(l, depth + 1);
+            }
+          }
+          log(`[V2-RULES] Tree dump (canvas-absolute coords) BEFORE applyLayerRules:`);
+          await dumpTree(newAb, 0);
+          // Sample a few rules so we can see what positions are expected.
+          log(`[V2-RULES] Rule sample (first 3 of ${ruleArr.length}):`);
+          for (let i = 0; i < Math.min(3, ruleArr.length); i++) {
+            const r = ruleArr[i];
+            log(`[V2-RULES]   [${i}] name="${r.name}" top=${r.top} left=${r.left} right=${r.right} bottom=${r.bottom} _widthRaw=${r._widthRaw} _heightRaw=${r._heightRaw} _fontSize=${r._fontSize} scale=${r.scale}`);
+          }
+          log(`[V2-RULES] ─────────────────────────────────────────────`);
+        } catch (e) { log(`[V2-RULES] pre-apply log failed: ${e.message}`); }
+
+        const tRules = perfNow();
+        try {
+          await applyLayerRules(newAb, target.raw, target.width, target.height, savedGridLeft, savedGridTop, sourceOrigBounds, srcRect.width, srcRect.height);
+        } catch (e) { log(`[V2] applyLayerRules skipped: ${e.message}`); }
+        perfLog(`[V2] applyLayerRules ${target.raw}`, tRules);
+
+        // POST-RULES LOG: dump tree again so we can see the after-state and
+        // verify whether layers landed in expected positions inside the
+        // artboard rect (origin..origin+canvas).
+        try {
+          log(`[V2-RULES] Tree dump AFTER applyLayerRules:`);
+          async function dumpTreeAfter(parent, depth) {
+            const layers = parent.layers || [];
+            for (const l of layers) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const fmt = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+                const b = d.bounds || {};
+                const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+                const indent = "  ".repeat(depth);
+                // Flag layers that fall outside the new artboard rect — those
+                // are likely candidates for "rule didn't apply correctly" bugs.
+                const inside = left < abRectAfter.right && right > abRectAfter.left && top < abRectAfter.bottom && bottom > abRectAfter.top;
+                const flag = inside ? "" : " [OUTSIDE-AB]";
+                log(`[V2-RULES]   ${indent}"${l.name}" bounds=(${left},${top},${right},${bottom}) ${right - left}x${bottom - top}${flag}`);
+              } catch (e) { /* skip */ }
+              if (l.layers && l.layers.length) await dumpTreeAfter(l, depth + 1);
+            }
+          }
+          await dumpTreeAfter(newAb, 0);
+          log(`[V2-RULES] ─────────────────────────────────────────────`);
+        } catch (e) { log(`[V2-RULES] post-apply log failed: ${e.message}`); }
+      }
+      // FIX (Option 6): shrink artboard rect back to target size after
+      // rules finished placing layers. Layers should now be at their final
+      // positions per the rules — within the target rect — so this shrink
+      // doesn't trigger eviction (only layers strictly outside target rect
+      // would; those are edge cases for negative-position rules).
+      if (artboardExpanded) {
+        try {
+          await selectLayerById(newAb.id);
+          await bp([{
+            _obj: "editArtboardEvent",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            artboard: {
+              _obj: "artboard",
+              artboardRect: {
+                _obj: "classFloatRect",
+                top: savedGridTop,
+                left: savedGridLeft,
+                bottom: savedGridTop + target.height,
+                right: savedGridLeft + target.width
+              },
+              guideIDs: [],
+              artboardPresetName: "Custom",
+              color: { _obj: "RGBColor", red: 255, grain: 255, blue: 255 },
+              artboardBackgroundType: 1
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          // Verify
+          const dShr = await getLayerDescriptor(newAb.id);
+          const isArtbAgain = !!(dShr.artboardEnabled || dShr.artboard);
+          const finalRect = rectSize(dShr.artboard?.artboardRect || dShr.bounds);
+          log(`[V2] Shrunk artboard back to target: isArtboard=${isArtbAgain} rect=(L${finalRect.left},T${finalRect.top},R${finalRect.right},B${finalRect.bottom}) ${finalRect.width}x${finalRect.height}`);
+
+          // Move artboard from shifted position back to the ORIGINAL grid
+          // position (savedGridLeft/Top were adjusted after expand auto-shift,
+          // so use origGridLeft/Top — the position we wanted before expand).
+          const moveBackX = origGridLeft - finalRect.left;
+          const moveBackY = origGridTop - finalRect.top;
+          if (Math.abs(moveBackX) > 0.5 || Math.abs(moveBackY) > 0.5) {
+            await selectLayerById(newAb.id);
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: newAb.id }],
+              to: {
+                _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: Math.round(moveBackX) },
+                vertical: { _unit: "pixelsUnit", _value: Math.round(moveBackY) }
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            log(`[V2] Moved artboard back to original grid (${finalRect.left},${finalRect.top}) → (${origGridLeft},${origGridTop})`);
+          }
+
+          // Second re-parent pass: shrinking can evict layers whose final
+          // positions still fall outside target rect (e.g. fill layers smart
+          // match skipped, or negative-coord rules).
+          await runReparent("POST-SHRINK");
+        } catch (e) {
+          log(`[V2] artboard shrink failed: ${e.message}`);
+        }
+      }
+    } else {
+      log(`[V2] Skipping rules — artboard rect mismatch (got ${abRectAfter?.width}x${abRectAfter?.height}, expected ${target.width}x${target.height})`);
+    }
+
+    nextX += target.width + 80;
+    log(`[V2] Created: ${newName}`);
+    perfLog(`[V2] target ${target.raw} total`, tTarget);
   }
 }
 
@@ -2307,13 +3297,35 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         }]);
         log(`Canvas: ${target.width}x${target.height}`);
 
-        // DEBUG: check actual layer positions after canvasSize
+        // DEBUG: confirm tempDoc canvas matches target after canvasSize
         try {
-          for (const l of tempDoc.layers) {
-            const b = await getLayerBounds(l.id);
-            if (b.width > 0) { log(`[DEBUG] After crop - "${l.name}": (${b.left},${b.top}) ${b.width}x${b.height}`); break; }
-          }
+          log(`[DIAG] tempDoc canvas after resize: ${tempDoc.width}x${tempDoc.height} (expected ${target.width}x${target.height})`);
         } catch(e) {}
+
+        // DEBUG: dump ALL root-level layers + bounds + kind + isArtboard.
+        // Why: when "make artboardSection" produces a group instead of an
+        // artboard, the most common cause is that some root layer has bounds
+        // far outside canvas, expanding the union rect PS uses. We need every
+        // root layer (not just the first with width>0) to spot the offender.
+        try {
+          const roots = [...tempDoc.layers];
+          log(`[DIAG] After canvasSize: ${roots.length} root layer(s) in tempDoc`);
+          for (const l of roots) {
+            try {
+              const d = await getLayerDescriptor(l.id);
+              const isArtb = !!(d.artboardEnabled || d.artboard);
+              const fmt = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+              const b = d.bounds || {};
+              const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
+              const w = right - left, h = bottom - top;
+              const inside = (right > 0 && left < target.width && bottom > 0 && top < target.height);
+              const flag = isArtb ? "ARTBOARD" : (inside ? "" : "OFFCANVAS");
+              log(`[DIAG]   "${l.name}" kind=${l.kind} isArtboard=${isArtb} bounds=(L${left},T${top},R${right},B${bottom}) ${w}x${h} ${flag}`);
+            } catch (e) {
+              log(`[DIAG]   "${l.name}" (descriptor failed: ${e.message})`);
+            }
+          }
+        } catch(e) { log(`[DIAG] root dump failed: ${e.message}`); }
 
         // Uniform mode owns the layout — skip smart match and JSON rules.
         const hasRules = !uniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
@@ -2412,20 +3424,37 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           throw e;
         }
 
-        // 7. Wrap all layers into an artboard
-        await bp([{
-          _obj: "select",
-          _target: [{ _ref: "layer", _enum: "ordinal", _value: "front" }],
-          makeVisible: false,
-          _options: { dialogOptions: "dontDisplay" }
-        }]);
-        await bp([{
-          _obj: "select",
-          _target: [{ _ref: "layer", _enum: "ordinal", _value: "back" }],
-          selectionModifier: { _enum: "selectionModifierType", _value: "addToSelectionContinuous" },
-          makeVisible: false,
-          _options: { dialogOptions: "dontDisplay" }
-        }]);
+        // 7. Wrap all layers into an artboard.
+        //
+        // Fix A: select ONLY root-level layers by id. The previous approach
+        // (`select front` + `addToSelectionContinuous back`) walks the whole
+        // tree and ends up selecting both parent groups AND their nested
+        // children — e.g. 6 root groups → 15 layers selected. With nested
+        // layers in the selection, `make artboardSection from layer` falls
+        // back to creating an EMPTY artboard offset to the side (observed:
+        // "Artboard 1" at L480..R960 instead of L0..R480) and leaves the
+        // root groups un-wrapped. Selecting only the 6 root layer ids gives
+        // PS a clean, flat selection so it can wrap them into one artboard.
+        const rootIdsForMake = tempDoc.layers.map(l => l.id);
+        if (rootIdsForMake.length) {
+          await bp([{
+            _obj: "select",
+            _target: rootIdsForMake.map(id => ({ _ref: "layer", _id: id })),
+            makeVisible: false,
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+        }
+
+        // DIAG: log selection state right before "make artboardSection".
+        // If selection is empty or single, PS may silently produce a group
+        // instead of an artboard. We use app.activeDocument.activeLayers.
+        try {
+          const sel = (app.activeDocument && app.activeDocument.activeLayers) || [];
+          const ids = sel.map(l => `${l.id}:"${l.name}"`).join(", ");
+          log(`[DIAG] Pre-make selection: ${sel.length} layer(s) [${ids}]`);
+          log(`[DIAG] Pre-make tempDoc root count=${tempDoc.layers.length}, artboardRect target=(0,0,${target.width},${target.height})`);
+        } catch(e) { log(`[DIAG] selection probe failed: ${e.message}`); }
+
         await bp([{
           _obj: "make",
           _target: [{ _ref: "artboardSection" }],
@@ -2453,6 +3482,29 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           // for human-readable log; fall back to "?" if absent.
           const fmt = v => v && typeof v === "object" && "_value" in v ? v._value : v;
           log(`Artboard created in temp doc: ${newName} (kind=${abLayer.kind}, isArtboard=${wrapOk}, rect=(L${fmt(r?.left)},T${fmt(r?.top)},R${fmt(r?.right)},B${fmt(r?.bottom)}))`);
+
+          // DIAG: full descriptor info to understand WHY PS fell back to group.
+          // artboardEnabled / artboard absent → PS treated this as a group.
+          // Log the actual bounds vs the requested artboardRect, child count,
+          // and root layer count after make to understand what ended up where.
+          try {
+            const fmtN = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+            const bb = verifyDesc.bounds || {};
+            log(`[DIAG] abLayer descriptor: id=${abLayer.id} kind=${abLayer.kind} artboardEnabled=${verifyDesc.artboardEnabled} hasArtboardObj=${!!verifyDesc.artboard}`);
+            log(`[DIAG] abLayer bounds=(L${fmtN(bb.left)},T${fmtN(bb.top)},R${fmtN(bb.right)},B${fmtN(bb.bottom)}) requested=(0,0,${target.width},${target.height})`);
+            log(`[DIAG] abLayer children=${abLayer.layers?.length || 0}, tempDoc root layers=${tempDoc.layers.length}`);
+            if (!wrapOk && tempDoc.layers.length > 1) {
+              log(`[DIAG] Multiple root layers after make — listing siblings of abLayer:`);
+              for (const sib of tempDoc.layers) {
+                if (sib.id === abLayer.id) continue;
+                try {
+                  const sd = await getLayerDescriptor(sib.id);
+                  const sb = sd.bounds || {};
+                  log(`[DIAG]   sibling "${sib.name}" kind=${sib.kind} isArtboard=${!!(sd.artboardEnabled||sd.artboard)} bounds=(L${fmtN(sb.left)},T${fmtN(sb.top)},R${fmtN(sb.right)},B${fmtN(sb.bottom)})`);
+                } catch (e) { log(`[DIAG]   sibling "${sib.name}" descriptor failed`); }
+              }
+            }
+          } catch (e) { log(`[DIAG] verbose descriptor dump failed: ${e.message}`); }
         } catch (e) {
           log(`Artboard verify error: ${e.message}`);
         }
@@ -2466,6 +3518,58 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         // calls — no batchPlay selection state to misread.
         if (!wrapOk) {
           log(`[WRAP-FAIL] Falling back: delete ghost + retry make artboardSection`);
+
+          // PROBE (1): before running the original fallback, try the
+          // alternative approach — make an EMPTY artboard with `make
+          // artboardSection` (no `from`) at the correct rect. If this
+          // produces a real artboard, we know Fix C (empty + move-into)
+          // would work and can replace the editArtboardEvent fallback.
+          // Probe is wrapped in try/catch and uses a unique temp name so
+          // it doesn't interfere with the real fallback below.
+          try {
+            const probeName = `__probe_empty_artboard_${Date.now()}`;
+            log(`[PROBE] Trying make artboardSection (no from) at rect (0,0,${target.width},${target.height})`);
+            await bp([{
+              _obj: "make",
+              _target: [{ _ref: "artboardSection" }],
+              artboardRect: {
+                _obj: "classFloatRect",
+                top: 0, left: 0,
+                bottom: target.height, right: target.width
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            const probeLayer = tempDoc.layers[0];
+            if (probeLayer) {
+              try { probeLayer.name = probeName; } catch (e) {}
+              const probeDesc = await getLayerDescriptor(probeLayer.id);
+              const probeOk = !!(probeDesc.artboardEnabled || probeDesc.artboard);
+              const fmtN = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+              const pr = probeDesc.artboard?.artboardRect;
+              const pb = probeDesc.bounds || {};
+              log(`[PROBE] result: kind=${probeLayer.kind} isArtboard=${probeOk} artboardEnabled=${probeDesc.artboardEnabled}`);
+              if (pr) log(`[PROBE]   artboardRect=(L${fmtN(pr.left)},T${fmtN(pr.top)},R${fmtN(pr.right)},B${fmtN(pr.bottom)})`);
+              log(`[PROBE]   bounds=(L${fmtN(pb.left)},T${fmtN(pb.top)},R${fmtN(pb.right)},B${fmtN(pb.bottom)})`);
+              // Cleanup: delete probe artboard so the real fallback below
+              // operates on the same doc state it would have without probe.
+              try {
+                await selectLayerById(probeLayer.id);
+                await bp([{
+                  _obj: "delete",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                log(`[PROBE] cleanup: probe artboard deleted`);
+              } catch (e) {
+                log(`[PROBE] cleanup failed: ${e.message}`);
+              }
+            } else {
+              log(`[PROBE] no top layer after make — probe inconclusive`);
+            }
+          } catch (e) {
+            log(`[PROBE] failed: ${e.message}`);
+          }
+
           try {
             // Why: when `make artboardSection` fails silently (no real artboard
             // in tempDoc), it leaves a ghost layer at top of stack — kind
@@ -2478,23 +3582,29 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
             // "Artboard 1" by canvasSize, but the failed `make` left an
             // empty pretender on top — that pretender is what we delete.
             const ghosts = [];
+            const artboardCandidates = [];
             for (const l of [...tempDoc.layers]) {
               try {
                 const d = await getLayerDescriptor(l.id);
                 const isArtb2 = !!(d.artboardEnabled || d.artboard);
-                if (!isArtb2) ghosts.push(l);
+                if (!isArtb2) ghosts.push({ layer: l, kind: l.kind });
+                else artboardCandidates.push({ layer: l, kind: l.kind });
               } catch (e) { /* skip */ }
+            }
+            log(`[DIAG] Pre-cleanup root scan: ${ghosts.length} non-artboard, ${artboardCandidates.length} artboard candidate(s)`);
+            for (const c of artboardCandidates) {
+              log(`[DIAG]   artboard candidate: "${c.layer.name}" kind=${c.kind}`);
             }
             for (const g of ghosts) {
               try {
-                await selectLayerById(g.id);
+                await selectLayerById(g.layer.id);
                 await bp([{
                   _obj: "delete",
                   _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
                   _options: { dialogOptions: "dontDisplay" }
                 }]);
               } catch (e) {
-                try { g.delete(); } catch (e2) { /* ignore */ }
+                try { g.layer.delete(); } catch (e2) { /* ignore */ }
               }
             }
             if (ghosts.length) log(`[WRAP-FAIL]   deleted ${ghosts.length} ghost layer(s)`);
@@ -2507,7 +3617,14 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
                 if (d.artboardEnabled || d.artboard) { realArtb = l; break; }
               } catch (e) { /* skip */ }
             }
-            if (!realArtb) throw new Error("no artboard found in tempDoc after ghost-cleanup");
+            if (!realArtb) {
+              log(`[DIAG] Post-cleanup: NO artboard found. Root layers remaining=${tempDoc.layers.length}`);
+              for (const l of tempDoc.layers) {
+                log(`[DIAG]   leftover: "${l.name}" kind=${l.kind}`);
+              }
+              throw new Error("no artboard found in tempDoc after ghost-cleanup");
+            }
+            log(`[DIAG] Post-cleanup: found realArtb id=${realArtb.id} name="${realArtb.name}" kind=${realArtb.kind}`);
 
             // Step 3: resize the real artboard to target size via editArtboardEvent.
             await selectLayerById(realArtb.id);
@@ -2525,7 +3642,13 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
             try { realArtb.name = newName; } catch (e) { /* ignore */ }
             const desc2 = await getLayerDescriptor(realArtb.id);
             const ok2 = !!(desc2.artboardEnabled || desc2.artboard);
+            const fmtN = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
+            const r2 = desc2.artboard?.artboardRect;
+            const b2 = desc2.bounds || {};
             log(`[WRAP-FAIL] Reused artboard: isArtboard=${ok2}, name=${realArtb.name}, children=${realArtb.layers?.length || 0}`);
+            log(`[DIAG] Reused descriptor: artboardEnabled=${desc2.artboardEnabled} hasArtboardObj=${!!desc2.artboard}`);
+            if (r2) log(`[DIAG]   artboardRect after editArtboardEvent=(L${fmtN(r2.left)},T${fmtN(r2.top)},R${fmtN(r2.right)},B${fmtN(r2.bottom)})`);
+            log(`[DIAG]   bounds=(L${fmtN(b2.left)},T${fmtN(b2.top)},R${fmtN(b2.right)},B${fmtN(b2.bottom)})`);
             abLayer = realArtb;
           } catch (e) {
             log(`[WRAP-FAIL] Fallback failed: ${e.message}`);
@@ -6514,8 +7637,22 @@ try {
 
 sizesInput.addEventListener("input", applySizesChange);
 suffixNameEl.addEventListener("change", saveSuffixPref);
-smartMatchEl.addEventListener("change", saveSmartMatchPref);
-uniformScaleEl?.addEventListener("change", saveUniformScalePref);
+// Smart match and Uniform scale are mutually exclusive — checking one
+// auto-unchecks the other. Both can be unchecked simultaneously.
+smartMatchEl.addEventListener("change", () => {
+  if (smartMatchEl.checked && uniformScaleEl) {
+    uniformScaleEl.checked = false;
+    saveUniformScalePref();
+  }
+  saveSmartMatchPref();
+});
+uniformScaleEl?.addEventListener("change", () => {
+  if (uniformScaleEl.checked && smartMatchEl) {
+    smartMatchEl.checked = false;
+    saveSmartMatchPref();
+  }
+  saveUniformScalePref();
+});
 refreshBtn.addEventListener("click", refreshSource);
 cloneBtn.addEventListener("click", () => {
   if (cloneMode === "artboards") cloneAsArtboards();

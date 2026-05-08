@@ -346,8 +346,24 @@
   <ol>
     <li><strong>Scan missing</strong> — lists missing links. <strong>Scan all</strong> = lists everything with its status.</li>
     <li><strong>+ subfolders</strong> checkbox (default ON): walks into subfolders when relinking.</li>
-    <li>Click <strong>Pick folder &amp; relink</strong> → choose the folder with the new files. Matching is by <em>filename</em>.</li>
+    <li>Choose the relink action that fits your situation:</li>
   </ol>
+  <table>
+    <thead><tr><th>Button</th><th>Scope</th><th>When to use</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Pick folder &amp; relink missing</strong></td>
+        <td><em>Missing</em> links only</td>
+        <td>Everyday use — safe, leaves currently linked files untouched</td>
+      </tr>
+      <tr>
+        <td><strong>Redirect all links to folder…</strong></td>
+        <td>All links (including currently linked)</td>
+        <td>Moving the entire project to a new server or folder — replaces even working links</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="warn"><strong>Note on "Redirect all links":</strong> this button redirects <em>every</em> link — including ones that are currently working — to the folder you pick (matched by filename). Use it when moving all assets to a new location.</div>
   <div class="tip"><strong>The "All opened docs" checkbox</strong> affects <em>both scanning and the relink actions</em> (Pick folder &amp; Path Find &amp; Replace). Enabled = every open document is touched. Disabled = active doc only.</div>
 
   <h3>5.2 Path Find &amp; Replace (regex)</h3>

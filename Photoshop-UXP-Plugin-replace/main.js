@@ -1642,17 +1642,28 @@ async function replaceTextOnLayer(occ, newContent) {
   // Point text was anchored at the first-line baseline, but after point→box
   // conversion PS anchors at top-left and the box is often wider than the visual
   // bounds — left and top drift. We translate so that:
-  //   - horizontal center matches oldBounds center (center-aligned point text)
-  //   - top of the rendered text matches oldBounds.top
+  //   - left  align: oldBounds.left  matches new left
+  //   - right align: oldBounds.right matches new right
+  //   - center:      horizontal center matches oldBounds center
+  //   - top of the rendered text matches oldBounds.top in all cases
   if (isPointText && oldBounds.width > 0) {
     const afterSet = await getTargetLayerDescriptor();
     const nb = rectSize(afterSet.bounds);
     if (nb.width > 0 && nb.height > 0) {
-      const oldCenterX = oldBounds.left + oldBounds.width / 2;
-      const newCenterX = nb.left + nb.width / 2;
-      const dx = oldCenterX - newCenterX;
+      const alignRaw = String(
+        tk?.paragraphStyleRange?.[0]?.paragraphStyle?.align?._value
+        ?? freshTK?.paragraphStyleRange?.[0]?.paragraphStyle?.align?._value
+        ?? "left"
+      ).toLowerCase();
+      let alignKind = "left";
+      if (alignRaw.includes("right"))       alignKind = "right";
+      else if (alignRaw.includes("center")) alignKind = "center";
+      let dx;
+      if (alignKind === "right")       dx = oldBounds.right - nb.right;
+      else if (alignKind === "center") dx = (oldBounds.left + oldBounds.width / 2) - (nb.left + nb.width / 2);
+      else                              dx = oldBounds.left - nb.left;
       const dy = oldBounds.top - nb.top;
-      log(`  [TXT] realign dx=${Math.round(dx)} dy=${Math.round(dy)} (old@${Math.round(oldBounds.left)},${Math.round(oldBounds.top)} new@${Math.round(nb.left)},${Math.round(nb.top)})`);
+      log(`  [TXT] realign align=${alignKind} (raw=${alignRaw}) dx=${Math.round(dx)} dy=${Math.round(dy)} (old L=${Math.round(oldBounds.left)} R=${Math.round(oldBounds.right)} T=${Math.round(oldBounds.top)} | new L=${Math.round(nb.left)} R=${Math.round(nb.right)} T=${Math.round(nb.top)})`);
       const activeIds = (app.activeDocument.activeLayers || []).map(l => l.id).join(",");
       log(`  [TXT] activeLayers=[${activeIds}] target=${occ.layerId}`);
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {

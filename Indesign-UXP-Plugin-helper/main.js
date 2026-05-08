@@ -1311,6 +1311,41 @@ function applyTableColumnWidths(tbl, widths) {
   }
 }
 
+// Remove all cell borders on a freshly created table so InDesign's default
+// "[Basic Table]" black stroke doesn't appear after each rebuild.
+function clearTableBorders(tbl) {
+  try {
+    const doc = tbl.parent && tbl.parent.parent && tbl.parent.parent.parent;
+    const none = doc ? doc.colors.itemByName("None") : null;
+    const rows = tbl.rows.length;
+    const cols = tbl.columns.length;
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        try {
+          const cell = tbl.rows.item(i).cells.item(j);
+          const strokeProps = {
+            topEdgeStrokeWeight: 0,
+            bottomEdgeStrokeWeight: 0,
+            leftEdgeStrokeWeight: 0,
+            rightEdgeStrokeWeight: 0,
+          };
+          if (none) {
+            strokeProps.topEdgeStrokeColor    = none;
+            strokeProps.bottomEdgeStrokeColor = none;
+            strokeProps.leftEdgeStrokeColor   = none;
+            strokeProps.rightEdgeStrokeColor  = none;
+          }
+          try { cell.properties = strokeProps; } catch (e) {
+            for (const [k, v] of Object.entries(strokeProps)) {
+              try { cell[k] = v; } catch (e2) {}
+            }
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
 function applyCellStyles(tbl, cellsByCol, rowCount, colCount) {
   for (let i = 0; i < rowCount; i++) {
     for (let j = 0; j < colCount; j++) {
@@ -1319,6 +1354,40 @@ function applyCellStyles(tbl, cellsByCol, rowCount, colCount) {
       try { cellText = tbl.rows.item(i).cells.item(j).texts.item(0); } catch (e) {}
       if (cellText) applyTextStyle(cellText, cellsByCol[j]);
     }
+  }
+}
+
+// For each row, check if the label cell (col 0) has overflowing text.
+// If so, widen col 0 in 4pt steps until cell.lines.length === 1, capped at
+// 3x the original width so we never blow out the table layout.
+function expandLabelColumnIfNeeded(tbl, rowCount) {
+  let col0 = null;
+  try { col0 = tbl.columns.item(0); } catch (e) { return; }
+
+  let originalWidth = 0;
+  try { originalWidth = col0.width; } catch (e) { return; }
+  if (originalWidth <= 0) return;
+
+  const maxWidth = originalWidth * 3;
+  const STEP = 4; // points per iteration
+
+  for (let i = 0; i < rowCount; i++) {
+    try {
+      const cell = tbl.rows.item(i).cells.item(0);
+      let lineCount = 1;
+      try { lineCount = cell.lines.length; } catch (e) {}
+      if (lineCount <= 1) continue;
+
+      // Widen col 0 until single line or cap reached
+      let w = originalWidth;
+      while (lineCount > 1 && w < maxWidth) {
+        w += STEP;
+        try { col0.width = w; } catch (e) { break; }
+        try { lineCount = cell.lines.length; } catch (e) { break; }
+      }
+      // Once widened, no need to check other rows — col is shared
+      break;
+    } catch (e) {}
   }
 }
 
@@ -1336,6 +1405,7 @@ function writeReportToFrame(frame, data) {
       const ip = story.insertionPoints.lastItem();
       const tbl = ip.tables.add();
       setTableGeometry(tbl, 4, 2);
+      clearTableBorders(tbl);
       applyTableColumnWidths(tbl, snap.columnWidths);
       applyCellStyles(tbl, snap.cellsByCol, 2, 4);
       return;
@@ -1352,6 +1422,7 @@ function writeReportToFrame(frame, data) {
     const ip = story.insertionPoints.lastItem();
     const tbl = ip.tables.add();
     setTableGeometry(tbl, 4, data.rows.length);
+    clearTableBorders(tbl);
     applyTableColumnWidths(tbl, snap.columnWidths);
 
     for (let i = 0; i < data.rows.length; i++) {
@@ -1366,6 +1437,7 @@ function writeReportToFrame(frame, data) {
       }
     }
     applyCellStyles(tbl, snap.cellsByCol, data.rows.length, 4);
+    expandLabelColumnIfNeeded(tbl, data.rows.length);
   } catch (e) {
     log(`[report] write error: ${e.message || e}`, "error");
     throw e;
@@ -2040,6 +2112,51 @@ async function relinkFromFolder() {
   scanMissing(true);
 }
 
+async function relinkAllFromFolder() {
+  const targets = getScanTargets();
+  if (!targets.length) { flashStatus("No document open", true); return; }
+  const lfs = getLfs();
+  if (!lfs) { flashStatus("File system unavailable", true); return; }
+
+  let folder;
+  try { folder = await lfs.getFolder(); }
+  catch (e) { return; /* user cancelled */ }
+  if (!folder) return;
+
+  const recursive = $("#optRecursive").checked;
+  const multi = targets.length > 1;
+  flashStatus("Scanning folder…");
+  const { map, baseMap } = await folderToFileMap(folder, recursive);
+
+  let ok = 0, notFound = 0, failed = 0, totalLinks = 0;
+  for (const { doc, docName } of targets) {
+    const links = getLinksArray(doc).filter(l => !isEmbedded(l));
+    totalLinks += links.length;
+    log(`Relinking all ${links.length} link(s)${multi ? ` in ${docName}` : ""}…`);
+    for (const link of links) {
+      const tag = multi ? `[${docName}] ` : "";
+      const name = (link.name || "").toLowerCase();
+      let entry = map.get(name);
+      if (!entry) {
+        const base = name.replace(/\.[^.]+$/, "");
+        entry = baseMap.get(base);
+      }
+      if (!entry) { notFound++; log(`  · not found: ${tag}${link.name}`, "warn"); continue; }
+      const nativePath = entry.nativePath;
+      const result = await tryRelink(link, nativePath);
+      if (result.ok) {
+        ok++;
+        log(`  · relinked: ${tag}${link.name}`, "success");
+      } else {
+        failed++;
+        log(`  · failed: ${tag}${link.name}`, "error");
+      }
+    }
+  }
+  flashStatus(`Relinked ${ok}/${totalLinks}${notFound ? ` · ${notFound} not found in folder` : ""}${failed ? ` · ${failed} failed` : ""}${multi ? ` · ${targets.length} docs` : ""}`, notFound + failed > 0);
+  scanMissing(true);
+}
+
 // Build a `file://` URI from a native path, properly encoded.
 // InDesign UXP expects a valid URI, not a raw path. Spaces / non-ASCII must be encoded.
 function pathToFileUri(path) {
@@ -2230,6 +2347,8 @@ function wireRelink() {
   const scanAllBtn = $("#btnScanAll");
   if (scanAllBtn) scanAllBtn.addEventListener("click", scanAll);
   $("#btnRelinkFolder").addEventListener("click", relinkFromFolder);
+  const relinkAllBtn = $("#btnRelinkFolderAll");
+  if (relinkAllBtn) relinkAllBtn.addEventListener("click", relinkAllFromFolder);
 
   // Click-to-copy on the file path. Event delegation on the list container
   // so it keeps working after re-renders.
@@ -2274,6 +2393,21 @@ let scaleCheckIssues = [];       // cached for click handlers after render
 let scaleCheckPassItems = [];    // cached proportional items (shown when all-pass)
 let scaleCheckPassExpanded = false;
 let lastScaleSig = "";
+
+// Repaint only the badge using the already-cached scaleCheckIssues array.
+// Zero cost — no InDesign DOM access, safe to call every 500ms.
+function updateScaleBadgeFromCache() {
+  const badgeEl = document.getElementById("scaleCheckBadge");
+  if (!badgeEl) return;
+  const n = scaleCheckIssues.length;
+  if (n > 0) {
+    badgeEl.textContent = String(n);
+    badgeEl.classList.remove("tab-badge-hidden");
+  } else {
+    badgeEl.textContent = "";
+    badgeEl.classList.add("tab-badge-hidden");
+  }
+}
 
 function scanScaleIssues(doc, opts) {
   const vectorOnly = !!(opts && opts.vectorOnly);
@@ -2569,6 +2703,329 @@ function wireScaleCheck() {
   if (tabBtn) tabBtn.addEventListener("click", () => renderScaleCheck({ force: true }));
 }
 
+/* ============ REPOSITION ============ */
+
+let repoTargetId = null; // pageItem.id of captured frame
+
+function repoSetStatus(msg, isError) {
+  const el = $("#repoStatus");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = isError ? "status error" : "status";
+}
+
+function repoSetFrameStatus(msg, linked) {
+  const el = $("#repoFrameStatus");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = linked ? "report-status is-linked" : "report-status";
+}
+
+function repoCaptureFrame() {
+  repoTargetId = null;
+  repoSetFrameStatus("No frame selected", false);
+  $("#repoPreviewBox").style.display = "none";
+  repoSetStatus("");
+
+  let doc;
+  try { doc = app.activeDocument; } catch (e) { doc = null; }
+  if (!doc) { repoSetFrameStatus("No document open", false); return; }
+
+  const sel = app.selection;
+  if (!sel || sel.length === 0) {
+    repoSetFrameStatus("Nothing selected in InDesign", false);
+    return;
+  }
+  const item = sel[0];
+  let id;
+  try { id = item.id; } catch (e) { id = null; }
+  if (!id) { repoSetFrameStatus("Selected item has no ID", false); return; }
+
+  repoTargetId = id;
+
+  let name = "";
+  try { name = item.name || item.label || ("Item " + id); } catch (e) { name = "Item " + id; }
+
+  const unit = resolveDisplayUnit(doc);
+  let xPtCurrent = 0, yPtCurrent = 0, wPt = 0, hPt = 0;
+  try {
+    withPtUnits(doc, () => {
+      const b = item.geometricBounds; // [y1, x1, y2, x2] in pt
+      const page = item.parentPage || doc.pages.item(0);
+      const pb = page.bounds; // [y1, x1, y2, x2] of page in pt
+      xPtCurrent = b[1] - pb[1]; // X from left of page
+      yPtCurrent = b[0] - pb[0]; // Y from top of page
+      wPt = b[3] - b[1];
+      hPt = b[2] - b[0];
+    });
+  } catch (e) {}
+
+  // Sync dropdown to doc unit, then pre-fill inputs
+  const unitSel = $("#repoUnit");
+  if (unitSel) { unitSel.value = unit; unitSel.dataset.prevUnit = unit; }
+
+  const xInput = $("#repoX");
+  const yInput = $("#repoY");
+  if (xInput) xInput.value = Number(ptToUnit(xPtCurrent, unit).toFixed(4));
+  if (yInput) yInput.value = Number(ptToUnit(yPtCurrent, unit).toFixed(4));
+
+  const xDisp = repoDisplay(xPtCurrent, unit);
+  const yDisp = repoDisplay(yPtCurrent, unit);
+  const wDisp = repoDisplay(wPt, unit);
+  const hDisp = repoDisplay(hPt, unit);
+  const info = `${name} — ${wDisp} × ${hDisp} @ X:${xDisp}, Y:${yDisp}`;
+  repoSetFrameStatus(info, true);
+  log(`Reposition: captured "${name}" X:${xDisp} Y:${yDisp}`);
+}
+
+function repoDisplay(pt, unit) {
+  const val = ptToUnit(pt, unit);
+  return `${Number(val.toFixed(3))} ${unitLabel(unit)}`;
+}
+
+function repoGetMode() {
+  const checked = document.querySelector('input[name="repoMode"]:checked');
+  return checked ? checked.value : "manual";
+}
+
+const PT_PER_FT = 864; // 1 ft = 12 in = 12 × 72 pt
+
+function unitToPt(val, unit) {
+  switch (unit) {
+    case "ft": return val * PT_PER_FT;
+    case "mm": return val * PT_PER_MM;
+    case "cm": return val * PT_PER_CM;
+    case "in": return val * PT_PER_IN;
+    default:   return val; // px / pt
+  }
+}
+
+function repoGetUnit() {
+  const sel = $("#repoUnit");
+  return sel ? sel.value : "px";
+}
+
+// Convert X/Y inputs from oldUnit → newUnit in place
+function repoConvertInputs(oldUnit, newUnit) {
+  const xEl = $("#repoX");
+  const yEl = $("#repoY");
+  if (!xEl || !yEl) return;
+  const xRaw = parseFloat(String(xEl.value).replace(",", "."));
+  const yRaw = parseFloat(String(yEl.value).replace(",", "."));
+  if (isFinite(xRaw)) {
+    const xPt = unitToPt(xRaw, oldUnit);
+    xEl.value = Number(ptToUnit(xPt, newUnit).toFixed(4));
+  }
+  if (isFinite(yRaw)) {
+    const yPt = unitToPt(yRaw, oldUnit);
+    yEl.value = Number(ptToUnit(yPt, newUnit).toFixed(4));
+  }
+}
+
+// Read X/Y from current mode. Returns { xPt, yPt } in points or null if invalid.
+function repoReadValues() {
+  const mode = repoGetMode();
+  if (mode === "manual") {
+    const unit = repoGetUnit();
+    const x = parseFloat(String($("#repoX").value).replace(",", "."));
+    const y = parseFloat(String($("#repoY").value).replace(",", "."));
+    if (!isFinite(x) || !isFinite(y)) return null;
+    return { xPt: unitToPt(x, unit), yPt: unitToPt(y, unit), unit };
+  } else {
+    const px = $("#repoJsonX");
+    const py = $("#repoJsonY");
+    if (!px || !py) return null;
+    const xPt = parseFloat(px.dataset.valPt);
+    const yPt = parseFloat(py.dataset.valPt);
+    if (!isFinite(xPt) || !isFinite(yPt)) return null;
+    return { xPt, yPt, unit: "in" };
+  }
+}
+
+function repoPreview() {
+  repoSetStatus("");
+  const box = $("#repoPreviewBox");
+  if (!box) return;
+
+  if (!repoTargetId) {
+    repoSetStatus("Capture a frame first", true);
+    box.style.display = "none";
+    return;
+  }
+  const vals = repoReadValues();
+  if (!vals) {
+    repoSetStatus("Enter valid X and Y values", true);
+    box.style.display = "none";
+    return;
+  }
+  const unit = vals.unit || "px";
+  const xDisp = repoDisplay(vals.xPt, unit);
+  const yDisp = repoDisplay(vals.yPt, unit);
+  box.innerHTML = `Will move to <strong>X: ${escapeHtml(xDisp)}</strong> from left, <strong>Y: ${escapeHtml(yDisp)}</strong> from top`;
+  box.style.display = "block";
+  repoSetStatus("");
+}
+
+async function repoApply() {
+  repoSetStatus("");
+  const previewBox = $("#repoPreviewBox");
+  if (previewBox) previewBox.style.display = "none";
+
+  if (!repoTargetId) { repoSetStatus("Capture a frame first", true); return; }
+
+  const vals = repoReadValues();
+  if (!vals) { repoSetStatus("Enter valid X and Y values", true); return; }
+
+  let doc;
+  try { doc = app.activeDocument; } catch (e) { doc = null; }
+  if (!doc) { repoSetStatus("No document open", true); return; }
+
+  const item = findPageItemById(repoTargetId);
+  if (!item) {
+    repoSetStatus("Target frame not found — re-capture it", true);
+    repoTargetId = null;
+    repoSetFrameStatus("No frame selected", false);
+    return;
+  }
+
+  const { xPt, yPt, unit = "px" } = vals;
+
+  try {
+    withPtUnits(doc, () => {
+      const page = item.parentPage || doc.pages.item(0);
+      const pb = page.bounds; // [y1, x1, y2, x2] of page in pt
+      const pageOriginX = pb[1];
+      const pageOriginY = pb[0];
+
+      const b = item.geometricBounds; // [y1, x1, y2, x2] current position
+      const currentX = b[1]; // spread-absolute
+      const currentY = b[0];
+
+      const targetX = pageOriginX + xPt;
+      const targetY = pageOriginY + yPt;
+      const deltaX = targetX - currentX;
+      const deltaY = targetY - currentY;
+
+      // move() shifts the item AND all its children by the delta
+      item.move(undefined, [deltaX, deltaY]);
+    });
+  } catch (e) {
+    const msg = "Move failed: " + (e.message || String(e));
+    repoSetStatus(msg, true);
+    log(msg, "error");
+    return;
+  }
+
+  const xDisp = repoDisplay(xPt, unit);
+  const yDisp = repoDisplay(yPt, unit);
+  const msg = `Moved to X: ${xDisp}, Y: ${yDisp}`;
+  repoSetStatus(msg);
+  log("Reposition: " + msg, "success");
+}
+
+async function repoPickJson() {
+  const lfs = getLfs();
+  if (!lfs) { repoSetStatus("File system unavailable", true); return; }
+
+  let file;
+  try {
+    file = await lfs.getFileForOpening({ types: ["json"] });
+  } catch (e) {
+    if (e && /cancel/i.test(e.message || "")) return;
+    repoSetStatus("Could not open file: " + (e.message || e), true);
+    return;
+  }
+  if (!file) return;
+
+  let raw;
+  try { raw = await file.read({ format: require("uxp").storage.formats.utf8 }); }
+  catch (e) { repoSetStatus("Read failed: " + (e.message || e), true); return; }
+
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (e) { repoSetStatus("Invalid JSON: " + (e.message || e), true); return; }
+
+  const dims = data && data.pricer && (data.pricer.design_file || data.pricer.dimensions);
+  if (!dims) {
+    repoSetStatus("JSON missing pricer.design_file.x_from_left_in / y_from_top_in", true);
+    return;
+  }
+
+  // Values may be number or string with comma decimal separator (e.g. "18,49")
+  const parseJsonNum = v => parseFloat(typeof v === "string" ? v.replace(",", ".") : v);
+  const xRaw = parseJsonNum(dims.x_from_left_in);
+  const yRaw = parseJsonNum(dims.y_from_top_in);
+  if (!isFinite(xRaw) || !isFinite(yRaw)) {
+    repoSetStatus("JSON missing pricer.design_file.x_from_left_in / y_from_top_in", true);
+    return;
+  }
+  const designName = (data.design && data.design.name) || file.name || "";
+
+  // JSON values are always in inches (design_file fields)
+  const xPt = unitToPt(xRaw, "in");
+  const yPt = unitToPt(yRaw, "in");
+
+  // Update preview UI — show raw value in inches
+  const pxEl = $("#repoJsonX");
+  const pyEl = $("#repoJsonY");
+  const pnEl = $("#repoJsonName");
+  if (pxEl) { pxEl.textContent = `${xRaw} in`; pxEl.dataset.valPt = xPt; pxEl.dataset.rawVal = xRaw; }
+  if (pyEl) { pyEl.textContent = `${yRaw} in`; pyEl.dataset.valPt = yPt; pyEl.dataset.rawVal = yRaw; }
+  if (pnEl) pnEl.textContent = designName;
+
+  const jsonPreview = $("#repoJsonPreview");
+  if (jsonPreview) jsonPreview.style.display = "block";
+
+  const jsonStatus = $("#repoJsonStatus");
+  if (jsonStatus) {
+    jsonStatus.textContent = file.name + " loaded";
+    jsonStatus.className = "report-status is-linked";
+  }
+
+  // Auto-show preview
+  repoPreview();
+  log(`Reposition JSON: "${designName}" X=${x} ft, Y=${y} ft`);
+}
+
+function wireReposition() {
+  const captureBtn = $("#btnRepoCaptureFrame");
+  if (!captureBtn) return;
+  captureBtn.addEventListener("click", repoCaptureFrame);
+
+  $("#btnRepoPreview").addEventListener("click", repoPreview);
+  $("#btnRepoApply").addEventListener("click", repoApply);
+  $("#btnRepoPickJson").addEventListener("click", repoPickJson);
+
+  // Unit dropdown: convert displayed values when user switches unit
+  const unitSel = $("#repoUnit");
+  if (unitSel) {
+    unitSel.addEventListener("change", (e) => {
+      const newUnit = e.target.value;
+      const prevUnit = e.target.dataset.prevUnit || newUnit;
+      repoConvertInputs(prevUnit, newUnit);
+      e.target.dataset.prevUnit = newUnit;
+      const previewBox = $("#repoPreviewBox");
+      if (previewBox) previewBox.style.display = "none";
+      repoSetStatus("");
+    });
+  }
+
+  // Toggle panels based on mode radio
+  document.querySelectorAll('input[name="repoMode"]').forEach(radio => {
+    radio.addEventListener("change", () => {
+      const mode = repoGetMode();
+      const manualPanel = $("#repoManualPanel");
+      const jsonPanel = $("#repoJsonPanel");
+      if (manualPanel) manualPanel.style.display = mode === "manual" ? "" : "none";
+      if (jsonPanel) jsonPanel.style.display = mode === "json" ? "" : "none";
+      // Clear preview when switching modes
+      const previewBox = $("#repoPreviewBox");
+      if (previewBox) previewBox.style.display = "none";
+      repoSetStatus("");
+    });
+  });
+}
+
 /* ============ WIRING ============ */
 // Tabs are <div role="button"> (Spectrum styles native <button> with high
 // specificity that defeats stylesheet overrides). Divs need manual keyboard
@@ -2580,7 +3037,7 @@ function activateOnEnterSpace(e) {
   }
 }
 function wireTabs() {
-  // Top tabs (Calculator / Relink)
+  // Top tabs (Calculator / Relink / Scale Check / Reposition)
   $$(".top-tab-btn").forEach(btn => {
     const activate = () => {
       $$(".top-tab-btn").forEach(b => b.classList.remove("is-active"));
@@ -2809,7 +3266,14 @@ function wireSettings() {
 let lastSig = "";
 let lastDocKey = null;
 let refreshTimer = null;
+let scaleCheckTimer = null;
 const POLL_MS = 500;
+const SCALE_POLL_MS = 3000;
+
+function isScaleCheckTabActive() {
+  const btn = document.querySelector('.top-tab-btn[data-toptab="scalecheck"]');
+  return !!(btn && btn.classList.contains("is-active"));
+}
 
 function buildSignature(doc) {
   if (!doc) return "no-doc";
@@ -2850,6 +3314,7 @@ function tickAutoRefresh() {
     loadLogos();
     refreshDocInfo();
     renderLogos();
+    // Force scale scan on doc switch so badge is immediately correct.
     renderScaleCheck({ force: true });
     lastSig = buildSignature(doc);
     return;
@@ -2863,11 +3328,16 @@ function tickAutoRefresh() {
     renderLogos();
   }
 
-  // Scale changes don't always change frame geometry (graphic scale can
-  // change without bounds moving), so scan every tick. Internal sig in
-  // renderScaleCheck skips DOM work when stable. Runs regardless of which
-  // tab is active so the tab badge stays fresh from anywhere.
-  renderScaleCheck();
+  // Keep badge in sync using the cached issue list — zero InDesign DOM cost.
+  // Full re-scan happens in the separate scaleCheckTimer (every 3s, tab-gated).
+  updateScaleBadgeFromCache();
+}
+
+function tickScaleCheck() {
+  // Only run the expensive doc.allGraphics scan when Scale Check tab is visible.
+  // When on another tab, skip entirely — the badge retains its last cached value.
+  if (!isScaleCheckTabActive()) return;
+  try { renderScaleCheck(); } catch (e) { console.error("[BannerHelper] scaleCheck tick error", e); }
 }
 
 function startAutoRefresh() {
@@ -2875,6 +3345,9 @@ function startAutoRefresh() {
   refreshTimer = setInterval(() => {
     try { tickAutoRefresh(); } catch (e) { console.error("[BannerHelper] tick error", e); }
   }, POLL_MS);
+
+  if (scaleCheckTimer) return;
+  scaleCheckTimer = setInterval(tickScaleCheck, SCALE_POLL_MS);
 }
 
 /* ============ IMPORT / EXPORT ============ */
@@ -3026,6 +3499,7 @@ function boot() {
   wireLogos();
   wireRelink();
   wireScaleCheck();
+  wireReposition();
   wireSettings();
   renderSettingsForm();
   refreshDocInfo();

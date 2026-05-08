@@ -346,8 +346,24 @@
   <ol>
     <li><strong>Scan missing</strong> — list các link bị missing. <strong>Scan all</strong> = list tất cả kèm status.</li>
     <li>Checkbox <strong>+ subfolders</strong> (default ON): tìm sâu vào subfolder khi relink.</li>
-    <li>Bấm <strong>Pick folder &amp; relink</strong> → chọn folder chứa file mới. Plugin match theo <em>tên file</em>.</li>
+    <li>Chọn hành động relink phù hợp:</li>
   </ol>
+  <table>
+    <thead><tr><th>Button</th><th>Scope</th><th>Khi nào dùng</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Pick folder &amp; relink missing</strong></td>
+        <td>Chỉ link đang <em>missing</em></td>
+        <td>Sử dụng hàng ngày — an toàn, không đụng link đang OK</td>
+      </tr>
+      <tr>
+        <td><strong>Redirect all links to folder…</strong></td>
+        <td>Tất cả link (kể cả link đang hoạt động)</td>
+        <td>Chuyển toàn bộ project sang server/folder mới — thay thế luôn cả link đang OK</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="warn"><strong>Lưu ý với "Redirect all links":</strong> button này sẽ redirect <em>tất cả</em> link — kể cả những link đang hoạt động bình thường — về folder bạn chọn (match theo tên file). Dùng khi chuyển toàn bộ asset sang location mới.</div>
   <div class="tip"><strong>Checkbox "All opened docs"</strong> áp dụng <em>cả scan lẫn thao tác relink</em> (cả Pick folder &amp; Path Find &amp; Replace). Bật nó = tất cả doc đang mở đều bị ảnh hưởng. Tắt = chỉ active doc.</div>
 
   <h3>5.2 Path Find &amp; Replace (regex)</h3>
