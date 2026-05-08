@@ -76,6 +76,7 @@
         <div class="section checkboxes">
           <label class="checkbox-row"><input id="filterGgPrefix" type="checkbox" /> <span>Only export layers/groups starting with "gg-"</span></label>
           <label class="checkbox-row"><input id="generateInfoHtml" type="checkbox" /> <span>Generate info-image.html gallery at root</span></label>
+          <label class="checkbox-row"><input id="useNoSizeDetected" type="checkbox" /> <span>Use no size detected</span></label>
         </div>
       </div>
       <div class="section btn-row">
@@ -105,7 +106,7 @@
       <div class="section checkboxes">
         <label class="checkbox-row"><input id="uniformScaleEnabled" type="checkbox" /> <span>Uniform scale (preserve ratio — bỏ qua smart match & JSON rules)</span></label>
         <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
-        <label class="checkbox-row"><input id="suffixName" type="checkbox" checked /> <span>Append size suffix to name</span></label>
+        <label class="row" style="margin-left: 22px;"><span style="font-size:10px; color:#aaa;">Auto-fit suffix(es):</span><input id="autoFitSuffix" type="text" placeholder="-auto-fit, -stretch, -hero" style="margin-left:6px; flex:1;" /></label>
         <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" /> <span>Require GG- prefix for layer rules</span></label>
         <label class="checkbox-row"><input id="matchFrameTokenEnabled" type="checkbox" checked /> <span>Match source frame token (e.g. "...-F2" source → only "F2-*" targets)</span></label>
       </div>

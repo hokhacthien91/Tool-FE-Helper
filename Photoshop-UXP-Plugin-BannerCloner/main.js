@@ -52,9 +52,12 @@ const cloneBtn = document.getElementById("cloneBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const sourceNameEl = document.getElementById("sourceName");
 const sourceSizeEl = document.getElementById("sourceSize");
-const suffixNameEl = document.getElementById("suffixName");
+// Suffix-name behavior: always ON (UI checkbox removed). Stub kept so any
+// remaining references still resolve cleanly.
+const suffixNameEl = { checked: true };
 const smartMatchEl = document.getElementById("smartMatchEnabled");
 const uniformScaleEl = document.getElementById("uniformScaleEnabled");
+const autoFitSuffixEl = document.getElementById("autoFitSuffix");
 const matchFrameTokenEnabled = document.getElementById("matchFrameTokenEnabled");
 const skipLayerInput = document.getElementById("skipLayerInput");
 const logBox = document.getElementById("logBox");
@@ -349,6 +352,7 @@ const SIZES_KEY = "bannerCloner.targetSizes";
 const SUFFIX_KEY = "bannerCloner.suffixName";
 const SMART_MATCH_KEY = "bannerCloner.smartMatch";
 const UNIFORM_SCALE_KEY = "bannerCloner.uniformScale";
+const AUTO_FIT_SUFFIX_KEY = "bannerCloner.autoFitSuffix";
 
 function loadBgLayerName() {
   try {
@@ -373,6 +377,8 @@ function loadTargetSizes() {
     if (smart !== null) smartMatchEl.checked = smart === "1";
     const uniform = localStorage.getItem(UNIFORM_SCALE_KEY);
     if (uniform !== null && uniformScaleEl) uniformScaleEl.checked = uniform === "1";
+    const autoFit = localStorage.getItem(AUTO_FIT_SUFFIX_KEY);
+    if (autoFit !== null && autoFitSuffixEl) autoFitSuffixEl.value = autoFit;
   } catch (e) {}
 }
 
@@ -397,6 +403,12 @@ function saveSmartMatchPref() {
 function saveUniformScalePref() {
   try {
     localStorage.setItem(UNIFORM_SCALE_KEY, uniformScaleEl?.checked ? "1" : "0");
+  } catch (e) {}
+}
+
+function saveAutoFitSuffix() {
+  try {
+    localStorage.setItem(AUTO_FIT_SUFFIX_KEY, autoFitSuffixEl?.value || "");
   } catch (e) {}
 }
 
@@ -715,8 +727,21 @@ function findBgGroup(parent) {
 async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
   originX = originX || 0;
   originY = originY || 0;
-  // Process each child layer inside bg group individually
-  // (transform on group opens interactive mode, so we do each child)
+  // Group cover: compute ONE scale ratio + ONE translation for the whole BG
+  // group, then apply to every child uniformly. This preserves the BG
+  // composition (Color Fill, Rectangle gradient, image) instead of letting
+  // each child compute its own scale independently (which breaks layout).
+  //
+  // Strategy:
+  //   1. Compute "reference" bounds = the largest non-fill child (typically
+  //      the main image). Adjustment fill layers (Color Fill 1) cover the
+  //      entire canvas — their bounds aren't a meaningful reference for the
+  //      composition's "intended size", so we skip them when computing scale.
+  //   2. Cover scale = max(canvasW/refW, canvasH/refH).
+  //   3. Group center BEFORE scale = center of reference bounds.
+  //   4. Target center = canvas center in canvas-absolute coords.
+  //   5. For each child: scale uniformly by cover scale, then move so its
+  //      center maps from (oldCenter - groupCenter)*scale + targetCenter.
   const children = [];
   function collect(layer) {
     if (layer.layers && layer.layers.length > 0) {
@@ -726,49 +751,115 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
     }
   }
   collect(bgGroup);
+  if (!children.length) { log(`[BG] no children`); return; }
+
+  // Find reference bounds — first non-adjustment-fill child with valid size.
+  // If none, fall back to first child.
+  let refBounds = null;
+  for (const c of children) {
+    const isAdjFill = c.kind === "solidColor" || c.kind === "solidFill"
+      || c.kind === "gradientFill" || c.kind === "pattern";
+    let hasMask = false;
+    if (isAdjFill) {
+      try {
+        const d = await getLayerDescriptor(c.id);
+        hasMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+      } catch (e) {}
+    }
+    if (isAdjFill && !hasMask) continue; // skip canvas-cover fills
+    const b = await getLayerBounds(c.id);
+    if (b.width > 0 && b.height > 0) {
+      refBounds = b;
+      log(`[BG] reference layer "${c.name}" bounds=${b.width}x${b.height} at (${b.left},${b.top})`);
+      break;
+    }
+  }
+  if (!refBounds) {
+    // Fallback: first child with valid bounds.
+    for (const c of children) {
+      const b = await getLayerBounds(c.id);
+      if (b.width > 0 && b.height > 0) { refBounds = b; break; }
+    }
+  }
+  if (!refBounds) { log(`[BG] no valid reference bounds, skipping`); return; }
+
+  const scaleX = canvasW / refBounds.width;
+  const scaleY = canvasH / refBounds.height;
+  const scale = Math.max(scaleX, scaleY);
+  const refCenterX = refBounds.left + refBounds.width / 2;
+  const refCenterY = refBounds.top + refBounds.height / 2;
+  const tgtCenterX = originX + canvasW / 2;
+  const tgtCenterY = originY + canvasH / 2;
+  log(`[BG] cover scale=${scale.toFixed(4)} refCenter=(${Math.round(refCenterX)},${Math.round(refCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
 
   for (const child of children) {
     try {
       log(`[BG] layer: "${child.name}" kind: ${child.kind} id: ${child.id}`);
       const bounds = await getLayerBounds(child.id);
-      log(`[BG]   bounds: ${bounds.width}x${bounds.height} (${bounds.left},${bounds.top})`);
       if (bounds.width === 0 || bounds.height === 0) { log(`[BG]   skip: zero bounds`); continue; }
 
-      const scaleX = canvasW / bounds.width;
-      const scaleY = canvasH / bounds.height;
-      const scale = Math.max(scaleX, scaleY);
+      // Compute child's intended new center (group-pivoted scale).
+      const oldCenterX = bounds.left + bounds.width / 2;
+      const oldCenterY = bounds.top + bounds.height / 2;
+      const newCenterX = tgtCenterX + (oldCenterX - refCenterX) * scale;
+      const newCenterY = tgtCenterY + (oldCenterY - refCenterY) * scale;
+      const newW = bounds.width * scale;
+      const newH = bounds.height * scale;
+      const newLeft = newCenterX - newW / 2;
+      const newTop = newCenterY - newH / 2;
+
+      // Skip scale on adjustment fill (no vectorMask) — they auto-fill canvas.
+      const isAdjFill = child.kind === "solidColor" || child.kind === "solidFill"
+        || child.kind === "gradientFill" || child.kind === "pattern";
+      let canScale = true;
+      if (isAdjFill) {
+        try {
+          const d = await getLayerDescriptor(child.id);
+          const hasMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+          if (!hasMask) {
+            canScale = false;
+            log(`[BG]   skip scale (adjustment fill, no vectorMask)`);
+          }
+        } catch (e) {}
+      }
 
       await selectLayerById(child.id);
 
-      if (Math.abs(scale - 1) > 0.01) {
+      if (canScale && Math.abs(scale - 1) > 0.01) {
         log(`[BG]   transform: scale ${(scale * 100).toFixed(1)}%`);
-        await bpSafe([{
-          _obj: "transform",
-          _target: [{ _ref: "layer", _id: child.id }],
-          freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-          width: { _unit: "percentUnit", _value: scale * 100 },
-          height: { _unit: "percentUnit", _value: scale * 100 },
-          interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
-          _options: { dialogOptions: "dontDisplay" }
-        }]);
-        log(`[BG]   transform OK`);
+        try {
+          await bpSafe([{
+            _obj: "transform",
+            _target: [{ _ref: "layer", _id: child.id }],
+            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+            width: { _unit: "percentUnit", _value: scale * 100 },
+            height: { _unit: "percentUnit", _value: scale * 100 },
+            interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`[BG]   transform OK`);
+        } catch (e) {
+          log(`[BG]   transform failed: ${e.message} — skipping scale`);
+          canScale = false;
+        }
       }
 
-      // Center on canvas (account for artboard origin offset)
-      const centerX = originX + canvasW / 2;
-      const centerY = originY + canvasH / 2;
-      const newBounds = await getLayerBounds(child.id);
-      const dx = centerX - (newBounds.left + newBounds.width / 2);
-      const dy = centerY - (newBounds.top + newBounds.height / 2);
+      // Move to new center (use actual bounds after scale to compute dx/dy
+      // accurately, since smart object scale may have rounding).
+      const afterBounds = await getLayerBounds(child.id);
+      const afterCenterX = afterBounds.left + afterBounds.width / 2;
+      const afterCenterY = afterBounds.top + afterBounds.height / 2;
+      const dx = Math.round(newCenterX - afterCenterX);
+      const dy = Math.round(newCenterY - afterCenterY);
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-        log(`[BG]   move: dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+        log(`[BG]   move: dx=${dx} dy=${dy} → center (${Math.round(newCenterX)},${Math.round(newCenterY)})`);
         await bpSafe([{
           _obj: "move",
           _target: [{ _ref: "layer", _id: child.id }],
           to: {
             _obj: "offset",
-            horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
-            vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+            horizontal: { _unit: "pixelsUnit", _value: dx },
+            vertical: { _unit: "pixelsUnit", _value: dy }
           },
           _options: { dialogOptions: "dontDisplay" }
         }]);
@@ -779,6 +870,429 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
 }
 
 // ─── Smart Layout helpers ───
+
+// V2: capture detailed content layout with full bounds + font size info,
+// suitable for relative-position + overlap-aware layout in target rect.
+// Returns { contentBounds, children: [{ name, kind, id, srcLeft, srcTop, srcW, srcH, fontSize }, ...] }
+async function captureContentLayoutV2(artboardLayer, srcArtRect) {
+  const contentGroup = artboardLayer.layers
+    ? [...artboardLayer.layers].find(l => l.name.toLowerCase() === "content")
+    : null;
+  if (!contentGroup || !contentGroup.layers || !contentGroup.layers.length) return null;
+
+  // Compute content group bounds = union of children (visible bounds).
+  let cgLeft = Infinity, cgTop = Infinity, cgRight = -Infinity, cgBottom = -Infinity;
+  const children = [];
+  for (const child of contentGroup.layers) {
+    if (!passesGGFilter(child.name)) continue;
+    try {
+      const bounds = (child.layers && child.layers.length > 0)
+        ? await getGroupBoundsNoEffects(child)
+        : await getLayerBoundsNoEffects(child.id);
+      if (bounds.width === 0 || bounds.height === 0) continue;
+      cgLeft = Math.min(cgLeft, bounds.left);
+      cgTop = Math.min(cgTop, bounds.top);
+      cgRight = Math.max(cgRight, bounds.right);
+      cgBottom = Math.max(cgBottom, bounds.bottom);
+
+      let fontSize = null;
+      if (isTextLayer(child)) {
+        try {
+          const desc = await getLayerDescriptor(child.id);
+          const tk = desc.textKey;
+          if (tk?.textStyleRange?.length) {
+            const rawPt = tk.textStyleRange[0]?.textStyle?.size?._value;
+            const tx = tk.transform;
+            const yy = tx?.yy?._value ?? tx?.yy ?? 1;
+            fontSize = rawPt * Math.abs(yy);
+          }
+        } catch (e) {}
+      }
+
+      children.push({
+        name: child.name,
+        kind: child.kind,
+        id: child.id,
+        srcLeft: bounds.left,
+        srcTop: bounds.top,
+        srcW: bounds.width,
+        srcH: bounds.height,
+        fontSize
+      });
+    } catch (e) { /* skip */ }
+  }
+  if (!children.length) return null;
+  const contentBounds = {
+    left: cgLeft, top: cgTop, right: cgRight, bottom: cgBottom,
+    width: cgRight - cgLeft, height: cgBottom - cgTop
+  };
+  // Also capture content area's relative position within the source artboard
+  // (we'll keep the same relative position in the target rect per Q1=a).
+  const relLeft = (cgLeft - srcArtRect.left) / srcArtRect.width;
+  const relTop = (cgTop - srcArtRect.top) / srcArtRect.height;
+  const relWidth = contentBounds.width / srcArtRect.width;
+  const relHeight = contentBounds.height / srcArtRect.height;
+  return {
+    contentBounds,
+    contentRel: { left: relLeft, top: relTop, width: relWidth, height: relHeight },
+    children,
+    contentGroupId: contentGroup.id
+  };
+}
+
+// V2: smart layout content children inside target rect with overlap detection.
+// `originX, originY` = artboard top-left in canvas-absolute coords.
+// `targetW, targetH` = the target artboard size (NOT the expanded rect — we
+// want layout as if rect were target size; the expanded rect just gives PS
+// space to work without eviction).
+async function smartLayoutContentV2(newAb, layoutV2, originX, originY, targetW, targetH) {
+  if (!layoutV2 || !layoutV2.children?.length) return;
+  const { contentBounds: cb, contentRel: cr, children, contentGroupId } = layoutV2;
+
+  // Target content area: same relative position/size as source content within
+  // its source artboard, applied to target rect.
+  const tcLeft = originX + cr.left * targetW;
+  const tcTop = originY + cr.top * targetH;
+  const tcWidth = cr.width * targetW;
+  const tcHeight = cr.height * targetH;
+  log(`[SMART-V2] target content area: (${Math.round(tcLeft)},${Math.round(tcTop)}) ${Math.round(tcWidth)}x${Math.round(tcHeight)} (relTo artboard ${cr.left.toFixed(3)},${cr.top.toFixed(3)} ${cr.width.toFixed(3)}x${cr.height.toFixed(3)})`);
+
+  // Scale = min(target.cw / src.cw, target.ch / src.ch) — contain.
+  const scale = Math.min(tcWidth / cb.width, tcHeight / cb.height);
+  log(`[SMART-V2] content scale=${scale.toFixed(4)} (src ${Math.round(cb.width)}x${Math.round(cb.height)} → target ${Math.round(tcWidth)}x${Math.round(tcHeight)})`);
+
+  // Find current children layers by ID (they may have been re-parented after
+  // the artboard expand, but ID stays). Re-lookup bounds since they may have
+  // moved/scaled by previous steps (e.g. resize).
+  const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+  if (!docHandle) return;
+  function findById(layers, id) {
+    for (const l of layers || []) {
+      if (l.id === id) return l;
+      if (l.layers && l.layers.length) {
+        const hit = findById(l.layers, id);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  // Pass 1: scale + position each child according to its source-relative
+  // position within content group, then map into target content area.
+  // For each child:
+  //   srcRelLeft  = (child.srcLeft - cb.left) / cb.width
+  //   srcRelTop   = (child.srcTop - cb.top) / cb.height
+  //   targetLeft  = tcLeft + srcRelLeft * tcWidth   (relative-position in target content)
+  //   targetTop   = tcTop  + srcRelTop  * tcHeight
+  //   targetW     = child.srcW * scale (uniform)
+  //   targetH     = child.srcH * scale
+  //
+  // Final: each child placed proportionally inside target content area; size
+  // scaled uniformly to preserve aspect.
+  const placed = [];
+  for (const c of children) {
+    const layer = findById(docHandle.layers, c.id);
+    if (!layer) { log(`[SMART-V2]   "${c.name}" id=${c.id} not found, skipping`); continue; }
+    try {
+      const srcRelLeft = (c.srcLeft - cb.left) / cb.width;
+      const srcRelTop = (c.srcTop - cb.top) / cb.height;
+      // Spacing-preserving: compute raw target by source-relative within content.
+      const tgtLeft = tcLeft + srcRelLeft * tcWidth;
+      const tgtTop = tcTop + srcRelTop * tcHeight;
+      const tgtW = c.srcW * scale;
+      const tgtH = c.srcH * scale;
+
+      // Apply size first (for text: set fontSize; for shape/image: transform).
+      if (isTextLayer(layer) && c.fontSize) {
+        const newFontSize = Math.max(6, Math.round(c.fontSize * scale));
+        try { await setTextFontSize(layer.id, newFontSize); }
+        catch (e) { log(`[SMART-V2]   "${c.name}" fontSize ERROR: ${e.message}`); }
+      } else if (!isFillLayer(layer)) {
+        if (Math.abs(scale - 1) > 0.005) {
+          try { await scaleLayerUniform(layer, scale); }
+          catch (e) { log(`[SMART-V2]   "${c.name}" scale ERROR: ${e.message}`); }
+        }
+      }
+
+      // Move to target position (top-left aligned to computed target).
+      const cur = await getLayerBoundsNoEffects(layer.id);
+      const dx = Math.round(tgtLeft - cur.left);
+      const dy = Math.round(tgtTop - cur.top);
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        await selectLayerById(layer.id);
+        await bp([{
+          _obj: "move",
+          _target: [{ _ref: "layer", _id: layer.id }],
+          to: {
+            _obj: "offset",
+            horizontal: { _unit: "pixelsUnit", _value: dx },
+            vertical: { _unit: "pixelsUnit", _value: dy }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      }
+      const after = await getLayerBoundsNoEffects(layer.id);
+      placed.push({ c, layer, top: after.top, bottom: after.bottom, left: after.left, right: after.right });
+      log(`[SMART-V2]   "${c.name}" → (${Math.round(after.left)},${Math.round(after.top)}) ${Math.round(after.right - after.left)}x${Math.round(after.bottom - after.top)}`);
+    } catch (e) {
+      log(`[SMART-V2]   "${c.name}" ERROR: ${e.message}`);
+    }
+  }
+
+  // Pass 2: overlap detection + push down.
+  // Sort by top ascending; for each pair (i, j) where i<j and they overlap
+  // vertically AND horizontally, push j down so j.top = i.bottom + minSpacing.
+  // minSpacing per Q2(a): src spacing × scale, with floor of 2px.
+  placed.sort((a, b) => a.top - b.top);
+  for (let i = 0; i < placed.length; i++) {
+    for (let j = i + 1; j < placed.length; j++) {
+      const A = placed[i], B = placed[j];
+      // Horizontal overlap?
+      const hOverlap = !(B.right <= A.left || B.left >= A.right);
+      if (!hOverlap) continue;
+      // Vertical overlap?
+      const vOverlap = !(B.top >= A.bottom);
+      if (!vOverlap) continue;
+      // Compute minSpacing from source (gap between A and B in source content).
+      const srcGap = Math.max(0, B.c.srcTop - (A.c.srcTop + A.c.srcH));
+      const minSpacing = Math.max(2, Math.round(srcGap * scale));
+      const newTop = A.bottom + minSpacing;
+      const dy = Math.round(newTop - B.top);
+      if (dy > 0) {
+        log(`[SMART-V2]   overlap "${A.c.name}"↔"${B.c.name}" — pushing "${B.c.name}" down dy=${dy} (newTop=${newTop}, minSpacing=${minSpacing})`);
+        try {
+          await selectLayerById(B.layer.id);
+          await bp([{
+            _obj: "move",
+            _target: [{ _ref: "layer", _id: B.layer.id }],
+            to: {
+              _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: 0 },
+              vertical: { _unit: "pixelsUnit", _value: dy }
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          B.top += dy; B.bottom += dy;
+        } catch (e) {
+          log(`[SMART-V2]   push ERROR "${B.c.name}": ${e.message}`);
+        }
+      }
+    }
+  }
+
+  // Pass 3: text fontSize fit check. If a text bounds extends beyond target
+  // content area horizontally, reduce fontSize incrementally down to 6px.
+  // (Q3=b "wrap multi-line" deferred to milestone 2.2 — for now we just
+  // shrink fontSize to fit width.)
+  for (const p of placed) {
+    if (!isTextLayer(p.layer)) continue;
+    const bounds = await getLayerBoundsNoEffects(p.layer.id);
+    const overflowX = bounds.right > tcLeft + tcWidth || bounds.left < tcLeft;
+    if (!overflowX) continue;
+    // Iteratively shrink fontSize until fit or reach 6px.
+    let curDesc = await getLayerDescriptor(p.layer.id);
+    let cur = curDesc.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+    let curScale = Math.abs(curDesc.textKey?.transform?.yy?._value ?? curDesc.textKey?.transform?.yy ?? 1);
+    let curPx = (cur || 0) * curScale;
+    let attempts = 0;
+    while (attempts < 10 && curPx > 6) {
+      const tryPx = Math.max(6, Math.floor(curPx * 0.9));
+      try { await setTextFontSize(p.layer.id, tryPx); }
+      catch (e) { break; }
+      const newBounds = await getLayerBoundsNoEffects(p.layer.id);
+      const stillOverflow = newBounds.right > tcLeft + tcWidth || newBounds.left < tcLeft;
+      log(`[SMART-V2]   "${p.c.name}" shrink fontSize → ${tryPx}px (overflow=${stillOverflow})`);
+      if (!stillOverflow) break;
+      curPx = tryPx;
+      attempts++;
+    }
+  }
+}
+
+function isFillLayer(layer) {
+  return layer && (layer.kind === "solidColor" || layer.kind === "solidFill"
+    || layer.kind === "gradientFill" || layer.kind === "pattern");
+}
+
+// ─── Auto-fit (Smart match override per layer) ───
+//
+// User can tag specific layers/groups with a name suffix (default "-auto-fit"
+// — configurable via UI input) to opt them out of the uniform contain scale
+// and instead get scaled independently relative to the source canvas. Useful
+// for hero images, banners, anything that should "stretch with the canvas".
+//
+// Rules (per user spec):
+//   - If a group is tagged, its descendants are NOT separately processed
+//     (children follow parent transform). Skip descendant matches.
+//   - Image (smartObject/pixel): scale uniformly by width to preserve aspect.
+//   - Non-image (text/shape/fill): scale non-uniform width × height
+//     independently — may distort, but matches "stretch" intent.
+//   - Position: relative to the source artboard rect — top% × target.h,
+//     left% × target.w — re-anchor to target rect.
+//
+// Suffix matching: case-insensitive endsWith. Empty suffix = disabled.
+
+function isImageLayer(layer) {
+  return layer && (layer.kind === "smartObject" || layer.kind === "pixel"
+    || layer.kind === "raster" || layer.kind === "rasterImage");
+}
+
+// Walk the source artboard tree, find all layers/groups whose name ends with
+// any of `suffixes` (case-insensitive, comma-separated input). If a group
+// matches, its descendants are excluded (children follow parent). Returns
+// list of { layer, isGroup, srcLeft, srcTop, srcW, srcH } captured from the
+// SOURCE artboard.
+async function collectAutoFitCandidatesFromSource(sourceArtboard, suffixesInput) {
+  if (!suffixesInput) return [];
+  // Split by comma, trim, lowercase, drop empties.
+  const lcSuffixes = String(suffixesInput)
+    .split(",")
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s.length > 0);
+  if (!lcSuffixes.length) return [];
+  const candidates = [];
+  // Walk tree; if a layer matches, capture it and DON'T recurse into it.
+  async function walk(parent) {
+    for (const l of parent.layers || []) {
+      const lcName = String(l.name || "").toLowerCase();
+      const matches = lcSuffixes.some(s => lcName.endsWith(s));
+      if (matches) {
+        const isGroup = !!(l.layers && l.layers.length > 0);
+        const bounds = isGroup ? await getGroupBoundsNoEffects(l) : await getLayerBoundsNoEffects(l.id);
+        if (bounds && bounds.width > 0 && bounds.height > 0) {
+          candidates.push({
+            name: l.name,
+            kind: isGroup ? "group" : l.kind,
+            isGroup,
+            srcLeft: bounds.left,
+            srcTop: bounds.top,
+            srcW: bounds.width,
+            srcH: bounds.height,
+            // image flag determined by kind of group's representative or layer itself.
+            isImage: !isGroup && isImageLayer(l)
+          });
+        }
+        // Don't recurse into matched layer (children follow parent).
+        continue;
+      }
+      if (l.layers && l.layers.length > 0) await walk(l);
+    }
+  }
+  await walk(sourceArtboard);
+  return candidates;
+}
+
+// Apply auto-fit to a candidate layer in the NEW artboard. We look up the
+// target layer by NAME (since after duplicate, IDs differ). Scale + position
+// per the auto-fit rules above.
+async function applyAutoFitCandidate(newAb, candidate, srcArtRect, originX, originY, targetW, targetH) {
+  // Find the layer in newAb by exact name match (deep walk).
+  function findByName(parent, name) {
+    for (const l of parent.layers || []) {
+      if (l.name === name) return l;
+      if (l.layers && l.layers.length > 0) {
+        const hit = findByName(l, name);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+  const layer = findByName(newAb, candidate.name);
+  if (!layer) {
+    log(`[AUTO-FIT]   "${candidate.name}" not found in newAb, skipping`);
+    return;
+  }
+
+  // Compute relative position+size in source artboard.
+  const relLeft = (candidate.srcLeft - srcArtRect.left) / srcArtRect.width;
+  const relTop = (candidate.srcTop - srcArtRect.top) / srcArtRect.height;
+  const relW = candidate.srcW / srcArtRect.width;
+  const relH = candidate.srcH / srcArtRect.height;
+
+  // Target position (canvas-absolute, anchored at artboard top-left = origin).
+  let tgtLeft = originX + relLeft * targetW;
+  let tgtTop = originY + relTop * targetH;
+  let tgtW = relW * targetW;
+  let tgtH = relH * targetH;
+
+  // Image: keep aspect by scaling per width (height follows source aspect).
+  if (candidate.isImage) {
+    tgtH = (candidate.srcH / candidate.srcW) * tgtW;
+  }
+
+  // Get current bounds (layer may have been moved/scaled by uniform walk).
+  const cur = candidate.isGroup ? await getGroupBoundsNoEffects(layer) : await getLayerBoundsNoEffects(layer.id);
+  if (!cur || cur.width <= 0 || cur.height <= 0) {
+    log(`[AUTO-FIT]   "${candidate.name}" zero bounds, skipping`);
+    return;
+  }
+
+  log(`[AUTO-FIT] "${candidate.name}" ${candidate.isGroup ? "(group)" : `(${candidate.kind})`} src=${Math.round(candidate.srcW)}x${Math.round(candidate.srcH)} @ (${Math.round(relLeft * 100)}%,${Math.round(relTop * 100)}%) → target=${Math.round(tgtW)}x${Math.round(tgtH)} @ (${Math.round(tgtLeft)},${Math.round(tgtTop)})`);
+
+  // Scale factors (current → target).
+  const scaleX = tgtW / cur.width;
+  const scaleY = tgtH / cur.height;
+
+  // For groups: transform doesn't work cleanly on group; skip scale (group
+  // bounds will follow children — but we have NO descendants since user said
+  // "if parent matched, children follow". So we must scale every leaf inside
+  // the group by the SAME factors then move).
+  if (candidate.isGroup) {
+    const leaves = [];
+    function collect(p) {
+      for (const c of p.layers || []) {
+        if (c.layers && c.layers.length > 0) collect(c);
+        else leaves.push(c);
+      }
+    }
+    collect(layer);
+    // Scale leaves uniformly using avg of scaleX,scaleY for now (group can't
+    // be non-uniform stretched without rasterizing). Compromise: use scaleX
+    // — width is the typical anchor for group "stretch".
+    const groupScale = (scaleX + scaleY) / 2;
+    for (const lf of leaves) {
+      try {
+        if (isFillLayer(lf)) {
+          // Adjustment fill — skip transform.
+          continue;
+        }
+        if (Math.abs(groupScale - 1) > 0.01) {
+          await scaleLayerUniform(lf, groupScale);
+        }
+      } catch (e) { log(`[AUTO-FIT]   "${candidate.name}" leaf "${lf.name}" scale ERROR: ${e.message}`); }
+    }
+  } else {
+    // Single layer (image or non-image): scale uniformly by width to keep
+    // aspect. (User chose option B: text/non-image auto-fit scales like
+    // image — no distortion.)
+    if (Math.abs(scaleX - 1) > 0.01) {
+      try { await scaleLayerUniform(layer, scaleX); }
+      catch (e) { log(`[AUTO-FIT]   "${candidate.name}" scale ERROR: ${e.message}`); }
+    }
+  }
+
+  // Move to target position (top-left aligned).
+  const after = candidate.isGroup ? await getGroupBoundsNoEffects(layer) : await getLayerBoundsNoEffects(layer.id);
+  if (!after) return;
+  const dx = Math.round(tgtLeft - after.left);
+  const dy = Math.round(tgtTop - after.top);
+  if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+    try {
+      await selectLayerById(layer.id);
+      await bp([{
+        _obj: "move",
+        _target: [{ _ref: "layer", _id: layer.id }],
+        to: {
+          _obj: "offset",
+          horizontal: { _unit: "pixelsUnit", _value: dx },
+          vertical: { _unit: "pixelsUnit", _value: dy }
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      log(`[AUTO-FIT]   "${candidate.name}" moved dx=${dx} dy=${dy}`);
+    } catch (e) { log(`[AUTO-FIT]   "${candidate.name}" move ERROR: ${e.message}`); }
+  }
+}
 
 async function captureContentLayout(artboardLayer, srcW, srcH) {
   const artDesc = await getLayerDescriptor(artboardLayer.id);
@@ -2261,6 +2775,24 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
   const sourceLayout = await captureContentLayout(source.layer, srcRect.width, srcRect.height);
   if (sourceLayout) log(`[V2] [LAYOUT] Captured ${sourceLayout.length} content groups from source`);
 
+  // Capture detailed layout (V2 smart match — overlap-aware).
+  const sourceLayoutV2 = await captureContentLayoutV2(source.layer, srcRect);
+  if (sourceLayoutV2) log(`[V2] [LAYOUT-V2] Captured ${sourceLayoutV2.children.length} content children, contentBounds ${Math.round(sourceLayoutV2.contentBounds.width)}x${Math.round(sourceLayoutV2.contentBounds.height)} relSize ${(sourceLayoutV2.contentRel.width * 100).toFixed(0)}%×${(sourceLayoutV2.contentRel.height * 100).toFixed(0)}% of artboard`);
+
+  // Capture auto-fit candidates from the SOURCE artboard (matched by suffix
+  // input, default "-auto-fit"). Comma-separated list of suffixes — a layer
+  // matches if its name ends with ANY of them. Only relevant for smart match.
+  const autoFitSuffixRaw = (autoFitSuffixEl?.value || "").trim() || "-auto-fit";
+  const autoFitCandidates = await collectAutoFitCandidatesFromSource(source.layer, autoFitSuffixRaw);
+  if (autoFitCandidates.length) {
+    log(`[V2] [AUTO-FIT] Captured ${autoFitCandidates.length} candidates with suffix(es) "${autoFitSuffixRaw}":`);
+    for (const c of autoFitCandidates) {
+      log(`[V2] [AUTO-FIT]   "${c.name}" ${c.isGroup ? "(group)" : `(${c.kind}${c.isImage ? ", image" : ""})`} src=${Math.round(c.srcW)}x${Math.round(c.srcH)}`);
+    }
+  } else if (autoFitSuffixRaw) {
+    log(`[V2] [AUTO-FIT] No candidates matching suffix(es) "${autoFitSuffixRaw}"`);
+  }
+
   // Capture original bounds ONCE on the source artboard (used by applyLayerRules).
   // V1 captured on a tempDoc; V2 captures on the source artboard layer directly
   // since name-keyed bounds are stable across artboards with the same children.
@@ -2362,14 +2894,22 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       try {
         const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
         if (!docHandle) return;
-        const currentDescIds = new Set();
-        function collectDesc(parent) {
+        // Build CURRENT parent map by walking newAb tree. For each descendant,
+        // record its current direct parent id. (We also track docHandle root
+        // for layers evicted out of newAb entirely.)
+        const currentParentMap = new Map(); // descId → currentParentId
+        function collectWithParent(parent) {
           for (const c of parent.layers || []) {
-            currentDescIds.add(c.id);
-            if (c.layers && c.layers.length) collectDesc(c);
+            currentParentMap.set(c.id, parent.id);
+            if (c.layers && c.layers.length) collectWithParent(c);
           }
         }
-        collectDesc(newAb);
+        collectWithParent(newAb);
+        // Also include layers at doc root (orphans evicted out of newAb).
+        for (const l of docHandle.layers || []) {
+          if (l.id !== newAb.id) currentParentMap.set(l.id, docHandle.id || -1);
+        }
+
         function findById(layers, id) {
           for (const l of layers || []) {
             if (l.id === id) return l;
@@ -2380,13 +2920,22 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           }
           return null;
         }
+
+        // Orphan = descendant whose CURRENT parent ≠ original parent.
+        // Covers two eviction modes:
+        //   1. Evicted to doc root (out of artboard entirely).
+        //   2. Evicted to artboard root (out of original group, but still in artboard).
         const orphans = [];
         for (const [descId, info] of parentMap.entries()) {
-          if (currentDescIds.has(descId)) continue;
+          const currentParentId = currentParentMap.get(descId);
+          if (currentParentId === info.parentId) continue; // still in original parent
           const layer = findById(docHandle.layers, descId);
-          if (layer) orphans.push({ layer, originalParentId: info.parentId, originalIndex: info.index });
+          if (layer) orphans.push({ layer, originalParentId: info.parentId, originalIndex: info.index, currentParentId });
         }
-        if (!orphans.length) return;
+        if (!orphans.length) {
+          log(`[V2-REPARENT-${label}] no orphans (parentMap=${parentMap.size})`);
+          return;
+        }
         const { constants } = require("photoshop");
         function getDepth(parentId) {
           let d = 0, p = parentId;
@@ -2406,18 +2955,67 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           return b.originalIndex - a.originalIndex;
         });
         log(`[V2-REPARENT-${label}] ${orphans.length} orphan(s) to re-parent`);
+        // Track which parent groups received orphans — we'll re-order their
+        // children afterwards.
+        const touchedParentIds = new Set();
         for (const o of orphans) {
           try {
             const originalParent = findById(docHandle.layers, o.originalParentId);
             if (originalParent && originalParent.id !== newAb.id) {
               o.layer.move(originalParent, constants.ElementPlacement.PLACEINSIDE);
-              log(`[V2-REPARENT-${label}]   "${o.layer.name}" → inside "${originalParent.name}"`);
+              touchedParentIds.add(originalParent.id);
+              log(`[V2-REPARENT-${label}]   "${o.layer.name}" curParent=${o.currentParentId} → inside "${originalParent.name}" (id=${o.originalParentId})`);
             } else {
               o.layer.move(newAb, constants.ElementPlacement.PLACEINSIDE);
-              log(`[V2-REPARENT-${label}]   "${o.layer.name}" → inside artboard`);
+              touchedParentIds.add(newAb.id);
+              log(`[V2-REPARENT-${label}]   "${o.layer.name}" curParent=${o.currentParentId} → inside artboard`);
             }
           } catch (e) {
             log(`[V2-REPARENT-${label}]   "${o.layer.name}" failed: ${e.message}`);
+          }
+        }
+
+        // Re-order touched parent groups so children match the original
+        // z-order from parentMap. PLACEINSIDE always puts moved layer at top
+        // of destination, so existing siblings (not orphans) get pushed
+        // down. We need to restore the snapshot order.
+        //
+        // Strategy: for each touched parent, build the desired child order
+        // (sorted ascending by originalIndex from parentMap), then walk
+        // bottom-up moving each child to PLACEAFTER the current bottom.
+        // Equivalent: PLACEAT_END for each child in desired order, top-to-
+        // bottom — but UXP doesn't have PLACEAT_END. We use PLACEAFTER
+        // with the previous child as anchor.
+        for (const parentId of touchedParentIds) {
+          try {
+            const parent = findById(docHandle.layers, parentId);
+            if (!parent || !parent.layers) continue;
+            // Get all current children of parent.
+            const currentChildren = [...parent.layers];
+            // Build desired order: sort by originalIndex ascending.
+            // For each current child, look up its originalIndex from parentMap.
+            // Children without a parentMap entry (rare — shouldn't happen)
+            // get sorted last by current position.
+            const desired = currentChildren.slice().sort((a, b) => {
+              const ia = parentMap.get(a.id);
+              const ib = parentMap.get(b.id);
+              if (ia && ib) return ia.index - ib.index;
+              if (ia && !ib) return -1;
+              if (!ia && ib) return 1;
+              return 0;
+            });
+            // PLACEINSIDE each in REVERSE order — last reverse-iter ends on top.
+            // i.e. iterate desired from BOTTOM (last index) to TOP (index 0),
+            // each PLACEINSIDE puts that layer on top of parent → final top
+            // is the desired top (idx=0).
+            for (let i = desired.length - 1; i >= 0; i--) {
+              try {
+                desired[i].move(parent, constants.ElementPlacement.PLACEINSIDE);
+              } catch (e) { /* ignore individual failures */ }
+            }
+            log(`[V2-REPARENT-${label}]   re-ordered ${desired.length} children of "${parent.name}" (id=${parentId})`);
+          } catch (e) {
+            log(`[V2-REPARENT-${label}]   re-order failed for parent id=${parentId}: ${e.message}`);
           }
         }
       } catch (e) {
@@ -2778,12 +3376,14 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         }
       }
 
-      if (uniformEnabled) {
-        // Uniform mode (V2 implementation): always CONTAIN — pick the
-        // smaller axis ratio so the entire source fits inside the target
-        // rect. Empty bands appear on the off-axis when aspects differ.
-        // (V1 used cover/contain auto based on axis ratio; user prefers
-        // pure contain so nothing gets cropped.)
+      if (uniformEnabled || smartEnabled) {
+        // Smart match = uniform contain scale + BG cover override (applied
+        // after the uniform walk). Uniform mode is just contain scale alone.
+        // Both modes share the same uniform walk to scale + reposition all
+        // children proportionally.
+        if (smartEnabled) {
+          log(`[V2] Mode: smart match (uniform contain scale + BG cover override)`);
+        }
         const sx = target.width / srcRect.width;
         const sy = target.height / srcRect.height;
         const scale = Math.min(sx, sy);
@@ -2808,10 +3408,28 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
 
         // Walk every leaf descendant and apply: scale + reposition.
         // For each leaf: new position = tgtCenter + (oldPos - srcCenter) * scale
+        // In smart mode, skip the BG group entirely — it will be processed
+        // separately with cover scale instead.
+        // Smart mode also skips auto-fit candidates (handled separately).
+        const lcAutoFitNames = new Set(
+          (smartEnabled ? autoFitCandidates : []).map(c => c.name.toLowerCase())
+        );
         const tUniform = perfNow();
         async function uniformWalk(parent) {
           const layers = parent.layers || [];
           for (const l of layers) {
+            // Smart mode: skip BG group, will be cover-scaled afterwards.
+            if (smartEnabled && l.layers && l.layers.length > 0
+                && l.name && l.name.toLowerCase() === "bg") {
+              log(`[V2-UNIFORM]   skipping "${l.name}" (smart mode — BG handled separately)`);
+              continue;
+            }
+            // Smart mode: skip auto-fit candidates (also skip their descendants
+            // since user spec said "if parent matched, children follow").
+            if (smartEnabled && lcAutoFitNames.has(String(l.name || "").toLowerCase())) {
+              log(`[V2-UNIFORM]   skipping "${l.name}" (smart mode — auto-fit candidate)`);
+              continue;
+            }
             // Recurse into groups (we scale individual leaves, not groups).
             if (l.layers && l.layers.length > 0) {
               await uniformWalk(l);
@@ -2893,37 +3511,12 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         }
         perfLog(`[V2-UNIFORM] applied ${target.raw}`, tUniform);
         await runReparent("POST-UNIFORM");
-      } else {
-        log(`[V2] Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
-      }
 
-      // Smart match — scale background + reposition content groups.
-      // Skips layers that have JSON rules so applyLayerRules can take over.
-      if (smartEnabled) {
-        // BG cover scaling (only when no JSON rules — applyLayerRules
-        // handles bg with explicit scale/position when rules exist).
-        if (!hasRules) {
-          const bgGroup = findBgGroup(newAb);
-          if (bgGroup) {
-            try {
-              log(`[V2] BG: "${bgGroup.name}" → cover (smart match)`);
-              await scaleBgCover(bgGroup, target.width, target.height);
-            } catch (e) { log(`[V2] BG scale skipped: ${e.message}`); }
-          }
-        }
-        const tSmart = perfNow();
+        // DIAG: dump full tree state AFTER uniform walk + reparent so we can
+        // see actual layer bounds and z-order for debugging visual issues.
         try {
-          await smartLayoutContent(newAb, srcRect.width, srcRect.height, target.width, target.height, savedGridLeft, savedGridTop, sourceLayout, target.raw);
-        } catch (e) { log(`[V2] smartLayoutContent skipped: ${e.message}`); }
-        perfLog(`[V2] smartLayoutContent ${target.raw}`, tSmart);
-        await runReparent("POST-SMART");
-
-        // DIAG: dump tree state AFTER smart match to see which layers got
-        // evicted to root by smartLayoutContent's moves (PS often evicts a
-        // child group's leaf when it's moved across the artboard rect).
-        try {
-          log(`[V2-SMART] Tree dump AFTER smartLayoutContent:`);
-          async function dumpAfterSmart(parent, depth) {
+          log(`[V2-UNIFORM] === Tree dump AFTER uniform + reparent ===`);
+          async function dumpTreeFull(parent, depth) {
             const indent = "  ".repeat(depth);
             for (const l of parent.layers || []) {
               try {
@@ -2931,19 +3524,47 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                 const fmt = v => (v && typeof v === "object" && "_value" in v) ? Math.round(Number(v._value)) : Math.round(Number(v));
                 const b = d.bounds || {};
                 const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
-                log(`[V2-SMART]   ${indent}"${l.name}" id=${l.id} kind=${l.kind} bounds=(${left},${top},${right},${bottom}) ${right - left}x${bottom - top}`);
-              } catch (e) { /* skip */ }
-              if (l.layers && l.layers.length) await dumpAfterSmart(l, depth + 1);
+                const w = right - left, h = bottom - top;
+                const visible = d.visible !== false ? "" : " (hidden)";
+                const opacity = d.opacity !== undefined ? ` op=${d.opacity}` : "";
+                const clip = d.clipping ? " CLIP" : "";
+                log(`[V2-UNIFORM]   ${indent}"${l.name}" id=${l.id} kind=${l.kind} bounds=(${left},${top},${right},${bottom}) ${w}x${h}${visible}${opacity}${clip}`);
+              } catch (e) { log(`[V2-UNIFORM]   ${indent}"${l.name}" descriptor failed: ${e.message}`); }
+              if (l.layers && l.layers.length) await dumpTreeFull(l, depth + 1);
             }
           }
-          await dumpAfterSmart(newAb, 0);
-          // Also list root layers — orphans show up here.
-          const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
-          if (docHandle) {
-            const rootNames = docHandle.layers.filter(l => l.id !== newAb.id).map(l => `"${l.name}"(id=${l.id} kind=${l.kind})`).join(", ");
-            log(`[V2-SMART] doc root siblings of newAb: ${rootNames || "(none)"}`);
+          await dumpTreeFull(newAb, 0);
+          log(`[V2-UNIFORM] === end dump ===`);
+        } catch (e) { log(`[V2-UNIFORM] dump failed: ${e.message}`); }
+
+        // Smart match override: after uniform contain scale, override the
+        // BG group with cover scale (so background fills the canvas instead
+        // of being scaled with content).
+        if (smartEnabled) {
+          const bgGroup = findBgGroup(newAb);
+          if (bgGroup) {
+            try {
+              log(`[V2] Smart override: BG "${bgGroup.name}" → cover full canvas`);
+              await scaleBgCover(bgGroup, target.width, target.height, savedGridLeft, savedGridTop);
+              await runReparent("POST-SMART-BG");
+            } catch (e) { log(`[V2] BG cover override skipped: ${e.message}`); }
           }
-        } catch (e) { log(`[V2-SMART] dump failed: ${e.message}`); }
+
+          // Apply auto-fit candidates: each tagged layer/group gets scaled
+          // independently relative to the source canvas (non-uniform for
+          // non-image, uniform-by-width for image).
+          if (autoFitCandidates.length) {
+            log(`[V2] Smart override: applying ${autoFitCandidates.length} auto-fit candidate(s)`);
+            for (const c of autoFitCandidates) {
+              try {
+                await applyAutoFitCandidate(newAb, c, srcRect, savedGridLeft, savedGridTop, target.width, target.height);
+              } catch (e) { log(`[V2] auto-fit "${c.name}" skipped: ${e.message}`); }
+            }
+            await runReparent("POST-AUTO-FIT");
+          }
+        }
+      } else {
+        log(`[V2] Mode: ${hasRules ? "JSON rules" : "no rules"}${!hasRules ? " (canvas only)" : ""}`);
       }
 
       // JSON rules — highest priority, runs after smart match.
@@ -6181,6 +6802,7 @@ async function scanArtboardImages() {
           sizeMode: defaultSizeMode,
           scale: defaultScale,
           type: defaultType,
+          cutMode: "full",
           bounds: bounds,
           artboardRect: source.size,
           artboardId: source.id,
@@ -6354,6 +6976,29 @@ function renderAssetList() {
   exportAssetsAction.style.display = "";
   assetSearchRow.style.display = "";
 
+  if (isAdvancedEnabled()) {
+    const bulkRow = document.createElement("div");
+    bulkRow.className = "asset-bulk-apply-row";
+    const lbl = document.createElement("span");
+    lbl.className = "asset-bulk-apply-label";
+    lbl.textContent = "Apply to all";
+    bulkRow.appendChild(lbl);
+    const mkBtn = (label, value) => {
+      const b = document.createElement("button");
+      b.className = "asset-bulk-apply-btn";
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        for (const a of scannedAssets) a.cutMode = value;
+        log(`[ASSETS] Applied "${label}" to all ${scannedAssets.length} asset(s)`);
+        renderAssetList();
+      });
+      return b;
+    };
+    bulkRow.appendChild(mkBtn("Full canvas", "full"));
+    bulkRow.appendChild(mkBtn("Tight crop", "tight"));
+    imageListContainer.appendChild(bulkRow);
+  }
+
   const collisions = computeAssetCollisions();
   const q = assetSearchQ.trim().toLowerCase();
   const filtered = q
@@ -6404,7 +7049,7 @@ function renderAssetList() {
     const ab = scannedArtboards.find(x => x.id === asset.artboardId);
     const sizeBadge = document.createElement("span");
     sizeBadge.className = "asset-size-badge";
-    sizeBadge.textContent = ab ? getArtboardSizeKey(ab) : `${Math.round(asset.artboardRect?.width || 0)}x${Math.round(asset.artboardRect?.height || 0)}`;
+    sizeBadge.textContent = ab ? getArtboardSizeKey(ab).sizeKey : `${Math.round(asset.artboardRect?.width || 0)}x${Math.round(asset.artboardRect?.height || 0)}`;
     sizeBadge.title = ab ? `From artboard: ${ab.name}` : `From artboard: ${asset.artboardName || "unknown"}`;
 
     // Show button — select layer in PS Layers panel để user biết đang nói layer nào
@@ -6461,6 +7106,12 @@ function renderAssetList() {
         asset.sizeMode = "A";
       }
       fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
+    } else {
+      if (asset.cutMode !== "full" && asset.cutMode !== "tight") asset.cutMode = "full";
+      fieldsRow.appendChild(createAssetCycleBtn("Crop", [
+        { value: "full", label: "Full canvas" },
+        { value: "tight", label: "Tight crop" }
+      ], asset.cutMode, (v) => { asset.cutMode = v; }));
     }
 
     fieldsRow.appendChild(createAssetCycleBtn("Scale", [
@@ -6499,10 +7150,24 @@ function toggleAllAssetsCollapsed(collapsed) {
 
 // Create a timestamped subfolder inside a picked folder
 // Extract "300x600" from "...-300x600". Fallback → full sanitized artboard name.
+// Resolve a folder name for an artboard.
+// Strategy: find the LAST "WxH" token in the name and use it + everything after it (size + suffix),
+// dropping the prefix. Examples:
+//   "P0011967-ExternalLaunch-480x320"      → "480x320"
+//   "P0011967-ExternalLaunch-480x320-v3"   → "480x320-v3"
+//   "banner-300x600"                       → "300x600"
+//   "v2-300x600"                           → "300x600"
+//   "homepage"                             → "homepage" + hasSize=false (caller may skip)
 function getArtboardSizeKey(artboard) {
-  const m = /(\d+x\d+)(?:[^a-z0-9]*)?$/i.exec(artboard.name || "");
-  if (m) return m[1].toLowerCase();
-  return (artboard.name || "artboard").replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-");
+  const name = artboard.name || "artboard";
+  const sanitized = (s) => s.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-").replace(/^[-_.\s]+|[-_.\s]+$/g, "");
+  // Match last WxH followed by anything (or nothing).
+  const m = /(\d+x\d+)([^a-z0-9].*)?$/i.exec(name);
+  if (m) {
+    const fromSize = name.slice(m.index);
+    return { sizeKey: sanitized(fromSize).toLowerCase(), hasSize: true };
+  }
+  return { sizeKey: sanitized(name) || "artboard", hasSize: false };
 }
 
 // Resolve an existing absolute folder path. Throws if path missing or not a folder.
@@ -6753,11 +7418,16 @@ async function exportAssets() {
       groups.get(a.artboardId).push(a);
     }
 
+    const useNoSizeDetected = !!document.getElementById("useNoSizeDetected")?.checked;
     const aggregatedForHtml = [];
     for (const [abId, assets] of groups) {
       const ab = scannedArtboards.find(x => x.id === abId);
       if (!ab) { log(`[ASSETS] Artboard ${abId} not found — skipped`); continue; }
-      const sizeKey = getArtboardSizeKey(ab);
+      const { sizeKey, hasSize } = getArtboardSizeKey(ab);
+      if (!hasSize && !useNoSizeDetected) {
+        log(`[ASSETS] WARNING: artboard "${ab.name}" has no size in name (e.g. 300x600) — skipped. Enable "Use no size detected" to export it under its full name.`);
+        continue;
+      }
       try {
         const sizeFolder = await getOrCreateChildFolder(rootFolder, sizeKey);
         const assetsFolder = await getOrCreateChildFolder(sizeFolder, "assets");
@@ -7042,8 +7712,12 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAsset
         }
 
         // Mode B: temp doc is artboard-sized, duplicated layer lands at its artboard-relative coords.
-        // Crop canvas to the overlap between layer and artboard (both in artboard-relative coords).
-        if (asset.sizeMode === "B") {
+        // Crop behavior:
+        //  - Advanced OFF: always tight crop to overlap layer ∩ artboard (legacy)
+        //  - Advanced ON  + cutMode="tight": same tight crop
+        //  - Advanced ON  + cutMode="full" : skip crop → keep full canvas; layer at its position, transparent elsewhere
+        const tightCrop = asset.sizeMode === "B" && (!isAdvancedEnabled() || asset.cutMode === "tight");
+        if (tightCrop) {
           const relX = Math.round(asset.bounds.left - asset.artboardRect.left);
           const relY = Math.round(asset.bounds.top - asset.artboardRect.top);
           const lw = asset.bounds.width;
@@ -7060,6 +7734,8 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAsset
               await cropCanvasTo(cropLeft, cropTop, cropRight, cropBottom);
             } catch (e) { log(`[ASSETS] Mode B crop failed: ${e.message}`); }
           }
+        } else if (asset.sizeMode === "B") {
+          log(`[DEBUG] Mode B (full canvas): keeping ${asset.artboardRect.width}x${asset.artboardRect.height}, no crop`);
         }
 
         // Mode C: trim transparent edges to remove padding inside the layer bounds
@@ -7311,6 +7987,7 @@ async function addGroupToAssets() {
       sizeMode: advancedOn ? "B" : "A",
       scale: advancedOn ? 1 : 2,
       type: "PNG",
+      cutMode: "full",
       bounds: bounds,
       artboardRect: artboardRect
     });
@@ -7351,6 +8028,8 @@ try {
   if (Number.isFinite(saved.quality) && jpgQualityInput) jpgQualityInput.value = String(saved.quality);
   if (typeof saved.ggFilter === "boolean" && filterGgPrefixInput) filterGgPrefixInput.checked = saved.ggFilter;
   if (typeof saved.infoHtml === "boolean" && generateInfoHtmlInput) generateInfoHtmlInput.checked = saved.infoHtml;
+  const useNoSizeEl = document.getElementById("useNoSizeDetected");
+  if (typeof saved.useNoSizeDetected === "boolean" && useNoSizeEl) useNoSizeEl.checked = saved.useNoSizeDetected;
 } catch (e) {}
 updateAdvancedPanelVisibility();
 
@@ -7361,7 +8040,8 @@ function saveAdvancedOptions() {
       path: customExportPathInput?.value || "",
       quality: parseInt(jpgQualityInput?.value, 10),
       ggFilter: !!filterGgPrefixInput?.checked,
-      infoHtml: !!generateInfoHtmlInput?.checked
+      infoHtml: !!generateInfoHtmlInput?.checked,
+      useNoSizeDetected: !!document.getElementById("useNoSizeDetected")?.checked
     }));
   } catch (e) {}
 }
@@ -7383,6 +8063,7 @@ customExportPathInput?.addEventListener("input", () => { customExportPathInput.c
 jpgQualityInput?.addEventListener("input", () => { jpgQualityInput.classList.remove("input-error"); saveAdvancedOptions(); });
 filterGgPrefixInput?.addEventListener("change", saveAdvancedOptions);
 generateInfoHtmlInput?.addEventListener("change", saveAdvancedOptions);
+document.getElementById("useNoSizeDetected")?.addEventListener("change", saveAdvancedOptions);
 
 // ─── Artboard picker ───
 
@@ -7636,7 +8317,6 @@ try {
 } catch (e) {}
 
 sizesInput.addEventListener("input", applySizesChange);
-suffixNameEl.addEventListener("change", saveSuffixPref);
 // Smart match and Uniform scale are mutually exclusive — checking one
 // auto-unchecks the other. Both can be unchecked simultaneously.
 smartMatchEl.addEventListener("change", () => {
@@ -7653,6 +8333,7 @@ uniformScaleEl?.addEventListener("change", () => {
   }
   saveUniformScalePref();
 });
+autoFitSuffixEl?.addEventListener("input", saveAutoFitSuffix);
 refreshBtn.addEventListener("click", refreshSource);
 cloneBtn.addEventListener("click", () => {
   if (cloneMode === "artboards") cloneAsArtboards();
