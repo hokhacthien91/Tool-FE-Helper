@@ -1045,28 +1045,167 @@ appendTextApplyBtn.addEventListener("click", async () => {
 });
 
 // ─── Artboard rename ─────────────────────────────────
-const artboardRenameCurrent = document.getElementById("artboardRenameCurrent");
-const artboardRenameNew     = document.getElementById("artboardRenameNew");
-const artboardRenameBtn     = document.getElementById("artboardRenameBtn");
+const artboardRenameCurrent    = document.getElementById("artboardRenameCurrent");
+const artboardRenameNew        = document.getElementById("artboardRenameNew");
+const artboardRenameBtn        = document.getElementById("artboardRenameBtn");
+const artboardRenamePreviewBtn = document.getElementById("artboardRenamePreviewBtn");
+const artboardRenamePreviewEl  = document.getElementById("artboardRenamePreview");
 
 function updateArtboardRenamePreview() {
   const first = state.artboardList.find(a => state.enabledArtboards.has(a.id))
              || state.artboardList[0];
   artboardRenameCurrent.value = first ? first.name : "";
+  // Hide stale preview whenever inputs/selection change
+  hideArtboardRenamePreview();
 }
 
+// Matches {wxh} or {wxh:<factor>}, case-insensitive. Group 1 = factor string (optional).
+const WXH_TOKEN_RE = /\{wxh(?::([^}]+))?\}/gi;
+
+// Format must contain exactly one {wxh} or {wxh:factor}. Returns { error } or { newName }.
 function buildNewArtboardName(userInput, width, height) {
-  // Strip trailing size digits so user can paste a full name like "foo_970x250"
-  const cleaned = (userInput || "").replace(/\s*\d+x\d+\s*$/i, "");
-  return `${cleaned}${width}x${height}`;
+  const str = userInput || "";
+  // Use exec loop to count + capture factor
+  const tokens = [];
+  let m;
+  WXH_TOKEN_RE.lastIndex = 0;
+  while ((m = WXH_TOKEN_RE.exec(str)) !== null) {
+    tokens.push({ full: m[0], factorStr: m[1] });
+  }
+  if (tokens.length === 0) return { error: "Format must contain {WxH} token (e.g. test1_{WxH}_OP1 or {WxH:0.5})." };
+  if (tokens.length > 1)  return { error: "Format must contain only one {WxH} token." };
+
+  const factorStr = tokens[0].factorStr;
+  let factor = 1;
+  if (factorStr !== undefined) {
+    const trimmed = String(factorStr).trim().replace(",", ".");
+    const parsed = parseFloat(trimmed);
+    if (!isFinite(parsed) || parsed <= 0) {
+      return { error: `Invalid scale "${factorStr}" — must be a positive number (e.g. {WxH:0.5} or {WxH:2}).` };
+    }
+    factor = parsed;
+  }
+
+  const sw = Math.round(width  * factor);
+  const sh = Math.round(height * factor);
+  WXH_TOKEN_RE.lastIndex = 0;
+  return { newName: str.replace(WXH_TOKEN_RE, `${sw}x${sh}`) };
 }
+
+function computeArtboardRenamePlan() {
+  const userInput = artboardRenameNew.value || "";
+  const targets = state.artboardList.filter(a => state.enabledArtboards.has(a.id));
+  let formatError = null;
+  const raw = targets.map(ab => {
+    const res = buildNewArtboardName(userInput, ab.width, ab.height);
+    if (res.error) {
+      formatError = res.error;
+      return { ab, newName: ab.name, baseName: ab.name, suffixed: false, same: true, error: res.error };
+    }
+    return { ab, newName: res.newName, baseName: res.newName, suffixed: false, same: false };
+  });
+
+  // Dedup within same doc: first occurrence keeps name, later ones get _v2, _v3, ...
+  // If _vN also collides, increment until unique.
+  if (!formatError) {
+    const usedByDoc = new Map(); // docId -> Set<name>
+    for (const item of raw) {
+      const docId = item.ab.docId;
+      if (!usedByDoc.has(docId)) usedByDoc.set(docId, new Set());
+      const used = usedByDoc.get(docId);
+      let candidate = item.baseName;
+      let v = 2;
+      while (used.has(candidate)) {
+        candidate = `${item.baseName}_v${v}`;
+        v++;
+      }
+      if (candidate !== item.baseName) item.suffixed = true;
+      item.newName = candidate;
+      item.same = candidate === item.ab.name;
+      used.add(candidate);
+    }
+  }
+
+  return { userInput, targets, plan: raw, formatError };
+}
+
+function hideArtboardRenamePreview() {
+  if (!artboardRenamePreviewEl) return;
+  artboardRenamePreviewEl.style.display = "none";
+  artboardRenamePreviewEl.innerHTML = "";
+}
+
+function renderArtboardRenamePreviewList() {
+  const { userInput, targets, plan, formatError } = computeArtboardRenamePlan();
+  artboardRenamePreviewEl.style.display = "block";
+
+  if (!userInput.trim()) {
+    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">Enter a new name to preview.</div>`;
+    return;
+  }
+  if (!targets.length) {
+    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">No artboards enabled.</div>`;
+    return;
+  }
+  if (formatError) {
+    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">${escapeHtml(formatError)}</div>`;
+    return;
+  }
+
+  // Count collisions on baseName (per doc) — flag every row whose base collides
+  const baseCountByDoc = new Map();
+  for (const p of plan) {
+    const key = `${p.ab.docId}::${p.baseName}`;
+    baseCountByDoc.set(key, (baseCountByDoc.get(key) || 0) + 1);
+  }
+
+  const rows = plan.map(p => {
+    const cls = p.same ? "is-same" : "is-change";
+    const dup = baseCountByDoc.get(`${p.ab.docId}::${p.baseName}`) > 1;
+    const dupTag    = dup        ? ` <span class="arp-warn">(duplicate)</span>` : "";
+    const suffixTag = p.suffixed ? ` <span class="arp-suffix">(auto-suffixed)</span>` : "";
+    const oldEsc = escapeHtml(p.ab.name);
+    const newEsc = escapeHtml(p.newName);
+    return `<div class="arp-row ${cls}">
+      <span class="arp-old" title="${oldEsc}">${oldEsc}</span>
+      <span class="arp-arrow">→</span>
+      <span class="arp-new" title="${newEsc}">${newEsc}${dupTag}${suffixTag}</span>
+    </div>`;
+  }).join("");
+
+  const changeCount   = plan.filter(p => !p.same).length;
+  const sameCount     = plan.length - changeCount;
+  const suffixedCount = plan.filter(p => p.suffixed).length;
+  const dupGroups     = [...baseCountByDoc.values()].filter(c => c > 1).length;
+  const summary = `${changeCount} change${changeCount === 1 ? "" : "s"}, ${sameCount} unchanged`
+                + (dupGroups     ? ` · <span class="arp-warn">${dupGroups} duplicate group(s)</span>` : "")
+                + (suffixedCount ? ` · <span class="arp-suffix">${suffixedCount} auto-suffixed</span>` : "");
+
+  artboardRenamePreviewEl.innerHTML = rows + `<div class="arp-summary">${summary}</div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[ch]));
+}
+
+artboardRenamePreviewBtn.addEventListener("click", renderArtboardRenamePreviewList);
+
+// Auto-hide preview when user edits the input (avoid showing stale plan)
+["input", "keyup", "change", "paste", "cut"].forEach(ev => {
+  artboardRenameNew.addEventListener(ev, () => setTimeout(hideArtboardRenamePreview, 0));
+});
 
 artboardRenameBtn.addEventListener("click", async () => {
-  const newInput = artboardRenameNew.value || "";
-  if (!newInput.trim()) { log("Rename: enter a new name first"); return; }
-
-  const targets = state.artboardList.filter(a => state.enabledArtboards.has(a.id));
-  if (!targets.length) { log("Rename: no artboards enabled"); return; }
+  const { userInput, targets, plan, formatError } = computeArtboardRenamePlan();
+  if (!userInput.trim()) { log("Rename: enter a new name first"); return; }
+  if (!targets.length)   { log("Rename: no artboards enabled"); return; }
+  if (formatError) {
+    log(`Rename: ${formatError}`);
+    renderArtboardRenamePreviewList();
+    return;
+  }
 
   setDisabled(artboardRenameBtn, true);
   const origHtml = artboardRenameBtn.innerHTML;
@@ -1074,9 +1213,8 @@ artboardRenameBtn.addEventListener("click", async () => {
   let ok = 0, fail = 0, skipped = 0;
   try {
     await core.executeAsModal(async () => {
-      for (const ab of targets) {
-        const newName = buildNewArtboardName(newInput, ab.width, ab.height);
-        if (newName === ab.name) { skipped++; continue; }
+      for (const { ab, newName, same } of plan) {
+        if (same) { skipped++; continue; }
         try {
           await switchActiveDoc(ab.docId);
           await selectLayerById(ab.id);
@@ -1094,6 +1232,7 @@ artboardRenameBtn.addEventListener("click", async () => {
 
     renderArtboardsList();
     refreshSaveEnabled();
+    hideArtboardRenamePreview();
     const msg = fail ? `${ok} ok / ${fail} fail` : (ok ? "Done ✓" : "No change");
     artboardRenameBtn.textContent = msg;
     artboardRenameBtn.classList.add(fail ? "is-fail" : "is-success");

@@ -698,6 +698,50 @@ body.mode-replace #actionBar { display: none !important; }
 .artboard-rename-btn.is-success { background: var(--gg-green-dark); color: #fff; border-color: var(--gg-green-dark); }
 .artboard-rename-btn.is-fail    { background: var(--gg-accent);     color: #fff; border-color: var(--gg-accent); }
 
+.artboard-rename-actions {
+  display: flex;
+  flex-direction: row;
+  margin-top: 4px;
+}
+.artboard-rename-actions > .btn { flex: 1 1 0; margin-right: 6px; }
+.artboard-rename-actions > .btn:last-child { margin-right: 0; }
+
+.artboard-rename-preview {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 8px;
+  font-family: monospace;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.artboard-rename-preview .arp-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(255,255,255,.06);
+  line-height: 1.35;
+}
+.artboard-rename-preview .arp-row:last-child { border-bottom: 0; }
+.artboard-rename-preview .arp-old { flex: 1; min-width: 0; color: var(--muted); word-break: break-all; white-space: normal; }
+.artboard-rename-preview .arp-new { flex: 1; min-width: 0; color: var(--text); word-break: break-all; white-space: normal; }
+.artboard-rename-preview .arp-arrow { color: var(--gg-green); margin: 0 6px; flex: 0 0 auto; }
+.artboard-rename-preview .arp-row.is-same .arp-new { color: var(--muted); font-style: italic; }
+.artboard-rename-preview .arp-row.is-change .arp-new { color: var(--gg-green); font-weight: 600; }
+.artboard-rename-preview .arp-summary {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.artboard-rename-preview .arp-warn { color: var(--gg-accent); }
+.artboard-rename-preview .arp-suffix { color: #d6a23c; font-style: italic; }
+
 /* ─── Append Text Layer ─── */
 .append-text-body { padding: 10px; background: var(--panel); }
 .append-text-body.synced { box-shadow: inset 0 0 0 1px var(--gg-green); transition: box-shadow .4s; }

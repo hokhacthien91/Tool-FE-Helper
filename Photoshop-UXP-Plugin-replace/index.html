@@ -56,10 +56,14 @@
           <button id="artboardsSearchClear" class="search-clear" title="Clear">×</button>
         </div>
         <div class="artboard-rename" id="artboardRenameBox">
-          <div class="artboard-rename-label">Rename (keeps <code>_WxH</code> suffix)</div>
+          <div class="artboard-rename-label">Rename — <code>{WxH}</code> = size, <code>{WxH:0.5}</code> = ÷2, <code>{WxH:2}</code> = ×2</div>
           <input id="artboardRenameCurrent" type="text" class="artboard-rename-input" placeholder="Current name" readonly />
-          <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="New name (e.g. P001_honda_)" />
-          <button id="artboardRenameBtn" class="btn btn-secondary btn-full">Rename artboards</button>
+          <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="e.g. test1_{WxH}_OP1 or test1_{WxH:0.5}" />
+          <div class="artboard-rename-actions">
+            <button id="artboardRenamePreviewBtn" class="btn btn-tertiary">Preview</button>
+            <button id="artboardRenameBtn" class="btn btn-secondary">Rename</button>
+          </div>
+          <div id="artboardRenamePreview" class="artboard-rename-preview" style="display:none;"></div>
         </div>
         <div id="artboardsList" class="artboards-list"></div>
       </div>

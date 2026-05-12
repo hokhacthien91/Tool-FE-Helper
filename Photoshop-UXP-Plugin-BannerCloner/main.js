@@ -664,6 +664,24 @@ async function scaleLayerUniform(layer, scale) {
     log(`[SCALE] "${layer.name}" skip: unbounded fill layer (bounds = canvas)`);
     return;
   }
+  // Smart object with a layer mask is fragile under non-uniform PS transform —
+  // PS frequently breaks the mask, leaving the smart object with 0×0 visible
+  // bounds. Detect via descriptor properties and skip transform; the layer
+  // keeps its original size (which is acceptable for mockup placeholders).
+  if (layer.kind === "smartObject") {
+    try {
+      const desc = await getLayerDescriptor(layer.id);
+      const hasMask = !!(desc && (
+        desc.hasUserMask === true || desc.userMaskEnabled === true
+        || desc.hasFilterMask === true || desc.hasVectorMask === true
+        || desc.vectorMaskEnabled === true
+      ));
+      if (hasMask) {
+        log(`[SCALE] "${layer.name}" skip: smartObject with mask — transform may corrupt content`);
+        return;
+      }
+    } catch (e) { /* fall through to transform */ }
+  }
   log(`[SCALE] "${layer.name}" (kind=${layer.kind}) before: ${before.width}x${before.height} × ${(scale*100).toFixed(1)}%`);
   await selectLayerById(layer.id);
   try {
@@ -2643,6 +2661,11 @@ async function cloneAsArtboards() {
       // caused by *later* sources.
       const originalRects = sources.map(s => ({ left: s.size.left, top: s.size.top }));
 
+      // Track every target artboard we create so the final pass can restore
+      // any that drifted (e.g. an earlier target's expand/shrink can shove
+      // siblings around). Helper will push {id, intendedLeft, intendedTop}.
+      const createdTargets = [];
+
       for (let si = 0; si < sources.length; si++) {
         const source = sources[si];
         const srcTargets = targetsPerSource[si];
@@ -2665,14 +2688,16 @@ async function cloneAsArtboards() {
           rowY,
           progressBase: totalProgressDone,
           progressMax: totalProgressMax,
+          createdTargets,
         });
         totalProgressDone += srcTargets.length;
       }
 
-      // Final pass: restore every source to its original location. After
-      // source N runs, sources N+1..end may have drifted again because they
-      // weren't touched by the per-source restore inside the helper.
+      // Final pass: restore every source AND every created target to its
+      // intended location. After target N runs, earlier sources/targets may
+      // have drifted again because expand/shrink shifts the canvas.
       log(`[POS] Final pass: restoring all sources to original positions`);
+      // 1) restore sources
       for (let si = 0; si < sources.length; si++) {
         const s = sources[si];
         const orig = originalRects[si];
@@ -2696,6 +2721,29 @@ async function cloneAsArtboards() {
             }]);
           }
         } catch (e) { log(`[POS] restore "${s.name}" skipped: ${e.message}`); }
+      }
+      // 2) restore created targets to their intended grid positions
+      for (const t of createdTargets) {
+        try {
+          const desc = await getLayerDescriptor(t.id);
+          const cur = rectSize(desc.artboard?.artboardRect || desc.bounds);
+          const dx = t.intendedLeft - cur.left;
+          const dy = t.intendedTop - cur.top;
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            log(`[POS] target "${t.name}" drift=(${Math.round(dx)},${Math.round(dy)}) → restoring to (${t.intendedLeft},${t.intendedTop})`);
+            await selectLayerById(t.id);
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: t.id }],
+              to: {
+                _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: Math.round(dx) },
+                vertical: { _unit: "pixelsUnit", _value: Math.round(dy) }
+              },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          }
+        } catch (e) { log(`[POS] restore target "${t.name}" skipped: ${e.message}`); }
       }
 
       log("=== Clone complete ===");
@@ -2754,7 +2802,7 @@ async function snapshotDoc(doc, label) {
 // around the artboard's center. Layout rules / smart match / uniform mode are
 // intentionally skipped in this version — first goal is to confirm the new
 // artboard is created cleanly at the right size and position.
-async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStartX, rowY, progressBase, progressMax }) {
+async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStartX, rowY, progressBase, progressMax, createdTargets }) {
   const { base: baseName, sep: baseSep, tail: baseTail } = stripSizeSuffix(source.name);
 
   // Make sure we operate on the source doc (the previous source iteration
@@ -2886,6 +2934,26 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     }
     buildParentMap(newAb);
     log(`[V2] Snapshot ${childIdsBeforeResize.length} top-level children + ${parentMap.size} total descendants with parent+index mapping`);
+
+    // Snapshot visibility of every descendant. PS sometimes flips visibility
+    // during transform/move operations, especially on hidden layers — they
+    // re-appear after the clone. We restore visibility at the end so layers
+    // that were hidden in source stay hidden in clone.
+    const visibilityMap = new Map();
+    async function snapshotVisibility(parent) {
+      for (const l of parent.layers || []) {
+        try {
+          const d = await getLayerDescriptor(l.id);
+          // PS uses "visible" property in descriptor (true/false). Default = true.
+          const vis = d.visible !== false;
+          visibilityMap.set(l.id, vis);
+        } catch (e) {}
+        if (l.layers && l.layers.length) await snapshotVisibility(l);
+      }
+    }
+    await snapshotVisibility(newAb);
+    const hiddenCount = [...visibilityMap.values()].filter(v => !v).length;
+    log(`[V2] Snapshot visibility: ${visibilityMap.size} layers, ${hiddenCount} hidden`);
 
     // Helper: re-parent any descendant that escaped newAb back into its
     // original parent group. Idempotent — call after any step that may
@@ -3314,6 +3382,13 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       const origGridLeft = abRectAfter.left;
       const origGridTop = abRectAfter.top;
       let artboardExpanded = false;
+      // Track expand auto-shift so we can compensate after shrink: when PS
+      // auto-shifts the rect (e.g. negative coords), it also shifts every
+      // layer by the same delta. After shrink, the artboard rect snaps back
+      // to (origGridLeft, origGridTop) but children stay at the shifted
+      // coords — we need to translate them back by (-expandShiftX, -shiftY).
+      let expandShiftX = 0;
+      let expandShiftY = 0;
       // HUGE buffer: scale with the larger of source / target so the expanded
       // rect always comfortably exceeds both. Min 1500 buffer per side.
       const HUGE = Math.max(1500, Math.max(srcRect.width, target.width), Math.max(srcRect.height, target.height));
@@ -3365,6 +3440,8 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               log(`[V2] PS auto-shifted rect by (${shiftX},${shiftY}) — adjusting saved grid origin`);
               savedGridLeft += shiftX;
               savedGridTop += shiftY;
+              expandShiftX = shiftX;
+              expandShiftY = shiftY;
             }
             log(`[V2] Adjusted saved grid origin → (${savedGridLeft},${savedGridTop})`);
             abRectAfter = expRect;
@@ -3406,87 +3483,249 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         const tgtCenterY = savedGridTop + target.height / 2;
         log(`[V2-UNIFORM] srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
 
-        // Walk every leaf descendant and apply: scale + reposition.
-        // For each leaf: new position = tgtCenter + (oldPos - srcCenter) * scale
-        // In smart mode, skip the BG group entirely — it will be processed
-        // separately with cover scale instead.
-        // Smart mode also skips auto-fit candidates (handled separately).
+        // NEW APPROACH: select all eligible leaves at once and apply ONE
+        // transform (scale around selection center), then ONE move to align
+        // selection center with target center. This matches what a user does
+        // manually: select all → cmd-T → scale → move. Avoids per-layer math
+        // bugs (especially around expand auto-shift) and is much faster.
         const lcAutoFitNames = new Set(
           (smartEnabled ? autoFitCandidates : []).map(c => c.name.toLowerCase())
         );
         const tUniform = perfNow();
-        async function uniformWalk(parent) {
-          const layers = parent.layers || [];
-          for (const l of layers) {
-            // Smart mode: skip BG group, will be cover-scaled afterwards.
-            if (smartEnabled && l.layers && l.layers.length > 0
-                && l.name && l.name.toLowerCase() === "bg") {
-              log(`[V2-UNIFORM]   skipping "${l.name}" (smart mode — BG handled separately)`);
-              continue;
-            }
-            // Smart mode: skip auto-fit candidates (also skip their descendants
-            // since user spec said "if parent matched, children follow").
-            if (smartEnabled && lcAutoFitNames.has(String(l.name || "").toLowerCase())) {
-              log(`[V2-UNIFORM]   skipping "${l.name}" (smart mode — auto-fit candidate)`);
-              continue;
-            }
-            // Recurse into groups (we scale individual leaves, not groups).
-            if (l.layers && l.layers.length > 0) {
-              await uniformWalk(l);
-              continue;
-            }
-            // Leaf — read bounds, compute new center, scale + move.
-            try {
-              const d = await getLayerDescriptor(l.id);
-              const b = d.bounds;
-              if (!b) continue;
-              const fmt = v => (v && typeof v === "object" && "_value" in v) ? Number(v._value) : Number(v);
-              const left = fmt(b.left), top = fmt(b.top), right = fmt(b.right), bottom = fmt(b.bottom);
-              if (![left, top, right, bottom].every(Number.isFinite)) continue;
-              const w = right - left;
-              const h = bottom - top;
-              if (w < 1 || h < 1) continue;
-              const cx = (left + right) / 2;
-              const cy = (top + bottom) / 2;
-              // New center = target center + (old center - source center) * scale
-              const newCx = tgtCenterX + (cx - srcCenterX) * scale;
-              const newCy = tgtCenterY + (cy - srcCenterY) * scale;
-              const newW = w * scale;
-              const newH = h * scale;
-              const newLeft = newCx - newW / 2;
-              const newTop = newCy - newH / 2;
 
-              // Scale unless adjustment fill (no vectorMask) — those throw
-              // "initial bounding rectangle is empty" on transform.
-              let canScale = true;
-              const isAdjustmentFillKind = l.kind === "solidColor" || l.kind === "solidFill"
-                || l.kind === "gradientFill" || l.kind === "pattern";
-              if (isAdjustmentFillKind) {
-                let hasVectorMask = false;
-                try {
-                  hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
-                } catch (e) { /* assume no mask */ }
+        // Collect ALL eligible leaf IDs. Recurse into groups; skip whole BG
+        // group (smart mode) and auto-fit candidates (smart mode). For
+        // adjustment fill layers without a vector mask, transform throws
+        // "initial bounding rectangle is empty" — exclude them from the batch
+        // selection (they keep source coords; PS will clip via artboard rect).
+        // Smart objects with masks: PS may silently SKIP them in batch
+        // transforms (we've seen this with vector masks specifically). We
+        // collect them in a separate list to fall back to per-layer scale.
+        const eligibleIds = [];
+        const fallbackLayers = [];   // {l, hasMask} — scaled individually after batch
+        const skippedNames = [];
+        async function collectEligible(parent, parentSkipped) {
+          for (const l of parent.layers || []) {
+            const lcName = String(l.name || "").toLowerCase();
+            // Skip whole BG group in smart mode (cover-scaled afterwards).
+            if (smartEnabled && l.layers && l.layers.length > 0 && lcName === "bg") {
+              skippedNames.push(`"${l.name}" (smart-mode BG)`);
+              continue;
+            }
+            // Skip auto-fit candidates and their descendants in smart mode.
+            if (smartEnabled && lcAutoFitNames.has(lcName)) {
+              skippedNames.push(`"${l.name}" (smart-mode auto-fit)`);
+              continue;
+            }
+            if (l.layers && l.layers.length > 0) {
+              await collectEligible(l, parentSkipped);
+              continue;
+            }
+            // Adjustment fill no-mask: transform fails. Drop from selection.
+            const isAdjustmentFillKind = l.kind === "solidColor" || l.kind === "solidFill"
+              || l.kind === "gradientFill" || l.kind === "pattern";
+            if (isAdjustmentFillKind) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
                 if (!hasVectorMask) {
-                  canScale = false;
-                  log(`[V2-UNIFORM]   "${l.name}" skip scale (adjustment fill, no vectorMask)`);
+                  skippedNames.push(`"${l.name}" (adjustment fill, no vectorMask)`);
+                  continue;
                 }
-              }
-              if (canScale && Math.abs(scale - 1) > 0.005) {
-                try {
-                  await scaleLayerUniform(l, scale);
-                } catch (e) {
-                  log(`[V2-UNIFORM]   "${l.name}" scale failed: ${e.message} — skipping`);
-                  canScale = false;
+              } catch (e) { /* keep — assume mask */ }
+            }
+            // Smart object with ANY mask (user/vector/filter): PS often
+            // silently skips in batch transform with multi-select. Pull out
+            // for individual fallback scale.
+            if (l.kind === "smartObject") {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const hasMask = !!(d && (
+                  d.hasUserMask === true || d.userMaskEnabled === true
+                  || d.hasVectorMask === true || d.vectorMaskEnabled === true
+                  || d.hasFilterMask === true
+                ));
+                if (hasMask) {
+                  fallbackLayers.push(l);
+                  const maskKinds = [];
+                  if (d.hasUserMask || d.userMaskEnabled) maskKinds.push("user");
+                  if (d.hasVectorMask || d.vectorMaskEnabled) maskKinds.push("vector");
+                  if (d.hasFilterMask) maskKinds.push("filter");
+                  skippedNames.push(`"${l.name}" (smart-object mask=${maskKinds.join("+") || "?"} → fallback)`);
+                  continue;
                 }
+              } catch (e) { /* keep in batch */ }
+            }
+            eligibleIds.push(l.id);
+          }
+        }
+        try { await collectEligible(newAb, false); }
+        catch (e) { log(`[V2-UNIFORM] collect failed: ${e.message}`); }
+
+        log(`[V2-UNIFORM] eligible=${eligibleIds.length} skipped=${skippedNames.length}${skippedNames.length ? " (" + skippedNames.join(", ") + ")" : ""}`);
+
+        if (eligibleIds.length === 0) {
+          log(`[V2-UNIFORM] no eligible layers — nothing to scale`);
+        } else {
+          try {
+            // Compute selection bbox BEFORE transform (for verification + move).
+            const bboxBefore = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+            for (const id of eligibleIds) {
+              try {
+                const bnd = await getLayerBoundsNoEffects(id);
+                if (Number.isFinite(bnd.left) && Number.isFinite(bnd.top)
+                    && Number.isFinite(bnd.right) && Number.isFinite(bnd.bottom)
+                    && bnd.right > bnd.left && bnd.bottom > bnd.top) {
+                  if (bnd.left < bboxBefore.l) bboxBefore.l = bnd.left;
+                  if (bnd.top < bboxBefore.t) bboxBefore.t = bnd.top;
+                  if (bnd.right > bboxBefore.r) bboxBefore.r = bnd.right;
+                  if (bnd.bottom > bboxBefore.b) bboxBefore.b = bnd.bottom;
+                }
+              } catch (e) { /* skip */ }
+            }
+            const bboxBeforeOk = Number.isFinite(bboxBefore.l) && bboxBefore.r > bboxBefore.l;
+            if (bboxBeforeOk) {
+              log(`[V2-UNIFORM] selection bbox before: (${Math.round(bboxBefore.l)},${Math.round(bboxBefore.t)},${Math.round(bboxBefore.r)},${Math.round(bboxBefore.b)}) ${Math.round(bboxBefore.r - bboxBefore.l)}x${Math.round(bboxBefore.b - bboxBefore.t)}`);
+            }
+
+            // Multi-select all eligible IDs. Build _target array of layer refs.
+            const selectTargets = eligibleIds.map(id => ({ _ref: "layer", _id: id }));
+            await bp([{
+              _obj: "select",
+              _target: selectTargets,
+              makeVisible: false,
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+
+            // ONE transform — PS uses selection bbox center (QCSAverage) as
+            // the pivot. After scale, selection center remains at the SAME
+            // canvas point as before scale (because pivot = center).
+            if (Math.abs(scale - 1) > 0.005) {
+              await bp([{
+                _obj: "transform",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+                width: { _unit: "percentUnit", _value: scale * 100 },
+                height: { _unit: "percentUnit", _value: scale * 100 },
+                interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              log(`[V2-UNIFORM] scaled ${eligibleIds.length} layers by ${(scale * 100).toFixed(1)}% (pivot=selection-center)`);
+            }
+
+            // Compute selection bbox AFTER transform.
+            const bboxAfter = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+            for (const id of eligibleIds) {
+              try {
+                const bnd = await getLayerBoundsNoEffects(id);
+                if (Number.isFinite(bnd.left) && bnd.right > bnd.left && bnd.bottom > bnd.top) {
+                  if (bnd.left < bboxAfter.l) bboxAfter.l = bnd.left;
+                  if (bnd.top < bboxAfter.t) bboxAfter.t = bnd.top;
+                  if (bnd.right > bboxAfter.r) bboxAfter.r = bnd.right;
+                  if (bnd.bottom > bboxAfter.b) bboxAfter.b = bnd.bottom;
+                }
+              } catch (e) { /* skip */ }
+            }
+            const bboxAfterOk = Number.isFinite(bboxAfter.l) && bboxAfter.r > bboxAfter.l;
+            if (bboxAfterOk) {
+              log(`[V2-UNIFORM] selection bbox after:  (${Math.round(bboxAfter.l)},${Math.round(bboxAfter.t)},${Math.round(bboxAfter.r)},${Math.round(bboxAfter.b)}) ${Math.round(bboxAfter.r - bboxAfter.l)}x${Math.round(bboxAfter.b - bboxAfter.t)}`);
+
+              // Compute move offset so each layer's NEW center matches the
+              // uniform formula: cL_new = tgtCenter + (cL_src - srcArtboardCenter) * scale.
+              // PS scales around bbox center (pivot=QCSAverage), so post-scale
+              //   cL_postScale = bboxCenter_before + (cL_src - bboxCenter_before) * scale.
+              // → move offset = cL_new - cL_postScale
+              //                = (tgtCenter - bboxCenter_before)
+              //                  + scale * (bboxCenter_before - srcArtboardCenter)
+              // Independent of cL_src ⇒ same offset for every layer ✓
+              const bboxBefCx = bboxBeforeOk ? (bboxBefore.l + bboxBefore.r) / 2 : null;
+              const bboxBefCy = bboxBeforeOk ? (bboxBefore.t + bboxBefore.b) / 2 : null;
+              let dx, dy;
+              if (bboxBefCx !== null && bboxBefCy !== null) {
+                dx = Math.round((tgtCenterX - bboxBefCx) + scale * (bboxBefCx - srcCenterX));
+                dy = Math.round((tgtCenterY - bboxBefCy) + scale * (bboxBefCy - srcCenterY));
+              } else {
+                // Fallback: align bbox center with target center (old behavior)
+                const selCx = (bboxAfter.l + bboxAfter.r) / 2;
+                const selCy = (bboxAfter.t + bboxAfter.b) / 2;
+                dx = Math.round(tgtCenterX - selCx);
+                dy = Math.round(tgtCenterY - selCy);
               }
-              // Re-read bounds after scale to get accurate dx/dy.
-              const dAfter = await getLayerDescriptor(l.id);
-              const ba = dAfter.bounds || {};
-              const al = fmt(ba.left), at = fmt(ba.top);
-              const dx = Math.round(newLeft - al);
-              const dy = Math.round(newTop - at);
               if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                await selectLayerById(l.id);
+                // Selection still active from transform — issue 1 move call.
+                await bp([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                  to: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: dx },
+                    vertical: { _unit: "pixelsUnit", _value: dy }
+                  },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                log(`[V2-UNIFORM] moved selection by (${dx},${dy}) — uniform-correct (bboxBefCenter=(${Math.round(bboxBefCx)},${Math.round(bboxBefCy)}), srcArtboardCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}), tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)}))`);
+              } else {
+                log(`[V2-UNIFORM] selection already at uniform-correct position — no move`);
+              }
+            }
+          } catch (e) {
+            log(`[V2-UNIFORM] batch transform failed: ${e.message}`);
+          }
+        }
+
+        // Fallback scale for smart objects with vector masks (PS silently
+        // skips them in batch transform). Capture each one's source center
+        // BEFORE per-layer scale so we can position it correctly:
+        //   newCenter = tgtCenter + (srcCenter - srcArtboardCenter) * scale
+        if (fallbackLayers.length > 0) {
+          log(`[V2-UNIFORM] fallback per-layer scale for ${fallbackLayers.length} smart-object layer(s) with mask`);
+          for (const l of fallbackLayers) {
+            try {
+              // Read pre-scale bounds = source position in canvas coords
+              // (these layers were NOT moved by batch transform/move).
+              const dPre = await getLayerDescriptor(l.id);
+              const bp1 = dPre.bounds || {};
+              const fmt = v => (v && typeof v === "object" && "_value" in v) ? Number(v._value) : Number(v);
+              const sl = fmt(bp1.left), st = fmt(bp1.top), sr = fmt(bp1.right), sb = fmt(bp1.bottom);
+              if (![sl, st, sr, sb].every(Number.isFinite)) {
+                log(`[V2-UNIFORM]   "${l.name}" skip — invalid bounds`);
+                continue;
+              }
+              const scx = (sl + sr) / 2, scy = (st + sb) / 2;
+              // Target center for this layer:
+              const newCx = tgtCenterX + (scx - srcCenterX) * scale;
+              const newCy = tgtCenterY + (scy - srcCenterY) * scale;
+
+              // Try transform; if it fails or doesn't shrink, layer keeps
+              // its source size. Either way, move so its current center
+              // aligns with newCx/newCy.
+              await selectLayerById(l.id);
+              try {
+                await bp([{
+                  _obj: "transform",
+                  _target: [{ _ref: "layer", _id: l.id }],
+                  freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+                  width: { _unit: "percentUnit", _value: scale * 100 },
+                  height: { _unit: "percentUnit", _value: scale * 100 },
+                  interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              } catch (e) {
+                log(`[V2-UNIFORM]   "${l.name}" transform failed: ${e.message}`);
+              }
+
+              // Re-read bounds and re-center on (newCx, newCy).
+              const dPost = await getLayerDescriptor(l.id);
+              const bp2 = dPost.bounds || {};
+              const al = fmt(bp2.left), at = fmt(bp2.top), ar = fmt(bp2.right), ab = fmt(bp2.bottom);
+              if (![al, at, ar, ab].every(Number.isFinite) || (ar - al) < 1 || (ab - at) < 1) {
+                log(`[V2-UNIFORM]   "${l.name}" post-transform bounds invalid — skipping move`);
+                continue;
+              }
+              const curCx = (al + ar) / 2, curCy = (at + ab) / 2;
+              const dx = Math.round(newCx - curCx);
+              const dy = Math.round(newCy - curCy);
+              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
                 await bp([{
                   _obj: "move",
                   _target: [{ _ref: "layer", _id: l.id }],
@@ -3498,17 +3737,13 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                   _options: { dialogOptions: "dontDisplay" }
                 }]);
               }
-              log(`[V2-UNIFORM]   "${l.name}" ${Math.round(w)}x${Math.round(h)} @ (${Math.round(left)},${Math.round(top)}) → ${Math.round(newW)}x${Math.round(newH)} @ (${Math.round(newLeft)},${Math.round(newTop)})`);
+              log(`[V2-UNIFORM]   fallback "${l.name}" → bounds (${Math.round(al)},${Math.round(at)},${Math.round(ar)},${Math.round(ab)}) ${Math.round(ar - al)}x${Math.round(ab - at)} centered at (${Math.round(newCx)},${Math.round(newCy)})`);
             } catch (e) {
-              log(`[V2-UNIFORM]   "${l.name}" ERROR: ${e.message}`);
+              log(`[V2-UNIFORM]   fallback "${l.name}" ERROR: ${e.message}`);
             }
           }
         }
-        try {
-          await uniformWalk(newAb);
-        } catch (e) {
-          log(`[V2-UNIFORM] walk failed: ${e.message}`);
-        }
+
         perfLog(`[V2-UNIFORM] applied ${target.raw}`, tUniform);
         await runReparent("POST-UNIFORM");
 
@@ -3679,7 +3914,92 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           // so use origGridLeft/Top — the position we wanted before expand).
           const moveBackX = origGridLeft - finalRect.left;
           const moveBackY = origGridTop - finalRect.top;
+
+          // Edge case: PS auto-shifts artboard rect back to origGrid during
+          // shrink BUT leaves children at the shifted coords from expand.
+          // Probe a sample child: if its bounds are anywhere near the
+          // shifted-grid origin (savedGridLeft/Top) instead of origGrid,
+          // shift all descendants back by (-expandShiftX, -expandShiftY).
+          let needsChildShiftBack = false;
+          if (Math.abs(moveBackX) <= 0.5 && Math.abs(moveBackY) <= 0.5
+              && (expandShiftX !== 0 || expandShiftY !== 0)) {
+            try {
+              let probe = null;
+              function findFirstLeafProbe(p) {
+                for (const c of p.layers || []) {
+                  if (c.layers && c.layers.length) {
+                    const hit = findFirstLeafProbe(c);
+                    if (hit) return hit;
+                  } else return c;
+                }
+                return null;
+              }
+              probe = findFirstLeafProbe(newAb);
+              if (probe) {
+                const pb = await getLayerBoundsNoEffects(probe.id);
+                // Distance to origGrid vs shifted-grid (savedGridLeft/Top):
+                const distToOrig = Math.hypot(pb.left - origGridLeft, pb.top - origGridTop);
+                const distToShifted = Math.hypot(pb.left - savedGridLeft, pb.top - savedGridTop);
+                log(`[V2] Shift-back probe "${probe.name}" at (${Math.round(pb.left)},${Math.round(pb.top)}); distToOrig=${Math.round(distToOrig)} distToShifted=${Math.round(distToShifted)}; expandShift=(${expandShiftX},${expandShiftY})`);
+                // If probe is closer to shifted-grid than orig-grid → it's
+                // stuck shifted, needs translation back.
+                if (distToShifted < distToOrig) {
+                  needsChildShiftBack = true;
+                  log(`[V2] Children stuck at expand-shifted coords — will translate by (${-expandShiftX},${-expandShiftY})`);
+                }
+              }
+            } catch (e) { log(`[V2] shift-back probe failed: ${e.message}`); }
+          }
+
+          if (needsChildShiftBack) {
+            const shiftDx = -expandShiftX;
+            const shiftDy = -expandShiftY;
+            const allLeavesShift = [];
+            function collectLeavesShift(p) {
+              for (const c of p.layers || []) {
+                if (c.layers && c.layers.length) collectLeavesShift(c);
+                else allLeavesShift.push(c);
+              }
+            }
+            collectLeavesShift(newAb);
+            for (const lf of allLeavesShift) {
+              try {
+                await selectLayerById(lf.id);
+                await bp([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _id: lf.id }],
+                  to: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: shiftDx },
+                    vertical: { _unit: "pixelsUnit", _value: shiftDy }
+                  },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              } catch (e) { log(`[V2]   shift-back "${lf.name}" failed: ${e.message}`); }
+            }
+            log(`[V2] Translated ${allLeavesShift.length} descendants by (${shiftDx},${shiftDy}) to compensate for expand auto-shift`);
+          }
+
           if (Math.abs(moveBackX) > 0.5 || Math.abs(moveBackY) > 0.5) {
+            // Sample one child to verify: does moving the artboard also move
+            // its children? Take first leaf descendant, snapshot its bounds
+            // BEFORE and AFTER the artboard move.
+            let sampleChild = null;
+            function findFirstLeaf(p) {
+              for (const c of p.layers || []) {
+                if (c.layers && c.layers.length) {
+                  const hit = findFirstLeaf(c);
+                  if (hit) return hit;
+                } else return c;
+              }
+              return null;
+            }
+            sampleChild = findFirstLeaf(newAb);
+            let sampleBefore = null;
+            if (sampleChild) {
+              try { sampleBefore = await getLayerBoundsNoEffects(sampleChild.id); } catch (e) {}
+            }
+
             await selectLayerById(newAb.id);
             await bp([{
               _obj: "move",
@@ -3692,6 +4012,47 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               _options: { dialogOptions: "dontDisplay" }
             }]);
             log(`[V2] Moved artboard back to original grid (${finalRect.left},${finalRect.top}) → (${origGridLeft},${origGridTop})`);
+
+            if (sampleChild && sampleBefore) {
+              try {
+                const sampleAfter = await getLayerBoundsNoEffects(sampleChild.id);
+                const childDx = Math.round(sampleAfter.left - sampleBefore.left);
+                const childDy = Math.round(sampleAfter.top - sampleBefore.top);
+                const expectedDx = Math.round(moveBackX);
+                const expectedDy = Math.round(moveBackY);
+                const followed = (Math.abs(childDx - expectedDx) <= 1 && Math.abs(childDy - expectedDy) <= 1);
+                log(`[V2] Sample child "${sampleChild.name}" moved dx=${childDx} dy=${childDy} (expected dx=${expectedDx} dy=${expectedDy}) — children ${followed ? "DID FOLLOW ✓" : "DID NOT FOLLOW ✗"}`);
+                if (!followed) {
+                  // Children did NOT follow artboard move. Move them manually.
+                  log(`[V2] Manually moving all descendants by (${expectedDx - childDx}, ${expectedDy - childDy})`);
+                  const remainingDx = expectedDx - childDx;
+                  const remainingDy = expectedDy - childDy;
+                  const allLeaves = [];
+                  function collectLeaves(p) {
+                    for (const c of p.layers || []) {
+                      if (c.layers && c.layers.length) collectLeaves(c);
+                      else allLeaves.push(c);
+                    }
+                  }
+                  collectLeaves(newAb);
+                  for (const lf of allLeaves) {
+                    try {
+                      await selectLayerById(lf.id);
+                      await bp([{
+                        _obj: "move",
+                        _target: [{ _ref: "layer", _id: lf.id }],
+                        to: {
+                          _obj: "offset",
+                          horizontal: { _unit: "pixelsUnit", _value: remainingDx },
+                          vertical: { _unit: "pixelsUnit", _value: remainingDy }
+                        },
+                        _options: { dialogOptions: "dontDisplay" }
+                      }]);
+                    } catch (e) { log(`[V2]   move "${lf.name}" failed: ${e.message}`); }
+                  }
+                }
+              } catch (e) { log(`[V2] sample-child verify failed: ${e.message}`); }
+            }
           }
 
           // Second re-parent pass: shrinking can evict layers whose final
@@ -3706,6 +4067,47 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       log(`[V2] Skipping rules — artboard rect mismatch (got ${abRectAfter?.width}x${abRectAfter?.height}, expected ${target.width}x${target.height})`);
     }
 
+    // Restore visibility of layers that were hidden in source. PS may have
+    // flipped them visible during transform/move, so we explicitly set
+    // visible=false on each one to match source state.
+    // Use the proper "show"/"hide" event instead of `set { visible }` —
+    // PS doesn't always honor `set visible:false` on layers inside artboards.
+    try {
+      let restored = 0;
+      const failures = [];
+      for (const [layerId, wasVisible] of visibilityMap.entries()) {
+        if (wasVisible) continue; // was visible — leave as is
+        try {
+          // Try the "hide" event (matches what PS records when you click the
+          // eye icon to hide a layer).
+          await bp([{
+            _obj: "hide",
+            null: [{ _ref: "layer", _id: layerId }],
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          // Verify
+          const dAfter = await getLayerDescriptor(layerId);
+          if (dAfter.visible === false) {
+            restored++;
+          } else {
+            failures.push({ id: layerId, after: dAfter.visible });
+          }
+        } catch (e) {
+          failures.push({ id: layerId, error: e.message });
+        }
+      }
+      if (restored > 0) log(`[V2] Restored visibility (hide event) for ${restored} layer(s)`);
+      if (failures.length > 0) {
+        log(`[V2] Visibility restore FAILED for ${failures.length} layer(s):`);
+        for (const f of failures) log(`[V2]   id=${f.id} ${f.error ? `error="${f.error}"` : `visible=${f.after}`}`);
+      }
+    } catch (e) {
+      log(`[V2] visibility restore failed: ${e.message}`);
+    }
+
+    if (createdTargets) {
+      createdTargets.push({ id: newAb.id, name: newName, intendedLeft: nextX, intendedTop: rowY });
+    }
     nextX += target.width + 80;
     log(`[V2] Created: ${newName}`);
     perfLog(`[V2] target ${target.raw} total`, tTarget);
