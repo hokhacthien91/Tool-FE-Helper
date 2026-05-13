@@ -138,11 +138,19 @@
         <label class="checkbox-row"><input id="autoRenameDupsEnabled" type="checkbox" checked /> <span>Auto-rename duplicate layers before export (within each artboard)</span></label>
       </div>
       <div class="section btn-row">
-        <button id="importJsonBtn" class="primary import-json-btn">Import JSON</button>
+        <div id="importJsonWrap" class="import-json-wrap">
+          <button id="importJsonBtn" class="primary import-json-btn" type="button">
+            <span id="importJsonLabel">Import JSON</span>
+          </button>
+          <button id="importJsonClearBtn" class="import-json-clear-btn" type="button" title="Clear imported JSON" style="display:none;">×</button>
+        </div>
         <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
       </div>
       <div class="section btn-row" id="applyRulesSection" style="display:none;">
         <button id="applyRulesBtn" class="primary">Apply Rules to Existing</button>
+      </div>
+      <div class="section btn-row">
+        <button id="createTestFileBtn" class="primary" title="Tạo file PSD test với 5 case risk cao (smart object mask, layer effects, raster mask, warped text, clipping chain)">Create Test File</button>
       </div>
 
       <div id="importInfoCard" class="section info-card" style="display:none;">

@@ -478,6 +478,62 @@ button.full { width: 100%; }
   background: #3d3d3d;
   color: var(--text);
 }
+.import-json-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+.import-json-wrap .import-json-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+}
+.import-json-wrap.is-imported .import-json-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: var(--text);
+  cursor: default;
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 28px;
+}
+.import-json-wrap.is-imported #importJsonLabel {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 11px;
+  color: #ccc;
+}
+.import-json-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ddd;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.import-json-clear-btn:hover {
+  background: rgba(255, 80, 80, 0.7);
+  color: #fff;
+}
 .add-layer-btn {
   background: transparent;
   color: var(--gg-green);

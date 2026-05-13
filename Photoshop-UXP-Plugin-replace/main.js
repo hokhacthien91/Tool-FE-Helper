@@ -255,7 +255,11 @@ function collectNode(node, layerPath, docInfo, targetName, layerMap, artboardId)
   const key = `${base}::${kind}`;
   const occ = { docId: docInfo.id, docName: docInfo.name, layerId: node.id, target: targetName, layerPath, artboardId };
   if (!layerMap.has(key)) {
-    layerMap.set(key, { name: node.name, displayPath: layerPath, kind, occurrences: [] });
+    const entry = { name: node.name, displayPath: layerPath, kind, occurrences: [] };
+    if (kind === "text") {
+      try { entry.currentText = node.textItem?.contents || ""; } catch (e) { entry.currentText = ""; }
+    }
+    layerMap.set(key, entry);
   }
   layerMap.get(key).occurrences.push(occ);
 }
@@ -371,8 +375,8 @@ async function locateLayer(entry, btnEl) {
     }, { commandName: "Content Replacer: Locate" });
     if (btnEl) {
       btnEl.textContent = occs.length > 1
-        ? `Show ${entry._locateIdx + 1}/${occs.length}`
-        : "Show";
+        ? `Reveal ${entry._locateIdx + 1}/${occs.length}`
+        : "Reveal";
       const pathInfo = occ.layerPath || occ.target;
       btnEl.title = hidden ? `${pathInfo} (hidden)` : pathInfo;
       btnEl.classList.toggle("locate-btn-hidden", hidden);
@@ -429,7 +433,13 @@ function buildUnifiedRow(entry, idx) {
 
   let contentHTML = "";
   if (entry.kind === "text") {
-    contentHTML = `<textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip"></textarea>`;
+    const curText = entry.currentText || "";
+    contentHTML = `
+      <div class="current-text-block">
+        <div class="current-text-label">Current text</div>
+        <textarea class="current-text-value" rows="3" placeholder="(empty)">${escapeHtml(curText)}</textarea>
+      </div>
+      <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip"></textarea>`;
   } else if (entry.kind === "image") {
     contentHTML = `
       <div class="replace-row-file">
@@ -445,7 +455,7 @@ function buildUnifiedRow(entry, idx) {
       <span class="replace-row-name"></span>
       <span class="replace-row-kind">${entry.kind}</span>
       <span class="replace-row-count">${visibleOccurrences(entry).length}/${state.totalTargets}</span>
-      <button class="locate-btn">Show</button>
+      <button class="locate-btn">Reveal</button>
     </div>
     <div class="replace-row-meta">
       <input type="text" class="link-id-input" placeholder="Link ID" />
@@ -505,7 +515,7 @@ function buildUnifiedRow(entry, idx) {
 
   // Text content
   if (entry.kind === "text") {
-    const input = row.querySelector("textarea");
+    const input = row.querySelector(".replace-row-input");
     input.value = entry.newContent || "";
 
     // UXP Chromium's native paste drops the whole buffer when clipboard
@@ -1734,7 +1744,7 @@ async function replaceTextOnLayer(occ, newContent) {
     if (tk?.antiAlias) toObj.antiAlias = tk.antiAlias;
     else if (freshTK.antiAlias) toObj.antiAlias = freshTK.antiAlias;
     if (freshTK.orientation) toObj.orientation = freshTK.orientation;
-    // Preserve box (now paragraph text after conversion)
+    // Preserve box (now paragraph text after conversion).
     if (freshTK.textShape && freshTK.textShape.length) {
       const s = freshTK.textShape[0];
       if (s?.char?._value === "box" && s.bounds) {
@@ -1770,12 +1780,45 @@ async function replaceTextOnLayer(occ, newContent) {
     }
   }
 
+  // Pre-inflate the box bottom BEFORE setting textKey so PS lays out all lines
+  // without clipping. We can then measure the true rendered height and shrink
+  // the box to fit (grow-only vs original: never shrinks below curLocalH).
+  const shape0 = toObj.textShape?.[0];
+  const isHorizontal = String(freshTK?.orientation?._value ?? "horizontal").toLowerCase() !== "vertical";
+  if (shape0?.bounds && isHorizontal) {
+    // Inflate to a huge local height — PS will respect width, ignore overflow.
+    shape0.bounds.bottom = shape0.bounds.top + 1_000_000;
+  }
+
   await bp([{
     _obj: "set",
     _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
     to: toObj,
     _options: { dialogOptions: "dontDisplay" }
   }]);
+
+  // Pass 2: measure true rendered height, then snap box to fit.
+  // tkTransform.yy converts canvas pixels → local units.
+  const tkYY = Math.abs(Number(tk?.transform?.yy ?? freshTK?.transform?.yy ?? 1)) || 1;
+  if (shape0?.bounds && isHorizontal) {
+    const measured = await getTargetLayerDescriptor();
+    const rb = rectSize(measured.boundsNoEffects || measured.bounds);
+    const renderedLocalH = rb.height / tkYY;
+    const PAD_LOCAL = 20;
+    const fitLocalH = renderedLocalH + PAD_LOCAL;
+    const newBottom = shape0.bounds.top + fitLocalH;
+    const newShape = {
+      ...shape0,
+      bounds: { ...shape0.bounds, bottom: newBottom },
+    };
+    await bp([{
+      _obj: "set",
+      _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+      to: { _obj: "textLayer", textShape: [newShape] },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+    log(`  [TXT] autofit box: localH → ${Math.round(fitLocalH)} (rendered canvas=${Math.round(rb.height)} yy=${tkYY.toFixed(3)})`);
+  }
 
   // Realign so the new layer sits at the original visual position.
   // Point text was anchored at the first-line baseline, but after point→box
@@ -1864,8 +1907,69 @@ async function replaceImageOnLayer(occ, token) {
   const oldBounds = rectSize(oldDesc.bounds);
   const wasVisible = oldDesc.visible !== false;
   const isSmartObject = !!oldDesc.smartObject;
+  let oldName = oldDesc.name || "";
+  if (!oldName) {
+    try {
+      const r = await bp([{
+        _obj: "get",
+        _target: [
+          { _property: "name" },
+          { _ref: "layer", _id: occ.layerId }
+        ],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      oldName = r?.[0]?.name || "";
+    } catch (e) { /* leave empty */ }
+  }
 
-  // 2. Place new image as fresh SO (avoids stale descriptor from placedLayerReplaceContents)
+  // SO path: replace contents in place — keeps layer styles, masks, blend mode, opacity, smart filters.
+  if (isSmartObject) {
+    try {
+      await bp([{
+        _obj: "placedLayerReplaceContents",
+        null: { _path: token, _kind: "local" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+
+      // Re-read after replace; layer ID stays the same but bounds change.
+      const postDesc = await getTargetLayerDescriptor();
+      const afterBounds = rectSize(postDesc.bounds);
+      let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
+      if (oldBounds.width > 0 && afterBounds.width > 0) {
+        s = oldBounds.width / afterBounds.width;
+        finalW = afterBounds.width  * s;
+        finalH = afterBounds.height * s;
+        const dx = oldBounds.left - afterBounds.left - afterBounds.width  * (1 - s) / 2;
+        const dy = oldBounds.top  - afterBounds.top  - afterBounds.height * (1 - s) / 2;
+        const noScale = Math.abs(s - 1) < 0.0001;
+        const noMove  = Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5;
+        if (!noScale || !noMove) {
+          await bp([{
+            _obj: "transform",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+            offset: { _obj: "offset",
+                      horizontal: { _unit: "pixelsUnit", _value: dx },
+                      vertical:   { _unit: "pixelsUnit", _value: dy } },
+            width:  { _unit: "percentUnit", _value: s * 100 },
+            height: { _unit: "percentUnit", _value: s * 100 },
+            interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+        }
+      }
+      if (oldName) {
+        try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ }
+      }
+      if (!wasVisible) await hideTargetLayer();
+      return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible, mode: "so-replace" };
+    } catch (e) {
+      // Fall through to place+delete if replaceContents fails (e.g. linked SO, unsupported format).
+      log(`[IMG]  SO replace failed, falling back to place+delete: ${e.message || e}`);
+    }
+  }
+
+  // Raster (or SO fallback) path: place new SO, delete old layer.
   const oldLayerId = occ.layerId;
   await bp([{
     _obj: "placeEvent",
@@ -1877,11 +1981,9 @@ async function replaceImageOnLayer(occ, token) {
     _options: { dialogOptions: "dontDisplay" }
   }]);
 
-  // 3. Read fresh descriptor from the newly placed SO
   const postDesc = await getTargetLayerDescriptor();
   occ.layerId = postDesc.layerID;
 
-  // 4. Delete old layer (placeEvent doesn't remove it)
   try {
     await bp([{
       _obj: "delete",
@@ -1890,7 +1992,6 @@ async function replaceImageOnLayer(occ, token) {
     }]);
   } catch (e) { /* old layer may already be gone */ }
 
-  // Re-select the new SO
   await selectLayerById(occ.layerId);
   const afterBounds = rectSize(postDesc.bounds);
   let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
@@ -1917,10 +2018,13 @@ async function replaceImageOnLayer(occ, token) {
       }]);
     }
   }
-  // 6. Restore hidden state if the original layer was hidden
+  // Preserve original layer name (placeEvent uses the new file's name).
+  if (oldName) {
+    try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ }
+  }
   if (!wasVisible) await hideTargetLayer();
 
-  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible };
+  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible, mode: "place-delete" };
 }
 
 // Resolve link IDs: rows with same linkId inherit values from first row that has content

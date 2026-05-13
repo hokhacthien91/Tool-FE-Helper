@@ -16,6 +16,31 @@ uxp.entrypoints.setup({
 
 const PRESETS = ["300x250","300x600","160x600","728x90","320x50","300x50","970x250","480x320","1080x1080","1080x1920","1920x1080","1080x1440","1080x1350"];
 
+// Adjustment layer kinds reported by Photoshop UXP. Layers of these kinds
+// have no pixel content — `batchPlay({_obj:"transform"})` silently ignores
+// the scale factor on them but still applies subsequent translates. That
+// asymmetry corrupts the post-scale selection bbox, which is what the
+// uniform-scale move offset is computed against. Skip them outright; PS
+// will re-apply the adjustment to whichever layers end up below in the
+// cloned artboard.
+const ADJUSTMENT_LAYER_KINDS = new Set([
+  "brightnessContrast",
+  "curves",
+  "levels",
+  "hueSaturation",
+  "colorBalance",
+  "blackAndWhite",
+  "photoFilter",
+  "channelMixer",
+  "exposure",
+  "vibrance",
+  "gradientMap",
+  "selectiveColor",
+  "invert",
+  "posterize",
+  "threshold",
+]);
+
 let cloneMode = "artboards"; // clone target: "documents" | "artboards"
 
 const GG_PREFIX = "GG-";
@@ -2934,6 +2959,8 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     }
     buildParentMap(newAb);
     log(`[V2] Snapshot ${childIdsBeforeResize.length} top-level children + ${parentMap.size} total descendants with parent+index mapping`);
+    perfLog(`[V2-PERF] step: duplicate+parentMap`, tTarget);
+    const tAfterDup = perfNow();
 
     // Snapshot visibility of every descendant. PS sometimes flips visibility
     // during transform/move operations, especially on hidden layers — they
@@ -2954,6 +2981,46 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     await snapshotVisibility(newAb);
     const hiddenCount = [...visibilityMap.values()].filter(v => !v).length;
     log(`[V2] Snapshot visibility: ${visibilityMap.size} layers, ${hiddenCount} hidden`);
+
+    // DEBUG: snapshot per-layer style state (clipping, blendMode, opacity,
+    // fillOpacity, mask flags) BEFORE any transforms, so we can diff against
+    // the final state after clone. `group=true` in the descriptor means
+    // "this layer is clipped to the one below it" — what shows as the ↳
+    // arrow in the layers panel. Other style properties can also be lost
+    // if PS treats the layer as a "new" instance during eviction/reparent.
+    const styleMap = new Map(); // id → { name, group (clip), blendMode, opacity, fillOpacity, hasUserMask, hasVectorMask }
+    async function snapshotStyle(parent) {
+      for (const l of parent.layers || []) {
+        try {
+          const d = await getLayerDescriptor(l.id);
+          styleMap.set(l.id, {
+            name: l.name,
+            kind: l.kind,
+            group: d.group === true,                  // clipping flag
+            blendMode: d.mode?._value || d.mode || (l.blendMode ?? null),
+            opacity: typeof d.opacity?._value === "number" ? d.opacity._value
+                   : typeof d.opacity === "number" ? d.opacity
+                   : (l.opacity ?? null),
+            fillOpacity: typeof d.fillOpacity?._value === "number" ? d.fillOpacity._value
+                       : typeof d.fillOpacity === "number" ? d.fillOpacity : null,
+            hasUserMask: d.hasUserMask === true || d.userMaskEnabled === true,
+            hasVectorMask: d.hasVectorMask === true || d.vectorMaskEnabled === true,
+          });
+        } catch (e) {}
+        if (l.layers && l.layers.length) await snapshotStyle(l);
+      }
+    }
+    await snapshotStyle(newAb);
+    const clippedCount = [...styleMap.values()].filter(s => s.group).length;
+    log(`[V2] Snapshot style: ${styleMap.size} layers, ${clippedCount} clipped (↳)`);
+    perfLog(`[V2-PERF] step: snapshot visibility+style`, tAfterDup);
+    const tAfterSnapshot = perfNow();
+    // Dump clipped layers so we know which ones to verify after clone.
+    for (const [id, s] of styleMap.entries()) {
+      if (s.group) {
+        log(`[V2-STYLE-DBG] CLIP source: "${s.name}" id=${id} kind=${s.kind} blendMode=${s.blendMode} opacity=${s.opacity}`);
+      }
+    }
 
     // Helper: re-parent any descendant that escaped newAb back into its
     // original parent group. Idempotent — call after any step that may
@@ -3024,7 +3091,11 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         });
         log(`[V2-REPARENT-${label}] ${orphans.length} orphan(s) to re-parent`);
         // Track which parent groups received orphans — we'll re-order their
-        // children afterwards.
+        // children afterwards. ALSO always check the artboard root and any
+        // group that has parentMap entries: PS can silently reorder layers
+        // during resize/transform even when they're not orphans (observed:
+        // top-level `Can2` group dropped from index 0 to ~8 without being
+        // evicted). Verify+fix z-order for every snapshotted parent group.
         const touchedParentIds = new Set();
         for (const o of orphans) {
           try {
@@ -3054,6 +3125,13 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         // Equivalent: PLACEAT_END for each child in desired order, top-to-
         // bottom — but UXP doesn't have PLACEAT_END. We use PLACEAFTER
         // with the previous child as anchor.
+
+        // Also enqueue every parent that appears in parentMap (covers the
+        // case where PS silently shuffled z-order without evicting any
+        // child, e.g. top-level groups in the artboard root).
+        for (const info of parentMap.values()) {
+          touchedParentIds.add(info.parentId);
+        }
         for (const parentId of touchedParentIds) {
           try {
             const parent = findById(docHandle.layers, parentId);
@@ -3072,6 +3150,16 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               if (!ia && ib) return 1;
               return 0;
             });
+            // Skip if z-order already matches desired (no-op moves can
+            // trigger PS side effects).
+            let alreadyOrdered = true;
+            for (let i = 0; i < currentChildren.length; i++) {
+              if (currentChildren[i].id !== desired[i].id) {
+                alreadyOrdered = false;
+                break;
+              }
+            }
+            if (alreadyOrdered) continue;
             // PLACEINSIDE each in REVERSE order — last reverse-iter ends on top.
             // i.e. iterate desired from BOTTOM (last index) to TOP (index 0),
             // each PLACEINSIDE puts that layer on top of parent → final top
@@ -3088,6 +3176,40 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         }
       } catch (e) {
         log(`[V2-REPARENT-${label}] step failed: ${e.message}`);
+      }
+    }
+
+    // Re-apply clipping mask flag to layers that had it before clone.
+    // UXP `layer.move(parent, PLACEINSIDE)` resets `group=true` to false,
+    // so any clipped layer that was reparented (eviction → restore) loses
+    // its clip. Iterate styleMap; for each layer originally clipped that
+    // currently isn't, issue `groupEvent` to restore it.
+    async function restoreClippingFlags(label) {
+      try {
+        let restored = 0;
+        const failures = [];
+        for (const [id, before] of styleMap.entries()) {
+          if (!before.group) continue; // wasn't clipped originally
+          try {
+            const d = await getLayerDescriptor(id);
+            if (d.group === true) continue; // already clipped, no action needed
+            // batchPlay `groupEvent` = "Create Clipping Mask" on selected layer.
+            await bp([{
+              _obj: "groupEvent",
+              _target: [{ _ref: "layer", _id: id }],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            restored++;
+          } catch (e) {
+            failures.push({ id, name: before.name, error: e.message });
+          }
+        }
+        if (restored > 0) log(`[V2-CLIP-RESTORE-${label}] re-applied clipping to ${restored} layer(s)`);
+        if (failures.length) {
+          for (const f of failures) log(`[V2-CLIP-RESTORE-${label}]   "${f.name}" id=${f.id} FAILED: ${f.error}`);
+        }
+      } catch (e) {
+        log(`[V2-CLIP-RESTORE-${label}] step failed: ${e.message}`);
       }
     }
 
@@ -3125,6 +3247,16 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       log(`[V2] After move: isArtboard=${afterMoveOk} artboardEnabled=${afterMoveDesc.artboardEnabled} rect=(L${afterMoveRect.left},T${afterMoveRect.top},R${afterMoveRect.right},B${afterMoveRect.bottom}) ${afterMoveRect.width}x${afterMoveRect.height}`);
     }
 
+    // Detect mode early. If uniform-only (no smart-match, no JSON rules),
+    // we can use the "user-style" flow: scale layers FIRST, then resize
+    // artboard. This avoids the eviction+translation bug PS introduces
+    // when shrinking an artboard rect with children outside it.
+    const earlyUniformEnabled = !jsonImportedThisSession && uniformScaleEl?.checked === true;
+    const earlyHasRules = !earlyUniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
+    const earlySmartEnabled = !earlyUniformEnabled && !jsonImportedThisSession && smartMatchEl.checked;
+    const useUserStyleFlow = earlyUniformEnabled && !earlyHasRules && !earlySmartEnabled;
+    log(`[V2] Mode detection: uniformEnabled=${earlyUniformEnabled} hasRules=${earlyHasRules} smartEnabled=${earlySmartEnabled} → useUserStyleFlow=${useUserStyleFlow}`);
+
     // STEP A PROBE: try resizing the artboardRect via different APIs to
     // find one that doesn't destroy the artboard. Probe runs ON the real
     // target artboard — if the chosen API works, the artboard ends up at
@@ -3141,6 +3273,230 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     const probeRight = tgtRect.left + target.width;
     const probeBottom = tgtRect.top + target.height;
     log(`[V2-RESIZE] api=${RESIZE_API} from ${tgtRect.width}x${tgtRect.height} → ${target.width}x${target.height} rect=(${probeLeft},${probeTop},${probeRight},${probeBottom})`);
+
+    // Snapshot every descendant's canvas bounds BEFORE resize. PS auto-evicts
+    // children whose bounds fall outside the new (smaller) artboard rect, and
+    // — observed in test file — also TRANSLATES them upward so they fit. We
+    // need pre-resize coords to restore correct position after re-parent.
+    const preResizeBounds = new Map(); // id → {left, top, right, bottom}
+    async function snapshotBoundsTree(parent) {
+      for (const l of parent.layers || []) {
+        try {
+          const b = await getLayerBoundsNoEffects(l.id);
+          if (Number.isFinite(b.left)) {
+            preResizeBounds.set(l.id, { left: b.left, top: b.top, right: b.right, bottom: b.bottom });
+          }
+        } catch (e) {}
+        if (l.layers && l.layers.length) await snapshotBoundsTree(l);
+      }
+    }
+    await snapshotBoundsTree(newAb);
+    log(`[V2-RESIZE] snapshotted bounds of ${preResizeBounds.size} descendants pre-resize:`);
+    perfLog(`[V2-PERF] step: pre-resize-bounds-snapshot`, tAfterSnapshot);
+    const tAfterPreResize = perfNow();
+    for (const [id, b] of preResizeBounds.entries()) {
+      // Find layer name
+      let name = `id=${id}`;
+      function find(n) {
+        if (n.id === id) { name = n.name; return true; }
+        if (n.layers) { for (const c of n.layers) if (find(c)) return true; }
+        return false;
+      }
+      find(newAb);
+      log(`[V2-RESIZE-DBG]   "${name}" canvas=(${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.right)},${Math.round(b.bottom)}) ${Math.round(b.right-b.left)}x${Math.round(b.bottom-b.top)}`);
+    }
+
+    // USER-STYLE FLOW: scale layers FIRST (while artboard still at source
+    // size), THEN resize artboard. Avoids the eviction+translation bug PS
+    // introduces when shrinking the rect with children outside it.
+    // Only for uniform-only mode (no rules / no smart-match).
+    if (useUserStyleFlow) {
+      try {
+        // Compute scale + source/target centers. tgtRect = current source-
+        // sized artboard rect; target.width/height = desired final size.
+        // The target artboard will occupy (tgtRect.left, tgtRect.top,
+        // tgtRect.left+target.width, tgtRect.top+target.height) after the
+        // upcoming resize-down. To position each layer at its design-intent
+        // spot relative to the target rect, use:
+        //   newCenter = tgtCenter + (preCenter - srcCenter) * scale
+        // (NOT just `srcCenter + (preCenter - srcCenter) * scale` — that
+        // would scale around source center, leaving layers in the source-
+        // sized half of the canvas instead of moving them into target rect.)
+        const sx = target.width / tgtRect.width;
+        const sy = target.height / tgtRect.height;
+        const scale = Math.min(sx, sy);  // contain
+        const srcCenterX = tgtRect.left + tgtRect.width / 2;
+        const srcCenterY = tgtRect.top + tgtRect.height / 2;
+        const tgtCenterX = tgtRect.left + target.width / 2;
+        const tgtCenterY = tgtRect.top + target.height / 2;
+        log(`[V2-USER-FLOW] scale=${scale.toFixed(4)} srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
+
+        // Collect eligible leaf ids (skip canvas-cover fills and adjustment
+        // layers — same rules as later batch transform).
+        const eligibleIds = [];
+        const skipped = [];
+        async function collectEligible(parent) {
+          for (const l of parent.layers || []) {
+            // Skip adjustment layers (Brightness/Contrast, Curves, …) — PS
+            // ignores scale on them.
+            if (ADJUSTMENT_LAYER_KINDS.has(l.kind)) {
+              skipped.push(`"${l.name}" (adjustment kind=${l.kind})`);
+              continue;
+            }
+            // Skip canvas-cover solid fills (full doc bounds, no mask).
+            const isFillKind = l.kind === "solidColor" || l.kind === "solidFill"
+              || l.kind === "gradientFill" || l.kind === "pattern";
+            if (isFillKind) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                const hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+                if (!hasVectorMask) {
+                  const b = await getLayerBoundsNoEffects(l.id).catch(() => null);
+                  const doc = app.activeDocument;
+                  const docW = doc?.width || 0, docH = doc?.height || 0;
+                  const isFullCanvas = b
+                    && Math.abs((b.right - b.left) - docW) < 2
+                    && Math.abs((b.bottom - b.top) - docH) < 2
+                    && Math.abs(b.left) < 2 && Math.abs(b.top) < 2;
+                  if (isFullCanvas) {
+                    skipped.push(`"${l.name}" (canvas-cover fill)`);
+                    continue;
+                  }
+                }
+              } catch (e) {}
+            }
+            if (l.layers && l.layers.length) { await collectEligible(l); continue; }
+            eligibleIds.push(l.id);
+          }
+        }
+        await collectEligible(newAb);
+        log(`[V2-USER-FLOW] eligible=${eligibleIds.length} skipped=${skipped.length}${skipped.length ? " ("+skipped.join(", ")+")" : ""}`);
+
+        if (eligibleIds.length > 0 && Math.abs(scale - 1) > 0.005) {
+          // Detect + temporarily UNLOCK any layer with protectPosition or
+          // protectAll. PS rejects `move` ops on locked layers with the error
+          // "The command 'Move' is not currently available", which would crash
+          // the post-batch correction loop. We unlock now and re-lock after
+          // user-flow completes (so the cloned artboard keeps lock state).
+          const lockedLayers = []; // { id, protectAll, protectPosition }
+          for (const id of eligibleIds) {
+            try {
+              const d = await getLayerDescriptor(id);
+              const lk = d.layerLocking;
+              const protectAll = !!(lk && (lk.protectAll === true || lk.protectAll?._value === true));
+              const protectPosition = !!(lk && (lk.protectPosition === true || lk.protectPosition?._value === true));
+              if (protectAll || protectPosition) {
+                lockedLayers.push({ id, protectAll, protectPosition });
+                // Unlock everything for now.
+                await bp([{
+                  _obj: "applyLocking",
+                  _target: [{ _ref: "layer", _id: id }],
+                  layerLocking: { _obj: "layerLocking",
+                    protectAll: false, protectPosition: false,
+                    protectTransparency: false, protectComposite: false },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              }
+            } catch (e) { /* skip */ }
+          }
+          if (lockedLayers.length > 0) {
+            log(`[V2-USER-FLOW] unlocked ${lockedLayers.length} locked layer(s) for transform`);
+          }
+
+          // Multi-select all eligible layers.
+          await bp([{
+            _obj: "select",
+            _target: eligibleIds.map(id => ({ _ref: "layer", _id: id })),
+            makeVisible: false,
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+
+          // Snapshot pre-scale centers so we can correct positions after PS
+          // batch transform (QCSAverage pivot isn't exactly bbox center).
+          const preCenters = new Map();
+          for (const id of eligibleIds) {
+            try {
+              const b = await getLayerBoundsNoEffects(id);
+              if (Number.isFinite(b.left)) {
+                preCenters.set(id, { cx: (b.left + b.right) / 2, cy: (b.top + b.bottom) / 2 });
+              }
+            } catch (e) {}
+          }
+
+          // Batch scale by percent. PS pivots around its computed average
+          // center (QCSAverage); we'll correct per-layer after.
+          await bp([{
+            _obj: "transform",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+            width: { _unit: "percentUnit", _value: scale * 100 },
+            height: { _unit: "percentUnit", _value: scale * 100 },
+            interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`[V2-USER-FLOW] batch scaled ${eligibleIds.length} layers by ${(scale * 100).toFixed(1)}%`);
+
+          // Per-layer position correction: each layer's new tâm should be
+          // pivot + (preCenter - pivot) * scale. Move from current tâm.
+          // Target tâm = srcCenter + (preCenter - srcCenter) * scale
+          //            = srcCenter * (1 - scale) + preCenter * scale
+          let corrected = 0, maxDrift = 0;
+          for (const id of eligibleIds) {
+            const pre = preCenters.get(id);
+            if (!pre) continue;
+            try {
+              const b = await getLayerBoundsNoEffects(id);
+              if (!Number.isFinite(b.left)) continue;
+              const curCx = (b.left + b.right) / 2;
+              const curCy = (b.top + b.bottom) / 2;
+              const newCx = tgtCenterX + (pre.cx - srcCenterX) * scale;
+              const newCy = tgtCenterY + (pre.cy - srcCenterY) * scale;
+              const dx = Math.round(newCx - curCx);
+              const dy = Math.round(newCy - curCy);
+              const drift = Math.max(Math.abs(dx), Math.abs(dy));
+              if (drift > 0.5) {
+                await bp([{
+                  _obj: "move",
+                  _target: [{ _ref: "layer", _id: id }],
+                  to: { _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: dx },
+                    vertical: { _unit: "pixelsUnit", _value: dy } },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                corrected++;
+                if (drift > maxDrift) maxDrift = drift;
+              }
+            } catch (e) {}
+          }
+          log(`[V2-USER-FLOW] post-batch corrected ${corrected}/${eligibleIds.length} layers (max drift ${maxDrift}px)`);
+
+          // Re-lock layers that were unlocked at the start of this flow.
+          if (lockedLayers.length > 0) {
+            let relocked = 0;
+            for (const lk of lockedLayers) {
+              try {
+                await bp([{
+                  _obj: "applyLocking",
+                  _target: [{ _ref: "layer", _id: lk.id }],
+                  layerLocking: { _obj: "layerLocking",
+                    protectAll: lk.protectAll,
+                    protectPosition: lk.protectPosition },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+                relocked++;
+              } catch (e) {}
+            }
+            log(`[V2-USER-FLOW] re-locked ${relocked}/${lockedLayers.length} layer(s)`);
+          }
+        } else {
+          log(`[V2-USER-FLOW] skipped scale — nothing eligible or scale=1`);
+        }
+      } catch (e) {
+        log(`[V2-USER-FLOW] failed: ${e.message} — falling back to legacy flow`);
+      }
+      perfLog(`[V2-PERF] step: user-flow scale+correct`, tAfterPreResize);
+    }
+    const tBeforeResize = perfNow();
 
     try {
       await selectLayerById(newAb.id);
@@ -3305,6 +3661,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         log(`[V2-RESIZE] !! API "${RESIZE_API}" preserved artboard but did NOT resize (still ${afterResizeRect.width}x${afterResizeRect.height})`);
       } else {
         log(`[V2-RESIZE] ✓ API "${RESIZE_API}" works — artboard preserved + resized to ${target.width}x${target.height}`);
+        perfLog(`[V2-PERF] step: resize-artboard`, tBeforeResize);
       }
     } catch (e) {
       log(`[V2-RESIZE] API "${RESIZE_API}" threw: ${e.message}`);
@@ -3313,7 +3670,14 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     // RE-PARENT orphan children after resizing artboardRect (PS evicts
     // children outside new rect). Helper handles all logic — depth-aware
     // sort, original-parent lookup, z-order preservation.
+    const tBeforeReparent = perfNow();
     await runReparent("POST-RESIZE");
+    perfLog(`[V2-PERF] step: reparent-post-resize`, tBeforeReparent);
+
+    // POSITION-RESTORE is deferred until AFTER expand step (a few hundred
+    // lines below). The artboard is currently at target size, so moving a
+    // layer back to its pre-resize y=1372 gets clipped to y<960 by PS.
+    // After expand the rect is HUGE — restoring then succeeds.
 
     // STRIP " copy"/" copy N" suffix from descendant layer names. PS
     // auto-renames layers when duplicating an artboard inside the same doc
@@ -3341,6 +3705,29 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       log(`[V2] strip-suffix step failed: ${e.message}`);
     }
 
+    // DEBUG: dump child positions after resize+reparent, BEFORE expand+scale.
+    // If layers got translated (not just evicted+reparented in place), this
+    // is where it shows. Compare local y to design intent (e.g. Case 5
+    // chain was at source y≈1000-1300, should still be there relative to
+    // artboard rect — not snapped to top-left).
+    try {
+      const dPostResize = await getLayerDescriptor(newAb.id);
+      const rPR = dPostResize.artboard?.artboardRect || dPostResize.bounds;
+      const fmt = v => Number(v?._value ?? v ?? 0);
+      const abL = fmt(rPR?.left), abT = fmt(rPR?.top);
+      log(`[V2-POST-RESIZE-DBG] artboard at canvas (${abL},${abT}); child layout (local y in source-artboard frame):`);
+      for (const l of (newAb.layers || [])) {
+        try {
+          const b = await getLayerBoundsNoEffects(l.id);
+          if (!Number.isFinite(b.left)) continue;
+          const localL = b.left - abL, localT = b.top - abT;
+          log(`[V2-POST-RESIZE-DBG]   "${l.name}" canvas=(${Math.round(b.left)},${Math.round(b.top)}) local=(${Math.round(localL)},${Math.round(localT)}) ${Math.round(b.right-b.left)}x${Math.round(b.bottom-b.top)}`);
+        } catch (e) {}
+      }
+    } catch (e) {
+      log(`[V2-POST-RESIZE-DBG] dump failed: ${e.message}`);
+    }
+
     // ─── Wire V1 layout rules: smart match + JSON rules ──────────────────
     // Re-read the artboard rect after resize/re-parent — we'll pass its
     // top-left as originX/originY so smart/JSON-rules functions can place
@@ -3353,9 +3740,11 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     } catch (e) { abRectAfter = null; }
 
     if (abRectAfter && (abRectAfter.width === target.width && abRectAfter.height === target.height)) {
-      const uniformEnabled = uniformScaleEl?.checked === true;
+      // Once JSON is imported, JSON rules take absolute priority — uniform
+      // and smart-match checkboxes are ignored even if checked.
+      const uniformEnabled = !jsonImportedThisSession && uniformScaleEl?.checked === true;
       const hasRules = !uniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
-      const smartEnabled = !uniformEnabled && smartMatchEl.checked;
+      const smartEnabled = !uniformEnabled && !jsonImportedThisSession && smartMatchEl.checked;
 
       // FIX (Option 6): expand artboard rect to a HUGE size before applying
       // rules. PS evicts children when their bounds fall outside the
@@ -3370,9 +3759,14 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       // layers are already inside target rect, no eviction risk, skip expand
       // to avoid the side effects (PS coord auto-shift, source artboard drift).
       const targetCoversSource = target.width >= srcRect.width && target.height >= srcRect.height;
-      const willRunRules = (uniformEnabled || hasRules || smartEnabled) && !targetCoversSource;
+      // User-style flow already scaled layers before resize — no eviction risk
+      // at this point, so we don't need to expand the rect.
+      const willRunRules = (uniformEnabled || hasRules || smartEnabled) && !targetCoversSource && !useUserStyleFlow;
       if (targetCoversSource && (uniformEnabled || hasRules || smartEnabled)) {
         log(`[V2] target (${target.width}x${target.height}) >= source (${srcRect.width}x${srcRect.height}) on both axes — skipping expand (no eviction risk)`);
+      }
+      if (useUserStyleFlow) {
+        log(`[V2] user-style flow active — skipping expand step`);
       }
       let savedGridLeft = abRectAfter.left;
       let savedGridTop = abRectAfter.top;
@@ -3453,7 +3847,83 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         }
       }
 
-      if (uniformEnabled || smartEnabled) {
+      // POST-EXPAND POSITION RESTORE: now that the artboard is HUGE, any
+      // layer translated toward top-left during the earlier POST-RESIZE
+      // reparent can be safely moved back to its pre-resize canvas coords.
+      // We also have to compensate for the expand auto-shift: pre-resize
+      // bounds were captured BEFORE expand, but layers got shifted by
+      // (expandShiftX, expandShiftY) during expand. The "correct" canvas
+      // position now = pre-resize-bounds + expandShift.
+      if (artboardExpanded && preResizeBounds && preResizeBounds.size > 0) {
+        try {
+          let restored = 0, maxDrift = 0;
+          async function restoreTree(parent) {
+            for (const l of parent.layers || []) {
+              const pre = preResizeBounds.get(l.id);
+              if (pre) {
+                try {
+                  const b = await getLayerBoundsNoEffects(l.id);
+                  if (Number.isFinite(b.left)) {
+                    // Expected position = pre-resize coords + expand auto-shift.
+                    // (Layers that stayed in artboard get shifted with the
+                    // expand; layers that got reparented don't, but the formula
+                    // unifies both: re-aligning to pre-resize+expandShift.)
+                    const targetLeft = pre.left + expandShiftX;
+                    const targetTop = pre.top + expandShiftY;
+                    const dx = Math.round(targetLeft - b.left);
+                    const dy = Math.round(targetTop - b.top);
+                    const drift = Math.max(Math.abs(dx), Math.abs(dy));
+                    if (drift > 0.5) {
+                      await bp([{
+                        _obj: "move",
+                        _target: [{ _ref: "layer", _id: l.id }],
+                        to: {
+                          _obj: "offset",
+                          horizontal: { _unit: "pixelsUnit", _value: dx },
+                          vertical: { _unit: "pixelsUnit", _value: dy }
+                        },
+                        _options: { dialogOptions: "dontDisplay" }
+                      }]);
+                      restored++;
+                      if (drift > maxDrift) maxDrift = drift;
+                    }
+                  }
+                } catch (e) {}
+              }
+              if (l.layers && l.layers.length) await restoreTree(l);
+            }
+          }
+          await restoreTree(newAb);
+          log(`[V2-POSITION-RESTORE-POST-EXPAND] re-positioned ${restored} layer(s) (max drift ${maxDrift}px, expandShift=(${expandShiftX},${expandShiftY}))`);
+
+          // Verify
+          let stillDrifted = 0;
+          for (const [id, pre] of preResizeBounds.entries()) {
+            try {
+              const b = await getLayerBoundsNoEffects(id);
+              if (!Number.isFinite(b.left)) continue;
+              const driftX = Math.round(b.left - (pre.left + expandShiftX));
+              const driftY = Math.round(b.top - (pre.top + expandShiftY));
+              if (Math.abs(driftX) > 1 || Math.abs(driftY) > 1) {
+                stillDrifted++;
+                let name = `id=${id}`;
+                function f(n) { if (n.id === id) { name = n.name; return true; } if (n.layers) { for (const c of n.layers) if (f(c)) return true; } return false; }
+                f(newAb);
+                log(`[V2-POSITION-RESTORE-POST-EXPAND-VERIFY]   "${name}" drift=(${driftX},${driftY}) — STILL OFF`);
+              }
+            } catch (e) {}
+          }
+          if (stillDrifted === 0) log(`[V2-POSITION-RESTORE-POST-EXPAND-VERIFY] ✓ all layers at expected position`);
+        } catch (e) {
+          log(`[V2-POSITION-RESTORE-POST-EXPAND] failed: ${e.message}`);
+        }
+      }
+
+      // Skip legacy scale step if user-style flow already scaled layers.
+      if (useUserStyleFlow) {
+        log(`[V2] Skipping legacy scale step — user-style flow already scaled layers pre-resize`);
+      }
+      if (!useUserStyleFlow && (uniformEnabled || smartEnabled)) {
         // Smart match = uniform contain scale + BG cover override (applied
         // after the uniform walk). Uniform mode is just contain scale alone.
         // Both modes share the same uniform walk to scale + reposition all
@@ -3521,7 +3991,24 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               await collectEligible(l, parentSkipped);
               continue;
             }
-            // Adjustment fill no-mask: transform fails. Drop from selection.
+            // Adjustment layers (brightness/contrast, curves, levels, …) have
+            // no pixel content. PS silently ignores scale on them but still
+            // applies translate from the subsequent move — so they "stretch"
+            // the selection bbox after transform, breaking the move-offset
+            // math. Skip them entirely; they auto-apply to layers below in
+            // the new artboard.
+            if (ADJUSTMENT_LAYER_KINDS.has(l.kind)) {
+              skippedNames.push(`"${l.name}" (adjustment kind=${l.kind})`);
+              continue;
+            }
+            // Adjustment fill no-mask: PS treats them as canvas-cover fills.
+            // BUT: a `solidColor`/`gradientFill` layer can also be a SHAPE
+            // with finite bounds (Shape Tool / pen-drawn rectangle). Skipping
+            // those would leave them at source size — visually broken.
+            //
+            // Heuristic: only skip when bounds ≈ document size (full canvas
+            // fill). If bounds < doc size, it's a shape and must be scaled.
+            // Check vectorMask too — masked fills always have finite shape.
             const isAdjustmentFillKind = l.kind === "solidColor" || l.kind === "solidFill"
               || l.kind === "gradientFill" || l.kind === "pattern";
             if (isAdjustmentFillKind) {
@@ -3529,10 +4016,22 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                 const d = await getLayerDescriptor(l.id);
                 const hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
                 if (!hasVectorMask) {
-                  skippedNames.push(`"${l.name}" (adjustment fill, no vectorMask)`);
-                  continue;
+                  // Read layer bounds. PS reports bounds as fixed at doc rect
+                  // for true canvas-cover fills.
+                  const b = await getLayerBoundsNoEffects(l.id).catch(() => null);
+                  const doc = app.activeDocument;
+                  const docW = doc?.width || 0, docH = doc?.height || 0;
+                  const isFullCanvas = b
+                    && Math.abs((b.right - b.left) - docW) < 2
+                    && Math.abs((b.bottom - b.top) - docH) < 2
+                    && Math.abs(b.left) < 2 && Math.abs(b.top) < 2;
+                  if (isFullCanvas) {
+                    skippedNames.push(`"${l.name}" (canvas-cover fill kind=${l.kind})`);
+                    continue;
+                  }
+                  // Otherwise: shape with finite bounds — keep in batch.
                 }
-              } catch (e) { /* keep — assume mask */ }
+              } catch (e) { /* keep — assume shape */ }
             }
             // Smart object with ANY mask (user/vector/filter): PS often
             // silently skips in batch transform with multi-select. Pull out
@@ -3564,12 +4063,65 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
 
         log(`[V2-UNIFORM] eligible=${eligibleIds.length} skipped=${skippedNames.length}${skippedNames.length ? " (" + skippedNames.join(", ") + ")" : ""}`);
 
+        // Snapshot per-layer pre-scale tâm — declared at outer scope so the
+        // post-batch correction step (after try/catch below) can access it.
+        const preCenters = new Map(); // id → { cx, cy }
+
         if (eligibleIds.length === 0) {
           log(`[V2-UNIFORM] no eligible layers — nothing to scale`);
         } else {
           try {
+            // DEBUG: per-layer bounds BEFORE scale. Helps spot layers that
+            // "stretch" the selection bbox far beyond the artboard rect
+            // (e.g. unclipped adjustment layers spanning full canvas).
+            const dbgBoundsList = [];
+            function findLayerName(node, targetId) {
+              if (!node) return null;
+              if (node.id === targetId) return node.name;
+              if (node.layers) {
+                for (const c of node.layers) {
+                  const found = findLayerName(c, targetId);
+                  if (found) return found;
+                }
+              }
+              return null;
+            }
+            for (const id of eligibleIds) {
+              try {
+                const b = await getLayerBoundsNoEffects(id);
+                if (!Number.isFinite(b.left)) continue;
+                const w = b.right - b.left, h = b.bottom - b.top;
+                const name = findLayerName(newAb, id) || `id=${id}`;
+                dbgBoundsList.push({ id, name, l: b.left, t: b.top, r: b.right, bot: b.bottom, w, h, area: w * h });
+              } catch (e) { /* skip */ }
+            }
+            // Sort descending by area, log top 10 — the largest extents are
+            // the most likely culprits for an offset selection bbox.
+            dbgBoundsList.sort((a, b) => b.area - a.area);
+            const abRect = `(${Math.round(savedGridLeft)},${Math.round(savedGridTop)})-(${Math.round(savedGridLeft + target.width)},${Math.round(savedGridTop + target.height)}) ${target.width}x${target.height}`;
+            log(`[V2-UNIFORM-DBG] target artboard rect (post-expand): ${abRect}`);
+            log(`[V2-UNIFORM-DBG] source artboard rect (post-expand): (${Math.round(savedGridLeft)},${Math.round(savedGridTop)})-(${Math.round(savedGridLeft + srcRect.width)},${Math.round(savedGridTop + srcRect.height)}) ${srcRect.width}x${srcRect.height}`);
+            log(`[V2-UNIFORM-DBG] per-eligible-layer bounds (top ${Math.min(10, dbgBoundsList.length)} by area):`);
+            for (const d of dbgBoundsList.slice(0, 10)) {
+              // Flag layers wider/taller than source artboard — these are the
+              // ones likely to shift bbox center off srcCenter.
+              const flags = [];
+              if (d.w > srcRect.width * 1.1) flags.push("WIDER-than-src");
+              if (d.h > srcRect.height * 1.1) flags.push("TALLER-than-src");
+              if (d.l < savedGridLeft - 10) flags.push("L-outside");
+              if (d.r > savedGridLeft + srcRect.width + 10) flags.push("R-outside");
+              if (d.t < savedGridTop - 10) flags.push("T-outside");
+              if (d.bot > savedGridTop + srcRect.height + 10) flags.push("B-outside");
+              const flagStr = flags.length ? ` ⚠ ${flags.join(",")}` : "";
+              log(`[V2-UNIFORM-DBG]   "${d.name}" id=${d.id} (${Math.round(d.l)},${Math.round(d.t)},${Math.round(d.r)},${Math.round(d.bot)}) ${Math.round(d.w)}x${Math.round(d.h)}${flagStr}`);
+            }
+
             // Compute selection bbox BEFORE transform (for verification + move).
+            // Also snapshot per-layer center so we can post-correct positions
+            // (PS's batch QCSAverage pivot is not exactly bbox center — log
+            // verifies each layer drifts a few pixels after batch scale+move).
             const bboxBefore = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+            // preCenters declared at outer scope (line ~3697)
             for (const id of eligibleIds) {
               try {
                 const bnd = await getLayerBoundsNoEffects(id);
@@ -3580,6 +4132,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                   if (bnd.top < bboxBefore.t) bboxBefore.t = bnd.top;
                   if (bnd.right > bboxBefore.r) bboxBefore.r = bnd.right;
                   if (bnd.bottom > bboxBefore.b) bboxBefore.b = bnd.bottom;
+                  preCenters.set(id, { cx: (bnd.left + bnd.right) / 2, cy: (bnd.top + bnd.bottom) / 2 });
                 }
               } catch (e) { /* skip */ }
             }
@@ -3667,9 +4220,97 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               } else {
                 log(`[V2-UNIFORM] selection already at uniform-correct position — no move`);
               }
+
+              // DEBUG: re-read bbox after the move to verify content actually
+              // landed inside the target artboard rect. If center is far from
+              // tgtCenter, the scale/move math broke (likely due to bbox
+              // before being dragged off-center by a full-canvas layer).
+              try {
+                const bboxFinal = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+                for (const id of eligibleIds) {
+                  try {
+                    const bnd = await getLayerBoundsNoEffects(id);
+                    if (Number.isFinite(bnd.left) && bnd.right > bnd.left && bnd.bottom > bnd.top) {
+                      if (bnd.left < bboxFinal.l) bboxFinal.l = bnd.left;
+                      if (bnd.top < bboxFinal.t) bboxFinal.t = bnd.top;
+                      if (bnd.right > bboxFinal.r) bboxFinal.r = bnd.right;
+                      if (bnd.bottom > bboxFinal.b) bboxFinal.b = bnd.bottom;
+                    }
+                  } catch (e) {}
+                }
+                if (Number.isFinite(bboxFinal.l)) {
+                  const fCx = (bboxFinal.l + bboxFinal.r) / 2;
+                  const fCy = (bboxFinal.t + bboxFinal.b) / 2;
+                  const driftX = Math.round(fCx - tgtCenterX);
+                  const driftY = Math.round(fCy - tgtCenterY);
+                  const driftFlag = (Math.abs(driftX) > target.width / 2 || Math.abs(driftY) > target.height / 2)
+                    ? " ⚠ CENTER-OUTSIDE-TARGET-RECT"
+                    : "";
+                  log(`[V2-UNIFORM-DBG] selection bbox AFTER move: (${Math.round(bboxFinal.l)},${Math.round(bboxFinal.t)},${Math.round(bboxFinal.r)},${Math.round(bboxFinal.b)}) ${Math.round(bboxFinal.r - bboxFinal.l)}x${Math.round(bboxFinal.b - bboxFinal.t)}`);
+                  log(`[V2-UNIFORM-DBG] bbox center after move: (${Math.round(fCx)},${Math.round(fCy)}) vs tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)}) drift=(${driftX},${driftY})${driftFlag}`);
+                  // Target artboard rect (post-expand, pre-shrink):
+                  const tL = savedGridLeft, tT = savedGridTop;
+                  const tR = tL + target.width, tB = tT + target.height;
+                  log(`[V2-UNIFORM-DBG] target artboard rect: (${Math.round(tL)},${Math.round(tT)},${Math.round(tR)},${Math.round(tB)})`);
+                  // % of content bbox that overlaps target artboard rect
+                  const iL = Math.max(bboxFinal.l, tL), iT = Math.max(bboxFinal.t, tT);
+                  const iR = Math.min(bboxFinal.r, tR), iB = Math.min(bboxFinal.b, tB);
+                  const overlapArea = (iR > iL && iB > iT) ? (iR - iL) * (iB - iT) : 0;
+                  const bboxArea = (bboxFinal.r - bboxFinal.l) * (bboxFinal.b - bboxFinal.t);
+                  const overlapPct = bboxArea > 0 ? Math.round(overlapArea / bboxArea * 100) : 0;
+                  log(`[V2-UNIFORM-DBG] content↔target-rect overlap: ${overlapPct}% of bbox area${overlapPct < 10 ? " ⚠ CONTENT-LIKELY-OUTSIDE-ARTBOARD" : ""}`);
+                }
+              } catch (e) {
+                log(`[V2-UNIFORM-DBG] post-move bbox check failed: ${e.message}`);
+              }
             }
           } catch (e) {
             log(`[V2-UNIFORM] batch transform failed: ${e.message}`);
+          }
+        }
+
+        // POST-BATCH per-layer position correction. PS's QCSAverage pivot in
+        // batch transform is not exactly bbox center — each layer's actual
+        // post-scale tâm drifts a few pixels from the math-predicted spot.
+        // Fix: for each batched layer, compute its target tâm using
+        //   newCx = tgtCx + (preCx - srcCx) * scale
+        // then move it from its actual current tâm to that target tâm.
+        // This guarantees layers sharing a tâm in source share one in target.
+        if (eligibleIds.length > 0 && preCenters.size > 0 && Math.abs(scale - 1) > 0.005) {
+          try {
+            let correctedCount = 0, maxDrift = 0;
+            for (const id of eligibleIds) {
+              const pre = preCenters.get(id);
+              if (!pre) continue;
+              try {
+                const bnd = await getLayerBoundsNoEffects(id);
+                if (!Number.isFinite(bnd.left) || bnd.right <= bnd.left || bnd.bottom <= bnd.top) continue;
+                const curCx = (bnd.left + bnd.right) / 2;
+                const curCy = (bnd.top + bnd.bottom) / 2;
+                const newCx = tgtCenterX + (pre.cx - srcCenterX) * scale;
+                const newCy = tgtCenterY + (pre.cy - srcCenterY) * scale;
+                const dx = Math.round(newCx - curCx);
+                const dy = Math.round(newCy - curCy);
+                const drift = Math.max(Math.abs(dx), Math.abs(dy));
+                if (drift > 0.5) {
+                  await bp([{
+                    _obj: "move",
+                    _target: [{ _ref: "layer", _id: id }],
+                    to: {
+                      _obj: "offset",
+                      horizontal: { _unit: "pixelsUnit", _value: dx },
+                      vertical: { _unit: "pixelsUnit", _value: dy }
+                    },
+                    _options: { dialogOptions: "dontDisplay" }
+                  }]);
+                  correctedCount++;
+                  if (drift > maxDrift) maxDrift = drift;
+                }
+              } catch (e) { /* skip individual failures */ }
+            }
+            log(`[V2-UNIFORM] post-batch correction: re-aligned ${correctedCount}/${eligibleIds.length} layers (max drift was ${maxDrift}px)`);
+          } catch (e) {
+            log(`[V2-UNIFORM] post-batch correction failed: ${e.message}`);
           }
         }
 
@@ -3679,6 +4320,10 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         //   newCenter = tgtCenter + (srcCenter - srcArtboardCenter) * scale
         if (fallbackLayers.length > 0) {
           log(`[V2-UNIFORM] fallback per-layer scale for ${fallbackLayers.length} smart-object layer(s) with mask`);
+          // Same target-center formula as the post-batch correction:
+          //   newCenter = tgtCenter + (cL_src - srcCenter) * scale
+          // ensures fallback layers co-position with batch layers that share
+          // a tâm in source.
           for (const l of fallbackLayers) {
             try {
               // Read pre-scale bounds = source position in canvas coords
@@ -3692,9 +4337,10 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                 continue;
               }
               const scx = (sl + sr) / 2, scy = (st + sb) / 2;
-              // Target center for this layer:
+              log(`[V2-UNIFORM-DBG]   fallback "${l.name}" pre-scale bounds=(${Math.round(sl)},${Math.round(st)},${Math.round(sr)},${Math.round(sb)}) ${Math.round(sr-sl)}x${Math.round(sb-st)} tâm=(${Math.round(scx)},${Math.round(scy)})`);
               const newCx = tgtCenterX + (scx - srcCenterX) * scale;
               const newCy = tgtCenterY + (scy - srcCenterY) * scale;
+              log(`[V2-UNIFORM-DBG]   fallback "${l.name}" target tâm=(${Math.round(newCx)},${Math.round(newCy)})`);
 
               // Try transform; if it fails or doesn't shrink, layer keeps
               // its source size. Either way, move so its current center
@@ -4059,6 +4705,35 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           // positions still fall outside target rect (e.g. fill layers smart
           // match skipped, or negative-coord rules).
           await runReparent("POST-SHRINK");
+
+          // DEBUG: dump FINAL bounds of every top-level layer + flag which
+          // ones are now outside the target artboard rect. Helps catch
+          // layers that look "missing" in the clone because they landed
+          // outside the visible canvas.
+          try {
+            const finalRectNow = await getLayerDescriptor(newAb.id);
+            const fRect = rectSize(finalRectNow.artboard?.artboardRect || finalRectNow.bounds);
+            log(`[V2-FINAL-DBG] artboard final rect=(${fRect.left},${fRect.top},${fRect.right},${fRect.bottom}) ${fRect.width}x${fRect.height}`);
+            async function dumpFinal(parent, depth) {
+              const indent = "  ".repeat(depth);
+              for (const l of parent.layers || []) {
+                try {
+                  const b = await getLayerBoundsNoEffects(l.id);
+                  if (!Number.isFinite(b.left)) continue;
+                  const cx = (b.left + b.right) / 2;
+                  const cy = (b.top + b.bottom) / 2;
+                  const insideX = cx >= fRect.left && cx <= fRect.right;
+                  const insideY = cy >= fRect.top && cy <= fRect.bottom;
+                  const flag = (insideX && insideY) ? "" : " ⚠ OUTSIDE-ARTBOARD";
+                  log(`[V2-FINAL-DBG] ${indent}"${l.name}" id=${l.id} (${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.right)},${Math.round(b.bottom)}) ${Math.round(b.right-b.left)}x${Math.round(b.bottom-b.top)} center=(${Math.round(cx)},${Math.round(cy)})${flag}`);
+                  if (l.layers && l.layers.length) await dumpFinal(l, depth + 1);
+                } catch (e) {}
+              }
+            }
+            await dumpFinal(newAb, 0);
+          } catch (e) {
+            log(`[V2-FINAL-DBG] dump failed: ${e.message}`);
+          }
         } catch (e) {
           log(`[V2] artboard shrink failed: ${e.message}`);
         }
@@ -4072,6 +4747,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     // visible=false on each one to match source state.
     // Use the proper "show"/"hide" event instead of `set { visible }` —
     // PS doesn't always honor `set visible:false` on layers inside artboards.
+    const tBeforeVisibility = perfNow();
     try {
       let restored = 0;
       const failures = [];
@@ -4104,6 +4780,74 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     } catch (e) {
       log(`[V2] visibility restore failed: ${e.message}`);
     }
+    perfLog(`[V2-PERF] step: visibility-restore`, tBeforeVisibility);
+
+    // Restore clipping mask flags lost during reparent. Must run BEFORE the
+    // style diff so the diff reflects the FINAL post-restore state.
+    const tBeforeClipRestore = perfNow();
+    await restoreClippingFlags("FINAL");
+    perfLog(`[V2-PERF] step: clip-restore`, tBeforeClipRestore);
+    const tBeforeStyleDiff = perfNow();
+
+    // DEBUG: diff per-layer style against snapshot — flag layers where
+    // clipping/blendMode/opacity changed during the clone. Use ID as key
+    // because layer name might have been mutated ("copy" stripping).
+    try {
+      let clipLost = 0, clipGained = 0, blendChanged = 0, opacityChanged = 0;
+      const issues = [];
+      async function walkDiff(parent) {
+        for (const l of parent.layers || []) {
+          const before = styleMap.get(l.id);
+          if (before) {
+            try {
+              const d = await getLayerDescriptor(l.id);
+              const afterClip = d.group === true;
+              const afterBlend = d.mode?._value || d.mode || (l.blendMode ?? null);
+              const afterOpacity = typeof d.opacity?._value === "number" ? d.opacity._value
+                                 : typeof d.opacity === "number" ? d.opacity
+                                 : (l.opacity ?? null);
+              const afterFillOp = typeof d.fillOpacity?._value === "number" ? d.fillOpacity._value
+                                : typeof d.fillOpacity === "number" ? d.fillOpacity : null;
+              const afterUserMask = d.hasUserMask === true || d.userMaskEnabled === true;
+              const afterVectorMask = d.hasVectorMask === true || d.vectorMaskEnabled === true;
+              const diffs = [];
+              if (before.group !== afterClip) {
+                if (before.group && !afterClip) { clipLost++; diffs.push(`clip LOST (was ↳)`); }
+                else { clipGained++; diffs.push(`clip GAINED`); }
+              }
+              if (String(before.blendMode) !== String(afterBlend)) {
+                blendChanged++;
+                diffs.push(`blendMode ${before.blendMode} → ${afterBlend}`);
+              }
+              if (before.opacity !== null && afterOpacity !== null && Math.abs(before.opacity - afterOpacity) > 0.01) {
+                opacityChanged++;
+                diffs.push(`opacity ${before.opacity} → ${afterOpacity}`);
+              }
+              if (before.fillOpacity !== null && afterFillOp !== null && Math.abs(before.fillOpacity - afterFillOp) > 0.01) {
+                diffs.push(`fillOpacity ${before.fillOpacity} → ${afterFillOp}`);
+              }
+              if (before.hasUserMask !== afterUserMask) diffs.push(`userMask ${before.hasUserMask} → ${afterUserMask}`);
+              if (before.hasVectorMask !== afterVectorMask) diffs.push(`vectorMask ${before.hasVectorMask} → ${afterVectorMask}`);
+              if (diffs.length) {
+                issues.push(`"${before.name}" (id=${l.id} kind=${before.kind}): ${diffs.join(", ")}`);
+              }
+            } catch (e) {}
+          }
+          if (l.layers && l.layers.length) await walkDiff(l);
+        }
+      }
+      await walkDiff(newAb);
+      log(`[V2-STYLE-DIFF] summary: clipLost=${clipLost} clipGained=${clipGained} blendChanged=${blendChanged} opacityChanged=${opacityChanged}`);
+      if (issues.length) {
+        log(`[V2-STYLE-DIFF] ${issues.length} layer(s) with style changes:`);
+        for (const msg of issues) log(`[V2-STYLE-DIFF]   ${msg}`);
+      } else {
+        log(`[V2-STYLE-DIFF] ✓ no style changes detected`);
+      }
+    } catch (e) {
+      log(`[V2-STYLE-DIFF] failed: ${e.message}`);
+    }
+    perfLog(`[V2-PERF] step: style-diff`, tBeforeStyleDiff);
 
     if (createdTargets) {
       createdTargets.push({ id: newAb.id, name: newName, intendedLeft: nextX, intendedTop: rowY });
@@ -4272,7 +5016,8 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         // miniature of the source — same composition, just smaller — and bypasses
         // smart match / JSON rules entirely. Aspect mismatch >30% logs a warning
         // because the result will have large empty bands on the off-axis.
-        const uniformEnabled = uniformScaleEl?.checked === true;
+        // Skip uniform if JSON was imported (rules take priority).
+        const uniformEnabled = !jsonImportedThisSession && uniformScaleEl?.checked === true;
         if (uniformEnabled) {
           // Hybrid cover/contain. When source vs target aspect is close (≤3x
           // axis ratio), use COVER — fill the canvas, crop the off-axis (e.g.
@@ -4351,8 +5096,9 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
         } catch(e) { log(`[DIAG] root dump failed: ${e.message}`); }
 
         // Uniform mode owns the layout — skip smart match and JSON rules.
+        // JSON-imported sessions: rules take priority, ignore smart match.
         const hasRules = !uniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
-        const smartEnabled = !uniformEnabled && smartMatchEl.checked;
+        const smartEnabled = !uniformEnabled && !jsonImportedThisSession && smartMatchEl.checked;
         if (uniformEnabled) {
           log(`Mode: uniform scale (smart match & JSON rules skipped)`);
         } else {
@@ -5074,9 +5820,10 @@ async function cloneOneSourceAsDocs({ selectedAb, targets, sourceDoc, progressBa
 
         log(`Canvas: ${target.width}x${target.height}`);
 
-        // Decide which layout pipeline to run
+        // Decide which layout pipeline to run.
+        // JSON-imported sessions: rules take priority, ignore smart match.
         const hasRules = !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
-        const smartEnabled = smartMatchEl.checked;
+        const smartEnabled = !jsonImportedThisSession && smartMatchEl.checked;
         log(`Mode: ${hasRules ? "JSON rules" : "no rules"}${smartEnabled ? " + smart match" : ""}${!hasRules && !smartEnabled ? " (canvas only)" : ""}`);
 
         // 5. Scale background — only when NO JSON rules (smart match fallback)
@@ -5433,6 +6180,61 @@ async function updateActionButtonsVisibility() {
 // Tracks whether user clicked Import JSON in the current plugin session.
 // Reset on plugin reload — persisted layerRules in localStorage do NOT count.
 let jsonImportedThisSession = false;
+
+// When JSON is imported, JSON rules take absolute priority — uncheck and
+// disable Uniform / Smart-match checkboxes so the user sees they're inert.
+// Also swap the Import-JSON button into "filename + clear" mode.
+function applyJsonImportedUI(fileName) {
+  const isImported = jsonImportedThisSession;
+  if (uniformScaleEl) {
+    if (isImported) uniformScaleEl.checked = false;
+    uniformScaleEl.disabled = isImported;
+    const row = uniformScaleEl.closest(".checkbox-row");
+    if (row) row.style.opacity = isImported ? "0.5" : "";
+    if (row) row.title = isImported ? "Disabled — JSON rules take priority" : "";
+  }
+  if (smartMatchEl) {
+    if (isImported) smartMatchEl.checked = false;
+    smartMatchEl.disabled = isImported;
+    const row = smartMatchEl.closest(".checkbox-row");
+    if (row) row.style.opacity = isImported ? "0.5" : "";
+    if (row) row.title = isImported ? "Disabled — JSON rules take priority" : "";
+  }
+  const wrap = document.getElementById("importJsonWrap");
+  const label = document.getElementById("importJsonLabel");
+  const clearBtn = document.getElementById("importJsonClearBtn");
+  if (wrap && label && clearBtn) {
+    if (isImported) {
+      wrap.classList.add("is-imported");
+      if (fileName) label.textContent = fileName;
+      label.title = label.textContent;
+      clearBtn.style.display = "";
+    } else {
+      wrap.classList.remove("is-imported");
+      label.textContent = "Import JSON";
+      label.title = "";
+      clearBtn.style.display = "none";
+    }
+  }
+}
+
+function clearImportedJson() {
+  layerRules = {};
+  jsonImportedThisSession = false;
+  // Hide import info card + reset its values
+  const importInfoCard = document.getElementById("importInfoCard");
+  if (importInfoCard) importInfoCard.style.display = "none";
+  const importModuleName = document.getElementById("importModuleName");
+  if (importModuleName) importModuleName.textContent = "-";
+  const importSizeCount = document.getElementById("importSizeCount");
+  if (importSizeCount) importSizeCount.textContent = "-";
+  // Re-render rule editor (will show empty state)
+  try { renderSizeGroups(); } catch (e) {}
+  try { updateJsonStatus(); } catch (e) {}
+  applyJsonImportedUI();
+  try { updateActionButtonsVisibility(); } catch (e) {}
+  log("[IMPORT] Cleared imported JSON — checkboxes re-enabled");
+}
 
 // ─── Settings: Layer Rules per target size ───
 
@@ -5992,13 +6794,27 @@ async function importJson() {
     }
     updateJsonStatus();
     jsonImportedThisSession = true;
+    applyJsonImportedUI(file?.name || "imported.json");
     updateActionButtonsVisibility().catch(() => {});
   } catch (e) {
     log(`[IMPORT] Error: ${e.message}`);
   }
 }
 
-importJsonBtn.addEventListener("click", importJson);
+importJsonBtn.addEventListener("click", () => {
+  // When already imported, the button itself becomes inert (filename display).
+  // User must click the × clear button to reset, then click Import again.
+  if (jsonImportedThisSession) return;
+  importJson();
+});
+
+const importJsonClearBtn = document.getElementById("importJsonClearBtn");
+if (importJsonClearBtn) {
+  importJsonClearBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    clearImportedJson();
+  });
+}
 
 // ─── Apply Rules to Existing Artboards ───
 
@@ -6996,6 +7812,549 @@ async function exportLayerJson() {
 
 exportLayerJsonBtn.addEventListener("click", exportLayerJson);
 
+// ─── Create Test File ───
+// Generate a single 1080x1920 artboard PSD with the top 5 high-risk cases
+// the clone pipeline can mis-handle. Used to regression-test the clone flow
+// after fixes. Each case is a separate group at the top level so it's easy
+// to toggle visibility and isolate which case fails.
+
+const createTestFileBtn = document.getElementById("createTestFileBtn");
+
+// Wrappers: tạo các loại layer test bằng batchPlay. Mỗi helper expects to
+// run inside core.executeAsModal already.
+
+async function makeSolidColorLayer(name, rgb) {
+  // Full-canvas solid color fill. Bounds = document rect, no vector mask.
+  // Plugin's clone pipeline treats this as canvas-cover and skips scale —
+  // suitable for layers that SHOULD fill the artboard (e.g. background).
+  await bp([{
+    _obj: "make",
+    _target: [{ _ref: "contentLayer" }],
+    using: {
+      _obj: "contentLayer",
+      type: { _obj: "solidColorLayer", color: { _obj: "RGBColor", red: rgb[0], grain: rgb[1], blue: rgb[2] } }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  if (name) {
+    try { app.activeDocument.activeLayers[0].name = name; } catch (e) {}
+  }
+}
+
+async function makeShapeRect(name, x, y, w, h, rgb) {
+  // Vector shape rectangle (Rectangle Tool style). Bounds = (x, y, x+w, y+h),
+  // backed by a vectorMask. Plugin's clone pipeline keeps these in the batch
+  // transform because they have a vectorMask.
+  await bp([{
+    _obj: "make",
+    _target: [{ _ref: "contentLayer" }],
+    using: {
+      _obj: "contentLayer",
+      type: { _obj: "solidColorLayer", color: { _obj: "RGBColor", red: rgb[0], grain: rgb[1], blue: rgb[2] } },
+      shape: {
+        _obj: "rectangle",
+        unitValueQuadVersion: 1,
+        top:    { _unit: "pixelsUnit", _value: y },
+        left:   { _unit: "pixelsUnit", _value: x },
+        bottom: { _unit: "pixelsUnit", _value: y + h },
+        right:  { _unit: "pixelsUnit", _value: x + w }
+      },
+      strokeStyle: {
+        _obj: "strokeStyle", strokeStyleVersion: 2, strokeEnabled: false,
+        fillEnabled: true, strokeStyleLineWidth: { _unit: "pixelsUnit", _value: 0 },
+        strokeStyleLineDashOffset: { _unit: "pointsUnit", _value: 0 },
+        strokeStyleMiterLimit: 100,
+        strokeStyleLineCapType: { _enum: "strokeStyleLineCapType", _value: "strokeStyleButtCap" },
+        strokeStyleLineJoinType: { _enum: "strokeStyleLineJoinType", _value: "strokeStyleMiterJoin" },
+        strokeStyleLineAlignment: { _enum: "strokeStyleLineAlignment", _value: "strokeStyleAlignInside" },
+        strokeStyleScaleLock: false, strokeStyleStrokeAdjust: false,
+        strokeStyleLineDashSet: [],
+        strokeStyleBlendMode: { _enum: "blendMode", _value: "normal" },
+        strokeStyleOpacity: { _unit: "percentUnit", _value: 100 },
+        strokeStyleContent: { _obj: "solidColorLayer", color: { _obj: "RGBColor", red: 0, grain: 0, blue: 0 } },
+        strokeStyleResolution: 72
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  if (name) {
+    try { app.activeDocument.activeLayers[0].name = name; } catch (e) {}
+  }
+}
+
+async function makeTextLayer(name, content, x, y, size, rgb) {
+  await bp([{
+    _obj: "make",
+    _target: [{ _ref: "textLayer" }],
+    using: {
+      _obj: "textLayer",
+      textKey: content,
+      textShape: [{ _obj: "textShape", char: { _enum: "char", _value: "box" },
+        orientation: { _enum: "orientation", _value: "horizontal" },
+        transform: { _obj: "transform", xx: 1, xy: 0, yx: 0, yy: 1, tx: 0, ty: 0 },
+        rowCount: 1, columnCount: 1, rowMajorOrder: true,
+        bounds: { _obj: "rectangle", top: 0, left: 0, bottom: 200, right: 600 }
+      }],
+      textStyleRange: [{
+        _obj: "textStyleRange", from: 0, to: content.length,
+        textStyle: {
+          _obj: "textStyle", fontPostScriptName: "ArialMT", fontName: "Arial", fontStyleName: "Regular",
+          size: { _unit: "pointsUnit", _value: size },
+          color: { _obj: "RGBColor", red: rgb[0], grain: rgb[1], blue: rgb[2] }
+        }
+      }],
+      position: { _obj: "paint", horizontal: { _unit: "pixelsUnit", _value: x }, vertical: { _unit: "pixelsUnit", _value: y } }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  if (name) {
+    try { app.activeDocument.activeLayers[0].name = name; } catch (e) {}
+  }
+}
+
+async function moveLayerTo(layer, x, y) {
+  // Move layer so its top-left is at (x, y).
+  const b = layer.bounds;
+  const dx = x - b.left;
+  const dy = y - b.top;
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+  await bp([{
+    _obj: "move",
+    _target: [{ _ref: "layer", _id: layer.id }],
+    to: { _obj: "offset", horizontal: { _unit: "pixelsUnit", _value: dx }, vertical: { _unit: "pixelsUnit", _value: dy } },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function makeGroupFromActiveLayers(name) {
+  await bp([{
+    _obj: "make",
+    _target: [{ _ref: "layerSection" }],
+    from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  if (name) {
+    try { app.activeDocument.activeLayers[0].name = name; } catch (e) {}
+  }
+}
+
+async function selectLayerByIdForTest(id) {
+  await bp([{
+    _obj: "select", _target: [{ _ref: "layer", _id: id }],
+    makeVisible: false, _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function applyClippingMask() {
+  // Apply "Create Clipping Mask" to currently selected layer.
+  await bp([{
+    _obj: "groupEvent",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function applyDropShadow(distance, size, opacity) {
+  // Apply Drop Shadow layer effect to currently selected layer.
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "property", _property: "layerEffects" }, { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layerEffects",
+      scale: { _unit: "percentUnit", _value: 100 },
+      dropShadow: {
+        _obj: "dropShadow", enabled: true, present: true, showInDialog: true,
+        mode: { _enum: "blendMode", _value: "multiply" },
+        color: { _obj: "RGBColor", red: 0, grain: 0, blue: 0 },
+        opacity: { _unit: "percentUnit", _value: opacity },
+        useGlobalAngle: false,
+        localLightingAngle: { _unit: "angleUnit", _value: 120 },
+        distance: { _unit: "pixelsUnit", _value: distance },
+        chokeMatte: { _unit: "pixelsUnit", _value: 0 },
+        blur: { _unit: "pixelsUnit", _value: size },
+        noise: { _unit: "percentUnit", _value: 0 },
+        antiAlias: false,
+        transferSpec: { _obj: "shapeCurveType", name: "Linear" },
+        layerConceals: true
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function addLayerMaskFromTransparency() {
+  // Reveal-all layer mask.
+  await bp([{
+    _obj: "make",
+    new: { _class: "channel" },
+    at: { _ref: "channel", _enum: "channel", _value: "mask" },
+    using: { _enum: "userMaskEnabled", _value: "revealAll" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function rasterizeLayer() {
+  // Rasterize the active layer (turns shape/SO into pixel layer).
+  await bp([{
+    _obj: "rasterizeLayer",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function warpTextActiveLayer(warpStyle) {
+  // warpStyle e.g. "arc", "wave", "fish", "bulge".
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "textLayer",
+      warp: {
+        _obj: "warp",
+        warpStyle: { _enum: "warpStyle", _value: "warp" + warpStyle.charAt(0).toUpperCase() + warpStyle.slice(1) },
+        warpValue: 50,
+        warpPerspective: 0,
+        warpPerspectiveOther: 0,
+        warpRotate: { _enum: "orientation", _value: "horizontal" }
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function convertActiveToSmartObject() {
+  await bp([{ _obj: "newPlacedLayer", _options: { dialogOptions: "dontDisplay" } }]);
+}
+
+async function applyStroke(sizePx, rgb) {
+  // Apply Stroke layer effect to currently selected layer.
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "property", _property: "layerEffects" }, { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layerEffects",
+      scale: { _unit: "percentUnit", _value: 100 },
+      frameFX: {
+        _obj: "frameFX", enabled: true, present: true, showInDialog: true,
+        style: { _enum: "frameStyle", _value: "outsetFrame" },
+        paintType: { _enum: "frameFill", _value: "solidColor" },
+        mode: { _enum: "blendMode", _value: "normal" },
+        opacity: { _unit: "percentUnit", _value: 100 },
+        size: { _unit: "pixelsUnit", _value: sizePx },
+        color: { _obj: "RGBColor", red: rgb[0], grain: rgb[1], blue: rgb[2] }
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function applyOuterGlow(sizePx, rgb) {
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "property", _property: "layerEffects" }, { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layerEffects",
+      scale: { _unit: "percentUnit", _value: 100 },
+      outerGlow: {
+        _obj: "outerGlow", enabled: true, present: true, showInDialog: true,
+        mode: { _enum: "blendMode", _value: "screen" },
+        color: { _obj: "RGBColor", red: rgb[0], grain: rgb[1], blue: rgb[2] },
+        opacity: { _unit: "percentUnit", _value: 75 },
+        glowTechnique: { _enum: "matteTechnique", _value: "softMatte" },
+        chokeMatte: { _unit: "percentUnit", _value: 0 },
+        blur: { _unit: "pixelsUnit", _value: sizePx },
+        noise: { _unit: "percentUnit", _value: 0 },
+        shadingNoise: { _unit: "percentUnit", _value: 0 },
+        antiAlias: false,
+        transferSpec: { _obj: "shapeCurveType", name: "Linear" },
+        inputRange: 50
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function setLayerLocked(layerId) {
+  // Lock layer position (`Lock position` button — keeps content visible but
+  // immovable). Triggers the "lock layer" case for clone scaling.
+  try {
+    await bp([{
+      _obj: "applyLocking",
+      _target: [{ _ref: "layer", _id: layerId }],
+      layerLocking: { _obj: "layerLocking", protectAll: false, protectPosition: true },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+  } catch (e) { /* ignore — locking is optional for tests */ }
+}
+
+async function setLayerHidden(layerId) {
+  // Use "hide" event so it survives PS state transitions (matches snapshot
+  // restore path in clone flow).
+  await bp([{
+    _obj: "hide",
+    null: [{ _ref: "layer", _id: layerId }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function applyTextWarp(warpStyle, warpValue = 50) {
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "textLayer",
+      warp: {
+        _obj: "warp",
+        warpStyle: { _enum: "warpStyle", _value: "warp" + warpStyle.charAt(0).toUpperCase() + warpStyle.slice(1) },
+        warpValue, warpPerspective: 0, warpPerspectiveOther: 0,
+        warpRotate: { _enum: "orientation", _value: "horizontal" }
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+async function createTestFile() {
+  try {
+    log(`[TEST FILE] Creating test PSD (1080x1920 with 10 high-risk cases)...`);
+
+    await core.executeAsModal(async () => {
+      // 1. Create new RGB document 1080x1920.
+      await bp([{
+        _obj: "make",
+        new: {
+          _obj: "document",
+          mode: { _class: "RGBColorMode" },
+          width: { _unit: "pixelsUnit", _value: 1080 },
+          height: { _unit: "pixelsUnit", _value: 1920 },
+          resolution: { _unit: "densityUnit", _value: 72 },
+          pixelScaleFactor: 1,
+          fill: { _enum: "fill", _value: "white" },
+          depth: 8,
+          profile: "sRGB IEC61966-2.1",
+          artboard: false
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      const doc = app.activeDocument;
+      log(`[TEST FILE]   Created doc: ${doc.width}x${doc.height}`);
+
+      // 2. Convert to artboard by wrapping background in an artboard. Easiest
+      //    path: create solid bg layer, then "newArtboard" wraps current
+      //    selection. Otherwise the existing "Background" stays as plain layer.
+
+      // First, delete background layer to start clean.
+      try {
+        await bp([{
+          _obj: "delete",
+          _target: [{ _ref: "layer", _name: "Background" }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      } catch (e) { /* may already be gone */ }
+
+      // ── CASE 1: Smart object with vector mask ───────────────────────────
+      log(`[TEST FILE]   Case 1: Smart object with mask`);
+      // Base rectangle 400x300 at (100, 100) — shape with finite bounds.
+      await makeShapeRect("Case1-SO-base-rect", 100, 100, 400, 300, [255, 100, 100]);
+
+      // Smart object on top: make a small shape, convert to SO, add mask.
+      await makeShapeRect("Case1-SO-image-tmp", 150, 150, 300, 200, [100, 100, 255]);
+      await convertActiveToSmartObject();
+      try { app.activeDocument.activeLayers[0].name = "Case1-SmartObject-with-mask"; } catch (e) {}
+      await addLayerMaskFromTransparency();
+
+      // ── CASE 2: Layer with Drop Shadow effect ───────────────────────────
+      log(`[TEST FILE]   Case 2: Layer effects (Drop Shadow)`);
+      // Finite-bounds shape so plugin scales it. Drop Shadow effect should
+      // scale too — but PS usually doesn't scale layer effect distances.
+      await makeShapeRect("Case2-shape-with-shadow", 550, 100, 350, 250, [100, 200, 100]);
+      await applyDropShadow(20, 30, 75);
+
+      // ── CASE 3: Pixel layer with raster mask ────────────────────────────
+      log(`[TEST FILE]   Case 3: Pixel layer with raster mask`);
+      await makeShapeRect("Case3-pixel-tmp", 100, 500, 400, 350, [200, 100, 200]);
+      await rasterizeLayer();
+      try { app.activeDocument.activeLayers[0].name = "Case3-PixelLayer-with-mask"; } catch (e) {}
+      await addLayerMaskFromTransparency();
+
+      // ── CASE 4: Warped text ─────────────────────────────────────────────
+      log(`[TEST FILE]   Case 4: Warped text`);
+      await makeTextLayer("Case4-WarpedText", "Warped Text", 550, 600, 48, [50, 50, 50]);
+      try { await warpTextActiveLayer("arc"); }
+      catch (e) { log(`[TEST FILE]     Warp text failed: ${e.message}`); }
+
+      // ── CASE 5: Clipping mask chain (3 layers clip to 1 base) ───────────
+      log(`[TEST FILE]   Case 5: Clipping chain (3 layers → 1 base)`);
+      // Base shape 500x300 at (100, 1000) — finite bounds. Other 3 layers
+      // overlap base bbox so the chain has visible interaction.
+      await makeShapeRect("Case5-base-rect", 100, 1000, 500, 300, [255, 230, 100]);
+
+      await makeShapeRect("Case5-clip-3-top", 80, 950, 540, 80, [255, 100, 100]);
+      await selectLayerByIdForTest(app.activeDocument.activeLayers[0].id);
+      await applyClippingMask();
+
+      await makeShapeRect("Case5-clip-2-mid", 200, 1050, 300, 200, [100, 255, 100]);
+      await selectLayerByIdForTest(app.activeDocument.activeLayers[0].id);
+      await applyClippingMask();
+
+      await makeShapeRect("Case5-clip-1-just-above-base", 80, 1250, 540, 80, [100, 100, 255]);
+      await selectLayerByIdForTest(app.activeDocument.activeLayers[0].id);
+      await applyClippingMask();
+
+      // ── CASE 6: Layer with Stroke effect ────────────────────────────────
+      log(`[TEST FILE]   Case 6: Layer effects (Stroke)`);
+      await makeShapeRect("Case6-shape-with-stroke", 80, 1400, 250, 150, [100, 150, 255]);
+      try { await applyStroke(15, [255, 0, 0]); }
+      catch (e) { log(`[TEST FILE]     Stroke failed: ${e.message}`); }
+
+      // ── CASE 7: Layer with Outer Glow effect ────────────────────────────
+      log(`[TEST FILE]   Case 7: Layer effects (Outer Glow)`);
+      await makeShapeRect("Case7-shape-with-glow", 380, 1400, 250, 150, [255, 200, 0]);
+      try { await applyOuterGlow(40, [255, 100, 0]); }
+      catch (e) { log(`[TEST FILE]     Outer glow failed: ${e.message}`); }
+
+      // ── CASE 8: Pixel layer with raster mask (non-SO mask) ──────────────
+      log(`[TEST FILE]   Case 8: Pixel layer with raster mask (revisit)`);
+      // Already covered by Case 3 — add a wider, full-shape version to
+      // exercise mask-follows-layer-position invariant during scale.
+      await makeShapeRect("Case8-pixel-with-mask-tmp", 680, 1400, 320, 150, [0, 200, 100]);
+      await rasterizeLayer();
+      try { app.activeDocument.activeLayers[0].name = "Case8-PixelLayer-wide-with-mask"; } catch (e) {}
+      await addLayerMaskFromTransparency();
+
+      // ── CASE 9: Locked layer (position locked) ──────────────────────────
+      log(`[TEST FILE]   Case 9: Locked layer (position lock)`);
+      await makeShapeRect("Case9-locked-shape", 80, 1600, 300, 130, [150, 100, 200]);
+      try {
+        await setLayerLocked(app.activeDocument.activeLayers[0].id);
+      } catch (e) { log(`[TEST FILE]     Lock failed: ${e.message}`); }
+
+      // ── CASE 10: Hidden layer (visibility OFF in source) ────────────────
+      log(`[TEST FILE]   Case 10: Hidden layer (should stay hidden in clone)`);
+      await makeShapeRect("Case10-hidden-shape", 430, 1600, 300, 130, [255, 0, 200]);
+      const c10Id = app.activeDocument.activeLayers[0].id;
+      try { await setLayerHidden(c10Id); }
+      catch (e) { log(`[TEST FILE]     Hide failed: ${e.message}`); }
+
+      // ── CASE 11: Warped text — Wave style (different warp kind) ─────────
+      log(`[TEST FILE]   Case 11: Warped text — Wave style`);
+      await makeTextLayer("Case11-WaveText", "Wave Style", 780, 1620, 36, [50, 50, 50]);
+      try { await applyTextWarp("wave", 30); }
+      catch (e) { log(`[TEST FILE]     Wave warp failed: ${e.message}`); }
+
+      // ── CASE 12: Deeply nested group (3+ levels) ────────────────────────
+      log(`[TEST FILE]   Case 12: Deeply nested group (4 levels deep)`);
+      // Build leaf, then wrap into nested groups so structure is:
+      //   Case12-outer / sub1 / sub2 / Case12-leaf-shape
+      await makeShapeRect("Case12-leaf-shape", 80, 1780, 200, 100, [0, 100, 200]);
+      // Wrap once → "Group 1"
+      await bp([{
+        _obj: "make",
+        _target: [{ _ref: "layerSection" }],
+        from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]).catch(() => {});
+      try { app.activeDocument.activeLayers[0].name = "Case12-sub2"; } catch (e) {}
+      // Wrap again
+      await bp([{
+        _obj: "make", _target: [{ _ref: "layerSection" }],
+        from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]).catch(() => {});
+      try { app.activeDocument.activeLayers[0].name = "Case12-sub1"; } catch (e) {}
+      // Wrap one more time
+      await bp([{
+        _obj: "make", _target: [{ _ref: "layerSection" }],
+        from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]).catch(() => {});
+      try { app.activeDocument.activeLayers[0].name = "Case12-outer-deeply-nested"; } catch (e) {}
+
+      // ── CONVERT doc to a single artboard wrapping everything ────────────
+      log(`[TEST FILE]   Wrapping all layers into a 1080x1920 artboard`);
+      // Select all layers, then wrap with default bounds (= bbox of shapes).
+      // Resizing afterwards via editArtboardEvent moves the artboard origin
+      // and evicts children that no longer fit — bad. Instead, snapshot the
+      // current shape bounds (which already lie within 0..1080 × 0..1920 by
+      // design), wrap normally, then move artboard rect origin to (0,0) by
+      // a single move op that keeps children inside.
+      await bp([{
+        _obj: "selectAllLayers", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      try {
+        await bp([{
+          _obj: "make",
+          _target: [{ _ref: "artboardSection" }],
+          from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        try { app.activeDocument.activeLayers[0].name = "Test-1080x1920"; } catch (e) {}
+      } catch (e) {
+        log(`[TEST FILE]   Artboard wrap failed: ${e.message}`);
+      }
+
+      // Move artboard so its rect aligns with doc origin (0, 0). Children
+      // get moved together because they belong to the artboard. Then resize
+      // the rect to grow toward bottom-right — children already inside
+      // bbox stay inside the larger rect.
+      try {
+        const abLayer = app.activeDocument.activeLayers[0];
+        const dBefore = await getLayerDescriptor(abLayer.id);
+        const rBefore = dBefore.artboard?.artboardRect;
+        const fmt = v => Number(v?._value ?? v ?? 0);
+        const curL = fmt(rBefore?.left), curT = fmt(rBefore?.top);
+        log(`[TEST FILE]   Artboard rect before resize: top-left=(${curL},${curT})`);
+
+        // 1) Move artboard top-left to (0, 0). Children follow.
+        if (Math.abs(curL) > 0.5 || Math.abs(curT) > 0.5) {
+          await bp([{
+            _obj: "move",
+            _target: [{ _ref: "layer", _id: abLayer.id }],
+            to: { _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: -curL },
+              vertical: { _unit: "pixelsUnit", _value: -curT } },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+        }
+
+        // 2) Grow rect to 1080×1920 (origin already (0,0); only expand
+        //    right + bottom). Children stay where they are.
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          artboard: {
+            _obj: "artboard",
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: { _unit: "pixelsUnit", _value: 0 },
+              left: { _unit: "pixelsUnit", _value: 0 },
+              bottom: { _unit: "pixelsUnit", _value: 1920 },
+              right: { _unit: "pixelsUnit", _value: 1080 }
+            }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        const dAfter = await getLayerDescriptor(abLayer.id);
+        const r = dAfter.artboard?.artboardRect;
+        if (r) {
+          log(`[TEST FILE]   Artboard rect after: (${fmt(r.left)},${fmt(r.top)},${fmt(r.right)},${fmt(r.bottom)}) = ${fmt(r.right)-fmt(r.left)}x${fmt(r.bottom)-fmt(r.top)}`);
+        }
+      } catch (e) {
+        log(`[TEST FILE]   Artboard resize failed: ${e.message}`);
+      }
+    }, { commandName: "Banner Cloner — Create Test File" });
+
+    log(`[TEST FILE] ✓ Done. Test file ready.`);
+    log(`[TEST FILE] Now: tick artboard in picker → set target size 540x960 → Clone.`);
+    log(`[TEST FILE] After clone, check STYLE-DIFF + visual diff against source.`);
+  } catch (e) {
+    log(`[TEST FILE] Error: ${e.message}`);
+  }
+}
+
+createTestFileBtn?.addEventListener("click", createTestFile);
+
 // ─── Export Assets ───
 
 function isImageLayerForAssets(layer) {
@@ -7161,10 +8520,14 @@ async function scanArtboardImages() {
           return;
         }
 
-        // Leaf layer: pixel/smartObject only.
-        if (!isImageLayerForAssets(layer)) return;
+        // Leaf layer:
+        //  - Default: pixel / smartObject only.
+        //  - Advanced + gg- filter: any leaf with gg- prefix (shape/text/fill/...)
+        //    is exported by flattening into a temp doc (same pipeline as image leaves).
+        const advancedGgLeaf = isAdvancedEnabled() && ggOnly && matchesGg;
+        if (!advancedGgLeaf && !isImageLayerForAssets(layer)) return;
         if (ggOnly && !matchesGg) return;
-        items.push({ layer, isGroup: false });
+        items.push({ layer, isGroup: false, forceFlatten: advancedGgLeaf && !isImageLayerForAssets(layer) });
       }
       for (const child of source.layer.layers) walk(child);
 
@@ -7174,6 +8537,7 @@ async function scanArtboardImages() {
           ? await getGroupBounds(layer)
           : await getLayerBounds(layer.id);
         if (bounds.width === 0 || bounds.height === 0) continue;
+        log(`[ASSETS]   "${layer.name}" kind=${layer.kind} bounds=${Math.round(bounds.width)}x${Math.round(bounds.height)} @ (${Math.round(bounds.left)},${Math.round(bounds.top)})`);
 
         let defaultType = "PNG";
         let isVector = false;
@@ -7200,6 +8564,7 @@ async function scanArtboardImages() {
           exportName,
           kind,
           isGroup: item.isGroup || undefined,
+          forceFlatten: item.forceFlatten || undefined,
           isVector,
           sizeMode: defaultSizeMode,
           scale: defaultScale,
@@ -7445,7 +8810,20 @@ function renderAssetList() {
     });
     const kindBadge = document.createElement("span");
     kindBadge.className = "asset-kind-badge";
-    kindBadge.textContent = asset.kind === "smartObject" ? "Smart" : (asset.kind === "group" ? "Group" : "Pixel");
+    kindBadge.textContent = (() => {
+      switch (asset.kind) {
+        case "smartObject": return "Smart";
+        case "group": return "Group";
+        case "pixel": return "Pixel";
+        case "text":
+        case "textLayer": return "Text";
+        case "solidColor":
+        case "gradient":
+        case "pattern": return "Fill";
+        case "vectorSheet": return "Shape";
+        default: return asset.kind || "Layer";
+      }
+    })();
 
     // Size/artboard source badge
     const ab = scannedArtboards.find(x => x.id === asset.artboardId);
@@ -8106,10 +9484,45 @@ async function runExportAssetsFlow(folder, { writeLayersJson = true, scopedAsset
           }
         }
 
-        // Merge group layers into one
-        if (asset.isGroup) {
+        // Apply any USER (raster) masks on every layer in the temp doc BEFORE
+        // merging. mergeVisible alone does NOT always bake user-masks on
+        // Smart Objects — leftover masked-out areas end up visible as the
+        // SO's full content in the output.
+        //
+        // NOTE: We deliberately do NOT touch vector masks here. For shape
+        // layers (vectorSheet), the "vector mask" IS the shape's own path.
+        // Deleting it without explicit rasterize collapses the shape to a
+        // solid fill covering the entire layer bounds — which is exactly the
+        // "red square, no rounded corners" bug we just hit. Vector masks are
+        // handled correctly by mergeVisible/rasterize downstream.
+        try {
+          for (const tl of app.activeDocument.layers) {
+            try {
+              const d = await getLayerDescriptor(tl.id);
+              const hasUserMask = d?.hasUserMask === true || d?.userMaskEnabled === true;
+              if (!hasUserMask) continue;
+              await selectLayerById(tl.id);
+              await bp([{
+                _obj: "delete",
+                _target: [{ _ref: "channel", _enum: "channel", _value: "mask" }],
+                apply: true,
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            } catch (e) { /* per-layer mask apply failures are non-fatal */ }
+          }
+        } catch (e) { /* enumerating layers may fail on edge-case temp docs */ }
+
+        // Merge group layers into one. Also merge when forceFlatten is set
+        // (Advanced + gg- leaf that's a shape/text/fill/etc) so the temp doc
+        // becomes a flat raster ready to save as PNG/JPG.
+        //
+        // IMPORTANT: use `mergeVisible` (Merge Visible) — NOT `flattenImage`.
+        // `flattenImage` fills transparent pixels with a WHITE matte; the
+        // result is a fully-opaque doc, which destroys PNG alpha and turns
+        // mostly-empty temp docs into solid white tiles.
+        if (asset.isGroup || asset.forceFlatten) {
           try {
-            await bp([{ _obj: "flattenImage", _options: { dialogOptions: "silent" } }]);
+            await bp([{ _obj: "mergeVisible", duplicate: false, _options: { dialogOptions: "silent" } }]);
           } catch (e) {}
         }
 
