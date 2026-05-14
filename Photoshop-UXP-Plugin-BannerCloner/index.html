@@ -66,8 +66,11 @@
       <div id="advancedOptionsPanel" style="display:none;">
         <div class="section">
           <label class="label" for="customExportPath">Custom output path <span style="color:#e88">*</span></label>
-          <sp-textfield id="customExportPath" placeholder="/Users/.../test-export"></sp-textfield>
-          <div class="hint">Export per-artboard: {path}/{size}/assets/ — folder gốc phải tồn tại.</div>
+          <div class="path-row">
+            <sp-textfield id="customExportPath" placeholder="/Users/.../export  or  C:\Users\...\export"></sp-textfield>
+            <button id="browseExportPathBtn" class="path-browse-btn" title="Browse folder…">Browse…</button>
+          </div>
+          <div class="hint">Export per-artboard: {path}/{size}/assets/ — folder sẽ được tạo nếu chưa tồn tại. Hỗ trợ cả macOS (/Users/…) và Windows (C:\Users\…).</div>
         </div>
         <div class="section">
           <label class="label" for="jpgQuality">JPG quality (0-100) <span style="color:#e88">*</span></label>
@@ -151,6 +154,11 @@
       </div>
       <div class="section btn-row">
         <button id="createTestFileBtn" class="primary" title="Tạo file PSD test với 5 case risk cao (smart object mask, layer effects, raster mask, warped text, clipping chain)">Create Test File</button>
+        <button id="testGroupResizeBtn" class="primary" title="Test pipeline group-resize-scale-ungroup: bọc children vào temp group → resize artboard → scale group → ungroup. Bypass auto-eject của PS.">Test Group-Resize</button>
+        <button id="testTempDocBtn" class="primary" title="Test pipeline với temp document: copy artboard sang doc tạm (size = source) → resize + scale → copy về doc gốc. Isolate canvas-grow side-effects.">Test Temp-Doc</button>
+      </div>
+      <div class="section">
+        <label class="checkbox-row"><input id="keepTempDocOpen" type="checkbox" /> <span>Keep temp doc open (debug)</span></label>
       </div>
 
       <div id="importInfoCard" class="section info-card" style="display:none;">

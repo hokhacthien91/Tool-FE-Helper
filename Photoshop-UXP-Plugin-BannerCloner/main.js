@@ -2933,6 +2933,21 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       continue;
     }
     log(`[V2] Duplicated artboard id=${newAb.id} name="${newAb.name}"`);
+    // DEBUG: dump descendant names RIGHT AFTER duplicate, BEFORE any rename.
+    // Confirms whether batchPlay `_obj:"duplicate"` appends " copy" to layer
+    // names (vs manual Alt+drag duplicate which doesn't).
+    log(`[V2-RENAME-DBG] descendant names immediately after duplicate:`);
+    let _dbgCount = 0;
+    function _dbgDumpNames(parent, depth) {
+      for (const l of parent.layers || []) {
+        const indent = "  ".repeat(depth);
+        log(`[V2-RENAME-DBG] ${indent}"${l.name}" id=${l.id}`);
+        _dbgCount++;
+        if (l.layers && l.layers.length) _dbgDumpNames(l, depth + 1);
+      }
+    }
+    try { _dbgDumpNames(newAb, 0); } catch (e) {}
+    log(`[V2-RENAME-DBG] total ${_dbgCount} descendants`);
 
     // Rename the new artboard.
     try { newAb.name = newName; } catch (e) { /* ignore */ }
@@ -3247,15 +3262,23 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       log(`[V2] After move: isArtboard=${afterMoveOk} artboardEnabled=${afterMoveDesc.artboardEnabled} rect=(L${afterMoveRect.left},T${afterMoveRect.top},R${afterMoveRect.right},B${afterMoveRect.bottom}) ${afterMoveRect.width}x${afterMoveRect.height}`);
     }
 
-    // Detect mode early. If uniform-only (no smart-match, no JSON rules),
-    // we can use the "user-style" flow: scale layers FIRST, then resize
-    // artboard. This avoids the eviction+translation bug PS introduces
-    // when shrinking an artboard rect with children outside it.
+    // Detect mode + direction (upsize vs downsize). For uniform-only mode
+    // we use a "user-style" two-step flow that mirrors how a designer would
+    // do this in Photoshop manually:
+    //   - DOWNSIZE (smaller target): scale layers DOWN first, then shrink
+    //     the artboard rect. Order matters because shrinking first evicts
+    //     children outside the new rect AND translates them toward top-left
+    //     (PS bug verified in test files).
+    //   - UPSIZE (larger target): grow the artboard rect FIRST, then scale
+    //     layers UP. Order matters because scaling up first can push layers
+    //     past the current canvas extent, triggering PS auto-canvas-grow
+    //     which shifts coordinate system and breaks math.
     const earlyUniformEnabled = !jsonImportedThisSession && uniformScaleEl?.checked === true;
     const earlyHasRules = !earlyUniformEnabled && !!(layerRules[target.raw] && layerRules[target.raw].length > 0);
     const earlySmartEnabled = !earlyUniformEnabled && !jsonImportedThisSession && smartMatchEl.checked;
+    const isUpsize = target.width >= srcRect.width && target.height >= srcRect.height;
     const useUserStyleFlow = earlyUniformEnabled && !earlyHasRules && !earlySmartEnabled;
-    log(`[V2] Mode detection: uniformEnabled=${earlyUniformEnabled} hasRules=${earlyHasRules} smartEnabled=${earlySmartEnabled} → useUserStyleFlow=${useUserStyleFlow}`);
+    log(`[V2] Mode detection: uniformEnabled=${earlyUniformEnabled} hasRules=${earlyHasRules} smartEnabled=${earlySmartEnabled} isUpsize=${isUpsize} → useUserStyleFlow=${useUserStyleFlow}`);
 
     // STEP A PROBE: try resizing the artboardRect via different APIs to
     // find one that doesn't destroy the artboard. Probe runs ON the real
@@ -3273,6 +3296,11 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
     const probeRight = tgtRect.left + target.width;
     const probeBottom = tgtRect.top + target.height;
     log(`[V2-RESIZE] api=${RESIZE_API} from ${tgtRect.width}x${tgtRect.height} → ${target.width}x${target.height} rect=(${probeLeft},${probeTop},${probeRight},${probeBottom})`);
+    // DEBUG: track canvas size before resize.
+    try {
+      const _doc = app.activeDocument;
+      log(`[V2-CANVAS-DBG] BEFORE resize: doc canvas=${_doc.width}x${_doc.height}`);
+    } catch (e) {}
 
     // Snapshot every descendant's canvas bounds BEFORE resize. PS auto-evicts
     // children whose bounds fall outside the new (smaller) artboard rect, and
@@ -3306,30 +3334,27 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
       log(`[V2-RESIZE-DBG]   "${name}" canvas=(${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.right)},${Math.round(b.bottom)}) ${Math.round(b.right-b.left)}x${Math.round(b.bottom-b.top)}`);
     }
 
-    // USER-STYLE FLOW: scale layers FIRST (while artboard still at source
-    // size), THEN resize artboard. Avoids the eviction+translation bug PS
-    // introduces when shrinking the rect with children outside it.
-    // Only for uniform-only mode (no rules / no smart-match).
-    if (useUserStyleFlow) {
+    // Reusable user-flow scale step. Called twice:
+    //  - DOWNSIZE: before resize, with currentRect = source-sized rect
+    //  - UPSIZE: after resize, with currentRect = target-sized rect AND
+    //    srcLogicalSize set to the ORIGINAL source dimensions (so scale > 1)
+    //
+    // srcLogicalSize = the size that determines `scale = target / src`.
+    // currentRect = the artboard rect at the time of the call (anchor for
+    // computing center coords in canvas space).
+    async function runUserFlowScale(srcLogicalW, srcLogicalH, tgtLogicalW, tgtLogicalH, currentRect, label) {
       try {
-        // Compute scale + source/target centers. tgtRect = current source-
-        // sized artboard rect; target.width/height = desired final size.
-        // The target artboard will occupy (tgtRect.left, tgtRect.top,
-        // tgtRect.left+target.width, tgtRect.top+target.height) after the
-        // upcoming resize-down. To position each layer at its design-intent
-        // spot relative to the target rect, use:
-        //   newCenter = tgtCenter + (preCenter - srcCenter) * scale
-        // (NOT just `srcCenter + (preCenter - srcCenter) * scale` — that
-        // would scale around source center, leaving layers in the source-
-        // sized half of the canvas instead of moving them into target rect.)
-        const sx = target.width / tgtRect.width;
-        const sy = target.height / tgtRect.height;
+        // Compute scale + source/target centers. Both centers anchor to the
+        // CURRENT artboard rect (canvas coords). srcLogicalSize sets scale,
+        // tgtLogicalSize sets where layers should end up relative to anchor.
+        const sx = tgtLogicalW / srcLogicalW;
+        const sy = tgtLogicalH / srcLogicalH;
         const scale = Math.min(sx, sy);  // contain
-        const srcCenterX = tgtRect.left + tgtRect.width / 2;
-        const srcCenterY = tgtRect.top + tgtRect.height / 2;
-        const tgtCenterX = tgtRect.left + target.width / 2;
-        const tgtCenterY = tgtRect.top + target.height / 2;
-        log(`[V2-USER-FLOW] scale=${scale.toFixed(4)} srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
+        const srcCenterX = currentRect.left + srcLogicalW / 2;
+        const srcCenterY = currentRect.top + srcLogicalH / 2;
+        const tgtCenterX = currentRect.left + tgtLogicalW / 2;
+        const tgtCenterY = currentRect.top + tgtLogicalH / 2;
+        log(`[V2-USER-FLOW-${label}] scale=${scale.toFixed(4)} srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
 
         // Collect eligible leaf ids (skip canvas-cover fills and adjustment
         // layers — same rules as later batch transform).
@@ -3370,7 +3395,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           }
         }
         await collectEligible(newAb);
-        log(`[V2-USER-FLOW] eligible=${eligibleIds.length} skipped=${skipped.length}${skipped.length ? " ("+skipped.join(", ")+")" : ""}`);
+        log(`[V2-USER-FLOW-${label}] eligible=${eligibleIds.length} skipped=${skipped.length}${skipped.length ? " ("+skipped.join(", ")+")" : ""}`);
 
         if (eligibleIds.length > 0 && Math.abs(scale - 1) > 0.005) {
           // Detect + temporarily UNLOCK any layer with protectPosition or
@@ -3400,7 +3425,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
             } catch (e) { /* skip */ }
           }
           if (lockedLayers.length > 0) {
-            log(`[V2-USER-FLOW] unlocked ${lockedLayers.length} locked layer(s) for transform`);
+            log(`[V2-USER-FLOW-${label}] unlocked ${lockedLayers.length} locked layer(s) for transform`);
           }
 
           // Multi-select all eligible layers.
@@ -3411,8 +3436,64 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
             _options: { dialogOptions: "dontDisplay" }
           }]);
 
-          // Snapshot pre-scale centers so we can correct positions after PS
-          // batch transform (QCSAverage pivot isn't exactly bbox center).
+          // PRE-MOVE step: shift entire selection so bbox center is at the
+          // target artboard center BEFORE scaling. Reason: PS batch transform
+          // pivots around QCSAverage (bbox center of selection). When upsizing
+          // (scale > 1), layers in upper half of source artboard get scaled
+          // to NEGATIVE Y coords → PS auto-evicts them out of the artboard
+          // to doc root, breaking layout. By pre-centering bbox at target
+          // center first, then scaling, all layers stay within bounds.
+          // For downsize this is also safe — bbox stays inside target rect.
+          const bboxPreMove = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+          for (const id of eligibleIds) {
+            try {
+              const b = await getLayerBoundsNoEffects(id);
+              if (Number.isFinite(b.left) && b.right > b.left && b.bottom > b.top) {
+                if (b.left < bboxPreMove.l) bboxPreMove.l = b.left;
+                if (b.top < bboxPreMove.t) bboxPreMove.t = b.top;
+                if (b.right > bboxPreMove.r) bboxPreMove.r = b.right;
+                if (b.bottom > bboxPreMove.b) bboxPreMove.b = b.bottom;
+              }
+            } catch (e) {}
+          }
+          // Pre-move shift by (tgtCenter - srcCenter). Anchor uses the
+          // SOURCE ARTBOARD center (not bbox center) — bbox can be
+          // stretched by large layers (BG photo, adjustments) that extend
+          // beyond the artboard, making bbox-based shifts unreliable.
+          //
+          // SKIP pre-move for downsize cases where the shift would push
+          // upper-half layers to NEGATIVE canvas coords. PS would evict
+          // those layers immediately, and the post-correction step has to
+          // travel a huge distance (1000+ px) to put them back, which is
+          // slower AND often fails (layer might be evicted to doc root
+          // and lose its parent ref). For downsize we let correction do
+          // the heavy lifting on its own — it works directly with the
+          // pre-resize bbox center per layer, no shift needed.
+          const preMoveDx = Math.round(tgtCenterX - srcCenterX);
+          const preMoveDy = Math.round(tgtCenterY - srcCenterY);
+          // Heuristic: pre-move safe only if tgtCenter is reasonably close
+          // to srcCenter (upsize that grows toward srcCenter, or same-size
+          // shift). For large downsize the post-shift Y of upper layers
+          // would be < 0; skip and let correction do per-layer alignment.
+          const preMoveSafeForUpsize = (scale > 1) || (Math.abs(preMoveDx) < tgtCenterX * 0.5 && Math.abs(preMoveDy) < tgtCenterY * 0.5);
+          let preMoveApplied = false;
+          if (preMoveSafeForUpsize && (Math.abs(preMoveDx) > 0.5 || Math.abs(preMoveDy) > 0.5)) {
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+              to: { _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: preMoveDx },
+                vertical: { _unit: "pixelsUnit", _value: preMoveDy } },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            preMoveApplied = true;
+            log(`[V2-USER-FLOW-${label}] pre-move shifted by srcArtboardCenter→tgtArtboardCenter (${preMoveDx},${preMoveDy}) — srcCenter=(${Math.round(srcCenterX)},${Math.round(srcCenterY)}) → tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
+          } else {
+            log(`[V2-USER-FLOW-${label}] skipped pre-move (would push layers off-canvas or no shift needed: dx=${preMoveDx} dy=${preMoveDy}) — correction step will handle alignment`);
+          }
+
+          // Snapshot pre-scale centers AFTER pre-move (so correction math
+          // uses post-move positions).
           const preCenters = new Map();
           for (const id of eligibleIds) {
             try {
@@ -3424,7 +3505,8 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           }
 
           // Batch scale by percent. PS pivots around its computed average
-          // center (QCSAverage); we'll correct per-layer after.
+          // center (QCSAverage); after pre-move that's near tgtCenter, so
+          // post-scale positions stay within artboard rect (no eviction).
           await bp([{
             _obj: "transform",
             _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
@@ -3434,13 +3516,16 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
             interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
             _options: { dialogOptions: "dontDisplay" }
           }]);
-          log(`[V2-USER-FLOW] batch scaled ${eligibleIds.length} layers by ${(scale * 100).toFixed(1)}%`);
+          log(`[V2-USER-FLOW-${label}] batch scaled ${eligibleIds.length} layers by ${(scale * 100).toFixed(1)}%`);
 
-          // Per-layer position correction: each layer's new tâm should be
-          // pivot + (preCenter - pivot) * scale. Move from current tâm.
-          // Target tâm = srcCenter + (preCenter - srcCenter) * scale
-          //            = srcCenter * (1 - scale) + preCenter * scale
+          // Per-layer position correction. Optimization: group layers that
+          // need the SAME (dx, dy) offset and issue ONE multi-select + ONE
+          // move call per group. PS batchPlay round-trips cost ~1s each, so
+          // collapsing 15 individual moves into 2-3 group moves cuts target
+          // time from ~15-30s down to ~2-4s. Also reduces scratch-disk
+          // pressure (each PS history entry writes to disk).
           let corrected = 0, maxDrift = 0;
+          const moveGroups = new Map(); // "dx,dy" → [id, id, ...]
           for (const id of eligibleIds) {
             const pre = preCenters.get(id);
             if (!pre) continue;
@@ -3449,26 +3534,50 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
               if (!Number.isFinite(b.left)) continue;
               const curCx = (b.left + b.right) / 2;
               const curCy = (b.top + b.bottom) / 2;
-              const newCx = tgtCenterX + (pre.cx - srcCenterX) * scale;
-              const newCy = tgtCenterY + (pre.cy - srcCenterY) * scale;
+              // Pivot depends on whether pre-move ran.
+              //   preMoveApplied=true: layers shifted so bbox≈tgtCenter.
+              //     pre.cx is now relative to tgtCenter — pivot = tgtCenter.
+              //   preMoveApplied=false: layers at original positions.
+              //     pre.cx is relative to srcCenter — pivot = srcCenter.
+              const pivotX = preMoveApplied ? tgtCenterX : srcCenterX;
+              const pivotY = preMoveApplied ? tgtCenterY : srcCenterY;
+              const newCx = tgtCenterX + (pre.cx - pivotX) * scale;
+              const newCy = tgtCenterY + (pre.cy - pivotY) * scale;
               const dx = Math.round(newCx - curCx);
               const dy = Math.round(newCy - curCy);
               const drift = Math.max(Math.abs(dx), Math.abs(dy));
               if (drift > 0.5) {
-                await bp([{
-                  _obj: "move",
-                  _target: [{ _ref: "layer", _id: id }],
-                  to: { _obj: "offset",
-                    horizontal: { _unit: "pixelsUnit", _value: dx },
-                    vertical: { _unit: "pixelsUnit", _value: dy } },
-                  _options: { dialogOptions: "dontDisplay" }
-                }]);
-                corrected++;
+                const key = `${dx},${dy}`;
+                if (!moveGroups.has(key)) moveGroups.set(key, []);
+                moveGroups.get(key).push(id);
                 if (drift > maxDrift) maxDrift = drift;
               }
             } catch (e) {}
           }
-          log(`[V2-USER-FLOW] post-batch corrected ${corrected}/${eligibleIds.length} layers (max drift ${maxDrift}px)`);
+          // Issue 1 select + move per group.
+          for (const [key, ids] of moveGroups.entries()) {
+            const [dx, dy] = key.split(",").map(Number);
+            try {
+              await bp([{
+                _obj: "select",
+                _target: ids.map(id => ({ _ref: "layer", _id: id })),
+                makeVisible: false,
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              await bp([{
+                _obj: "move",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                to: { _obj: "offset",
+                  horizontal: { _unit: "pixelsUnit", _value: dx },
+                  vertical: { _unit: "pixelsUnit", _value: dy } },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              corrected += ids.length;
+            } catch (e) {
+              log(`[V2-USER-FLOW-${label}] group move (${dx},${dy}) for ${ids.length} layer(s) failed: ${e.message}`);
+            }
+          }
+          log(`[V2-USER-FLOW-${label}] post-batch corrected ${corrected}/${eligibleIds.length} layers in ${moveGroups.size} group move(s) (max drift ${maxDrift}px)`);
 
           // Re-lock layers that were unlocked at the start of this flow.
           if (lockedLayers.length > 0) {
@@ -3486,14 +3595,31 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
                 relocked++;
               } catch (e) {}
             }
-            log(`[V2-USER-FLOW] re-locked ${relocked}/${lockedLayers.length} layer(s)`);
+            log(`[V2-USER-FLOW-${label}] re-locked ${relocked}/${lockedLayers.length} layer(s)`);
           }
         } else {
-          log(`[V2-USER-FLOW] skipped scale — nothing eligible or scale=1`);
+          log(`[V2-USER-FLOW-${label}] skipped scale — nothing eligible or scale=1`);
         }
       } catch (e) {
-        log(`[V2-USER-FLOW] failed: ${e.message} — falling back to legacy flow`);
+        log(`[V2-USER-FLOW-${label}] failed: ${e.message}`);
       }
+    } // end runUserFlowScale
+
+    // DOWNSIZE branch: target smaller than source. Scale layers DOWN now,
+    // then resize artboard down. PS shrink-without-scale would evict layers.
+    if (useUserStyleFlow && !isUpsize) {
+      try {
+        const _doc = app.activeDocument;
+        log(`[V2-CANVAS-DBG] BEFORE user-flow scale (downsize): doc canvas=${_doc.width}x${_doc.height}`);
+        const _srcDesc = await getLayerDescriptor(source.id);
+        const _srcRect = rectSize(_srcDesc.artboard?.artboardRect || _srcDesc.bounds);
+        log(`[V2-CANVAS-DBG] source artboard now at canvas=(${_srcRect.left},${_srcRect.top}) ${_srcRect.width}x${_srcRect.height}`);
+      } catch (e) {}
+      // tgtRect = source-sized rect (300x600). srcLogical = same.
+      // tgtLogical = desired (540x960). After this scale, layers are at
+      // the final target size + at the right positions, and we'll shrink
+      // the artboard rect afterwards.
+      await runUserFlowScale(tgtRect.width, tgtRect.height, target.width, target.height, tgtRect, "DOWN");
       perfLog(`[V2-PERF] step: user-flow scale+correct`, tAfterPreResize);
     }
     const tBeforeResize = perfNow();
@@ -3661,16 +3787,84 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
         log(`[V2-RESIZE] !! API "${RESIZE_API}" preserved artboard but did NOT resize (still ${afterResizeRect.width}x${afterResizeRect.height})`);
       } else {
         log(`[V2-RESIZE] ✓ API "${RESIZE_API}" works — artboard preserved + resized to ${target.width}x${target.height}`);
+        try {
+          const _doc = app.activeDocument;
+          log(`[V2-CANVAS-DBG] AFTER resize: doc canvas=${_doc.width}x${_doc.height}`);
+          // Re-check source artboard position
+          const _srcDesc = await getLayerDescriptor(source.id);
+          const _srcRect = rectSize(_srcDesc.artboard?.artboardRect || _srcDesc.bounds);
+          log(`[V2-CANVAS-DBG] source artboard "${source.name}" now at canvas=(${_srcRect.left},${_srcRect.top}) ${_srcRect.width}x${_srcRect.height}`);
+        } catch (e) {}
         perfLog(`[V2-PERF] step: resize-artboard`, tBeforeResize);
       }
     } catch (e) {
       log(`[V2-RESIZE] API "${RESIZE_API}" threw: ${e.message}`);
     }
 
+    // UPSIZE branch: target larger than source. Artboard rect is now at
+    // TARGET size (e.g. 600x1200) — layers still at SOURCE size (e.g.
+    // 300x600 inside the larger rect). Scale layers UP now to fill the
+    // target rect. We use the ORIGINAL source size as srcLogical (so the
+    // scale factor > 1) and target size as tgtLogical. Anchor uses the
+    // current (target-sized) artboard rect, since layers are positioned
+    // relative to it now.
+    if (useUserStyleFlow && isUpsize) {
+      try {
+        try {
+          const _doc = app.activeDocument;
+          log(`[V2-CANVAS-DBG] BEFORE user-flow scale (upsize): doc canvas=${_doc.width}x${_doc.height}`);
+          const _srcDesc = await getLayerDescriptor(source.id);
+          const _srcRect = rectSize(_srcDesc.artboard?.artboardRect || _srcDesc.bounds);
+          log(`[V2-CANVAS-DBG] source artboard now at canvas=(${_srcRect.left},${_srcRect.top}) ${_srcRect.width}x${_srcRect.height}`);
+        } catch (e) {}
+        // Re-read newAb rect (current = target size).
+        const dCur = await getLayerDescriptor(newAb.id);
+        const curRect = rectSize(dCur.artboard?.artboardRect || dCur.bounds);
+        // srcLogical = original source size (tgtRect.width before resize).
+        // currentRect = target-sized artboard rect.
+        await runUserFlowScale(tgtRect.width, tgtRect.height, target.width, target.height, curRect, "UP");
+        perfLog(`[V2-PERF] step: user-flow scale+correct (upsize)`, tBeforeResize);
+      } catch (e) {
+        log(`[V2-USER-FLOW-UP] outer failed: ${e.message}`);
+      }
+    }
+
     // RE-PARENT orphan children after resizing artboardRect (PS evicts
     // children outside new rect). Helper handles all logic — depth-aware
     // sort, original-parent lookup, z-order preservation.
     const tBeforeReparent = perfNow();
+    // DEBUG: dump tree state BEFORE reparent so we can see where PS placed
+    // layers after resize. Includes id of every layer + its parent id.
+    try {
+      const docHandle = app.activeDocument;
+      log(`[V2-PRE-REPARENT-DBG] newAb.id=${newAb.id} doc root layer count=${docHandle.layers.length}`);
+      log(`[V2-PRE-REPARENT-DBG] === newAb tree ===`);
+      async function dumpTree(parent, depth) {
+        const indent = "  ".repeat(depth);
+        for (const l of parent.layers || []) {
+          try {
+            const b = await getLayerBoundsNoEffects(l.id);
+            const bs = Number.isFinite(b?.left) ? `bounds=(${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.right)},${Math.round(b.bottom)}) ${Math.round(b.right-b.left)}x${Math.round(b.bottom-b.top)}` : "bounds=?";
+            log(`[V2-PRE-REPARENT-DBG] ${indent}"${l.name}" id=${l.id} parent=${parent.id} ${bs}`);
+          } catch (e) {
+            log(`[V2-PRE-REPARENT-DBG] ${indent}"${l.name}" id=${l.id} parent=${parent.id} (bounds err: ${e.message})`);
+          }
+          if (l.layers && l.layers.length) await dumpTree(l, depth + 1);
+        }
+      }
+      await dumpTree(newAb, 0);
+      log(`[V2-PRE-REPARENT-DBG] === doc root layers (not in newAb) ===`);
+      for (const l of docHandle.layers || []) {
+        if (l.id === newAb.id) continue;
+        try {
+          const b = await getLayerBoundsNoEffects(l.id);
+          const bs = Number.isFinite(b?.left) ? `bounds=(${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.right)},${Math.round(b.bottom)})` : "bounds=?";
+          log(`[V2-PRE-REPARENT-DBG]   "${l.name}" id=${l.id} ${bs}`);
+        } catch (e) {}
+      }
+    } catch (e) {
+      log(`[V2-PRE-REPARENT-DBG] dump failed: ${e.message}`);
+    }
     await runReparent("POST-RESIZE");
     perfLog(`[V2-PERF] step: reparent-post-resize`, tBeforeReparent);
 
@@ -8355,6 +8549,1452 @@ async function createTestFile() {
 
 createTestFileBtn?.addEventListener("click", createTestFile);
 
+// ─── Test Group-Resize Pipeline ───
+// Implements the "group children → resize artboard → scale group → ungroup"
+// approach. Key insight: PS only checks containment at direct children of
+// artboard. A temp group containing all children acts as a single direct
+// child whose bbox intersects the artboard → no auto-eject when artboard
+// shrinks, no canvas grow, no orphans. After resize, scale the group with
+// `scaleStyles: true` to preserve layer effects, then ungroup.
+
+const testGroupResizeBtn = document.getElementById("testGroupResizeBtn");
+
+async function _grFindNewArtboardAfter(beforeIds, doc) {
+  for (const l of doc.layers) {
+    if (!beforeIds.has(l.id)) {
+      try {
+        const d = await getLayerDescriptor(l.id);
+        if (d.artboardEnabled || d.artboard) return l;
+      } catch (e) {}
+    }
+  }
+  return null;
+}
+
+async function runTestGroupResize() {
+  try {
+    const source = await resolveSelectedArtboard();
+    if (!source) { log(`[GR-TEST] No artboard selected.`); return; }
+
+    const sizesEl = document.getElementById("sizesInput");
+    const raw = (sizesEl?.value || "").trim();
+    const tokens = raw.split(/[\s,]+/).filter(Boolean);
+    const sizes = [];
+    for (const tok of tokens) {
+      const m = tok.match(/^(\d+)x(\d+)$/i);
+      if (m) sizes.push({ raw: `${m[1]}x${m[2]}`, w: parseInt(m[1], 10), h: parseInt(m[2], 10) });
+      else log(`[GR-TEST] skipping invalid size token "${tok}"`);
+    }
+    if (sizes.length === 0) { log(`[GR-TEST] no valid sizes parsed.`); return; }
+
+    const doc = app.activeDocument;
+    log(`[GR-TEST] === Test Group-Resize Pipeline (FULL flow, ${sizes.length} size${sizes.length>1?"s":""}) ===`);
+    log(`[GR-TEST] source="${source.name}" id=${source.id} sizes=[${sizes.map(s=>s.raw).join(", ")}]`);
+
+    await core.executeAsModal(async () => {
+      // Re-resolve source rect ONCE outside loop. Source artboard position
+      // shouldn't change between clones (we don't touch source), so this is
+      // safe to cache.
+      const srcDescTop = await getLayerDescriptor(source.id);
+      const srcRTop = rectSize(srcDescTop.artboard?.artboardRect || srcDescTop.bounds);
+      const W1 = srcRTop.width, H1 = srcRTop.height;
+      let nextX = srcRTop.right + 80;  // grid X for first clone
+      const baseTop = srcRTop.top;
+
+      for (let i = 0; i < sizes.length; i++) {
+        const { raw: targetRaw, w: targetW, h: targetH } = sizes[i];
+        log(`[GR-TEST] --- (${i+1}/${sizes.length}) target=${targetRaw} ---`);
+
+      const scale = Math.min(targetW / W1, targetH / H1);
+      const contentW = W1 * scale;
+      const contentH = H1 * scale;
+      const offsetX = (targetW - contentW) / 2;
+      const offsetY = (targetH - contentH) / 2;
+      log(`[GR-TEST] W1=${W1} H1=${H1} → target=${targetW}x${targetH} scale=${scale.toFixed(4)} offset=(${offsetX},${offsetY})`);
+
+      // 1) Duplicate source artboard.
+      const beforeIds = new Set();
+      for (const l of doc.layers) beforeIds.add(l.id);
+      await selectLayerById(source.id);
+      await bp([{
+        _obj: "duplicate",
+        _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      const newAb = await _grFindNewArtboardAfter(beforeIds, doc);
+      if (!newAb) { log(`[GR-TEST] could not find duplicated artboard`); continue; }
+      log(`[GR-TEST] duplicated artboard id=${newAb.id}`);
+
+      // Move duplicate to grid position (nextX, baseTop).
+      const targetLeft = nextX;
+      const targetTop  = baseTop;
+      const dDup = await getLayerDescriptor(newAb.id);
+      const rDup = rectSize(dDup.artboard?.artboardRect || dDup.bounds);
+      const moveDx = targetLeft - rDup.left;
+      const moveDy = targetTop  - rDup.top;
+      if (moveDx !== 0 || moveDy !== 0) {
+        await selectLayerById(newAb.id);
+        await bp([{
+          _obj: "move",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          to: { _obj: "offset",
+            horizontal: { _unit: "pixelsUnit", _value: moveDx },
+            vertical: { _unit: "pixelsUnit", _value: moveDy } },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      }
+      log(`[GR-TEST] moved duplicate to (${targetLeft},${targetTop})`);
+
+      // SNAPSHOT visibility + style of every descendant BEFORE any transform.
+      // PS may flip visibility during transform/move, and reparent operations
+      // can drop clipping flags. We restore both at the end.
+      const visibilityMap = new Map();
+      const styleMap = new Map();
+      async function snapshotTree(parent) {
+        for (const l of parent.layers || []) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            visibilityMap.set(l.id, d.visible !== false);
+            styleMap.set(l.id, {
+              name: l.name,
+              kind: l.kind,
+              group: d.group === true,  // clipping flag
+              blendMode: d.mode?._value || d.mode || (l.blendMode ?? null),
+              opacity: typeof d.opacity?._value === "number" ? d.opacity._value
+                     : typeof d.opacity === "number" ? d.opacity : null,
+            });
+          } catch (e) {}
+          if (l.layers && l.layers.length) await snapshotTree(l);
+        }
+      }
+      await snapshotTree(newAb);
+      const hiddenCount = [...visibilityMap.values()].filter(v => !v).length;
+      const clippedCount = [...styleMap.values()].filter(s => s.group).length;
+      log(`[GR-TEST] snapshot: ${visibilityMap.size} layers, ${hiddenCount} hidden, ${clippedCount} clipped`);
+
+      // 2) Group DIRECT children of newAb into a temp group, EXCLUDING
+      //    canvas-cover fills (e.g. background solidColor that spans the
+      //    entire doc — these act as artboard background and shouldn't be
+      //    scaled). The temp group will contain only the real content
+      //    layers/subgroups; the background stays as a direct child of the
+      //    artboard so PS's containment check passes for it too.
+      const allChildren = [...(newAb.layers || [])];
+      const childrenToGroup = [];
+      const childrenSkipped = [];
+      for (const l of allChildren) {
+        const isFillKind = l.kind === "solidColor" || l.kind === "solidFill"
+          || l.kind === "gradientFill" || l.kind === "pattern";
+        let skip = false;
+        if (isFillKind) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            const hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+            if (!hasVectorMask) {
+              const b = rectSize(d.bounds);
+              const isFullCanvas = b
+                && Math.abs(b.width  - doc.width)  < 4
+                && Math.abs(b.height - doc.height) < 4
+                && Math.abs(b.left) < 4 && Math.abs(b.top) < 4;
+              if (isFullCanvas) skip = true;
+            }
+          } catch (e) {}
+        }
+        if (skip) childrenSkipped.push(l.name);
+        else childrenToGroup.push(l);
+      }
+      log(`[GR-TEST] grouping ${childrenToGroup.length} direct children, skipped ${childrenSkipped.length} canvas-cover fills (${childrenSkipped.join(", ")})`);
+      if (childrenToGroup.length === 0) {
+        log(`[GR-TEST] no content children to group, aborting`);
+        return;
+      }
+      // Multi-select children.
+      await bp(childrenToGroup.map((l, i) => {
+        const cmd = {
+          _obj: "select",
+          _target: [{ _ref: "layer", _id: l.id }],
+          makeVisible: false,
+          _options: { dialogOptions: "dontDisplay" }
+        };
+        if (i > 0) cmd.selectionModifier = { _enum: "selectionModifierType", _value: "addToSelection" };
+        return cmd;
+      }));
+      // Group via `make layerSection`.
+      const tempGroupName = "__gr_test_temp__";
+      await bp([{
+        _obj: "make",
+        _target: [{ _ref: "layerSection" }],
+        from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+        using: { _obj: "layerSection", name: tempGroupName },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      // Find the temp group (it's the new active layer).
+      const tempGroup = doc.activeLayers[0];
+      if (!tempGroup) { log(`[GR-TEST] could not find temp group after make`); return; }
+      const tempGroupId = tempGroup.id;
+      log(`[GR-TEST] created temp group "${tempGroup.name}" id=${tempGroupId}`);
+      // Probe initial bounds (before resize). Use boundsNoEffects to get
+      // raw layer bounds without effects/masks expanding the box.
+      try {
+        const dInit = await getLayerDescriptor(tempGroupId);
+        const bInit = rectSize(dInit.bounds);
+        const bNoEff = await getLayerBoundsNoEffects(tempGroupId).catch(() => null);
+        log(`[GR-TEST] temp group INITIAL bounds=(L${bInit.left},T${bInit.top},R${bInit.right},B${bInit.bottom}) ${bInit.width}x${bInit.height}`);
+        if (bNoEff) log(`[GR-TEST] temp group INITIAL boundsNoEffects=(L${Math.round(bNoEff.left)},T${Math.round(bNoEff.top)},R${Math.round(bNoEff.right)},B${Math.round(bNoEff.bottom)})`);
+        // Dump children
+        const childList = dInit.layers || [];
+        log(`[GR-TEST] temp group has ${childList.length} children (from descriptor)`);
+      } catch (e) { log(`[GR-TEST] initial bounds probe failed: ${e.message}`); }
+
+      // 3) Resize artboard to target size.
+      await selectLayerById(newAb.id);
+      const _docBefore = app.activeDocument;
+      log(`[GR-TEST] BEFORE resize: canvas=${_docBefore.width}x${_docBefore.height}`);
+      await bp([{
+        _obj: "editArtboardEvent",
+        _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+        artboard: {
+          _obj: "artboard",
+          artboardRect: {
+            _obj: "classFloatRect",
+            top: targetTop, left: targetLeft,
+            bottom: targetTop + targetH, right: targetLeft + targetW
+          },
+          guideIDs: [],
+          artboardPresetName: "Custom",
+          color: { _obj: "RGBColor", red: 255, grain: 255, blue: 255 },
+          artboardBackgroundType: 1
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      const _docAfter = app.activeDocument;
+      log(`[GR-TEST] AFTER resize: canvas=${_docAfter.width}x${_docAfter.height}`);
+      const newAbDesc = await getLayerDescriptor(newAb.id);
+      const newAbR = rectSize(newAbDesc.artboard?.artboardRect || newAbDesc.bounds);
+      log(`[GR-TEST] artboard rect after resize=(L${newAbR.left},T${newAbR.top},R${newAbR.right},B${newAbR.bottom}) ${newAbR.width}x${newAbR.height}`);
+
+      // Probe temp group bounds after resize.
+      const groupDescPostResize = await getLayerDescriptor(tempGroupId);
+      const groupRPostResize = rectSize(groupDescPostResize.bounds);
+      const groupRPostResizeNoEff = await getLayerBoundsNoEffects(tempGroupId).catch(() => null);
+      log(`[GR-TEST] temp group POST-RESIZE bounds=(L${groupRPostResize.left},T${groupRPostResize.top},R${groupRPostResize.right},B${groupRPostResize.bottom})`);
+      if (groupRPostResizeNoEff) log(`[GR-TEST] temp group POST-RESIZE boundsNoEffects=(L${Math.round(groupRPostResizeNoEff.left)},T${Math.round(groupRPostResizeNoEff.top)},R${Math.round(groupRPostResizeNoEff.right)},B${Math.round(groupRPostResizeNoEff.bottom)})`);
+      log(`[GR-TEST] temp group parent=${groupDescPostResize.parentLayerID ?? "(root)"}`);
+      // Dump first 3 children bounds for sanity check.
+      try {
+        const childList = groupDescPostResize.layers || [];
+        log(`[GR-TEST] temp group has ${childList.length} children post-resize`);
+        // Try via UXP DOM (re-resolve from doc tree).
+        let domGroup = null;
+        function findById(parent, id) {
+          for (const l of parent.layers || []) {
+            if (l.id === id) return l;
+            const r = findById(l, id);
+            if (r) return r;
+          }
+          return null;
+        }
+        domGroup = findById(doc, tempGroupId);
+        if (domGroup) {
+          log(`[GR-TEST] DOM group resolved: name="${domGroup.name}" kind=${domGroup.kind} childCount=${(domGroup.layers||[]).length}`);
+          for (const ch of (domGroup.layers || []).slice(0, 3)) {
+            const cb = await getLayerBoundsNoEffects(ch.id).catch(() => null);
+            log(`[GR-TEST]   child "${ch.name}" id=${ch.id} kind=${ch.kind} bounds=${cb ? `(${Math.round(cb.left)},${Math.round(cb.top)},${Math.round(cb.right)},${Math.round(cb.bottom)})` : "?"}`);
+          }
+        } else {
+          log(`[GR-TEST] DOM group NOT found by id=${tempGroupId}`);
+        }
+      } catch (e) { log(`[GR-TEST] child dump failed: ${e.message}`); }
+
+      // 4a) UNLOCK + SHOW all descendants of temp group. PS rejects move/
+      //     transform on a group if ANY descendant is locked (protectPosition,
+      //     protectAll) or hidden. We unlock + show everything, do the
+      //     transform, then restore lock + hide state in post-process step.
+      const lockedDescendants = []; // { id, protectAll, protectPosition, protectTransparency, protectComposite }
+      const hiddenDescendants = []; // ids that were hidden
+      try {
+        async function collectIds(parent, out) {
+          for (const l of parent.layers || []) {
+            out.push(l.id);
+            if (l.layers && l.layers.length) await collectIds(l, out);
+          }
+        }
+        // Re-resolve temp group via DOM.
+        let tempGroupNode = null;
+        function findById(parent, id) {
+          for (const l of parent.layers || []) {
+            if (l.id === id) return l;
+            const r = findById(l, id);
+            if (r) return r;
+          }
+          return null;
+        }
+        tempGroupNode = findById(doc, tempGroupId);
+        const descIds = [];
+        if (tempGroupNode) await collectIds(tempGroupNode, descIds);
+        for (const id of descIds) {
+          try {
+            const d = await getLayerDescriptor(id);
+            const lk = d.layerLocking;
+            const protectAll = !!(lk && (lk.protectAll === true || lk.protectAll?._value === true));
+            const protectPosition = !!(lk && (lk.protectPosition === true || lk.protectPosition?._value === true));
+            const protectTransparency = !!(lk && (lk.protectTransparency === true || lk.protectTransparency?._value === true));
+            const protectComposite = !!(lk && (lk.protectComposite === true || lk.protectComposite?._value === true));
+            if (protectAll || protectPosition || protectTransparency || protectComposite) {
+              lockedDescendants.push({ id, protectAll, protectPosition, protectTransparency, protectComposite });
+              await bp([{
+                _obj: "applyLocking",
+                _target: [{ _ref: "layer", _id: id }],
+                layerLocking: { _obj: "layerLocking",
+                  protectAll: false, protectPosition: false,
+                  protectTransparency: false, protectComposite: false },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            }
+            if (d.visible === false) {
+              hiddenDescendants.push(id);
+              await bp([{
+                _obj: "show",
+                null: [{ _ref: "layer", _id: id }],
+                _options: { dialogOptions: "dontDisplay" }
+              }]).catch(() => {});
+            }
+          } catch (e) {}
+        }
+        log(`[GR-TEST] unlocked ${lockedDescendants.length} locked + showed ${hiddenDescendants.length} hidden descendant(s) for transform`);
+      } catch (e) {
+        log(`[GR-TEST] unlock/show step failed: ${e.message}`);
+      }
+
+      // 4b) Scale temp group by `scale` with scaleStyles=true. Anchor =
+      //     top-left of group (then translate after).
+      await selectLayerById(tempGroupId);
+      await bp([{
+        _obj: "transform",
+        _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+        width:  { _unit: "percentUnit", _value: scale * 100 },
+        height: { _unit: "percentUnit", _value: scale * 100 },
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        scaleStyles: true,
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+      log(`[GR-TEST] scaled temp group by ${(scale*100).toFixed(1)}% (scaleStyles=true)`);
+
+      // 5) Translate temp group so content ends up in the artboard's frame
+      // PROPORTIONALLY to where it was relative to the source artboard.
+      //
+      // Math: each design point P in source artboard (top-left S) lives at
+      // relative position (P - S). After scaling, we want the target point
+      // to live at relative position (P - S) * scale inside target artboard
+      // (top-left also S, since target keeps source's top-left rect).
+      //   P_target = S + (P - S) * scale
+      // PS scales around bbox AVERAGE center C, keeping C fixed. So after
+      // scale: every P_orig → P_postScale = C + (P_orig - C) * scale.
+      // To get P_target, translate by:
+      //   delta_per_point = P_target - P_postScale
+      //                   = [S + (P - S) * scale] - [C + (P - C) * scale]
+      //                   = S - C + (C - S) * scale
+      //                   = (S - C) * (1 - scale)
+      // This delta is CONSTANT for all points → one translate moves everything
+      // into the correct artboard frame.
+      const groupDescPostScale = await getLayerDescriptor(tempGroupId);
+      const groupRPostScale = rectSize(groupDescPostScale.bounds);
+      const groupRPostScaleNoEff = await getLayerBoundsNoEffects(tempGroupId).catch(() => null);
+      log(`[GR-TEST] temp group POST-SCALE bounds=(L${groupRPostScale.left},T${groupRPostScale.top},R${groupRPostScale.right},B${groupRPostScale.bottom})`);
+      if (groupRPostScaleNoEff) log(`[GR-TEST] temp group POST-SCALE boundsNoEffects=(L${Math.round(groupRPostScaleNoEff.left)},T${Math.round(groupRPostScaleNoEff.top)},R${Math.round(groupRPostScaleNoEff.right)},B${Math.round(groupRPostScaleNoEff.bottom)})`);
+      const bn = groupRPostScaleNoEff || groupRPostScale;
+      // Bbox center of the SCALED group (PS keeps this fixed = original
+      // pre-scale bbox center).
+      const Cx = (bn.left + bn.right) / 2;
+      const Cy = (bn.top  + bn.bottom) / 2;
+      // S = source artboard top-left (= target artboard top-left since target
+      // keeps source's top-left rect during resize).
+      const Sx = newAbR.left;
+      const Sy = newAbR.top;
+      // delta = (S - C) * (1 - scale)
+      const tdx = Math.round((Sx - Cx) * (1 - scale));
+      const tdy = Math.round((Sy - Cy) * (1 - scale));
+      log(`[GR-TEST] translating temp group (artboard-frame anchor): C=(${Math.round(Cx)},${Math.round(Cy)}) S=(${Sx},${Sy}) scale=${scale} delta=(${tdx},${tdy})`);
+      if (tdx !== 0 || tdy !== 0) {
+        await bp([{
+          _obj: "move",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          to: { _obj: "offset",
+            horizontal: { _unit: "pixelsUnit", _value: tdx },
+            vertical: { _unit: "pixelsUnit", _value: tdy } },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+      }
+      const groupRFinal = rectSize((await getLayerDescriptor(tempGroupId)).bounds);
+      const groupRFinalNoEff = await getLayerBoundsNoEffects(tempGroupId).catch(() => null);
+      log(`[GR-TEST] temp group FINAL bounds=(L${groupRFinal.left},T${groupRFinal.top},R${groupRFinal.right},B${groupRFinal.bottom})`);
+      if (groupRFinalNoEff) log(`[GR-TEST] temp group FINAL boundsNoEffects=(L${Math.round(groupRFinalNoEff.left)},T${Math.round(groupRFinalNoEff.top)},R${Math.round(groupRFinalNoEff.right)},B${Math.round(groupRFinalNoEff.bottom)})`);
+
+      // 6) Ungroup.
+      await selectLayerById(tempGroupId);
+      try {
+        await bp([{
+          _obj: "ungroupLayersEvent",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[GR-TEST] ungrouped temp group`);
+      } catch (e) {
+        log(`[GR-TEST] ungroup failed: ${e.message} — keeping temp group for debug`);
+      }
+
+      // 7) STRIP " copy"/" copy N" suffix from descendant layer names.
+      try {
+        let renamed = 0;
+        async function stripSuffixTree(parent) {
+          for (const l of parent.layers || []) {
+            const m = String(l.name || "").match(/^(.+?)(?:\s+copy(?:\s+\d+)?)+$/);
+            if (m && m[1] && m[1] !== l.name) {
+              try { l.name = m[1]; renamed++; } catch (e) {}
+            }
+            if (l.layers && l.layers.length) await stripSuffixTree(l);
+          }
+        }
+        await stripSuffixTree(newAb);
+        if (renamed) log(`[GR-TEST] stripped " copy" suffix from ${renamed} layer(s)`);
+      } catch (e) {
+        log(`[GR-TEST] strip-suffix failed: ${e.message}`);
+      }
+
+      // 8) RENAME artboard: replace size token in name (or append if not present).
+      try {
+        const { base: baseName, sep: baseSep, tail: baseTail } = stripSizeSuffix(source.name);
+        const newName = `${baseName}${baseSep || " - "}${targetRaw}${baseTail || ""}`;
+        try { newAb.name = newName; } catch (e) {
+          await bp([{
+            _obj: "set",
+            _target: [{ _ref: "layer", _id: newAb.id }],
+            to: { _obj: "layer", name: newName },
+            _options: { dialogOptions: "dontDisplay" }
+          }]).catch(() => {});
+        }
+        log(`[GR-TEST] renamed artboard → "${newName}"`);
+      } catch (e) {
+        log(`[GR-TEST] rename artboard failed: ${e.message}`);
+      }
+
+      // 9) RESTORE visibility: re-hide layers that were hidden in source.
+      try {
+        let restored = 0;
+        for (const [layerId, wasVisible] of visibilityMap.entries()) {
+          if (wasVisible) continue;
+          try {
+            await bp([{
+              _obj: "hide",
+              null: [{ _ref: "layer", _id: layerId }],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            restored++;
+          } catch (e) {}
+        }
+        if (restored > 0) log(`[GR-TEST] restored visibility (hidden) for ${restored} layer(s)`);
+      } catch (e) {
+        log(`[GR-TEST] visibility restore failed: ${e.message}`);
+      }
+
+      // 9b) RESTORE locks for layers that were locked at the start.
+      try {
+        let relocked = 0;
+        for (const lk of lockedDescendants) {
+          try {
+            await bp([{
+              _obj: "applyLocking",
+              _target: [{ _ref: "layer", _id: lk.id }],
+              layerLocking: { _obj: "layerLocking",
+                protectAll: lk.protectAll,
+                protectPosition: lk.protectPosition,
+                protectTransparency: lk.protectTransparency,
+                protectComposite: lk.protectComposite },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            relocked++;
+          } catch (e) {}
+        }
+        if (relocked > 0) log(`[GR-TEST] restored locks for ${relocked} layer(s)`);
+      } catch (e) {
+        log(`[GR-TEST] lock restore failed: ${e.message}`);
+      }
+
+      // 10) RESTORE clipping flags: re-apply clipping mask to layers that
+      //     had it before clone.
+      try {
+        let restored = 0;
+        for (const [id, before] of styleMap.entries()) {
+          if (!before.group) continue;
+          try {
+            const d = await getLayerDescriptor(id);
+            if (d.group === true) continue;
+            await bp([{
+              _obj: "groupEvent",
+              _target: [{ _ref: "layer", _id: id }],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            restored++;
+          } catch (e) {}
+        }
+        if (restored > 0) log(`[GR-TEST] restored clipping for ${restored} layer(s)`);
+      } catch (e) {
+        log(`[GR-TEST] clipping restore failed: ${e.message}`);
+      }
+
+      // Final verification.
+      const newAbFinalDesc = await getLayerDescriptor(newAb.id);
+      const newAbFinalR = rectSize(newAbFinalDesc.artboard?.artboardRect || newAbFinalDesc.bounds);
+      log(`[GR-TEST] (${i+1}/${sizes.length}) DONE artboard "${newAb.name}" rect=(L${newAbFinalR.left},T${newAbFinalR.top},R${newAbFinalR.right},B${newAbFinalR.bottom}) ${newAbFinalR.width}x${newAbFinalR.height}`);
+
+      // Advance grid X for next iteration.
+      // Use the union bbox of all descendants (which may extend beyond the
+      // artboard rect if source content does). Falls back to artboard width
+      // if union calc fails.
+      let advanceW = targetW;
+      try {
+        let uR = -Infinity;
+        async function walkRight(parent) {
+          for (const l of parent.layers || []) {
+            try {
+              const b = await getLayerBoundsNoEffects(l.id);
+              if (Number.isFinite(b?.right) && b.right > uR) uR = b.right;
+            } catch (e) {}
+            if (l.layers && l.layers.length) await walkRight(l);
+          }
+        }
+        await walkRight(newAb);
+        if (Number.isFinite(uR) && uR > newAbFinalR.left) {
+          const contentW = uR - newAbFinalR.left;
+          advanceW = Math.max(targetW, Math.ceil(contentW));
+        }
+      } catch (e) {}
+      log(`[GR-TEST] grid advance: width=${advanceW} (artboard=${targetW}${advanceW > targetW ? ", content extends" : ""})`);
+      nextX += advanceW + 80;
+      }  // end for-loop
+      log(`[GR-TEST] === ALL DONE. ${sizes.length} clone(s) created ===`);
+    }, { commandName: "Banner Cloner — Test Group-Resize" });
+  } catch (e) {
+    log(`[GR-TEST] error: ${e.message}`);
+  }
+}
+
+testGroupResizeBtn?.addEventListener("click", runTestGroupResize);
+
+// ─── Test Temp-Doc Pipeline ───
+// Cleaner version of group-resize: do all the messy work in a temp document
+// so canvas-grow side-effects don't pollute the source document. Pipeline:
+//   1. Duplicate source artboard within source doc (gives us a working copy)
+//   2. Move that artboard to a NEW temp doc (size = source artboard size)
+//   3. In temp doc: group children → resize artboard → scale group → ungroup
+//   4. Move resized artboard back to source doc at grid position
+//   5. Close temp doc (don't save)
+
+const testTempDocBtn = document.getElementById("testTempDocBtn");
+
+async function runTestTempDoc() {
+  try {
+    const source = await resolveSelectedArtboard();
+    if (!source) { log(`[TD-TEST] No artboard selected.`); return; }
+
+    const sizesEl = document.getElementById("sizesInput");
+    const raw = (sizesEl?.value || "").trim();
+    const tokens = raw.split(/[\s,]+/).filter(Boolean);
+    const sizes = [];
+    for (const tok of tokens) {
+      const m = tok.match(/^(\d+)x(\d+)$/i);
+      if (m) sizes.push({ raw: `${m[1]}x${m[2]}`, w: parseInt(m[1], 10), h: parseInt(m[2], 10) });
+      else log(`[TD-TEST] skipping invalid size token "${tok}"`);
+    }
+    if (sizes.length === 0) { log(`[TD-TEST] no valid sizes parsed.`); return; }
+
+    const sourceDoc = app.activeDocument;
+    const tStart = performance.now();
+    const tStep = (() => { let prev = tStart; return (label) => { const now = performance.now(); const dt = Math.round(now - prev); prev = now; log(`[TD-TIME] +${dt}ms — ${label}`); return now; }; })();
+    log(`[TD-TEST] === Test Temp-Doc Pipeline (${sizes.length} size${sizes.length>1?"s":""}) ===`);
+    log(`[TD-TEST] source="${source.name}" id=${source.id} sourceDoc="${sourceDoc.title}" sizes=[${sizes.map(s=>s.raw).join(", ")}]`);
+
+    await core.executeAsModal(async () => {
+      // Read source artboard rect ONCE.
+      const srcDescTop = await getLayerDescriptor(source.id);
+      const srcRTop = rectSize(srcDescTop.artboard?.artboardRect || srcDescTop.bounds);
+      const srcW = srcRTop.width, srcH = srcRTop.height;
+      let nextX = srcRTop.right + 80;
+      const baseTop = srcRTop.top;
+      log(`[TD-TEST] source artboard rect=(L${srcRTop.left},T${srcRTop.top}) ${srcW}x${srcH}`);
+
+      for (let i = 0; i < sizes.length; i++) {
+        const { raw: targetRaw, w: targetW, h: targetH } = sizes[i];
+        const tIterStart = performance.now();
+        log(`[TD-TEST] --- (${i+1}/${sizes.length}) target=${targetRaw} ---`);
+        tStep(`iter ${i+1}/${sizes.length} ${targetRaw} START`);
+
+        const scale = Math.min(targetW / srcW, targetH / srcH);
+
+        // SNAPSHOT source artboard:
+        //   - sourceDirectOrder: names of DIRECT children, top→bottom order.
+        //     Used to restore order at direct-child level only.
+        //   - sourceVisByName: ALL descendants name → visible. Used to
+        //     restore visibility throughout the tree.
+        // Don't flatten nested structure during restore — only fix order at
+        // direct-child level + visibility at every level.
+        const sourceDirectOrder = [];
+        const sourceVisByName = new Map();
+        try {
+          function findById(parent, id) {
+            for (const l of parent.layers || []) {
+              if (l.id === id) return l;
+              const r = findById(l, id);
+              if (r) return r;
+            }
+            return null;
+          }
+          const sourceFresh = findById(sourceDoc, source.id) || source;
+          // Snapshot direct children names + ALL descendants visibility.
+          for (const l of sourceFresh.layers || []) {
+            sourceDirectOrder.push(l.name);
+          }
+          async function walkVisTree(parent) {
+            for (const l of parent.layers || []) {
+              try {
+                const d = await getLayerDescriptor(l.id);
+                sourceVisByName.set(l.name, d.visible !== false);
+              } catch (e) {}
+              if (l.layers && l.layers.length) await walkVisTree(l);
+            }
+          }
+          await walkVisTree(sourceFresh);
+          log(`[TD-TEST] snapshot source: ${sourceDirectOrder.length} direct children, ${sourceVisByName.size} total descendants (${[...sourceVisByName.values()].filter(v=>!v).length} hidden)`);
+        } catch (e) {
+          log(`[TD-TEST] source snapshot failed: ${e.message}`);
+        }
+        tStep("snapshot source order+visibility");
+
+        // 1) Create temp doc size = source artboard size.
+        let tempDoc = null;
+        try {
+          tempDoc = await app.createDocument({
+            width: srcW,
+            height: srcH,
+            resolution: sourceDoc.resolution,
+            mode: "RGBColorMode",
+            fill: "transparent",
+            name: `__td_test_${targetRaw}__`
+          });
+          log(`[TD-TEST] created temp doc "${tempDoc.title}" id=${tempDoc.id} ${srcW}x${srcH}`);
+          tStep("create temp doc");
+        } catch (e) {
+          log(`[TD-TEST] createDocument failed: ${e.message}`);
+          continue;
+        }
+
+        // 2) Duplicate source artboard DIRECTLY cross-doc → temp doc.
+        try {
+          await bp([{
+            _obj: "select",
+            _target: [{ _ref: "document", _id: sourceDoc.id }],
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          await selectLayerById(source.id);
+          await bp([{
+            _obj: "duplicate",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            to: { _ref: "document", _id: tempDoc.id },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`[TD-TEST] duplicated source artboard cross-doc → temp doc`);
+          tStep("cross-doc duplicate source → temp");
+        } catch (e) {
+          log(`[TD-TEST] cross-doc duplicate failed: ${e.message}`);
+          try { await tempDoc.closeWithoutSaving(); } catch (e2) {}
+          continue;
+        }
+
+        // 4) In temp doc: find the new artboard, then run resize+scale+ungroup.
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "document", _id: tempDoc.id }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+
+        // Find the artboard in temp doc (should be the only artboard layer).
+        let tempAb = null;
+        for (const l of tempDoc.layers) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            if (d.artboardEnabled || d.artboard) { tempAb = l; break; }
+          } catch (e) {}
+        }
+        if (!tempAb) {
+          log(`[TD-TEST] could not find artboard in temp doc`);
+          try { await tempDoc.closeWithoutSaving(); } catch (e) {}
+          // Also clean up workingAb in source doc
+          try {
+            await bp([{ _obj: "select", _target: [{ _ref: "document", _id: sourceDoc.id }] }]);
+            await selectLayerById(workingAb.id);
+            await bp([{ _obj: "delete", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }] }]);
+          } catch (e) {}
+          continue;
+        }
+        log(`[TD-TEST] temp doc artboard id=${tempAb.id} name="${tempAb.name}"`);
+
+        // REPARENT orphans: cross-doc duplicate sometimes pops non-artboard
+        // layers (or layers extending outside artboard rect) to the root of
+        // the temp doc. Walk root layers, find anything that's not an
+        // artboard, move it INSIDE tempAb.
+        // FAST PATH: skip the per-layer descriptor scan if only 1 root layer
+        // exists (= just the artboard, no orphans).
+        try {
+          const rootLayers = [...(tempDoc.layers || [])];
+          if (rootLayers.length <= 1) {
+            log(`[TD-TEST] only ${rootLayers.length} root layer — skipping initial reparent`);
+            tStep("initial reparent (skipped — fast path)");
+          } else {
+          log(`[TD-TEST] temp doc has ${rootLayers.length} root layers — running initial reparent`);
+          let reparented = 0, defaultDeleted = 0;
+          const orphansForReparent = [];
+          for (const l of rootLayers) {
+            if (l.id === tempAb.id) continue;
+            try {
+              const d = await getLayerDescriptor(l.id);
+              if (d.artboardEnabled || d.artboard) continue;
+              // Delete PS-created empty default layer "Layer 1" (pixel kind,
+              // empty bounds).
+              const b = d.bounds ? rectSize(d.bounds) : null;
+              const isDefaultEmpty = (l.kind === "pixel" || l.kind === undefined)
+                && (l.name === "Layer 1" || l.name === "Background")
+                && (!b || (b.width === 0 && b.height === 0));
+              if (isDefaultEmpty) {
+                try {
+                  await selectLayerById(l.id);
+                  await bp([{ _obj: "delete",
+                    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                    _options: { dialogOptions: "dontDisplay" } }]);
+                  defaultDeleted++;
+                  log(`[TD-TEST]   deleted default empty layer "${l.name}"`);
+                  continue;
+                } catch (e) { log(`[TD-TEST]   delete default failed: ${e.message}`); }
+              }
+              orphansForReparent.push(l);
+            } catch (e) {}
+          }
+          // Reparent via batchPlay `move` with `to: { _ref:"layer", _id:tempAb.id }` + adjustment "placeAtBeginning".
+          for (const l of orphansForReparent) {
+            try {
+              await selectLayerById(l.id);
+              await bp([{
+                _obj: "move",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                to: { _ref: "layer", _id: tempAb.id },
+                adjustment: { _enum: "adjustmentReference", _value: "placeInside" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              reparented++;
+              log(`[TD-TEST]   reparented "${l.name}" id=${l.id} → tempAb`);
+            } catch (e) {
+              // Fallback: try UXP DOM move
+              try {
+                await l.move(tempAb, constants.ElementPlacement.PLACEINSIDE);
+                reparented++;
+                log(`[TD-TEST]   reparented (fallback DOM) "${l.name}" id=${l.id}`);
+              } catch (e2) {
+                log(`[TD-TEST]   reparent "${l.name}" FAILED: bp=${e.message} dom=${e2.message}`);
+              }
+            }
+          }
+          log(`[TD-TEST] reparent orphans: ${reparented}/${orphansForReparent.length} moved into artboard, ${defaultDeleted} default empty layer(s) deleted`);
+          tStep("initial reparent orphans");
+          }  // end else (rootLayers.length > 1)
+        } catch (e) {
+          log(`[TD-TEST] reparent step failed: ${e.message}`);
+        }
+
+        // Move temp artboard to (0, 0) so its top-left = doc origin.
+        const tempAbDesc = await getLayerDescriptor(tempAb.id);
+        const tempAbR = rectSize(tempAbDesc.artboard?.artboardRect || tempAbDesc.bounds);
+        const moveToOriginDx = -tempAbR.left;
+        const moveToOriginDy = -tempAbR.top;
+        if (moveToOriginDx !== 0 || moveToOriginDy !== 0) {
+          await selectLayerById(tempAb.id);
+          await bp([{
+            _obj: "move",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            to: { _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: moveToOriginDx },
+              vertical: { _unit: "pixelsUnit", _value: moveToOriginDy } },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+        }
+        log(`[TD-TEST] moved temp artboard to origin (0, 0)`);
+        tStep("move temp artboard to origin");
+
+        // SNAPSHOT visibility + style in temp doc.
+        const visibilityMap = new Map();
+        const styleMap = new Map();
+        async function snapshotTree(parent) {
+          for (const l of parent.layers || []) {
+            try {
+              const d = await getLayerDescriptor(l.id);
+              visibilityMap.set(l.id, d.visible !== false);
+              styleMap.set(l.id, { group: d.group === true });
+            } catch (e) {}
+            if (l.layers && l.layers.length) await snapshotTree(l);
+          }
+        }
+        await snapshotTree(tempAb);
+        log(`[TD-TEST] snapshot: ${visibilityMap.size} layers, ${[...visibilityMap.values()].filter(v=>!v).length} hidden, ${[...styleMap.values()].filter(s=>s.group).length} clipped`);
+        tStep("snapshot visibility+style");
+
+        // SKIP grouping — work directly on direct children. Each step that
+        // would have targeted the temp group will now target children.
+        // We still identify canvas-cover fills to skip them from the
+        // unlock/show/transform loops (they shouldn't be transformed).
+        const allChildren = [...(tempAb.layers || [])];
+        const childrenToTransform = [];
+        const childrenSkipped = [];
+        for (const l of allChildren) {
+          const isFillKind = l.kind === "solidColor" || l.kind === "solidFill"
+            || l.kind === "gradientFill" || l.kind === "pattern";
+          let skip = false;
+          let skipReason = "";
+          if (isFillKind) {
+            try {
+              const d = await getLayerDescriptor(l.id);
+              const hasVectorMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+              if (!hasVectorMask) {
+                const b = rectSize(d.bounds);
+                const isFullCanvas = b
+                  && Math.abs(b.width  - tempDoc.width)  < 4
+                  && Math.abs(b.height - tempDoc.height) < 4
+                  && Math.abs(b.left) < 4 && Math.abs(b.top) < 4;
+                if (isFullCanvas) { skip = true; skipReason = "canvas-cover fill"; }
+              }
+            } catch (e) {}
+          }
+          if (skip) {
+            childrenSkipped.push(`${l.name} (${skipReason})`);
+          } else {
+            childrenToTransform.push(l);
+          }
+        }
+        log(`[TD-TEST] direct children: ${childrenToTransform.length} to transform, ${childrenSkipped.length} skipped${childrenSkipped.length ? ` [${childrenSkipped.join(", ")}]` : ""}`);
+        tStep("collect children to transform");
+
+        // GROUP children into a temp group. PS only checks containment at
+        // direct children of artboard. Wrapping all content layers in ONE
+        // temp group means PS only sees the group (which intersects the
+        // artboard rect) — children inside the group are not checked, so
+        // they won't be evicted when we resize the artboard down.
+        let tempGroupId = null;
+        if (childrenToTransform.length > 0) {
+          try {
+            // Multi-select children.
+            await bp(childrenToTransform.map((l, k) => {
+              const cmd = {
+                _obj: "select",
+                _target: [{ _ref: "layer", _id: l.id }],
+                makeVisible: false,
+                _options: { dialogOptions: "dontDisplay" }
+              };
+              if (k > 0) cmd.selectionModifier = { _enum: "selectionModifierType", _value: "addToSelection" };
+              return cmd;
+            }));
+            // Group via `make layerSection`.
+            await bp([{
+              _obj: "make",
+              _target: [{ _ref: "layerSection" }],
+              from: { _ref: "layer", _enum: "ordinal", _value: "targetEnum" },
+              using: { _obj: "layerSection", name: "__td_temp_group__" },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            const tempGroup = tempDoc.activeLayers[0];
+            if (tempGroup) {
+              tempGroupId = tempGroup.id;
+              log(`[TD-TEST] grouped ${childrenToTransform.length} children → temp group id=${tempGroupId}`);
+            } else {
+              log(`[TD-TEST] make layerSection succeeded but no active layer found`);
+            }
+          } catch (e) {
+            log(`[TD-TEST] group children failed: ${e.message}`);
+          }
+        }
+        tStep("group children into temp group");
+
+        // Unlock + show descendants of childrenToTransform (recursive) so
+        // batch transform doesn't fail with "Move not currently available"
+        // due to locked/hidden layers.
+        const lockedDescendants = [];
+        const tempHiddenForTransform = [];
+        try {
+          const descIds = [];
+          async function collectIdsFromList(layerList, out) {
+            for (const l of layerList || []) {
+              out.push(l.id);
+              if (l.layers && l.layers.length) await collectIdsFromList(l.layers, out);
+            }
+          }
+          await collectIdsFromList(childrenToTransform, descIds);
+          for (const id of descIds) {
+            try {
+              const d = await getLayerDescriptor(id);
+              const lk = d.layerLocking;
+              const protectAll = !!(lk && (lk.protectAll === true || lk.protectAll?._value === true));
+              const protectPosition = !!(lk && (lk.protectPosition === true || lk.protectPosition?._value === true));
+              const protectTransparency = !!(lk && (lk.protectTransparency === true || lk.protectTransparency?._value === true));
+              const protectComposite = !!(lk && (lk.protectComposite === true || lk.protectComposite?._value === true));
+              if (protectAll || protectPosition || protectTransparency || protectComposite) {
+                lockedDescendants.push({ id, protectAll, protectPosition, protectTransparency, protectComposite });
+                await bp([{
+                  _obj: "applyLocking",
+                  _target: [{ _ref: "layer", _id: id }],
+                  layerLocking: { _obj: "layerLocking",
+                    protectAll: false, protectPosition: false,
+                    protectTransparency: false, protectComposite: false },
+                  _options: { dialogOptions: "dontDisplay" }
+                }]);
+              }
+              if (d.visible === false) {
+                tempHiddenForTransform.push(id);
+                await bp([{ _obj: "show", null: [{ _ref: "layer", _id: id }],
+                  _options: { dialogOptions: "dontDisplay" } }]).catch(() => {});
+              }
+            } catch (e) {}
+          }
+          log(`[TD-TEST] unlocked ${lockedDescendants.length} locked + showed ${tempHiddenForTransform.length} hidden descendant(s) for transform`);
+          tStep("unlock+show descendants");
+        } catch (e) {
+          log(`[TD-TEST] unlock/show step failed: ${e.message}`);
+        }
+
+        // Resize temp artboard to target size at (0, 0).
+        await selectLayerById(tempAb.id);
+        await bp([{
+          _obj: "editArtboardEvent",
+          _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+          artboard: {
+            _obj: "artboard",
+            artboardRect: {
+              _obj: "classFloatRect",
+              top: 0, left: 0, bottom: targetH, right: targetW
+            },
+            guideIDs: [],
+            artboardPresetName: "Custom",
+            color: { _obj: "RGBColor", red: 255, grain: 255, blue: 255 },
+            artboardBackgroundType: 1
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+        log(`[TD-TEST] resized temp artboard to ${targetW}x${targetH} at (0,0)`);
+        tStep("resize temp artboard");
+
+        // SCALE + PER-LAYER POSITION CORRECTION.
+        // Approach: PS scales group around bbox center (which is skewed when
+        // helper layers extend outside artboard, causing misalignment). So
+        // instead of relying on a single group-level shift, we:
+        //   1. Snapshot each direct child's expected position BEFORE scale
+        //      (expected = source_position * scale, since source artboard is
+        //      at origin (0,0) in temp doc).
+        //   2. Apply PS scale (positions content somewhere — exact location
+        //      depends on bbox center).
+        //   3. For each direct child, read current position, compute delta to
+        //      expected, and move by delta. Group same-delta moves to reduce
+        //      batchPlay round-trips.
+        if (tempGroupId && Math.abs(scale - 1) > 0.005) {
+          // Step 1: Snapshot direct children positions BEFORE scale.
+          const preScaleByName = new Map();
+          let tempGroupNode = null;
+          for (const rl of tempDoc.layers) {
+            if (rl.id === tempAb.id) {
+              for (const c of (rl.layers || [])) {
+                if (c.id === tempGroupId) { tempGroupNode = c; break; }
+              }
+              break;
+            }
+          }
+          const groupChildren = tempGroupNode ? [...(tempGroupNode.layers || [])] : [];
+          for (const c of groupChildren) {
+            try {
+              const cb = await getLayerBoundsNoEffects(c.id).catch(() => null);
+              if (cb && Number.isFinite(cb.left)) {
+                preScaleByName.set(c.id, { name: c.name, left: cb.left, top: cb.top, right: cb.right, bottom: cb.bottom });
+              }
+            } catch (e) {}
+          }
+          log(`[TD-TEST] snapshot ${preScaleByName.size} children pre-scale positions`);
+          tStep("snapshot pre-scale positions");
+
+          // Step 2: SCALE — PS scale around bbox center.
+          await selectLayerById(tempGroupId);
+          await bp([{
+            _obj: "transform",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+            width:  { _unit: "percentUnit", _value: scale * 100 },
+            height: { _unit: "percentUnit", _value: scale * 100 },
+            interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+            scaleStyles: true,
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`[TD-TEST] scaled temp group by ${(scale*100).toFixed(1)}%`);
+          tStep("scale temp group");
+
+          // Step 3: Per-layer position correction.
+          const moveGroups = new Map(); // key: "dx,dy" → [layerId, ...]
+          let correctedCount = 0;
+          for (const [layerId, pre] of preScaleByName.entries()) {
+            try {
+              const post = await getLayerBoundsNoEffects(layerId).catch(() => null);
+              if (!post || !Number.isFinite(post.left)) continue;
+              const expectedLeft = pre.left * scale;
+              const expectedTop = pre.top * scale;
+              const dx = Math.round(expectedLeft - post.left);
+              const dy = Math.round(expectedTop - post.top);
+              if (dx === 0 && dy === 0) continue;
+              const key = `${dx},${dy}`;
+              if (!moveGroups.has(key)) moveGroups.set(key, []);
+              moveGroups.get(key).push({ id: layerId, name: pre.name });
+              correctedCount++;
+            } catch (e) {}
+          }
+          log(`[TD-TEST] per-layer correction: ${correctedCount} layers in ${moveGroups.size} delta group(s)`);
+
+          // Apply grouped moves: multi-select layers with same delta, move once.
+          for (const [key, layers] of moveGroups.entries()) {
+            const [dxStr, dyStr] = key.split(",");
+            const dx = parseInt(dxStr, 10), dy = parseInt(dyStr, 10);
+            try {
+              await bp(layers.map((l, k) => {
+                const cmd = {
+                  _obj: "select",
+                  _target: [{ _ref: "layer", _id: l.id }],
+                  makeVisible: false,
+                  _options: { dialogOptions: "dontDisplay" }
+                };
+                if (k > 0) cmd.selectionModifier = { _enum: "selectionModifierType", _value: "addToSelection" };
+                return cmd;
+              }));
+              await bp([{
+                _obj: "move",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                to: { _obj: "offset",
+                  horizontal: { _unit: "pixelsUnit", _value: dx },
+                  vertical: { _unit: "pixelsUnit", _value: dy } },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+            } catch (e) {
+              log(`[TD-TEST] move group delta=(${dx},${dy}) failed: ${e.message}`);
+            }
+          }
+          tStep("apply per-layer corrections");
+        }
+
+        // UNGROUP temp group: restore original parent-child structure so
+        // pasted artboard has flat children matching source.
+        if (tempGroupId) {
+          try {
+            await selectLayerById(tempGroupId);
+            await bp([{
+              _obj: "ungroupLayersEvent",
+              _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            log(`[TD-TEST] ungrouped temp group`);
+          } catch (e) { log(`[TD-TEST] ungroup failed: ${e.message}`); }
+          tStep("ungroup temp group");
+        }
+
+        // Restore visibility (re-hide).
+        for (const [layerId, wasVisible] of visibilityMap.entries()) {
+          if (wasVisible) continue;
+          try {
+            await bp([{ _obj: "hide", null: [{ _ref: "layer", _id: layerId }],
+              _options: { dialogOptions: "dontDisplay" } }]);
+          } catch (e) {}
+        }
+
+        // Restore clipping flags.
+        for (const [id, before] of styleMap.entries()) {
+          if (!before.group) continue;
+          try {
+            const d = await getLayerDescriptor(id);
+            if (d.group === true) continue;
+            await bp([{ _obj: "groupEvent", _target: [{ _ref: "layer", _id: id }],
+              _options: { dialogOptions: "dontDisplay" } }]);
+          } catch (e) {}
+        }
+
+        // Restore locks.
+        for (const lk of lockedDescendants) {
+          try {
+            await bp([{
+              _obj: "applyLocking",
+              _target: [{ _ref: "layer", _id: lk.id }],
+              layerLocking: { _obj: "layerLocking",
+                protectAll: lk.protectAll,
+                protectPosition: lk.protectPosition,
+                protectTransparency: lk.protectTransparency,
+                protectComposite: lk.protectComposite },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          } catch (e) {}
+        }
+
+        // Strip " copy" suffix.
+        async function stripSuffixTree(parent) {
+          for (const l of parent.layers || []) {
+            const mm = String(l.name || "").match(/^(.+?)(?:\s+copy(?:\s+\d+)?)+$/);
+            if (mm && mm[1] && mm[1] !== l.name) {
+              try { l.name = mm[1]; } catch (e) {}
+            }
+            if (l.layers && l.layers.length) await stripSuffixTree(l);
+          }
+        }
+        await stripSuffixTree(tempAb);
+
+        // REORDER direct children to match source order — done at SOURCE
+        // DOC after duplicate-back (not at temp doc), because cross-doc
+        // duplicate doesn't preserve stacking order reliably. We defer
+        // reordering until after the paste lands in source doc.
+        log(`[TD-TEST] (reorder deferred to post-duplicate-back)`);
+        tStep("reorder direct children (deferred)");
+
+        // 5) Capture source doc root layer IDs BEFORE duplicate-back so we
+        //    can find ALL new layers (artboard + any evicted children).
+        const sourceIdsBeforeBack = new Set();
+        for (const l of sourceDoc.layers) sourceIdsBeforeBack.add(l.id);
+
+        // PRE-DUPLICATE-BACK REPARENT: resize + scale steps above may have
+        // evicted children to the root of temp doc (PS pops layers extending
+        // outside the new artboard rect). Walk root layers NOW, reparent
+        // any non-artboard back INTO tempAb so the cross-doc duplicate
+        // captures the full content.
+        try {
+          const rootLayersNow = [...(tempDoc.layers || [])];
+          log(`[TD-TEST] temp doc has ${rootLayersNow.length} root layer(s) before duplicate-back`);
+          let reparentedPre = 0, defaultDeletedPre = 0;
+          const orphansPre = [];
+          for (const rl of rootLayersNow) {
+            if (rl.id === tempAb.id) continue;
+            try {
+              const rd = await getLayerDescriptor(rl.id);
+              if (rd.artboardEnabled || rd.artboard) continue;
+              const rb = rd.bounds ? rectSize(rd.bounds) : null;
+              const isDefaultEmpty = (rl.kind === "pixel" || rl.kind === undefined)
+                && (rl.name === "Layer 1" || rl.name === "Background")
+                && (!rb || (rb.width === 0 && rb.height === 0));
+              if (isDefaultEmpty) {
+                try {
+                  await selectLayerById(rl.id);
+                  await bp([{ _obj: "delete",
+                    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                    _options: { dialogOptions: "dontDisplay" } }]);
+                  defaultDeletedPre++;
+                  continue;
+                } catch (e) {}
+              }
+              orphansPre.push({ rl, rd, rb });
+            } catch (e) {}
+          }
+          // Re-resolve tempAb via DOM tree (reference may have stale layers
+          // array after resize+scale operations).
+          let tempAbNode = null;
+          for (const rl of tempDoc.layers) {
+            if (rl.id === tempAb.id) { tempAbNode = rl; break; }
+          }
+          for (const o of orphansPre) {
+            // Re-resolve orphan via DOM (id-based).
+            let orphanNode = null;
+            for (const rl of tempDoc.layers) {
+              if (rl.id === o.rl.id) { orphanNode = rl; break; }
+            }
+            if (!orphanNode) {
+              log(`[TD-TEST]   orphan "${o.rl.name}" not found in tempDoc.layers — skip`);
+              continue;
+            }
+            // Try DOM move FIRST (more reliable than batchPlay for cross-parent moves).
+            let domOk = false;
+            try {
+              await orphanNode.move(tempAbNode || tempAb, constants.ElementPlacement.PLACEINSIDE);
+              domOk = true;
+            } catch (eDom) {
+              log(`[TD-TEST]   DOM move "${o.rl.name}" failed: ${eDom.message}`);
+            }
+            if (domOk) {
+              // Verify by re-reading the orphan's parent.
+              try {
+                const dCheck = await getLayerDescriptor(o.rl.id);
+                const newParentId = dCheck.parentLayerID ?? dCheck.parent?._id ?? null;
+                if (newParentId === tempAb.id) {
+                  reparentedPre++;
+                  log(`[TD-TEST]   reparented (DOM) "${o.rl.name}" id=${o.rl.id} → tempAb verified`);
+                  continue;
+                } else {
+                  log(`[TD-TEST]   DOM move reported success but parent=${newParentId} (expected ${tempAb.id}) — trying batchPlay`);
+                }
+              } catch (e) {}
+            }
+            // Fallback: batchPlay move.
+            try {
+              await selectLayerById(o.rl.id);
+              await bp([{
+                _obj: "move",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                to: { _ref: "layer", _id: tempAb.id },
+                adjustment: { _enum: "adjustmentReference", _value: "placeInside" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              const dCheck = await getLayerDescriptor(o.rl.id);
+              const newParentId = dCheck.parentLayerID ?? dCheck.parent?._id ?? null;
+              if (newParentId === tempAb.id) {
+                reparentedPre++;
+                log(`[TD-TEST]   reparented (bp) "${o.rl.name}" → tempAb verified`);
+              } else {
+                log(`[TD-TEST]   bp move reported success but parent=${newParentId} — FAILED`);
+              }
+            } catch (e) {
+              log(`[TD-TEST]   reparent "${o.rl.name}" FAILED: ${e.message}`);
+            }
+          }
+          log(`[TD-TEST] pre-duplicate-back reparent: ${reparentedPre}/${orphansPre.length} into artboard, ${defaultDeletedPre} default empty deleted`);
+          tStep("pre-duplicate-back reparent orphans");
+
+          // VERIFY: after reparent, dump temp doc state again.
+          log(`[TD-TEST] temp doc state AFTER reparent (verification):`);
+          for (const rl of tempDoc.layers) {
+            try {
+              const rd = await getLayerDescriptor(rl.id);
+              const isAb = !!(rd.artboardEnabled || rd.artboard);
+              log(`[TD-TEST]   root id=${rl.id} name="${rl.name}" isArtboard=${isAb} childCount=${(rl.layers||[]).length}`);
+              if (isAb && rl.layers && rl.layers.length) {
+                for (const ch of rl.layers) {
+                  log(`[TD-TEST]     child id=${ch.id} name="${ch.name}" kind=${ch.kind}`);
+                }
+              }
+            } catch (e) {}
+          }
+        } catch (e) { log(`[TD-TEST] pre-duplicate-back reparent failed: ${e.message}`); }
+
+        try {
+          await selectLayerById(tempAb.id);
+          await bp([{
+            _obj: "duplicate",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            to: { _ref: "document", _id: sourceDoc.id },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`[TD-TEST] duplicated resized artboard back to source doc`);
+          tStep("cross-doc duplicate temp → source");
+        } catch (e) {
+          log(`[TD-TEST] cross-doc back-duplicate failed: ${e.message}`);
+        }
+
+        // 6) Switch to source doc + find the pasted artboard + check for
+        // orphans (cross-doc duplicate may evict children that extend
+        // outside the artboard rect).
+        await bp([{
+          _obj: "select",
+          _target: [{ _ref: "document", _id: sourceDoc.id }],
+          _options: { dialogOptions: "dontDisplay" }
+        }]);
+
+        // Dump new root layers in source doc (added during duplicate-back).
+        const newRootLayers = [];
+        for (const l of sourceDoc.layers) {
+          if (sourceIdsBeforeBack.has(l.id)) continue;
+          newRootLayers.push(l);
+        }
+        log(`[TD-TEST] source doc gained ${newRootLayers.length} new root layer(s) after duplicate-back:`);
+        for (const l of newRootLayers) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            const isAb = !!(d.artboardEnabled || d.artboard);
+            const b = d.bounds ? rectSize(d.bounds) : null;
+            log(`[TD-TEST]   id=${l.id} name="${l.name}" kind=${l.kind} isArtboard=${isAb} bounds=${b ? `(${b.left},${b.top},${b.right},${b.bottom})` : "?"} childCount=${(l.layers||[]).length}`);
+            // If it's an artboard, dump children too
+            if (isAb && l.layers && l.layers.length) {
+              for (const ch of l.layers) {
+                try {
+                  const cd = await getLayerDescriptor(ch.id);
+                  const cb = cd.bounds ? rectSize(cd.bounds) : null;
+                  log(`[TD-TEST]     child id=${ch.id} name="${ch.name}" kind=${ch.kind} bounds=${cb ? `(${cb.left},${cb.top},${cb.right},${cb.bottom})` : "?"}`);
+                } catch (e) {}
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Find pasted artboard among new root layers.
+        let pastedAb = null;
+        for (const l of newRootLayers) {
+          try {
+            const d = await getLayerDescriptor(l.id);
+            if (!(d.artboardEnabled || d.artboard)) continue;
+            const r = rectSize(d.artboard?.artboardRect || d.bounds);
+            if (r.width === targetW && r.height === targetH) {
+              pastedAb = l;
+              break;
+            }
+          } catch (e) {}
+        }
+        if (!pastedAb) log(`[TD-TEST] WARN: could not find pasted artboard with size ${targetW}x${targetH}`);
+
+        // Reparent ALL other new root layers (orphans evicted during paste)
+        // INTO the pasted artboard, so artboard has the full content.
+        if (pastedAb) {
+          let reparentedBack = 0;
+          for (const l of newRootLayers) {
+            if (l.id === pastedAb.id) continue;
+            try {
+              await selectLayerById(l.id);
+              await bp([{
+                _obj: "move",
+                _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                to: { _ref: "layer", _id: pastedAb.id },
+                adjustment: { _enum: "adjustmentReference", _value: "placeInside" },
+                _options: { dialogOptions: "dontDisplay" }
+              }]);
+              reparentedBack++;
+            } catch (e) {
+              try {
+                await l.move(pastedAb, constants.ElementPlacement.PLACEINSIDE);
+                reparentedBack++;
+              } catch (e2) {
+                log(`[TD-TEST]   reparent "${l.name}" → pastedAb FAILED: ${e.message}`);
+              }
+            }
+          }
+          log(`[TD-TEST] reparented ${reparentedBack} orphan(s) back into pasted artboard`);
+          tStep("post-duplicate-back reparent orphans");
+        }
+
+        // Move pastedAb to grid position.
+        if (pastedAb) {
+          const pastedDesc = await getLayerDescriptor(pastedAb.id);
+          const pastedR = rectSize(pastedDesc.artboard?.artboardRect || pastedDesc.bounds);
+          const moveDx = nextX - pastedR.left;
+          const moveDy = baseTop - pastedR.top;
+          if (moveDx !== 0 || moveDy !== 0) {
+            await selectLayerById(pastedAb.id);
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+              to: { _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: moveDx },
+                vertical: { _unit: "pixelsUnit", _value: moveDy } },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          }
+          // Rename.
+          try {
+            const { base: baseName, sep: baseSep, tail: baseTail } = stripSizeSuffix(source.name);
+            const newName = `${baseName}${baseSep || " - "}${targetRaw}${baseTail || ""}`;
+            try { pastedAb.name = newName; } catch (e) {
+              await bp([{ _obj: "set", _target: [{ _ref: "layer", _id: pastedAb.id }],
+                to: { _obj: "layer", name: newName },
+                _options: { dialogOptions: "dontDisplay" } }]).catch(() => {});
+            }
+            log(`[TD-TEST] renamed pasted artboard → "${newName}" at (${nextX},${baseTop})`);
+            tStep("move + rename pasted artboard");
+          } catch (e) {}
+
+          // REORDER direct children of pasted artboard to match source.
+          // Cross-doc duplicate may flip stacking; we restore by walking
+          // sourceDirectOrder reverse and moving each layer to front.
+          // OPTIMIZATION: only move layers that are NOT already in correct
+          // position. Skip the whole step if pasted .layers already match
+          // sourceDirectOrder.
+          try {
+            // Re-resolve pastedAb via DOM (may be stale after rename).
+            let pastedAbFresh = null;
+            for (const rl of sourceDoc.layers) {
+              if (rl.id === pastedAb.id) { pastedAbFresh = rl; break; }
+            }
+            if (pastedAbFresh && sourceDirectOrder.length) {
+              // Current pasted order (direct children only, names).
+              // Filter out layers not in sourceDirectOrder (e.g. "Layer 3"
+              // default empty layer) before comparing.
+              const pastedChildren = (pastedAbFresh.layers || []);
+              const pastedNames = pastedChildren.map(c => c.name);
+              const pastedNamesFiltered = pastedNames.filter(n => sourceDirectOrder.includes(n));
+              // Compare directly: if filtered pasted order === source order, skip.
+              const matchesSource = pastedNamesFiltered.length === sourceDirectOrder.length
+                && pastedNamesFiltered.every((n, i) => n === sourceDirectOrder[i]);
+              if (matchesSource) {
+                log(`[TD-TEST] pasted order already matches source — skipping reorder`);
+              } else {
+                log(`[TD-TEST] pasted order MISMATCH — source=[${sourceDirectOrder.join(", ")}] pasted=[${pastedNamesFiltered.join(", ")}]`);
+                const byName = new Map();
+                for (const c of pastedChildren) {
+                  if (!byName.has(c.name)) byName.set(c.name, c);
+                }
+                // Walk source REVERSE, but skip layers already in correct
+                // position. A layer is "correct" if its current index in
+                // filtered pasted order === its index in sourceDirectOrder.
+                let reordered = 0, skipped = 0;
+                for (let k = sourceDirectOrder.length - 1; k >= 0; k--) {
+                  const srcName = sourceDirectOrder[k];
+                  const node = byName.get(srcName);
+                  if (!node) continue;
+                  // Re-check current position each iteration (pasted
+                  // order shifts as we move layers).
+                  const curIdx = pastedAbFresh.layers.findIndex(l => l.id === node.id);
+                  // Compute expected index in current .layers (sourceDirectOrder maps
+                  // 1:1 onto first N positions; "Layer 3" etc. push down).
+                  // Simpler heuristic: just attempt move; PS no-op if already at front
+                  // for that selection. But to avoid wasted bp calls, check if this
+                  // layer is currently AT the expected position relative to layers
+                  // already processed (those with k' > k).
+                  // For now: skip only if entire order already matches (handled above).
+                  try {
+                    await selectLayerById(node.id);
+                    await bp([{
+                      _obj: "move",
+                      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                      to: { _ref: "layer", _enum: "ordinal", _value: "front" },
+                      _options: { dialogOptions: "dontDisplay" }
+                    }]);
+                    reordered++;
+                  } catch (e) {}
+                }
+                log(`[TD-TEST] reordered ${reordered}/${sourceDirectOrder.length} direct children in pasted artboard`);
+              }
+            }
+          } catch (e) {
+            log(`[TD-TEST] post-paste reorder failed: ${e.message}`);
+          }
+          tStep("reorder pasted artboard children");
+        } else {
+          log(`[TD-TEST] could not find pasted artboard in source doc`);
+        }
+
+        // Close temp doc — unless user wants to keep it open for debug.
+        const keepOpen = !!document.getElementById("keepTempDocOpen")?.checked;
+        if (keepOpen) {
+          log(`[TD-TEST] temp doc kept open (debug checkbox enabled) — manually close when done`);
+        } else {
+          try {
+            await tempDoc.closeWithoutSaving();
+            log(`[TD-TEST] closed temp doc`);
+          } catch (e) {
+            log(`[TD-TEST] close temp doc failed: ${e.message}`);
+          }
+        }
+
+        nextX += targetW + 80;
+        const tIterEnd = performance.now();
+        log(`[TD-TIME] iter ${i+1}/${sizes.length} ${targetRaw} TOTAL: ${Math.round(tIterEnd - tIterStart)}ms`);
+      }  // end for-loop
+      const tTotal = Math.round(performance.now() - tStart);
+      log(`[TD-TIME] === GRAND TOTAL: ${tTotal}ms (${(tTotal/1000).toFixed(2)}s) for ${sizes.length} size(s) ===`);
+      log(`[TD-TEST] === ALL DONE ===`);
+    }, { commandName: "Banner Cloner — Test Temp-Doc" });
+  } catch (e) {
+    log(`[TD-TEST] error: ${e.message}`);
+  }
+}
+
+testTempDocBtn?.addEventListener("click", runTestTempDoc);
+
 // ─── Export Assets ───
 
 function isImageLayerForAssets(layer) {
@@ -8400,8 +10040,8 @@ function validateAdvancedInputs() {
   if (!path) {
     fieldErrors.customExportPath = "Custom output path is required";
     pathEl?.classList.add("input-error");
-  } else if (!path.startsWith("/")) {
-    fieldErrors.customExportPath = "Path must be absolute (start with /)";
+  } else if (!isAbsolutePath(path)) {
+    fieldErrors.customExportPath = "Path must be absolute (mac: /Users/... | win: C:\\Users\\...)";
     pathEl?.classList.add("input-error");
   }
 
@@ -8950,18 +10590,66 @@ function getArtboardSizeKey(artboard) {
   return { sizeKey: sanitized(name) || "artboard", hasSize: false };
 }
 
-// Resolve an existing absolute folder path. Throws if path missing or not a folder.
-async function resolveExistingFolderPath(absPath) {
-  const clean = absPath.replace(/\/+$/, "");
-  const url = "file:" + (clean.startsWith("/") ? clean : "/" + clean);
-  let entry;
-  try {
-    entry = await fs.getEntryWithUrl(url);
-  } catch (e) {
-    throw new Error(`Path not found: ${clean}`);
+// Cross-platform absolute-path check: mac/linux `/foo`, win `C:\foo` or `C:/foo`, UNC `\\srv\share`.
+function isAbsolutePath(p) {
+  if (!p) return false;
+  const s = String(p).trim();
+  if (s.startsWith("/")) return true;
+  if (/^[A-Za-z]:[\\/]/.test(s)) return true;
+  if (s.startsWith("\\\\")) return true;
+  return false;
+}
+
+// Normalize a user-typed path to a `file:` URL UXP's getEntryWithUrl accepts.
+// Mac:   /Users/x        → file:/Users/x
+// Win:   C:\Users\x      → file:/C:/Users/x   (backslashes → forward, drive prefixed with /)
+// Win:   C:/Users/x      → file:/C:/Users/x
+// Strips trailing slash/backslash.
+function toFileUrl(absPath) {
+  let s = String(absPath).trim().replace(/[\\/]+$/, "");
+  if (/^[A-Za-z]:[\\/]/.test(s)) {
+    s = s.replace(/\\/g, "/");
+    return "file:/" + s;
   }
-  if (!entry || !entry.isFolder) throw new Error(`Not a folder: ${clean}`);
-  return entry;
+  if (s.startsWith("/")) return "file:" + s;
+  return "file:/" + s.replace(/\\/g, "/");
+}
+
+// Split absolute path into [parent, leafName]. Returns null if no parent (root).
+function splitPathParent(absPath) {
+  const s = String(absPath).trim().replace(/[\\/]+$/, "");
+  const idx = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+  if (idx <= 0) return null;
+  const parent = s.slice(0, idx);
+  const leaf = s.slice(idx + 1);
+  if (!leaf) return null;
+  if (/^[A-Za-z]:$/.test(parent)) return [parent + "/", leaf];
+  return [parent, leaf];
+}
+
+// Resolve absolute folder path. If folder doesn't exist but parent does, auto-create it.
+// Throws only if the parent chain is missing or the target exists as a file.
+async function resolveExistingFolderPath(absPath) {
+  const url = toFileUrl(absPath);
+  try {
+    const entry = await fs.getEntryWithUrl(url);
+    if (!entry.isFolder) throw new Error(`Not a folder: ${absPath}`);
+    return entry;
+  } catch (e) {
+    if (/Not a folder/.test(e?.message || "")) throw e;
+  }
+  const split = splitPathParent(absPath);
+  if (!split) throw new Error(`Path not found and cannot resolve parent: ${absPath}`);
+  const [parentPath, leaf] = split;
+  let parentEntry;
+  try {
+    parentEntry = await fs.getEntryWithUrl(toFileUrl(parentPath));
+  } catch (e) {
+    throw new Error(`Parent folder not found: ${parentPath}`);
+  }
+  if (!parentEntry.isFolder) throw new Error(`Parent is not a folder: ${parentPath}`);
+  log(`[ASSETS] Folder không tồn tại — auto-create "${leaf}" trong ${parentPath}`);
+  return await parentEntry.createFolder(leaf);
 }
 
 // Return existing child folder with name, or create it.
@@ -9182,7 +10870,7 @@ async function exportAssets() {
     try {
       rootFolder = await resolveExistingFolderPath(customPathRaw);
     } catch (e) {
-      log(`[ASSETS] ${e.message}. Folder gốc phải tồn tại — aborted.`);
+      log(`[ASSETS] ${e.message}. Parent folder phải tồn tại — aborted.`);
       return;
     }
     log(`[ASSETS] Custom output root: ${customPathRaw}`);
@@ -9879,6 +11567,25 @@ jpgQualityInput?.addEventListener("input", () => { jpgQualityInput.classList.rem
 filterGgPrefixInput?.addEventListener("change", saveAdvancedOptions);
 generateInfoHtmlInput?.addEventListener("change", saveAdvancedOptions);
 document.getElementById("useNoSizeDetected")?.addEventListener("change", saveAdvancedOptions);
+
+// Browse button: open native folder picker, write absolute path back to the textfield.
+// UXP folder entries expose `.nativePath` on both macOS and Windows.
+document.getElementById("browseExportPathBtn")?.addEventListener("click", async () => {
+  try {
+    const folder = await fs.getFolder();
+    if (!folder) return;
+    const native = folder.nativePath || "";
+    if (!native) { log("[ASSETS] Browse: couldn't read native path of selected folder."); return; }
+    if (customExportPathInput) {
+      customExportPathInput.value = native;
+      customExportPathInput.classList.remove("input-error");
+    }
+    saveAdvancedOptions();
+    log(`[ASSETS] Output path set: ${native}`);
+  } catch (e) {
+    log(`[ASSETS] Browse failed: ${e?.message || e}`);
+  }
+});
 
 // ─── Artboard picker ───
 

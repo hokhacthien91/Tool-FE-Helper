@@ -137,6 +137,19 @@ h1::before {
 .btn-row { display: flex; }
 .btn-row button { flex: 1; margin-right: 10px; }
 .btn-row button:last-child { margin-right: 0; }
+.path-row { display: flex; align-items: center; }
+.path-row sp-textfield { flex: 1; margin-right: 8px; }
+.path-browse-btn {
+  background: var(--bg-input) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+.path-browse-btn:hover { background: var(--gg-green) !important; color: #000 !important; }
 .label {
   display: block;
   margin-bottom: 5px;
