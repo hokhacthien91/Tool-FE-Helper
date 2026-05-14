@@ -341,6 +341,21 @@ async function scanDocuments() {
     ...e, newContent: "", file: null, token: null, newName: "", linkId: "", selected: false,
   })).sort(sortByPath);
 
+  // Re-encode `currentText` for text entries to include inline style tags
+  // (<b>, <i>, <sup>, <sub>, <color=#hex>, <font=…>). Reads the first occurrence's
+  // descriptor; fails silently and keeps plain text on error.
+  for (const entry of state.allEntries) {
+    if (entry.kind !== "text") continue;
+    const occ = entry.occurrences?.[0];
+    if (!occ) continue;
+    try {
+      await switchActiveDoc(occ.docId);
+      const desc = await getLayerDescriptor(occ.layerId);
+      const tagged = encodeStyleTags(desc?.textKey);
+      if (tagged) entry.currentText = tagged;
+    } catch (e) { /* keep plain currentText on error */ }
+  }
+
   state.hasScanned = true;
   state.idCounter = 0;
 
@@ -439,7 +454,8 @@ function buildUnifiedRow(entry, idx) {
         <div class="current-text-label">Current text</div>
         <textarea class="current-text-value" rows="3" placeholder="(empty)">${escapeHtml(curText)}</textarea>
       </div>
-      <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip"></textarea>`;
+      <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip — use &lt;b&gt;, &lt;i&gt;, &lt;color=#hex&gt;, &lt;font=Bold&gt; tags to format. See cheatsheet above."></textarea>
+      <div class="replace-row-errors" style="display:none;"></div>`;
   } else if (entry.kind === "image") {
     contentHTML = `
       <div class="replace-row-file">
@@ -516,7 +532,22 @@ function buildUnifiedRow(entry, idx) {
   // Text content
   if (entry.kind === "text") {
     const input = row.querySelector(".replace-row-input");
+    const errorsEl = row.querySelector(".replace-row-errors");
     input.value = entry.newContent || "";
+    const runValidate = () => {
+      const errs = validateStyleMarkers(input.value);
+      state.allEntries[idx].markerErrors = errs;
+      if (errs.length) {
+        errorsEl.style.display = "block";
+        errorsEl.innerHTML = errs.map(e => `<div class="marker-err">⚠ ${escapeHtml(e)}</div>`).join("");
+        input.classList.add("has-marker-err");
+      } else {
+        errorsEl.style.display = "none";
+        errorsEl.innerHTML = "";
+        input.classList.remove("has-marker-err");
+      }
+    };
+    runValidate();
 
     // UXP Chromium's native paste drops the whole buffer when clipboard
     // contains variation selectors (U+FE0F etc). Insert manually; blur+focus
@@ -555,9 +586,11 @@ function buildUnifiedRow(entry, idx) {
           idInput.value = newId;
           state.allEntries[idx].linkId = newId;
         }
+        runValidate();
         refreshApplyEnabled();
       }, 120);
     });
+
   }
 
   // Image file picker
@@ -1340,15 +1373,22 @@ function refreshStickyCta() {
 function refreshApplyEnabled() {
   const { textCount, imageCount, renameCount, totalLayerOps } = countPendingOps();
   const hasAny = textCount + imageCount + renameCount > 0;
-  setDisabled(applyBtn, !hasAny);
-  applyBtn.textContent = hasAny ? `Apply edits (${totalLayerOps})` : "Apply edits";
+  // Block Apply if any text entry has unresolved marker errors.
+  const errCount = state.allEntries.reduce((n, e) => n + ((e.markerErrors?.length || 0) > 0 ? 1 : 0), 0);
+  const blocked = errCount > 0;
+  setDisabled(applyBtn, !hasAny || blocked);
+  if (blocked) {
+    applyBtn.textContent = `Fix tag errors (${errCount})`;
+  } else {
+    applyBtn.textContent = hasAny ? `Apply edits (${totalLayerOps})` : "Apply edits";
+  }
 
   const parts = [];
   if (textCount)   parts.push(`${textCount} text`);
   if (imageCount)  parts.push(`${imageCount} image`);
   if (renameCount) parts.push(`${renameCount} rename`);
   summaryBar.innerHTML = hasAny
-    ? `<span class="pending">${parts.join(" + ")}</span> ready across ${totalLayerOps} layer${totalLayerOps === 1 ? "" : "s"}`
+    ? `<span class="pending">${parts.join(" + ")}</span> ready across ${totalLayerOps} layer${totalLayerOps === 1 ? "" : "s"}${blocked ? ` <span class="err">— ${errCount} entry with tag errors</span>` : ""}`
     : "";
   refreshStickyCta();
 }
@@ -1511,24 +1551,310 @@ function dumpSentStyle(label, styleObj) {
 }
 
 // ─── Mixed-style preservation ──────────────────────────
-// Extracts <sup>…</sup> and <sub>…</sub> spans so the caller can apply a
-// "superscript-like" / "subscript-like" style to those spans in the new text.
-// Tags are stripped; returned positions are in the cleaned text. Markers are
-// case-insensitive and non-nested (lazy match).
+// Extracts inline style tags from `text`. Supported tags (case-insensitive):
+//   <sup>…</sup>            → superscript baseline
+//   <sub>…</sub>            → subscript baseline
+//   <b>…</b>                → bold (synthesizes faux bold)
+//   <i>…</i>                → italic (synthesizes faux italic)
+//   <color=#rrggbb>…</color> or <color=#rgb>…</color> → override fill color
+//   <font="Roboto-Bold">…</font> or <font=Roboto-Bold>…</font>
+//     → switch fontPostScriptName (and clear fontStyleName so PS resolves face).
+//       Value should be the PostScript name (e.g. "Roboto-Bold", "Arial-BoldMT").
+// Tags are stripped from the returned `clean` text. Returned positions are in
+// the cleaned text. Tags can be nested (e.g. <b><color=#ff0000>x</color></b>);
+// each tag contributes one span and overrides merge at apply time.
 function stripStyleMarkers(text) {
   const spans = [];
-  let clean = "";
-  const re = /<(sup|sub)>([\s\S]*?)<\/\1>/gi;
-  let last = 0, m;
-  while ((m = re.exec(text)) !== null) {
-    clean += text.slice(last, m.index);
-    const from = clean.length;
-    clean += m[2];
-    spans.push({ kind: m[1].toLowerCase(), from, to: clean.length });
-    last = m.index + m[0].length;
+  // Single pass: scan, when we hit "<tag…>" find its matching close and recurse
+  // through the inner content so nested tags can be parsed too.
+  function scan(src, baseOffset, cleanRef) {
+    const TAG_RE = /<(sup|sub|b|i|color|font)(=("[^"]*"|'[^']*'|[^>]*))?>/gi;
+    let last = 0, m;
+    while ((m = TAG_RE.exec(src)) !== null) {
+      const tag = m[1].toLowerCase();
+      let attr = m[3];
+      // Strip surrounding quotes from attr if present
+      if (attr && ((attr.startsWith('"') && attr.endsWith('"')) ||
+                   (attr.startsWith("'") && attr.endsWith("'")))) {
+        attr = attr.slice(1, -1);
+      }
+      const openStart = m.index;
+      const openEnd = TAG_RE.lastIndex;
+      // Find matching close tag, honoring nested same-name tags.
+      const closeRe = new RegExp(`<\\/${tag}>`, "gi");
+      const openSame = new RegExp(`<${tag}(=("[^"]*"|'[^']*'|[^>]*))?>`, "gi");
+      closeRe.lastIndex = openEnd;
+      openSame.lastIndex = openEnd;
+      let depth = 1, closeStart = -1, closeEnd = -1;
+      while (depth > 0) {
+        const c = closeRe.exec(src);
+        if (!c) break;
+        let o;
+        openSame.lastIndex = openEnd;
+        let nestedOpen = -1;
+        while ((o = openSame.exec(src)) !== null) {
+          if (o.index >= c.index) break;
+          if (o.index >= openEnd) nestedOpen = o.index;
+        }
+        if (nestedOpen >= 0 && nestedOpen < c.index) {
+          depth++;
+          openSame.lastIndex = nestedOpen + 1;
+        }
+        depth--;
+        if (depth === 0) { closeStart = c.index; closeEnd = closeRe.lastIndex; }
+      }
+      if (closeStart < 0) continue; // unmatched open tag → leave literal
+      // Copy text before tag
+      cleanRef.text += src.slice(last, openStart);
+      const innerSrc = src.slice(openEnd, closeStart);
+      const spanFrom = baseOffset + cleanRef.text.length;
+      // Recurse into inner content so nested tags get parsed
+      scan(innerSrc, baseOffset, cleanRef);
+      const spanTo = baseOffset + cleanRef.text.length;
+      const span = { kind: tag, from: spanFrom, to: spanTo };
+      if (tag === "color" && attr) span.color = parseHexColor(attr);
+      if (tag === "font" && attr)  span.font  = String(attr).trim();
+      spans.push(span);
+      last = closeEnd;
+      TAG_RE.lastIndex = closeEnd;
+    }
+    cleanRef.text += src.slice(last);
   }
-  clean += text.slice(last);
-  return { clean, spans };
+  const cleanRef = { text: "" };
+  scan(text, 0, cleanRef);
+  return { clean: cleanRef.text, spans };
+}
+
+// Validate user-typed style markers. Returns an array of error strings.
+// Catches:
+//   - Unknown tag names (<bold>, <colour=…>, <italic>, …)
+//   - Unmatched open / close tags ("<b>foo", "foo</b>", "<b>foo</i>")
+//   - Bad attribute values (color hex, empty font, empty color)
+//   - Nested same-name tags (<b><b>...</b></b>)
+// Returns [] if input is valid.
+function validateStyleMarkers(text) {
+  const errors = [];
+  if (!text) return errors;
+  const KNOWN = new Set(["sup", "sub", "b", "i", "color", "font"]);
+  // Tokenize every "<…>". We allow `=...` attrs (quoted or unquoted) and `/close`.
+  const TOKEN_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:=("[^"]*"|'[^']*'|[^>]*))?>/g;
+  // Also catch likely-tag-ish text that didn't match (e.g. "<b" no close ">").
+  // Stack of open tags with their position to report.
+  const stack = [];
+  let m;
+  while ((m = TOKEN_RE.exec(text)) !== null) {
+    const isClose = m[1] === "/";
+    const name = m[2].toLowerCase();
+    const attrRaw = m[3];
+    const pos = m.index;
+    if (!KNOWN.has(name)) {
+      errors.push(`Unknown tag <${isClose ? "/" : ""}${name}> at position ${pos}`);
+      continue;
+    }
+    if (isClose) {
+      if (!stack.length) {
+        errors.push(`Closing </${name}> without matching open at position ${pos}`);
+        continue;
+      }
+      const top = stack[stack.length - 1];
+      if (top.name !== name) {
+        errors.push(`Mismatched close: expected </${top.name}> but got </${name}> at position ${pos}`);
+        // Pop until we find a match or empty — heuristic recovery.
+        const idx = stack.map(s => s.name).lastIndexOf(name);
+        if (idx >= 0) stack.splice(idx, 1);
+        continue;
+      }
+      stack.pop();
+    } else {
+      // Validate attrs
+      let attr = attrRaw;
+      if (attr && ((attr.startsWith('"') && attr.endsWith('"')) ||
+                   (attr.startsWith("'") && attr.endsWith("'")))) {
+        attr = attr.slice(1, -1);
+      }
+      if (name === "color") {
+        if (!attr) errors.push(`<color> missing value at position ${pos} (expected <color=#hex>)`);
+        else if (!parseHexColor(attr)) errors.push(`<color="${attr}"> invalid hex at position ${pos}`);
+      }
+      if (name === "font") {
+        if (!attr || !String(attr).trim()) {
+          errors.push(`<font> missing value at position ${pos} (expected <font="Bold"> or <font=PostScriptName>)`);
+        }
+      }
+      if ((name === "sup" || name === "sub" || name === "b" || name === "i") && attrRaw) {
+        errors.push(`<${name}> should not have a value at position ${pos}`);
+      }
+      // Disallow nested same-name (meaningless, often a typo)
+      if (stack.some(s => s.name === name)) {
+        errors.push(`Nested <${name}> inside another <${name}> at position ${pos} — remove the inner pair`);
+      }
+      stack.push({ name, pos });
+    }
+  }
+  for (const open of stack) {
+    errors.push(`Unclosed <${open.name}> at position ${open.pos}`);
+  }
+  return errors;
+}
+
+// Parse "#rgb" / "#rrggbb" → { r, g, b } (0–255). Returns null on bad input.
+function parseHexColor(s) {
+  if (!s) return null;
+  const m = String(s).trim().match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+// Reverse of stripStyleMarkers: take a PS textKey descriptor and produce a
+// string with inline tags (<b>, <i>, <sup>, <sub>, <color=#hex>, <font=…>)
+// where character styles differ from the dominant base style. Used to render
+// the "Current text" field so users can see existing formatting.
+//
+// Strategy:
+//   1) Pick the longest textStyleRange as the base.
+//   2) For each character, derive a set of "diff flags" vs base (bold? italic?
+//      sup/sub? color? font face/style?).
+//   3) Walk the string char-by-char; whenever the flag set changes, close
+//      previous tags and open new ones. Innermost tag wraps tightest.
+//
+// Returns plain text if no styled ranges deviate from base.
+function encodeStyleTags(tk) {
+  const text = (tk?.textKey || "").replace(/\r/g, "\n");
+  const ranges = tk?.textStyleRange || [];
+  if (!text || !ranges.length) return text;
+
+  // Pick base = style that covers the MOST characters across all ranges
+  // (not the single longest range). Two short Medium ranges should outweigh
+  // one slightly-longer Medium Italic range.
+  const styleStats = new Map(); // key → { range, total }
+  for (const r of ranges) {
+    if (!r.textStyle) continue;
+    const ts = r.textStyle;
+    const key = [
+      ts.fontPostScriptName || "",
+      ts.fontStyleName || "",
+      ts.fontName || "",
+      ts.syntheticBold ? "B" : "",
+      ts.syntheticItalic ? "I" : "",
+      ts.color ? `${u(ts.color.red)|0},${u(ts.color.grain ?? ts.color.green)|0},${u(ts.color.blue)|0}` : "",
+      String(ts.baseline?._value ?? ts.baseline ?? ""),
+    ].join("|");
+    const len = Math.max(0, (r.to ?? 0) - (r.from ?? 0));
+    const cur = styleStats.get(key);
+    if (cur) cur.total += len;
+    else styleStats.set(key, { range: r, total: len });
+  }
+  let baseRange = ranges[0], baseTotal = -1;
+  for (const [, v] of styleStats) {
+    if (v.total > baseTotal) { baseTotal = v.total; baseRange = v.range; }
+  }
+  const base = baseRange.textStyle || {};
+  const baseColor = base.color;
+  const baseColorKey = baseColor
+    ? `${u(baseColor.red) | 0},${u(baseColor.grain ?? baseColor.green) | 0},${u(baseColor.blue) | 0}`
+    : "";
+  const baseStyleName = String(base.fontStyleName || "");
+  const basePS = String(base.fontPostScriptName || "");
+
+  // Per-char style lookup
+  const styleAt = new Array(text.length).fill(base);
+  for (const r of ranges) {
+    const ts = r.textStyle;
+    if (!ts) continue;
+    const from = Math.max(0, r.from ?? 0);
+    const to = Math.min(text.length, r.to ?? 0);
+    for (let k = from; k < to; k++) styleAt[k] = ts;
+  }
+
+  function flagsFor(ts) {
+    const bl = String(ts?.baseline?._value ?? ts?.baseline ?? "").toLowerCase();
+    const ob = String(ts?.otbaseline?._value ?? ts?.otbaseline ?? "").toLowerCase();
+    const sup = bl.includes("super") || ob.includes("super");
+    const sub = bl.includes("sub") || ob.includes("sub");
+    let bold = !!(ts?.syntheticBold || ts?.fauxBold || ts?.impliedFauxBold);
+    let italic = !!(ts?.syntheticItalic || ts?.fauxItalic || ts?.impliedFauxItalic);
+    const c = ts?.color;
+    const colorKey = c ? `${u(c.red) | 0},${u(c.grain ?? c.green) | 0},${u(c.blue) | 0}` : "";
+    const color = (colorKey && colorKey !== baseColorKey) ? colorKey : "";
+    // Font diff: prefer style name (shorter), fall back to PS name
+    const sn = String(ts?.fontStyleName || "");
+    const ps = String(ts?.fontPostScriptName || "");
+    let font = "";
+    if (sn && sn !== baseStyleName) font = sn;
+    else if (ps && ps !== basePS) font = ps;
+    // If PS could not resolve a requested face it falls back to "Regular"
+    // while keeping the faux bold/italic flags — that's noise, not user
+    // intent. Drop the <font="Regular"> wrapper so we just emit <b>/<i>.
+    if (font && /^regular$/i.test(font) && (bold || italic)) {
+      font = "";
+    }
+    // Avoid double-tagging: if <font="…"> already encodes weight/style, drop
+    // the redundant <b>/<i>. Example: "Bold" → suppress <b>; "Bold Italic" →
+    // suppress both <b> and <i>; "Black"/"Heavy" → suppress <b>.
+    if (font) {
+      const low = font.toLowerCase();
+      if (/bold|black|heavy/.test(low)) bold = false;
+      if (/italic|oblique/.test(low))   italic = false;
+    }
+    return { sup, sub, bold, italic, color, font };
+  }
+
+  function flagsKey(f) {
+    return `${f.sup ? 1 : 0}|${f.sub ? 1 : 0}|${f.bold ? 1 : 0}|${f.italic ? 1 : 0}|${f.color}|${f.font}`;
+  }
+
+  function colorToHex(key) {
+    if (!key) return "";
+    const [r, g, b] = key.split(",").map(n => Math.max(0, Math.min(255, Number(n) | 0)));
+    const hex = n => n.toString(16).padStart(2, "0");
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  }
+
+  // Emit tags grouped by stable order: sup/sub outermost, then font, color, b, i (innermost).
+  // This keeps `<b><color=#xxx>x</color></b>` style nesting consistent.
+  function openTags(f) {
+    let s = "";
+    if (f.sup) s += "<sup>";
+    if (f.sub) s += "<sub>";
+    if (f.font) s += `<font="${f.font.replace(/"/g, "")}">`;
+    if (f.color) s += `<color=${colorToHex(f.color)}>`;
+    if (f.bold) s += "<b>";
+    if (f.italic) s += "<i>";
+    return s;
+  }
+  function closeTags(f) {
+    let s = "";
+    if (f.italic) s += "</i>";
+    if (f.bold) s += "</b>";
+    if (f.color) s += "</color>";
+    if (f.font) s += "</font>";
+    if (f.sub) s += "</sub>";
+    if (f.sup) s += "</sup>";
+    return s;
+  }
+
+  let out = "";
+  let curKey = "";
+  let curFlags = null;
+  for (let i = 0; i < text.length; i++) {
+    const f = flagsFor(styleAt[i]);
+    const k = flagsKey(f);
+    if (k !== curKey) {
+      if (curFlags) out += closeTags(curFlags);
+      out += openTags(f);
+      curKey = k;
+      curFlags = f;
+    }
+    out += text[i];
+  }
+  if (curFlags) out += closeTags(curFlags);
+  return out;
 }
 
 // LCS-based char-level map: returns an array of length oldText.length whose
@@ -1614,8 +1940,9 @@ function pickMarkerStyle(ranges, baseRange, kind) {
 // Rebuilds textStyleRange entries for `newText` by:
 //   1) Picking the longest old range as the base style.
 //   2) Mapping each non-base old range onto newText via LCS char alignment.
-//   3) Overriding any sup-marker span with a "sup-like" style.
-//   4) Collapsing the per-char assignment into contiguous ranges.
+//   3) Overriding sup/sub spans with picked super/sub style.
+//   4) Applying b/i/color spans on top — merged per-char so nested tags stack.
+//   5) Collapsing the per-char assignment into contiguous ranges.
 function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
   if (!oldRanges?.length || !newText.length) {
     return [{ _obj: "textStyleRange", from: 0, to: newText.length, textStyle: oldRanges?.[0]?.textStyle }];
@@ -1629,26 +1956,95 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
   const supPick = pickMarkerStyle(oldRanges, baseRange, "sup");
   const subPick = pickMarkerStyle(oldRanges, baseRange, "sub");
   const markerStyles = { sup: supPick.style, sub: subPick.style };
-  if ((markerSpans || []).length) {
+  if ((markerSpans || []).some(s => s.kind === "sup" || s.kind === "sub")) {
     log(`  [TXT] marker styles: sup=${supPick.source} sub=${subPick.source}`);
   }
 
   const posStyle = new Array(newText.length).fill(baseStyle);
 
-  const map = lcsMapOldToNew(oldText, newText);
-  for (const r of oldRanges) {
-    if (r === baseRange) continue;
-    const from = Math.max(0, r.from ?? 0);
-    const to = Math.min(oldText.length, r.to ?? 0);
-    for (let k = from; k < to; k++) {
-      const nj = map[k];
-      if (nj >= 0) posStyle[nj] = r.textStyle;
+  // If the user provided ANY inline style tag, treat the new text as fully
+  // user-controlled formatting: every char defaults to base, and tags below
+  // are the only overrides. Skipping LCS prevents stray styles from the old
+  // text leaking into characters the user did not tag (which would later
+  // round-trip as unexpected <font=...> wrappers on re-scan).
+  const hasUserTags = (markerSpans || []).length > 0;
+  if (!hasUserTags) {
+    const map = lcsMapOldToNew(oldText, newText);
+    for (const r of oldRanges) {
+      if (r === baseRange) continue;
+      const from = Math.max(0, r.from ?? 0);
+      const to = Math.min(oldText.length, r.to ?? 0);
+      for (let k = from; k < to; k++) {
+        const nj = map[k];
+        if (nj >= 0) posStyle[nj] = r.textStyle;
+      }
     }
   }
 
+  // Apply sup/sub first (these replace the whole style).
   for (const span of markerSpans || []) {
+    if (span.kind !== "sup" && span.kind !== "sub") continue;
     const style = markerStyles[span.kind] || baseStyle;
     for (let k = span.from; k < Math.min(span.to, newText.length); k++) posStyle[k] = style;
+  }
+  // Apply b / i / color / font on top — clone the current style at each
+  // position so overrides merge with whatever was placed by LCS / sup-sub above.
+  for (const span of markerSpans || []) {
+    if (!["b", "i", "color", "font"].includes(span.kind)) continue;
+    for (let k = span.from; k < Math.min(span.to, newText.length); k++) {
+      const cur = posStyle[k] || baseStyle;
+      const cloned = { ...cur };
+      if (span.kind === "b") {
+        cloned.syntheticBold = true;
+        cloned.fauxBold = true;
+      } else if (span.kind === "i") {
+        cloned.syntheticItalic = true;
+        cloned.fauxItalic = true;
+      } else if (span.kind === "color" && span.color) {
+        cloned.color = {
+          _obj: "RGBColor",
+          red:   span.color.r,
+          grain: span.color.g, // UXP/PS uses `grain` for the green channel
+          green: span.color.g, // also set `green` for safety on newer builds
+          blue:  span.color.b,
+        };
+      } else if (span.kind === "font" && span.font) {
+        // <font=...> accepts two flavors:
+        //   1) PostScript name (contains "-" or ends with "MT"/"PS"):
+        //        e.g. "Roboto-Bold", "ArialMT" → fully replace face.
+        //   2) Style name only ("Bold", "Light", "Medium", "Bold Italic", …):
+        //        keep current fontName (family), set fontStyleName, let PS
+        //        resolve the PS name. This matches Photoshop's Character panel
+        //        style dropdown (Regular / Medium / Bold / Bold Italic / …).
+        const v = span.font;
+        const looksLikePS = /-|MT$|PS$|PSMT$/i.test(v);
+        if (looksLikePS) {
+          cloned.fontPostScriptName = v;
+          delete cloned.fontName;
+          delete cloned.fontStyleName;
+          delete cloned.fontScript;
+          delete cloned.fontTechnology;
+        } else {
+          // Style-only: PS resolves face by (fontName + fontStyleName).
+          cloned.fontStyleName = v;
+          delete cloned.fontPostScriptName;
+          // Belt-and-suspenders: also set faux flags so the rendering matches
+          // intent even if the family doesn't have the requested face
+          // (e.g. <font=Italic> on a family without an Italic face → PS would
+          // silently fall back to Regular, losing italic look).
+          const low = v.toLowerCase();
+          if (/italic|oblique/.test(low)) {
+            cloned.syntheticItalic = true;
+            cloned.fauxItalic = true;
+          }
+          if (/bold|black|heavy/.test(low)) {
+            cloned.syntheticBold = true;
+            cloned.fauxBold = true;
+          }
+        }
+      }
+      posStyle[k] = cloned;
+    }
   }
 
   const out = [];
@@ -1786,16 +2182,72 @@ async function replaceTextOnLayer(occ, newContent) {
   const shape0 = toObj.textShape?.[0];
   const isHorizontal = String(freshTK?.orientation?._value ?? "horizontal").toLowerCase() !== "vertical";
   if (shape0?.bounds && isHorizontal) {
-    // Inflate to a huge local height — PS will respect width, ignore overflow.
-    shape0.bounds.bottom = shape0.bounds.top + 1_000_000;
+    // Inflate to a tall-enough local height. PS text engine rejects boxes whose
+    // *world* dims (after tkTransform) exceed ~30000 px with "result would be
+    // too big". tkTransform.yy can shrink local→world, so we cap conservatively.
+    const tkYYInf = Math.abs(Number(tk?.transform?.yy ?? freshTK?.transform?.yy ?? 1)) || 1;
+    const SAFE_WORLD_H = 25_000;
+    const inflateLocal = Math.max(2_000, Math.floor(SAFE_WORLD_H / tkYYInf));
+    shape0.bounds.bottom = shape0.bounds.top + inflateLocal;
+    log(`  [TXT] pre-inflate localH=${inflateLocal} (tkYY=${tkYYInf.toFixed(4)} → worldH≈${Math.round(inflateLocal*tkYYInf)})`);
   }
 
-  await bp([{
-    _obj: "set",
-    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
-    to: toObj,
-    _options: { dialogOptions: "dontDisplay" }
-  }]);
+  // [DIAG SEND] Dump exact fields nghi gây "result too big".
+  try {
+    const sh = toObj.textShape?.[0];
+    const shB = sh?.bounds;
+    const shT = sh?.transform;
+    log(`  [DIAG SEND] textShape.bounds L=${shB?.left} T=${shB?.top} R=${shB?.right} B=${shB?.bottom} w=${shB ? (Number(shB.right)-Number(shB.left)) : "?"} h=${shB ? (Number(shB.bottom)-Number(shB.top)) : "?"}`);
+    log(`  [DIAG SEND] textShape.transform = ${shT ? JSON.stringify(shT) : "none"}`);
+    log(`  [DIAG SEND] toObj keys = ${Object.keys(toObj).join(",")}`);
+    log(`  [DIAG SEND] tsrN=${toObj.textStyleRange?.length} psrN=${toObj.paragraphStyleRange?.length}`);
+    for (let i = 0; i < (toObj.textStyleRange?.length || 0); i++) {
+      const r = toObj.textStyleRange[i];
+      const ts = r.textStyle || {};
+      const sz = ts.size?._value ?? ts.size;
+      const iSz = ts.impliedFontSize?._value ?? ts.impliedFontSize;
+      const ld = ts.leading?._value ?? ts.leading;
+      const iLd = ts.impliedLeading?._value ?? ts.impliedLeading;
+      const hScale = ts.horizontalScale;
+      const vScale = ts.verticalScale;
+      const hasBase = !!ts.baseParentStyle;
+      const baseSize = ts.baseParentStyle?.size?._value ?? ts.baseParentStyle?.size;
+      log(`  [DIAG SEND] tsr[${i}] ${r.from}-${r.to} size=${sz} impliedSize=${iSz} lead=${ld} impliedLead=${iLd} hScale=${hScale} vScale=${vScale} hasBaseParent=${hasBase} baseSize=${baseSize}`);
+    }
+    // Compute world dims after tkTransform to check overflow.
+    const tkT = tk?.transform || freshTK?.transform;
+    if (shB && tkT) {
+      const xx = Number(tkT.xx ?? 1), yy = Number(tkT.yy ?? 1);
+      const localW = Number(shB.right) - Number(shB.left);
+      const localH = Number(shB.bottom) - Number(shB.top);
+      log(`  [DIAG SEND] tkTransform xx=${xx} yy=${yy} → worldW≈${(localW*xx).toFixed(1)} worldH≈${(localH*yy).toFixed(1)} (PS limit ~30000)`);
+    }
+  } catch (e) {
+    log(`  [DIAG SEND] dump failed: ${e.message}`);
+  }
+
+  try {
+    await bp([{
+      _obj: "set",
+      _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+      to: toObj,
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+    log(`  [DIAG SEND] set textKey OK`);
+  } catch (e) {
+    log(`  [DIAG SEND] set textKey FAILED: ${e?.message || e}`);
+    // Dump toObj as JSON in chunks to inspect what triggered the rejection.
+    try {
+      const j = JSON.stringify(toObj);
+      log(`  [DIAG SEND] toObj.length=${j.length}`);
+      for (let off = 0; off < j.length; off += 800) {
+        log(`  [DIAG SEND] toObj[${off}]=${j.slice(off, off + 800)}`);
+      }
+    } catch (je) {
+      log(`  [DIAG SEND] toObj stringify failed: ${je.message}`);
+    }
+    throw e;
+  }
 
   // Pass 2: measure true rendered height, then snap box to fit.
   // tkTransform.yy converts canvas pixels → local units.
@@ -2304,6 +2756,18 @@ layersToggle.addEventListener("click", () => {
   const icon = layersToggle.querySelector(".toggle-icon");
   if (icon) icon.textContent = collapsed ? "▼" : "▶";
 });
+
+const tagHelpToggle = document.getElementById("tagHelpToggle");
+if (tagHelpToggle) {
+  tagHelpToggle.addEventListener("click", () => {
+    const body = document.getElementById("tagHelpBody");
+    if (!body) return;
+    const collapsed = body.style.display === "none";
+    body.style.display = collapsed ? "" : "none";
+    const icon = tagHelpToggle.querySelector(".toggle-icon");
+    if (icon) icon.textContent = collapsed ? "▼" : "▶";
+  });
+}
 
 // Load PS Actions palette via app.actionTree (no batchPlay → no error dialogs)
 async function loadActionSets() {
