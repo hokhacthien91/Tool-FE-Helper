@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "1.0.4-slugify-asset-names";
+const PLUGIN_VERSION = "1.3.0-temp-doc-main-flow";
 console.log(`[BannerCloner] main.js loaded — version=${PLUGIN_VERSION} @ ${new Date().toISOString()}`);
 
 const uxp = require("uxp");
@@ -2705,15 +2705,19 @@ async function cloneAsArtboards() {
           log(`  Skip: no matching targets for this source`);
           continue;
         }
-        await cloneOneSourceAsArtboardsV2({
+        // Use temp-doc pipeline (isolates canvas-grow side effects, handles
+        // sentinel bounds, no eviction at resize). srcTargets uses {raw, width,
+        // height, variant} from parseSizes; remap to {raw, w, h} for the helper.
+        const tdSizes = srcTargets.map(t => ({ raw: t.raw, w: t.width, h: t.height }));
+        await cloneOneSourceTempDoc({
           source,
-          targets: srcTargets,
+          sizes: tdSizes,
           sourceDoc,
           rowStartX,
           rowY,
+          createdTargets,
           progressBase: totalProgressDone,
           progressMax: totalProgressMax,
-          createdTargets,
         });
         totalProgressDone += srcTargets.length;
       }
@@ -9092,42 +9096,41 @@ testGroupResizeBtn?.addEventListener("click", runTestGroupResize);
 
 const testTempDocBtn = document.getElementById("testTempDocBtn");
 
-async function runTestTempDoc() {
-  try {
-    const source = await resolveSelectedArtboard();
-    if (!source) { log(`[TD-TEST] No artboard selected.`); return; }
+// CORE: Run temp-doc clone pipeline for ONE source artboard against N target sizes.
+// Caller must already be inside core.executeAsModal. Returns nothing; pushes
+// {id, name, intendedLeft, intendedTop} entries into `createdTargets` (if provided).
+//
+// Params:
+//   source         — resolved source artboard {id, name, layer, rect, size}
+//   sizes          — array of {raw, w, h}
+//   sourceDoc      — source document handle
+//   rowStartX      — canvas X where this row's clones start
+//   rowY           — canvas Y for this row
+//   createdTargets — optional array to track every clone created (for drift restore)
+//   progressBase   — running total of clones done across all sources
+//   progressMax    — total clones across all sources (for progress bar)
+async function cloneOneSourceTempDoc({ source, sizes, sourceDoc, rowStartX, rowY, createdTargets, progressBase, progressMax }) {
+  const tStart = performance.now();
+  const tStep = (() => { let prev = tStart; return (label) => { const now = performance.now(); const dt = Math.round(now - prev); prev = now; log(`[TD-TIME] +${dt}ms — ${label}`); return now; }; })();
 
-    const sizesEl = document.getElementById("sizesInput");
-    const raw = (sizesEl?.value || "").trim();
-    const tokens = raw.split(/[\s,]+/).filter(Boolean);
-    const sizes = [];
-    for (const tok of tokens) {
-      const m = tok.match(/^(\d+)x(\d+)$/i);
-      if (m) sizes.push({ raw: `${m[1]}x${m[2]}`, w: parseInt(m[1], 10), h: parseInt(m[2], 10) });
-      else log(`[TD-TEST] skipping invalid size token "${tok}"`);
-    }
-    if (sizes.length === 0) { log(`[TD-TEST] no valid sizes parsed.`); return; }
-
-    const sourceDoc = app.activeDocument;
-    const tStart = performance.now();
-    const tStep = (() => { let prev = tStart; return (label) => { const now = performance.now(); const dt = Math.round(now - prev); prev = now; log(`[TD-TIME] +${dt}ms — ${label}`); return now; }; })();
-    log(`[TD-TEST] === Test Temp-Doc Pipeline (${sizes.length} size${sizes.length>1?"s":""}) ===`);
-    log(`[TD-TEST] source="${source.name}" id=${source.id} sourceDoc="${sourceDoc.title}" sizes=[${sizes.map(s=>s.raw).join(", ")}]`);
-
-    await core.executeAsModal(async () => {
-      // Read source artboard rect ONCE.
-      const srcDescTop = await getLayerDescriptor(source.id);
-      const srcRTop = rectSize(srcDescTop.artboard?.artboardRect || srcDescTop.bounds);
-      const srcW = srcRTop.width, srcH = srcRTop.height;
-      let nextX = srcRTop.right + 80;
-      const baseTop = srcRTop.top;
-      log(`[TD-TEST] source artboard rect=(L${srcRTop.left},T${srcRTop.top}) ${srcW}x${srcH}`);
+  // Read source artboard rect ONCE.
+  const srcDescTop = await getLayerDescriptor(source.id);
+  const srcRTop = rectSize(srcDescTop.artboard?.artboardRect || srcDescTop.bounds);
+  const srcW = srcRTop.width, srcH = srcRTop.height;
+  let nextX = (typeof rowStartX === "number") ? rowStartX : (srcRTop.right + 80);
+  const baseTop = (typeof rowY === "number") ? rowY : srcRTop.top;
+  log(`[TD-TEST] source artboard rect=(L${srcRTop.left},T${srcRTop.top}) ${srcW}x${srcH}`);
 
       for (let i = 0; i < sizes.length; i++) {
         const { raw: targetRaw, w: targetW, h: targetH } = sizes[i];
         const tIterStart = performance.now();
         log(`[TD-TEST] --- (${i+1}/${sizes.length}) target=${targetRaw} ---`);
         tStep(`iter ${i+1}/${sizes.length} ${targetRaw} START`);
+
+        // Progress (when called from main clone flow).
+        if (typeof progressBase === "number" && typeof progressMax === "number") {
+          try { setProgress(progressBase + i + 1, progressMax, `${source.name} → ${targetRaw}`); } catch (e) {}
+        }
 
         const scale = Math.min(targetW / srcW, targetH / srcH);
 
@@ -9500,6 +9503,41 @@ async function runTestTempDoc() {
         //      expected, and move by delta. Group same-delta moves to reduce
         //      batchPlay round-trips.
         if (tempGroupId && Math.abs(scale - 1) > 0.005) {
+          // Helper: get safe bounds. PS returns INT_MIN sentinel
+          // (-2147483648) for groups whose bbox can't be computed (smart
+          // object + chained masks). 3-level fallback:
+          //   1) boundsNoEffects (default — most accurate)
+          //   2) bounds (with effects — sometimes valid when noEffects isn't)
+          //   3) walk leaves and union pixel bounds
+          // Returns null if all 3 fail.
+          async function _safeBounds(layerId, layerNode) {
+            const INT_MIN = -2147483647;  // -2^31 + 1 (safety margin)
+            const INT_MAX =  2147483647;
+            function isSane(b) {
+              if (!b || !Number.isFinite(b.left)) return false;
+              if (b.left  <= INT_MIN || b.left  >= INT_MAX) return false;
+              if (b.top   <= INT_MIN || b.top   >= INT_MAX) return false;
+              if (b.right <= INT_MIN || b.right >= INT_MAX) return false;
+              return true;
+            }
+            try {
+              const cb = await getLayerBoundsNoEffects(layerId);
+              if (isSane(cb)) return cb;
+            } catch (e) {}
+            try {
+              const desc = await getLayerDescriptor(layerId);
+              const b = rectSize(desc.bounds);
+              if (isSane(b)) return b;
+            } catch (e) {}
+            if (layerNode && layerNode.layers && layerNode.layers.length) {
+              try {
+                const gb = await getGroupBoundsNoEffects(layerNode);
+                if (isSane(gb)) return gb;
+              } catch (e) {}
+            }
+            return null;
+          }
+
           // Step 1: Snapshot direct children positions BEFORE scale.
           const preScaleByName = new Map();
           let tempGroupNode = null;
@@ -9514,9 +9552,11 @@ async function runTestTempDoc() {
           const groupChildren = tempGroupNode ? [...(tempGroupNode.layers || [])] : [];
           for (const c of groupChildren) {
             try {
-              const cb = await getLayerBoundsNoEffects(c.id).catch(() => null);
-              if (cb && Number.isFinite(cb.left)) {
+              const cb = await _safeBounds(c.id, c);
+              if (cb) {
                 preScaleByName.set(c.id, { name: c.name, left: cb.left, top: cb.top, right: cb.right, bottom: cb.bottom });
+              } else {
+                log(`[TD-TEST]   "${c.name}" id=${c.id} — no valid bounds (sentinel), skip from correction`);
               }
             } catch (e) {}
           }
@@ -9539,24 +9579,48 @@ async function runTestTempDoc() {
           tStep("scale temp group");
 
           // Step 3: Per-layer position correction.
+          // Guard against unreasonable deltas (sentinel bounds slipped through,
+          // or layer evicted by PS during scale). Skip layers with delta
+          // outside canvas safety range to prevent PS "Could not complete
+          // Move command" popup.
+          const moveLimit = Math.max(targetW, targetH) * 5;
           const moveGroups = new Map(); // key: "dx,dy" → [layerId, ...]
           let correctedCount = 0;
+          let skippedTooFar = 0;
           for (const [layerId, pre] of preScaleByName.entries()) {
             try {
-              const post = await getLayerBoundsNoEffects(layerId).catch(() => null);
-              if (!post || !Number.isFinite(post.left)) continue;
+              // Re-resolve layer node for safeBounds walk-leaves fallback.
+              let layerNode = null;
+              function findById(parent, id) {
+                for (const l of parent.layers || []) {
+                  if (l.id === id) return l;
+                  const r = findById(l, id);
+                  if (r) return r;
+                }
+                return null;
+              }
+              layerNode = findById(tempDoc, layerId);
+              const post = await _safeBounds(layerId, layerNode);
+              if (!post) continue;
               const expectedLeft = pre.left * scale;
               const expectedTop = pre.top * scale;
               const dx = Math.round(expectedLeft - post.left);
               const dy = Math.round(expectedTop - post.top);
               if (dx === 0 && dy === 0) continue;
+              // Skip if delta exceeds canvas range (safety net for any
+              // remaining sentinel/invalid bounds).
+              if (Math.abs(dx) > moveLimit || Math.abs(dy) > moveLimit) {
+                log(`[TD-TEST]   skip "${pre.name}" — delta=(${dx},${dy}) exceeds limit ±${moveLimit}`);
+                skippedTooFar++;
+                continue;
+              }
               const key = `${dx},${dy}`;
               if (!moveGroups.has(key)) moveGroups.set(key, []);
               moveGroups.get(key).push({ id: layerId, name: pre.name });
               correctedCount++;
             } catch (e) {}
           }
-          log(`[TD-TEST] per-layer correction: ${correctedCount} layers in ${moveGroups.size} delta group(s)`);
+          log(`[TD-TEST] per-layer correction: ${correctedCount} layers in ${moveGroups.size} delta group(s)${skippedTooFar ? `, ${skippedTooFar} too-far skipped` : ""}`);
 
           // Apply grouped moves: multi-select layers with same delta, move once.
           for (const [key, layers] of moveGroups.entries()) {
@@ -9895,6 +9959,10 @@ async function runTestTempDoc() {
             }
             log(`[TD-TEST] renamed pasted artboard → "${newName}" at (${nextX},${baseTop})`);
             tStep("move + rename pasted artboard");
+            // Track for drift restore (when called from main flow).
+            if (createdTargets) {
+              createdTargets.push({ id: pastedAb.id, name: newName, intendedLeft: nextX, intendedTop: baseTop });
+            }
           } catch (e) {}
 
           // REORDER direct children of pasted artboard to match source.
@@ -9987,6 +10055,32 @@ async function runTestTempDoc() {
       const tTotal = Math.round(performance.now() - tStart);
       log(`[TD-TIME] === GRAND TOTAL: ${tTotal}ms (${(tTotal/1000).toFixed(2)}s) for ${sizes.length} size(s) ===`);
       log(`[TD-TEST] === ALL DONE ===`);
+}
+
+// Wrapper for Test Temp-Doc button — kept for debugging. Resolves source from
+// active selection, parses sizes input, wraps cloneOneSourceTempDoc in modal.
+async function runTestTempDoc() {
+  try {
+    const source = await resolveSelectedArtboard();
+    if (!source) { log(`[TD-TEST] No artboard selected.`); return; }
+
+    const sizesEl = document.getElementById("sizesInput");
+    const raw = (sizesEl?.value || "").trim();
+    const tokens = raw.split(/[\s,]+/).filter(Boolean);
+    const sizes = [];
+    for (const tok of tokens) {
+      const m = tok.match(/^(\d+)x(\d+)$/i);
+      if (m) sizes.push({ raw: `${m[1]}x${m[2]}`, w: parseInt(m[1], 10), h: parseInt(m[2], 10) });
+      else log(`[TD-TEST] skipping invalid size token "${tok}"`);
+    }
+    if (sizes.length === 0) { log(`[TD-TEST] no valid sizes parsed.`); return; }
+
+    const sourceDoc = app.activeDocument;
+    log(`[TD-TEST] === Test Temp-Doc Pipeline (${sizes.length} size${sizes.length>1?"s":""}) ===`);
+    log(`[TD-TEST] source="${source.name}" id=${source.id} sourceDoc="${sourceDoc.title}" sizes=[${sizes.map(s=>s.raw).join(", ")}]`);
+
+    await core.executeAsModal(async () => {
+      await cloneOneSourceTempDoc({ source, sizes, sourceDoc });
     }, { commandName: "Banner Cloner — Test Temp-Doc" });
   } catch (e) {
     log(`[TD-TEST] error: ${e.message}`);

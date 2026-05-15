@@ -454,7 +454,55 @@ function buildUnifiedRow(entry, idx) {
         <div class="current-text-label">Current text</div>
         <textarea class="current-text-value" rows="3" placeholder="(empty)">${escapeHtml(curText)}</textarea>
       </div>
-      <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip — use &lt;b&gt;, &lt;i&gt;, &lt;color=#hex&gt;, &lt;font=Bold&gt; tags to format. See cheatsheet above."></textarea>
+      <div class="cur-toolbar">
+        <button class="cur-btn" data-cur-tag="b" title="Append <b></b>"><b>B</b></button>
+        <button class="cur-btn" data-cur-tag="i" title="Append <i></i>"><i>I</i></button>
+        <button class="cur-btn" data-cur-tag="sup" title="Append <sup></sup>">x<sup>2</sup></button>
+        <button class="cur-btn" data-cur-tag="sub" title="Append <sub></sub>">x<sub>2</sub></button>
+        <span class="cur-sep"></span>
+        <div class="cur-dropdown">
+          <button class="cur-btn cur-color-trigger" title="Append <color=...></color>">
+            <span class="cur-color-swatch" style="background:#ff0000"></span>
+            Color ▾
+          </button>
+          <div class="cur-popover cur-color-popover" style="display:none;">
+            <div class="cur-swatches">
+              <button class="cur-swatch" data-color="#000000" style="background:#000000"></button>
+              <button class="cur-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+              <button class="cur-swatch" data-color="#ff0000" style="background:#ff0000"></button>
+              <button class="cur-swatch" data-color="#00aa00" style="background:#00aa00"></button>
+              <button class="cur-swatch" data-color="#0066ff" style="background:#0066ff"></button>
+              <button class="cur-swatch" data-color="#ffaa00" style="background:#ffaa00"></button>
+              <button class="cur-swatch" data-color="#aa00aa" style="background:#aa00aa"></button>
+              <button class="cur-swatch" data-color="#666666" style="background:#666666"></button>
+            </div>
+            <div class="cur-input-row">
+              <input type="text" class="cur-hex-input" placeholder="#hex" maxlength="7" />
+              <button class="cur-hex-apply">Insert</button>
+            </div>
+          </div>
+        </div>
+        <div class="cur-dropdown">
+          <button class="cur-btn cur-font-trigger" title="Append <font=...></font>">Font ▾</button>
+          <div class="cur-popover cur-font-popover" style="display:none;">
+            <div class="cur-font-list">
+              <button class="cur-font-opt" data-font="Light">Light</button>
+              <button class="cur-font-opt" data-font="Regular">Regular</button>
+              <button class="cur-font-opt" data-font="Medium">Medium</button>
+              <button class="cur-font-opt" data-font="Bold">Bold</button>
+              <button class="cur-font-opt" data-font="Black">Black</button>
+              <button class="cur-font-opt" data-font="Italic">Italic</button>
+              <button class="cur-font-opt" data-font="Bold Italic">Bold Italic</button>
+            </div>
+            <div class="cur-input-row">
+              <input type="text" class="cur-font-input" placeholder="Style or PS name" />
+              <button class="cur-font-apply">Insert</button>
+            </div>
+          </div>
+        </div>
+        <span class="cur-hint">Tag inserted at end — edit text between &lt;…&gt; brackets</span>
+      </div>
+      <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip — use buttons above or type &lt;b&gt;, &lt;i&gt;, &lt;color=#hex&gt;, &lt;font=Bold&gt; tags."></textarea>
       <div class="replace-row-errors" style="display:none;"></div>`;
   } else if (entry.kind === "image") {
     contentHTML = `
@@ -591,6 +639,208 @@ function buildUnifiedRow(entry, idx) {
       }, 120);
     });
 
+    // ─── Tag generator toolbar ──────────────────────────
+    // UXP textarea doesn't expose mouse cursor position to JS (click/mouseup
+    // events don't fire on textarea), so we can't insert at where the user
+    // clicked. Instead, every button appends a tag pair at the END of the
+    // text and places the caret between the open/close tags so the user can
+    // type the content next. Treat the toolbar as a "tag generator" that
+    // saves typing, not a positional editor.
+    function appendTagPair(openTag, closeTag) {
+      const cur = input.value;
+      // If the input is empty, just insert. Otherwise append after current text.
+      input.value = cur + openTag + closeTag;
+      const caretPos = cur.length + openTag.length;
+      input.focus();
+      try { input.setSelectionRange(caretPos, caretPos); } catch (_) {}
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    const curToolbar = row.querySelector(".cur-toolbar");
+    if (curToolbar) {
+      const popovers = row.querySelectorAll(".cur-popover");
+      // UXP native widgets render above HTML z-index. While a popover is
+      // open, swap every <textarea> and <input> in the panel for a stand-in
+      // <div> that shows the same text. Divs are plain HTML so the popover
+      // can layer correctly above them. On close, restore the original
+      // elements with their values preserved.
+      function panelInputs() {
+        const list = Array.from(document.querySelectorAll("#layerList textarea, #layerList input"))
+          .filter(el => !el.closest(".cur-popover"))
+          // Skip non-text inputs (checkbox, radio, file, button) — they
+          // don't carry text content and would show their `value` ("on")
+          // as the placeholder label.
+          .filter(el => {
+            if (el.tagName === "TEXTAREA") return true;
+            const t = (el.type || "text").toLowerCase();
+            return t === "text" || t === "search" || t === "url" || t === "email" || t === "tel" || t === "password" || t === "number";
+          });
+        log(`  [SWAP] panelInputs found ${list.length} elements`);
+        return list;
+      }
+      // Track detached elements so we can re-attach on close
+      const detachedRefs = [];
+      function swapToDivs() {
+        const list = panelInputs();
+        let swapped = 0;
+        list.forEach((el, i) => {
+          if (el.dataset.swappedOut === "1") return;
+          const ph = document.createElement("div");
+          ph.className = "input-placeholder " + (el.tagName === "TEXTAREA" ? "for-textarea" : "for-input");
+          const hasValue = !!el.value;
+          ph.textContent = el.value || el.placeholder || "";
+          if (!hasValue) ph.classList.add("is-placeholder-text");
+          // Copy enough computed styles so the placeholder visually matches
+          // the underlying widget. Skip text-color and font-style when we're
+          // rendering placeholder text — the CSS class will style those dim
+          // + italic to match how real placeholders render in the widget.
+          const cs = window.getComputedStyle(el);
+          const props = [
+            "width", "height", "minHeight", "padding",
+            "fontFamily", "fontSize", "fontWeight",
+            "lineHeight", "letterSpacing",
+            "background", "backgroundColor",
+            "border", "borderRadius",
+            "textAlign",
+          ];
+          if (hasValue) {
+            // Real value → match input's text color and font style.
+            props.push("color", "fontStyle");
+          }
+          props.forEach(prop => {
+            const cssProp = prop.replace(/[A-Z]/g, c => "-" + c.toLowerCase());
+            const v = cs.getPropertyValue(cssProp);
+            if (v) ph.style.setProperty(cssProp, v);
+          });
+          // UXP Spectrum widgets may still render even when display:none — so
+          // DETACH from DOM entirely and remember where to put it back.
+          const parent = el.parentNode;
+          el.dataset.swappedOut = "1";
+          parent.insertBefore(ph, el);
+          parent.removeChild(el);
+          detachedRefs.push({ el, parent, anchor: ph });
+          swapped++;
+        });
+        log(`  [SWAP] detached & swapped ${swapped}/${list.length}`);
+      }
+      function swapBackFromDivs() {
+        log(`  [SWAP] reattaching ${detachedRefs.length} elements`);
+        for (const ref of detachedRefs) {
+          // Put the input back where its placeholder was, then remove placeholder.
+          if (ref.anchor && ref.anchor.parentNode) {
+            ref.anchor.parentNode.insertBefore(ref.el, ref.anchor);
+            ref.anchor.parentNode.removeChild(ref.anchor);
+          } else if (ref.parent) {
+            ref.parent.appendChild(ref.el);
+          }
+          ref.el.dataset.swappedOut = "0";
+        }
+        detachedRefs.length = 0;
+      }
+      function closeAllPopovers(except) {
+        popovers.forEach(p => { if (p !== except) p.style.display = "none"; });
+        const anyOpen = [...popovers].some(p => p.style.display === "block");
+        row.classList.toggle("has-popover-open", anyOpen);
+        if (anyOpen) swapToDivs();
+        else swapBackFromDivs();
+      }
+      document.addEventListener("click", e => {
+        // Close popovers when clicking anywhere that's not inside one of
+        // this row's popovers OR a dropdown trigger button that opens them.
+        const insidePopover = e.target.closest(".cur-popover");
+        const isTrigger = e.target.closest(".cur-color-trigger, .cur-font-trigger");
+        if (!insidePopover && !isTrigger) {
+          const anyOpen = [...popovers].some(p => p.style.display === "block");
+          if (anyOpen) closeAllPopovers(null);
+        }
+      });
+
+      // Simple tag buttons (b, i, sup, sub)
+      row.querySelectorAll(".cur-btn[data-cur-tag]").forEach(btn => {
+        btn.addEventListener("mousedown", e => e.preventDefault());
+        btn.addEventListener("click", () => {
+          const tag = btn.getAttribute("data-cur-tag");
+          appendTagPair(`<${tag}>`, `</${tag}>`);
+        });
+      });
+
+      // Dropdown triggers
+      row.querySelectorAll(".cur-color-trigger, .cur-font-trigger").forEach(btn => {
+        btn.addEventListener("mousedown", e => e.preventDefault());
+        btn.addEventListener("click", () => {
+          const pop = btn.parentElement.querySelector(".cur-popover");
+          if (!pop) return;
+          const opening = pop.style.display === "none" || !pop.style.display;
+          closeAllPopovers(opening ? pop : null);
+          pop.style.display = opening ? "block" : "none";
+          row.classList.toggle("has-popover-open", opening);
+          if (opening) swapToDivs();
+          else swapBackFromDivs();
+        });
+      });
+
+      // Color swatches
+      row.querySelectorAll(".cur-swatch").forEach(sw => {
+        sw.addEventListener("mousedown", e => e.preventDefault());
+        sw.addEventListener("click", () => {
+          const hex = sw.getAttribute("data-color");
+          appendTagPair(`<color=${hex}>`, `</color>`);
+          closeAllPopovers(null);
+        });
+      });
+      // Color hex input
+      const hexInput = row.querySelector(".cur-hex-input");
+      const hexApply = row.querySelector(".cur-hex-apply");
+      if (hexApply) {
+        hexApply.addEventListener("mousedown", e => e.preventDefault());
+        hexApply.addEventListener("click", () => {
+          let hex = (hexInput.value || "").trim();
+          if (!hex) return;
+          if (!hex.startsWith("#")) hex = "#" + hex;
+          if (!parseHexColor(hex)) { hexInput.classList.add("err"); return; }
+          hexInput.classList.remove("err");
+          appendTagPair(`<color=${hex}>`, `</color>`);
+          hexInput.value = "";
+          closeAllPopovers(null);
+        });
+      }
+      if (hexInput) {
+        hexInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") { e.preventDefault(); hexApply.click(); }
+        });
+      }
+
+      // Font style options
+      row.querySelectorAll(".cur-font-opt").forEach(opt => {
+        opt.addEventListener("mousedown", e => e.preventDefault());
+        opt.addEventListener("click", () => {
+          const f = opt.getAttribute("data-font");
+          const needsQuote = /\s/.test(f);
+          appendTagPair(needsQuote ? `<font="${f}">` : `<font=${f}>`, `</font>`);
+          closeAllPopovers(null);
+        });
+      });
+      // Font custom input
+      const fontInput = row.querySelector(".cur-font-input");
+      const fontApply = row.querySelector(".cur-font-apply");
+      if (fontApply) {
+        fontApply.addEventListener("mousedown", e => e.preventDefault());
+        fontApply.addEventListener("click", () => {
+          const f = (fontInput.value || "").trim();
+          if (!f) return;
+          const needsQuote = /\s/.test(f) || /"/.test(f);
+          const safe = f.replace(/"/g, "");
+          appendTagPair(needsQuote ? `<font="${safe}">` : `<font=${safe}>`, `</font>`);
+          fontInput.value = "";
+          closeAllPopovers(null);
+        });
+      }
+      if (fontInput) {
+        fontInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") { e.preventDefault(); fontApply.click(); }
+        });
+      }
+    }
   }
 
   // Image file picker
@@ -2348,26 +2598,108 @@ async function replaceTextOnLayer(occ, newContent) {
 }
 
 
+// Poll bounds until they stop changing — handles async vector render (EPS/AI/PDF).
+async function waitStableBounds(_tag, maxTries = 12, intervalMs = 60) {
+  let prev = rectSize((await getTargetLayerDescriptor()).bounds);
+  for (let i = 0; i < maxTries; i++) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    const cur = rectSize((await getTargetLayerDescriptor()).bounds);
+    if (Math.abs(cur.width - prev.width) < 0.5 && Math.abs(cur.height - prev.height) < 0.5) {
+      return cur;
+    }
+    prev = cur;
+  }
+  return prev;
+}
+
+// Fit new content: width = oldWidth, height auto by aspect, anchor at top-left of oldBounds.
+async function applyWidthFitTopLeft(oldBounds, afterBounds) {
+  if (oldBounds.width <= 0 || afterBounds.width <= 0) {
+    return { scale: 1, finalW: oldBounds.width, finalH: oldBounds.height };
+  }
+  const s = oldBounds.width / afterBounds.width;
+  const finalW = afterBounds.width * s;
+  const finalH = afterBounds.height * s;
+  // QCSAverage = center anchor; offset compensates so top-left lands on oldBounds.left/top.
+  const dx = oldBounds.left - afterBounds.left - afterBounds.width  * (1 - s) / 2;
+  const dy = oldBounds.top  - afterBounds.top  - afterBounds.height * (1 - s) / 2;
+  const noScale = Math.abs(s - 1) < 0.0001;
+  const noMove  = Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5;
+  if (noScale && noMove) return { scale: s, finalW, finalH };
+  await bp([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: { _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: dx },
+              vertical:   { _unit: "pixelsUnit", _value: dy } },
+    width:  { _unit: "percentUnit", _value: s * 100 },
+    height: { _unit: "percentUnit", _value: s * 100 },
+    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  return { scale: s, finalW, finalH };
+}
+
+// Walk doc.layers tree, collect every SO layer's id.
+function collectAllSmartObjectIds() {
+  const ids = [];
+  const doc = app.activeDocument;
+  if (!doc) return ids;
+  const walk = (layers) => {
+    for (const l of layers) {
+      if (l.kind === "smartObject") ids.push(l.id);
+      if (Array.isArray(l.layers) && l.layers.length) walk(l.layers);
+    }
+  };
+  walk(doc.layers);
+  return ids;
+}
+
+// Read descriptor of a specific layer by id.
+async function getLayerDescriptorById(layerId) {
+  const r = await bp([{
+    _obj: "get",
+    _target: [{ _ref: "layer", _id: layerId }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  return r?.[0] || null;
+}
+
+// Extract SO source identifier — used to group linked SO instances.
+// PS stores `documentID` as a UUID per SO source (e.g. "uuid:..." or "xmp.did:...").
+// Two SOs sharing content always share documentID even if their layer names differ.
+function getSoSourceKey(desc) {
+  const so = desc && desc.smartObject;
+  if (!so) return null;
+  if (typeof so.documentID === "string" && so.documentID) return so.documentID;
+  // Fallbacks (rarely needed in practice).
+  if (typeof so.fileReference === "string" && so.fileReference) return `ref:${so.fileReference}`;
+  return null;
+}
+
 async function replaceImageOnLayer(occ, token) {
   await selectLayerById(occ.layerId);
 
-  // 1. Verify the selection actually matches our target (catches stale IDs).
+  // Verify the selection actually matches our target (catches stale IDs).
   const oldDesc = await getTargetLayerDescriptor();
   if (oldDesc.layerID !== occ.layerId) {
     throw new Error(`stale id ${occ.layerId} — please re-scan (active: ${oldDesc.layerID})`);
   }
-  const oldBounds = rectSize(oldDesc.bounds);
-  const wasVisible = oldDesc.visible !== false;
+  // Use pre-captured values if available (set in runImageOps before any replace ran).
+  // Pre-capture survives shared-SO auto-propagation: when PS replaces one instance, it
+  // updates content on all siblings sharing the same documentID. By the time we process
+  // the sibling, its live bounds reflect the NEW content, not the original — so we'd
+  // wrongly skip fitting it. Pre-captured oldBounds locks in the true before-state.
+  const oldBounds = occ.preCapturedBounds || rectSize(oldDesc.bounds);
+  const wasVisible = occ.preCapturedVisible !== undefined ? occ.preCapturedVisible : (oldDesc.visible !== false);
   const isSmartObject = !!oldDesc.smartObject;
-  let oldName = oldDesc.name || "";
+  let oldName = occ.preCapturedName || oldDesc.name || "";
   if (!oldName) {
     try {
       const r = await bp([{
         _obj: "get",
-        _target: [
-          { _property: "name" },
-          { _ref: "layer", _id: occ.layerId }
-        ],
+        _target: [{ _property: "name" }, { _ref: "layer", _id: occ.layerId }],
         _options: { dialogOptions: "dontDisplay" }
       }]);
       oldName = r?.[0]?.name || "";
@@ -2382,39 +2714,12 @@ async function replaceImageOnLayer(occ, token) {
         null: { _path: token, _kind: "local" },
         _options: { dialogOptions: "dontDisplay" }
       }]);
-
-      // Re-read after replace; layer ID stays the same but bounds change.
-      const postDesc = await getTargetLayerDescriptor();
-      const afterBounds = rectSize(postDesc.bounds);
-      let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
-      if (oldBounds.width > 0 && afterBounds.width > 0) {
-        s = oldBounds.width / afterBounds.width;
-        finalW = afterBounds.width  * s;
-        finalH = afterBounds.height * s;
-        const dx = oldBounds.left - afterBounds.left - afterBounds.width  * (1 - s) / 2;
-        const dy = oldBounds.top  - afterBounds.top  - afterBounds.height * (1 - s) / 2;
-        const noScale = Math.abs(s - 1) < 0.0001;
-        const noMove  = Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5;
-        if (!noScale || !noMove) {
-          await bp([{
-            _obj: "transform",
-            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-            offset: { _obj: "offset",
-                      horizontal: { _unit: "pixelsUnit", _value: dx },
-                      vertical:   { _unit: "pixelsUnit", _value: dy } },
-            width:  { _unit: "percentUnit", _value: s * 100 },
-            height: { _unit: "percentUnit", _value: s * 100 },
-            interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
-            _options: { dialogOptions: "dontDisplay" }
-          }]);
-        }
-      }
-      if (oldName) {
-        try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ }
-      }
+      // PS renders SO content async (especially vector EPS/AI/PDF). Poll until bounds settle.
+      const afterBounds = await waitStableBounds();
+      const fitResult = await applyWidthFitTopLeft(oldBounds, afterBounds);
+      if (oldName) { try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ } }
       if (!wasVisible) await hideTargetLayer();
-      return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible, mode: "so-replace" };
+      return { oldW: oldBounds.width, oldH: oldBounds.height, scale: fitResult.scale, finalW: fitResult.finalW, finalH: fitResult.finalH, wasHidden: !wasVisible, mode: "so-replace" };
     } catch (e) {
       // Fall through to place+delete if replaceContents fails (e.g. linked SO, unsupported format).
       log(`[IMG]  SO replace failed, falling back to place+delete: ${e.message || e}`);
@@ -2445,38 +2750,12 @@ async function replaceImageOnLayer(occ, token) {
   } catch (e) { /* old layer may already be gone */ }
 
   await selectLayerById(occ.layerId);
-  const afterBounds = rectSize(postDesc.bounds);
-  let s = 1, finalW = oldBounds.width, finalH = oldBounds.height;
-  if (oldBounds.width > 0 && afterBounds.width > 0) {
-    s = oldBounds.width / afterBounds.width;
-    finalW = afterBounds.width  * s;
-    finalH = afterBounds.height * s;
-    const dx = oldBounds.left - afterBounds.left - afterBounds.width  * (1 - s) / 2;
-    const dy = oldBounds.top  - afterBounds.top  - afterBounds.height * (1 - s) / 2;
-    const noScale = Math.abs(s - 1) < 0.0001;
-    const noMove  = Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5;
-    if (!noScale || !noMove) {
-      await bp([{
-        _obj: "transform",
-        _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-        offset: { _obj: "offset",
-                  horizontal: { _unit: "pixelsUnit", _value: dx },
-                  vertical:   { _unit: "pixelsUnit", _value: dy } },
-        width:  { _unit: "percentUnit", _value: s * 100 },
-        height: { _unit: "percentUnit", _value: s * 100 },
-        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
-        _options: { dialogOptions: "dontDisplay" }
-      }]);
-    }
-  }
+  const afterBounds = await waitStableBounds();
+  const fitResult = await applyWidthFitTopLeft(oldBounds, afterBounds);
   // Preserve original layer name (placeEvent uses the new file's name).
-  if (oldName) {
-    try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ }
-  }
+  if (oldName) { try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ } }
   if (!wasVisible) await hideTargetLayer();
-
-  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: s, finalW, finalH, wasHidden: !wasVisible, mode: "place-delete" };
+  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: fitResult.scale, finalW: fitResult.finalW, finalH: fitResult.finalH, wasHidden: !wasVisible, mode: "place-delete" };
 }
 
 // Resolve link IDs: rows with same linkId inherit values from first row that has content
@@ -2563,25 +2842,116 @@ async function runOneTextOp(entry, occ) {
 }
 
 async function runImageOps(imageOps, step, totalSteps) {
+  // PRE-CAPTURE phase 1: bounds/name/visible for every occurrence the user picked.
+  // Shared-content SOs auto-update when one sibling is replaced — by the time we
+  // process occurrence #2, its bounds already reflect the new content. Capturing up
+  // front locks in the true before-state for each occurrence.
   for (const entry of imageOps) {
     for (const occ of visibleOccurrences(entry)) {
-      await runOneImageOp(entry, occ);
+      try {
+        await switchActiveDoc(occ.docId);
+        const d = await getLayerDescriptorById(occ.layerId);
+        if (d) {
+          occ.preCapturedBounds = rectSize(d.bounds);
+          occ.preCapturedName = d.name || "";
+          occ.preCapturedVisible = d.visible !== false;
+        }
+      } catch (e) { /* skip */ }
+    }
+  }
+
+  // PRE-CAPTURE phase 2: scan every SO in each touched doc, group by documentID.
+  // When a user-picked occurrence is replaced, PS auto-propagates content to all SOs
+  // sharing the same documentID (even ones the user didn't pick a file for). We need
+  // their original bounds captured here, before any replace runs, to re-fit them after.
+  const docIds = new Set(imageOps.flatMap(e => visibleOccurrences(e)).map(o => o.docId));
+  const sharedSoIndex = new Map(); // docId → Map<documentID, Array<{layerId,oldBounds,oldName,wasVisible}>>
+  for (const docId of docIds) {
+    try {
+      await switchActiveDoc(docId);
+      const groups = new Map();
+      for (const id of collectAllSmartObjectIds()) {
+        try {
+          const d = await getLayerDescriptorById(id);
+          const key = getSoSourceKey(d);
+          if (!key) continue;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push({
+            layerId: id,
+            oldBounds: rectSize(d.bounds),
+            oldName: d.name || "",
+            wasVisible: d.visible !== false
+          });
+        } catch (e) { /* skip */ }
+      }
+      sharedSoIndex.set(docId, groups);
+    } catch (e) { /* skip */ }
+  }
+
+  // Track layers already fit so we don't process the same shared-SO group twice
+  // (e.g. when the user picked file for 2 occurrences in the same group).
+  const fittedLayerIds = new Set();
+
+  for (const entry of imageOps) {
+    for (const occ of visibleOccurrences(entry)) {
+      if (fittedLayerIds.has(occ.layerId)) {
+        step++; await setProgress(step, totalSteps, "Replacing images");
+        continue;
+      }
+      await runOneImageOp(entry, occ, sharedSoIndex, fittedLayerIds);
       step++; await setProgress(step, totalSteps, "Replacing images");
     }
   }
   return step;
 }
 
-async function runOneImageOp(entry, occ) {
+async function runOneImageOp(entry, occ, sharedSoIndex, fittedLayerIds) {
   try {
     await switchActiveDoc(occ.docId);
     const result = await replaceImageOnLayer(occ, entry.token);
     state.modifiedDocIds.add(occ.docId);
     log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target})${formatImageInfo(result)}`);
+
+    // PS auto-propagates content to all SOs sharing the master's documentID — they
+    // weren't picked by the user but their bounds ballooned to the new vector's native
+    // size. Shrink each one back to its own pre-captured oldBounds. No duplicate/move:
+    // that would break the shared-SO link and edit-in-sync behavior.
+    if (sharedSoIndex && fittedLayerIds) {
+      await refitSharedSiblingsAfterReplace(occ, sharedSoIndex, fittedLayerIds);
+    }
   } catch (e) {
     log(`[IMG]  ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
   }
 }
+
+// Re-fit shared SO siblings (same documentID as target) to their pre-captured oldBounds.
+async function refitSharedSiblingsAfterReplace(occ, sharedSoIndex, fittedLayerIds) {
+  const docGroups = sharedSoIndex.get(occ.docId);
+  if (!docGroups) return;
+  let targetGroup = null;
+  for (const [, members] of docGroups) {
+    if (members.some(m => m.layerId === occ.layerId)) { targetGroup = members; break; }
+  }
+  if (!targetGroup || targetGroup.length <= 1) return;
+  fittedLayerIds.add(occ.layerId);
+
+  for (const m of targetGroup) {
+    if (m.layerId === occ.layerId) continue;
+    if (fittedLayerIds.has(m.layerId)) continue;
+    try {
+      await selectLayerById(m.layerId);
+      const after = await waitStableBounds();
+      await applyWidthFitTopLeft(m.oldBounds, after);
+      if (m.oldName) { try { await renameTargetLayer(m.oldName); } catch (e) { /* ignore */ } }
+      if (!m.wasVisible) await hideTargetLayer();
+      fittedLayerIds.add(m.layerId);
+    } catch (e) {
+      log(`[IMG]  sibling re-fit error id=${m.layerId}: ${e.message || e}`);
+    }
+  }
+  try { await selectLayerById(occ.layerId); } catch (e) { /* ignore */ }
+}
+
 
 async function runRenameOps(renameOps, step, totalSteps) {
   for (const entry of renameOps) {

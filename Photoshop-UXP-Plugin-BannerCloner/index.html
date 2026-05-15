@@ -152,12 +152,13 @@
       <div class="section btn-row" id="applyRulesSection" style="display:none;">
         <button id="applyRulesBtn" class="primary">Apply Rules to Existing</button>
       </div>
-      <div class="section btn-row">
+      <!-- Debug/test buttons — hidden in production. Logic stays for dev/debug. -->
+      <div class="section btn-row" style="display:none;">
         <button id="createTestFileBtn" class="primary" title="Tạo file PSD test với 5 case risk cao (smart object mask, layer effects, raster mask, warped text, clipping chain)">Create Test File</button>
         <button id="testGroupResizeBtn" class="primary" title="Test pipeline group-resize-scale-ungroup: bọc children vào temp group → resize artboard → scale group → ungroup. Bypass auto-eject của PS.">Test Group-Resize</button>
         <button id="testTempDocBtn" class="primary" title="Test pipeline với temp document: copy artboard sang doc tạm (size = source) → resize + scale → copy về doc gốc. Isolate canvas-grow side-effects.">Test Temp-Doc</button>
       </div>
-      <div class="section">
+      <div class="section" style="display:none;">
         <label class="checkbox-row"><input id="keepTempDocOpen" type="checkbox" /> <span>Keep temp doc open (debug)</span></label>
       </div>
 
@@ -180,7 +181,7 @@
     </div>
 
     <footer class="app-footer">
-      <div class="footer-title">Banner Cloner <span class="footer-version">v1.2.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
+      <div class="footer-title">Banner Cloner <span class="footer-version">v1.3.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
       <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
     </footer>
   </div>
