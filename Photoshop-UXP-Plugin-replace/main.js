@@ -457,8 +457,8 @@ function buildUnifiedRow(entry, idx) {
       <div class="cur-toolbar">
         <button class="cur-btn" data-cur-tag="b" title="Append <b></b>"><b>B</b></button>
         <button class="cur-btn" data-cur-tag="i" title="Append <i></i>"><i>I</i></button>
-        <button class="cur-btn" data-cur-tag="sup" title="Append <sup></sup>">x<sup>2</sup></button>
-        <button class="cur-btn" data-cur-tag="sub" title="Append <sub></sub>">x<sub>2</sub></button>
+        <button class="cur-btn" data-cur-tag="sup" title="Append <sup></sup>">X²</button>
+        <button class="cur-btn" data-cur-tag="sub" title="Append <sub></sub>">X₂</button>
         <span class="cur-sep"></span>
         <div class="cur-dropdown">
           <button class="cur-btn cur-color-trigger" title="Append <color=...></color>">
@@ -500,6 +500,11 @@ function buildUnifiedRow(entry, idx) {
             </div>
           </div>
         </div>
+        <span class="cur-sep"></span>
+        <label class="cur-checkbox" title="Override layer's All Caps style — show new text exactly as typed">
+          <input type="checkbox" class="cur-ignore-caps" />
+          <span>Ignore All Caps</span>
+        </label>
         <span class="cur-hint">Tag inserted at end — edit text between &lt;…&gt; brackets</span>
       </div>
       <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip — use buttons above or type &lt;b&gt;, &lt;i&gt;, &lt;color=#hex&gt;, &lt;font=Bold&gt; tags."></textarea>
@@ -654,6 +659,16 @@ function buildUnifiedRow(entry, idx) {
       input.focus();
       try { input.setSelectionRange(caretPos, caretPos); } catch (_) {}
       input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    // Ignore-AllCaps checkbox: persists to entry state so applyReplacements
+    // can force fontCaps=normal on every range when checked.
+    const ignoreCapsBox = row.querySelector(".cur-ignore-caps");
+    if (ignoreCapsBox) {
+      ignoreCapsBox.checked = !!state.allEntries[idx].ignoreAllCaps;
+      ignoreCapsBox.addEventListener("change", () => {
+        state.allEntries[idx].ignoreAllCaps = ignoreCapsBox.checked;
+      });
     }
 
     const curToolbar = row.querySelector(".cur-toolbar");
@@ -2308,7 +2323,7 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
   return out.length ? out : [{ _obj: "textStyleRange", from: 0, to: newText.length, textStyle: baseStyle }];
 }
 
-async function replaceTextOnLayer(occ, newContent) {
+async function replaceTextOnLayer(occ, newContent, opts = {}) {
   await selectLayerById(occ.layerId);
   const preDesc = await getTargetLayerDescriptor();
   if (preDesc.layerID !== occ.layerId) {
@@ -2365,6 +2380,10 @@ async function replaceTextOnLayer(occ, newContent) {
       // the "sup-like" style picked from the original ranges.
       const oldText = styleSource.textKey || tk?.textKey || "";
       const ranges = buildRangesForNewText(oldText, styleSource.textStyleRange, psContent, markerSpans);
+      // ignoreAllCaps: don't touch the inline textStyleRange here — PS may
+      // crash when local "normal" conflicts with the linked Character Style
+      // sheet's "allCaps". Apply via a separate post-pass after textKey is
+      // set (see below).
       log(`  [TXT] rebuilt ranges: ${ranges.length} from ${styleSource.textStyleRange.length} (markers=${markerSpans.length})`);
       for (let i = 0; i < ranges.length; i++) {
         const r = ranges[i];
@@ -2484,6 +2503,45 @@ async function replaceTextOnLayer(occ, newContent) {
       _options: { dialogOptions: "dontDisplay" }
     }]);
     log(`  [DIAG SEND] set textKey OK`);
+    // After textKey is applied, if user asked to ignore All Caps, re-set the
+    // text layer with rangeless textStyleRange spanning the entire string,
+    // explicitly forcing fontCaps=normal. Done as a separate pass so the
+    // first pass (with original styles) doesn't trip on style-sheet conflict.
+    if (opts.ignoreAllCaps) {
+      try {
+        // Re-fetch descriptor so we work with the post-textKey state.
+        const cur = await getTargetLayerDescriptor();
+        const curTK = cur.textKey;
+        const len = (curTK?.textKey || "").length;
+        if (len > 0 && curTK?.textStyleRange?.length) {
+          // PS reads fontCaps back as an enum descriptor; sending plain
+          // "normal" gets ignored. Force enum format here and also override
+          // baseParentStyle in case the parent Character Style defines caps.
+          const normalCaps = { _enum: "fontCapsType", _value: "normal" };
+          const baseStyle = { ...curTK.textStyleRange[0].textStyle, fontCaps: normalCaps };
+          if (baseStyle.baseParentStyle) {
+            baseStyle.baseParentStyle = { ...baseStyle.baseParentStyle, fontCaps: normalCaps };
+          }
+          await bp([{
+            _obj: "set",
+            _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+            to: {
+              _obj: "textLayer",
+              textStyleRange: [{
+                _obj: "textStyleRange",
+                from: 0,
+                to: len,
+                textStyle: baseStyle,
+              }],
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`  [TXT] ignoreAllCaps: forced fontCaps=normal on 0-${len}`);
+        }
+      } catch (e) {
+        log(`  [TXT] ignoreAllCaps failed: ${e?.message || e}`);
+      }
+    }
   } catch (e) {
     log(`  [DIAG SEND] set textKey FAILED: ${e?.message || e}`);
     // Dump toObj as JSON in chunks to inspect what triggered the rejection.
@@ -2833,7 +2891,7 @@ async function runTextOps(textOps, step, totalSteps) {
 async function runOneTextOp(entry, occ) {
   try {
     await switchActiveDoc(occ.docId);
-    await replaceTextOnLayer(occ, entry.newContent);
+    await replaceTextOnLayer(occ, entry.newContent, { ignoreAllCaps: !!entry.ignoreAllCaps });
     state.modifiedDocIds.add(occ.docId);
     log(`[TEXT] ${entry.name} → "${entry.newContent}"  (${occ.target})`);
   } catch (e) {
