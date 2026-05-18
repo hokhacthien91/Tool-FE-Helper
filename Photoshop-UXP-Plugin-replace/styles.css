@@ -91,18 +91,29 @@
 /* ─── Sticky CTA footer ─── */
 .sticky-cta {
   bottom: 0;
-  padding: 10px 0;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
   z-index: 10;
   box-shadow: 0 -6px 12px rgba(0, 0, 0, 0.4);
 
   flex: 0 0 auto;
-    width: 100%;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-
+  width: 100%;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
 }
+.sticky-top {
+  flex: 0 0 auto;
+  width: 100%;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.sticky-top .section {
+  margin-bottom: 4px;
+  padding: 5px 16px;
+}
+
 .sticky-cta > * {
   margin-bottom: 8px;
 }
@@ -301,11 +312,11 @@ body {
   height: 100vh;
   overflow: hidden;
 }
-.app-scroll{
-      flex: 1 1 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 16px;
+.app-scroll {
+  flex: 1 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
 }
 .replace-row {
   background: var(--panel);
@@ -2239,7 +2250,7 @@ button.full {
   border-radius: 4px;
   cursor: pointer;
 }
-.cur-checkbox span{
+.cur-checkbox span {
   color: #fff !important;
   padding-left: 10px;
 }

@@ -1,315 +1,651 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Content Replacer</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body >
-  <div class="app">
-    <div class="app-scroll">
-    <div class="section scan-mode">
-      <div class="label">Scan mode</div>
-      <label class="radio-row">
-        <input type="radio" name="scanMode" value="current" checked />
-        <span>Current document (multiple artboards)</span>
-      </label>
-      <label class="radio-row">
-        <input type="radio" name="scanMode" value="all" />
-        <span>All open documents</span>
-      </label>
-      <div class="label" style="margin-top: 10px;">Matching</div>
-      <label class="radio-row">
-        <input type="checkbox" id="matchByNameOnly" />
-        <span>Match by layer name only (ignore path)</span>
-      </label>
-    </div>
-
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Content Replacer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <div class="sticky-top">
     <div class="section">
-      <button id="scanBtn" class="btn btn-primary btn-full">Scan document</button>
-    </div>
-    <div id="summaryBar" class="summary-bar"></div>
-
-    <div class="section info-card" id="infoCard">
-      <div><strong>Open Docs:</strong> <span id="docCount">0</span></div>
-      <div><strong>Targets:</strong> <span id="targetCount">0</span> <span id="targetBreakdown" class="sizes-count"></span></div>
-      <div id="scanStatus" class="json-status">Not scanned yet</div>
-      <div id="dirtyStatus" class="json-status"></div>
-    </div>
-
-    <div id="progressSection" class="section clone-progress" style="display:none;">
-      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
-      <div id="progressText" class="progress-text">Working…</div>
-    </div>
-
-    <div id="artboardsSection" class="section collapsible-section" style="display:none;">
-      <div class="log-header" id="artboardsToggle">
-        <div class="label">Artboards <span id="artboardsCount" class="sizes-count"></span> <span class="toggle-icon">▶</span></div>
-        <div class="log-btn-group">
-          <button id="artboardsAllBtn" class="btn btn-tertiary" title="Select all (or all matching search)">Select All</button>
-          <button id="artboardsNoneBtn" class="btn btn-tertiary" title="Deselect all (or all matching search)">Deselect All</button>
+          <button id="scanBtn" class="btn btn-primary btn-full">
+            Scan document
+          </button>
         </div>
       </div>
-      <div id="artboardsBody" style="display:none;">
-        <div class="search-bar artboards-search" id="artboardsSearchBar" style="display:none;">
-          <input id="artboardsSearchInput" type="text" placeholder="Search artboards…" />
-          <button id="artboardsSearchClear" class="search-clear" title="Clear">×</button>
-        </div>
-        <div class="artboard-rename" id="artboardRenameBox">
-          <div class="artboard-rename-label">Rename — <code>{WxH}</code> = size, <code>{WxH:0.5}</code> = ÷2, <code>{WxH:2}</code> = ×2</div>
-          <input id="artboardRenameCurrent" type="text" class="artboard-rename-input" placeholder="Current name" readonly />
-          <input id="artboardRenameNew" type="text" class="artboard-rename-input" placeholder="e.g. test1_{WxH}_OP1 or test1_{WxH:0.5}" />
-          <div class="artboard-rename-actions">
-            <button id="artboardRenamePreviewBtn" class="btn btn-tertiary">Preview</button>
-            <button id="artboardRenameBtn" class="btn btn-secondary">Rename</button>
-          </div>
-          <div id="artboardRenamePreview" class="artboard-rename-preview" style="display:none;"></div>
-        </div>
-        <div id="artboardsList" class="artboards-list"></div>
-      </div>
-    </div>
-
-    <div id="appendTextSection" class="section collapsible-section" style="display:none;">
-      <div class="log-header" id="appendTextToggle">
-        <div class="label">Append Text Layer <span id="appendTextCount" class="sizes-count"></span> <span class="toggle-icon">▶</span></div>
-      </div>
-      <div id="appendTextBody" class="append-text-body" style="display:none;">
-        <div class="at-top" style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;">
-          <label class="at-sync" style="display:flex;align-items:center;">
-            <input type="checkbox" id="appendTextAutoSync" checked />
-            <span>Auto-sync with selection</span>
+      <div class="app-scroll">
+        <div class="section scan-mode">
+          <div class="label">Scan mode</div>
+          <label class="radio-row">
+            <input type="radio" name="scanMode" value="current" checked />
+            <span>Current document (multiple artboards)</span>
           </label>
-          <button id="appendTextSampleBtn" class="btn btn-accent">Sample from selection</button>
+          <label class="radio-row">
+            <input type="radio" name="scanMode" value="all" />
+            <span>All open documents</span>
+          </label>
+          <div class="label" style="margin-top: 10px">Matching</div>
+          <label class="radio-row">
+            <input type="checkbox" id="matchByNameOnly" />
+            <span>Match by layer name only (ignore path)</span>
+          </label>
         </div>
 
-        <div class="at-label">Content</div>
-        <textarea id="appendTextContent" class="at-input at-textarea" rows="2" placeholder="Text content (multi-line ok)"></textarea>
+    
+        <div id="summaryBar" class="summary-bar"></div>
 
-        <div class="at-label">Font</div>
-        <input id="appendTextFont" class="at-input" type="text" value="Arial" />
-
-        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
-          <div class="at-cell">
-            <div class="at-label">Size (pt)</div>
-            <input id="appendTextSize" class="at-input" type="text" inputmode="numeric" value="12" />
+        <div class="section info-card" id="infoCard">
+          <div><strong>Open Docs:</strong> <span id="docCount">0</span></div>
+          <div>
+            <strong>Targets:</strong> <span id="targetCount">0</span>
+            <span id="targetBreakdown" class="sizes-count"></span>
           </div>
-          <div class="at-cell">
-            <div class="at-label">Line height (pt)</div>
-            <input id="appendTextLeading" class="at-input" type="text" inputmode="numeric" value="" placeholder="auto" />
+          <div id="scanStatus" class="json-status">Not scanned yet</div>
+          <div id="dirtyStatus" class="json-status"></div>
+        </div>
+
+        <div
+          id="progressSection"
+          class="section clone-progress"
+          style="display: none"
+        >
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div id="progressText" class="progress-text">Working…</div>
+        </div>
+
+        <div
+          id="artboardsSection"
+          class="section collapsible-section"
+          style="display: none"
+        >
+          <div class="log-header" id="artboardsToggle">
+            <div class="label">
+              Artboards <span id="artboardsCount" class="sizes-count"></span>
+              <span class="toggle-icon">▶</span>
+            </div>
+            <div class="log-btn-group">
+              <button
+                id="artboardsAllBtn"
+                class="btn btn-tertiary"
+                title="Select all (or all matching search)"
+              >
+                Select All
+              </button>
+              <button
+                id="artboardsNoneBtn"
+                class="btn btn-tertiary"
+                title="Deselect all (or all matching search)"
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+          <div id="artboardsBody" style="display: none">
+            <div
+              class="search-bar artboards-search"
+              id="artboardsSearchBar"
+              style="display: none"
+            >
+              <input
+                id="artboardsSearchInput"
+                type="text"
+                placeholder="Search artboards…"
+              />
+              <button
+                id="artboardsSearchClear"
+                class="search-clear"
+                title="Clear"
+              >
+                ×
+              </button>
+            </div>
+            <div class="artboard-rename" id="artboardRenameBox">
+              <div class="artboard-rename-label">
+                Rename — <code>{WxH}</code> = size, <code>{WxH:0.5}</code> = ÷2,
+                <code>{WxH:2}</code> = ×2
+              </div>
+              <input
+                id="artboardRenameCurrent"
+                type="text"
+                class="artboard-rename-input"
+                placeholder="Current name"
+                readonly
+              />
+              <input
+                id="artboardRenameNew"
+                type="text"
+                class="artboard-rename-input"
+                placeholder="e.g. test1_{WxH}_OP1 or test1_{WxH:0.5}"
+              />
+              <div class="artboard-rename-actions">
+                <button id="artboardRenamePreviewBtn" class="btn btn-tertiary">
+                  Preview
+                </button>
+                <button id="artboardRenameBtn" class="btn btn-secondary">
+                  Rename
+                </button>
+              </div>
+              <div
+                id="artboardRenamePreview"
+                class="artboard-rename-preview"
+                style="display: none"
+              ></div>
+            </div>
+            <div id="artboardsList" class="artboards-list"></div>
           </div>
         </div>
 
-        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
-          <div class="at-cell">
-            <div class="at-label">Color</div>
-            <input id="appendTextColor" class="at-input" type="text" value="#000000" />
+        <div
+          id="appendTextSection"
+          class="section collapsible-section"
+          style="display: none"
+        >
+          <div class="log-header" id="appendTextToggle">
+            <div class="label">
+              Append Text Layer
+              <span id="appendTextCount" class="sizes-count"></span>
+              <span class="toggle-icon">▶</span>
+            </div>
           </div>
-          <div class="at-cell">
-            <div class="at-label">Box width (px)</div>
-            <input id="appendTextWidth" class="at-input" type="text" inputmode="numeric" value="300" />
+          <div
+            id="appendTextBody"
+            class="append-text-body"
+            style="display: none"
+          >
+            <div
+              class="at-top"
+              style="
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+              "
+            >
+              <label class="at-sync" style="display: flex; align-items: center">
+                <input type="checkbox" id="appendTextAutoSync" checked />
+                <span>Auto-sync with selection</span>
+              </label>
+              <button id="appendTextSampleBtn" class="btn btn-accent">
+                Sample from selection
+              </button>
+            </div>
+
+            <div class="at-label">Content</div>
+            <textarea
+              id="appendTextContent"
+              class="at-input at-textarea"
+              rows="2"
+              placeholder="Text content (multi-line ok)"
+            ></textarea>
+
+            <div class="at-label">Font</div>
+            <input
+              id="appendTextFont"
+              class="at-input"
+              type="text"
+              value="Arial"
+            />
+
+            <div
+              class="at-pair"
+              style="display: flex; flex-direction: row; flex-wrap: nowrap"
+            >
+              <div class="at-cell">
+                <div class="at-label">Size (pt)</div>
+                <input
+                  id="appendTextSize"
+                  class="at-input"
+                  type="text"
+                  inputmode="numeric"
+                  value="12"
+                />
+              </div>
+              <div class="at-cell">
+                <div class="at-label">Line height (pt)</div>
+                <input
+                  id="appendTextLeading"
+                  class="at-input"
+                  type="text"
+                  inputmode="numeric"
+                  value=""
+                  placeholder="auto"
+                />
+              </div>
+            </div>
+
+            <div
+              class="at-pair"
+              style="display: flex; flex-direction: row; flex-wrap: nowrap"
+            >
+              <div class="at-cell">
+                <div class="at-label">Color</div>
+                <input
+                  id="appendTextColor"
+                  class="at-input"
+                  type="text"
+                  value="#000000"
+                />
+              </div>
+              <div class="at-cell">
+                <div class="at-label">Box width (px)</div>
+                <input
+                  id="appendTextWidth"
+                  class="at-input"
+                  type="text"
+                  inputmode="numeric"
+                  value="300"
+                />
+              </div>
+            </div>
+
+            <div class="at-label">Text align</div>
+            <div
+              class="at-align-radios"
+              style="
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                height: 28px;
+                margin-bottom: 8px;
+              "
+            >
+              <label class="at-radio"
+                ><input
+                  type="radio"
+                  name="appendTextAlign"
+                  value="left"
+                  checked
+                /><span>Left</span></label
+              >
+              <label class="at-radio"
+                ><input
+                  type="radio"
+                  name="appendTextAlign"
+                  value="center"
+                /><span>Center</span></label
+              >
+              <label class="at-radio"
+                ><input
+                  type="radio"
+                  name="appendTextAlign"
+                  value="right"
+                /><span>Right</span></label
+              >
+            </div>
+
+            <div
+              class="at-pair"
+              style="display: flex; flex-direction: row; flex-wrap: nowrap"
+            >
+              <div class="at-cell at-cell-2x">
+                <div class="at-label">X anchor</div>
+                <select id="appendTextXAnchor" class="at-input">
+                  <option value="left" selected>From left</option>
+                  <option value="center">From center</option>
+                  <option value="right">From right</option>
+                </select>
+              </div>
+              <div class="at-cell">
+                <div class="at-label">X offset (px)</div>
+                <input
+                  id="appendTextXOffset"
+                  class="at-input"
+                  type="text"
+                  inputmode="numeric"
+                  value="10"
+                />
+              </div>
+            </div>
+
+            <div
+              class="at-pair"
+              style="display: flex; flex-direction: row; flex-wrap: nowrap"
+            >
+              <div class="at-cell at-cell-2x">
+                <div class="at-label">Y anchor</div>
+                <select id="appendTextYAnchor" class="at-input">
+                  <option value="top" selected>From top</option>
+                  <option value="center">From center</option>
+                  <option value="bottom">From bottom</option>
+                </select>
+              </div>
+              <div class="at-cell">
+                <div class="at-label">Y offset (px)</div>
+                <input
+                  id="appendTextYOffset"
+                  class="at-input"
+                  type="text"
+                  inputmode="numeric"
+                  value="10"
+                />
+              </div>
+            </div>
+
+            <button
+              id="appendTextApplyBtn"
+              class="btn btn-primary btn-full at-apply-btn is-disabled"
+              disabled
+            >
+              Append to 0 artboard(s)
+            </button>
           </div>
         </div>
 
-        <div class="at-label">Text align</div>
-        <div class="at-align-radios" style="display:flex;flex-direction:row;align-items:center;height:28px;margin-bottom:8px;">
-          <label class="at-radio"><input type="radio" name="appendTextAlign" value="left" checked /><span>Left</span></label>
-          <label class="at-radio"><input type="radio" name="appendTextAlign" value="center" /><span>Center</span></label>
-          <label class="at-radio"><input type="radio" name="appendTextAlign" value="right" /><span>Right</span></label>
+        <div id="emptyState" class="section empty-state">
+          <strong>Get started</strong>
+          Open your PSD in Photoshop, then click <b>Scan</b>.<br />
+          Switch to <b>All open documents</b> if each size is a separate PSD.
         </div>
 
-        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
-          <div class="at-cell at-cell-2x">
-            <div class="at-label">X anchor</div>
-            <select id="appendTextXAnchor" class="at-input">
-              <option value="left" selected>From left</option>
-              <option value="center">From center</option>
-              <option value="right">From right</option>
-            </select>
+        <div id="layerSection" class="section" style="display: none">
+          <div class="label">What to do</div>
+          <div class="mode-tabs">
+            <button class="mode-tab active" data-mode="replace">
+              Edit content
+            </button>
+            <button class="mode-tab" data-mode="action">
+              Run Photoshop Action
+            </button>
           </div>
-          <div class="at-cell">
-            <div class="at-label">X offset (px)</div>
-            <input id="appendTextXOffset" class="at-input" type="text" inputmode="numeric" value="10" />
+          <div class="search-bar">
+            <span class="search-icon" aria-hidden="true"></span>
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="Search layer name…"
+            />
+            <button id="searchClearBtn" class="search-clear" title="Clear">
+              ×
+            </button>
           </div>
+          <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all">
+              All <span id="countAll" class="sizes-count"></span>
+            </button>
+            <button class="filter-btn" data-filter="text">
+              Text <span id="countText" class="sizes-count"></span>
+            </button>
+            <button class="filter-btn" data-filter="image">
+              Image <span id="countImage" class="sizes-count"></span>
+            </button>
+            <button class="filter-btn" data-filter="group">
+              Group <span id="countGroup" class="sizes-count"></span>
+            </button>
+            <button class="filter-btn" data-filter="other">
+              Other <span id="countOther" class="sizes-count"></span>
+            </button>
+            <button class="filter-btn select-btn action-only" id="selectAllBtn">
+              Select All
+            </button>
+            <button
+              class="filter-btn select-btn action-only"
+              id="deselectAllBtn"
+            >
+              Deselect All
+            </button>
+          </div>
+          <div id="actionBar" class="action-bar" style="display: none">
+            <div class="action-bar-row">
+              <select id="actionSetSelect" class="action-select">
+                <option value="">Loading...</option>
+              </select>
+              <select id="actionSelect" class="action-select">
+                <option value="">Select action</option>
+              </select>
+              <button
+                id="refreshActionsBtn"
+                class="filter-btn action-refresh-btn"
+                title="Reload Actions from Photoshop"
+              >
+                ↻
+              </button>
+            </div>
+            <button
+              id="runActionBtn"
+              class="btn btn-primary btn-full action-run-btn is-disabled"
+              disabled
+            >
+              Run Action
+            </button>
+          </div>
+          <div class="layers-toggle" id="tagHelpToggle">
+            <span>Style tag cheatsheet</span>
+            <span class="toggle-icon">▶</span>
+          </div>
+          <div id="tagHelpBody" class="tag-help" style="display: none">
+            <table class="tag-help-table">
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th>What it does</th>
+                  <th>Examples</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>&lt;b&gt;…&lt;/b&gt;</code></td>
+                  <td>Bold (faux — synthesized from current face)</td>
+                  <td>
+                    <div><code>Save &lt;b&gt;$500&lt;/b&gt; today</code></div>
+                    <div><code>&lt;b&gt;LIMITED&lt;/b&gt; offer</code></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;i&gt;…&lt;/i&gt;</code></td>
+                  <td>Italic (faux — slants the current face)</td>
+                  <td>
+                    <div>
+                      <code>For a &lt;i&gt;limited&lt;/i&gt; time</code>
+                    </div>
+                    <div><code>&lt;i&gt;Terms apply&lt;/i&gt;</code></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;sup&gt;…&lt;/sup&gt;</code></td>
+                  <td>Superscript — small + raised baseline</td>
+                  <td>
+                    <div><code>Area: 12 m&lt;sup&gt;2&lt;/sup&gt;</code></div>
+                    <div><code>Honda&lt;sup&gt;®&lt;/sup&gt;</code></div>
+                    <div><code>E = mc&lt;sup&gt;2&lt;/sup&gt;</code></div>
+                    <div>
+                      <code>Conditions apply&lt;sup&gt;*&lt;/sup&gt;</code>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;sub&gt;…&lt;/sub&gt;</code></td>
+                  <td>Subscript — small + lowered baseline</td>
+                  <td>
+                    <div><code>H&lt;sub&gt;2&lt;/sub&gt;O</code></div>
+                    <div><code>CO&lt;sub&gt;2&lt;/sub&gt; emissions</code></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;color=#hex&gt;…&lt;/color&gt;</code></td>
+                  <td>
+                    Change text color. 3- or 6-digit hex, optional
+                    <code>#</code>.
+                  </td>
+                  <td>
+                    <div>
+                      <code>&lt;color=#ff0000&gt;SALE&lt;/color&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;color=#0066ff&gt;link&lt;/color&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;color=#f00&gt;hot&lt;/color&gt;</code> (short
+                      form)
+                    </div>
+                    <div>
+                      <code>&lt;color=00aa00&gt;safe&lt;/color&gt;</code> (no #)
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;font="Style"&gt;…&lt;/font&gt;</code></td>
+                  <td>
+                    Switch style within the current family. Use the style name
+                    from Photoshop's Character panel.
+                  </td>
+                  <td>
+                    <div>
+                      <code>&lt;font="Bold"&gt;Pioneer&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;font="Medium"&gt;subtitle&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;font="Light"&gt;thin&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;font="Black"&gt;HEAVY&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;font="Bold Italic"&gt;mixed&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code>&lt;font="Condensed Medium"&gt;x&lt;/font&gt;</code>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>&lt;font=PSName&gt;…&lt;/font&gt;</code></td>
+                  <td>
+                    Switch to a completely different face by PostScript name
+                    (must be installed on this machine).
+                  </td>
+                  <td>
+                    <div>
+                      <code>&lt;font=Roboto-Bold&gt;x&lt;/font&gt;</code>
+                    </div>
+                    <div><code>&lt;font="ArialMT"&gt;x&lt;/font&gt;</code></div>
+                    <div>
+                      <code>&lt;font=Helvetica-Oblique&gt;x&lt;/font&gt;</code>
+                    </div>
+                    <div>
+                      <code
+                        >&lt;font="TimesNewRomanPS-BoldMT"&gt;x&lt;/font&gt;</code
+                      >
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="tag-help-notes">
+              <div>
+                <strong>Nesting:</strong> tags can be combined.
+                <code
+                  >&lt;b&gt;&lt;color=#f00&gt;BOLD
+                  RED&lt;/color&gt;&lt;/b&gt;</code
+                >
+                → bold + red at the same time.
+              </div>
+              <div>
+                <strong>Case-insensitive:</strong> <code>&lt;B&gt;</code>,
+                <code>&lt;Color=#FFF&gt;</code>,
+                <code>&lt;FONT="bold"&gt;</code> all work the same.
+              </div>
+              <div>
+                <strong>Quoting:</strong> any attribute value with spaces must
+                be quoted — <code>&lt;font="Bold Italic"&gt;</code>, not
+                <code>&lt;font=Bold Italic&gt;</code>.
+              </div>
+              <div>
+                <strong>Font tag auto-detect:</strong> values containing
+                <code>-</code> or ending in <code>MT</code>/<code>PS</code> are
+                treated as PostScript names (full face switch); plain words
+                (<code>Bold</code>, <code>Light</code>, etc.) keep the current
+                family and just change the style.
+              </div>
+              <div>
+                <strong>Bold/italic fallback:</strong> if a style face is not
+                installed (e.g. <code>&lt;font="Italic"&gt;</code> on a family
+                without an Italic face), Photoshop falls back to Regular and
+                faux bold/italic is applied so the look is preserved.
+              </div>
+              <div>
+                <strong>Validation:</strong> bad syntax is highlighted under the
+                input and Apply stays disabled until you fix it. Errors caught:
+                unknown tags, unclosed/unmatched tags, nested duplicates, bad
+                hex, missing attributes.
+              </div>
+              <div class="tag-help-sample">
+                <strong>Full example:</strong><br />
+                <code
+                  >SAVE
+                  &lt;b&gt;&lt;color=#ff0000&gt;$1,500&lt;/color&gt;&lt;/b&gt;
+                  on the all-new &lt;font="Bold"&gt;Pioneer
+                  1000&lt;/font&gt;&lt;sup&gt;®&lt;/sup&gt;. &lt;i&gt;Limited
+                  time&lt;/i&gt; — APR from &lt;b&gt;1.9%&lt;/b&gt; for 72
+                  months&lt;sup&gt;*&lt;/sup&gt;</code
+                >
+              </div>
+            </div>
+          </div>
+          <div class="layers-toggle" id="layersToggle">
+            <span>Layers</span>
+            <span id="layersToggleCount" class="sizes-count"></span>
+            <span class="toggle-icon">▼</span>
+          </div>
+          <div id="layerList"></div>
         </div>
 
-        <div class="at-pair" style="display:flex;flex-direction:row;flex-wrap:nowrap;">
-          <div class="at-cell at-cell-2x">
-            <div class="at-label">Y anchor</div>
-            <select id="appendTextYAnchor" class="at-input">
-              <option value="top" selected>From top</option>
-              <option value="center">From center</option>
-              <option value="bottom">From bottom</option>
-            </select>
-          </div>
-          <div class="at-cell">
-            <div class="at-label">Y offset (px)</div>
-            <input id="appendTextYOffset" class="at-input" type="text" inputmode="numeric" value="10" />
-          </div>
+        <div
+          id="noResultsState"
+          class="section empty-state"
+          style="display: none"
+        >
+          <strong>No layers found</strong>
+          Scan found no layers in the open documents.
         </div>
 
-        <button id="appendTextApplyBtn" class="btn btn-primary btn-full at-apply-btn is-disabled" disabled>Append to 0 artboard(s)</button>
+        <div class="section" id="logsSection">
+          <div class="log-header">
+            <div class="label" id="logToggle">
+              Logs <span class="toggle-icon">▼</span>
+            </div>
+            <div class="log-btn-group">
+              <button id="logCopyBtn" class="btn btn-tertiary">Copy</button>
+              <button id="logClearBtn" class="btn btn-tertiary">Clear</button>
+            </div>
+          </div>
+          <pre id="logBox" class="log-box"><div>Ready.</div></pre>
+        </div>
+
+        <footer class="app-footer">
+          <div class="footer-title">
+            Content Replacer <span class="footer-version">v0.2.2</span>
+            <span class="footer-sep">-</span>
+            <span class="footer-copyright">© 2026</span>
+          </div>
+          <div class="footer-credit">
+            by <span class="footer-author">Thien Ho</span> · Technical Solution
+          </div>
+        </footer>
+      </div>
+      <div id="stickyCta" class="sticky-cta" style="display: none">
+        <button
+          id="applyBtn"
+          class="btn btn-primary btn-full btn-lg replace-only is-disabled"
+          disabled
+        >
+          Apply
+        </button>
+        <button
+          id="saveBtn"
+          class="btn btn-primary btn-full btn-lg is-disabled"
+          style="display: none"
+          disabled
+        >
+          Save
+        </button>
       </div>
     </div>
-
-    <div id="emptyState" class="section empty-state">
-      <strong>Get started</strong>
-      Open your PSD in Photoshop, then click <b>Scan</b>.<br/>
-      Switch to <b>All open documents</b> if each size is a separate PSD.
-    </div>
-
-    <div id="layerSection" class="section" style="display:none;">
-      <div class="label">What to do</div>
-      <div class="mode-tabs">
-        <button class="mode-tab active" data-mode="replace">Edit content</button>
-        <button class="mode-tab" data-mode="action">Run Photoshop Action</button>
-      </div>
-      <div class="search-bar">
-        <span class="search-icon" aria-hidden="true"></span>
-        <input id="searchInput" type="text" placeholder="Search layer name…" />
-        <button id="searchClearBtn" class="search-clear" title="Clear">×</button>
-      </div>
-      <div class="filter-bar">
-        <button class="filter-btn active" data-filter="all">All <span id="countAll" class="sizes-count"></span></button>
-        <button class="filter-btn" data-filter="text">Text <span id="countText" class="sizes-count"></span></button>
-        <button class="filter-btn" data-filter="image">Image <span id="countImage" class="sizes-count"></span></button>
-        <button class="filter-btn" data-filter="group">Group <span id="countGroup" class="sizes-count"></span></button>
-        <button class="filter-btn" data-filter="other">Other <span id="countOther" class="sizes-count"></span></button>
-        <button class="filter-btn select-btn action-only" id="selectAllBtn">Select All</button>
-        <button class="filter-btn select-btn action-only" id="deselectAllBtn">Deselect All</button>
-      </div>
-      <div id="actionBar" class="action-bar" style="display:none;">
-        <div class="action-bar-row">
-          <select id="actionSetSelect" class="action-select"><option value="">Loading...</option></select>
-          <select id="actionSelect" class="action-select"><option value="">Select action</option></select>
-          <button id="refreshActionsBtn" class="filter-btn action-refresh-btn" title="Reload Actions from Photoshop">↻</button>
-        </div>
-        <button id="runActionBtn" class="btn btn-primary btn-full action-run-btn is-disabled" disabled>Run Action</button>
-      </div>
-      <div class="layers-toggle" id="tagHelpToggle">
-        <span>Style tag cheatsheet</span>
-        <span class="toggle-icon">▶</span>
-      </div>
-      <div id="tagHelpBody" class="tag-help" style="display:none;">
-        <table class="tag-help-table">
-          <thead>
-            <tr><th>Tag</th><th>What it does</th><th>Examples</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>&lt;b&gt;…&lt;/b&gt;</code></td>
-              <td>Bold (faux — synthesized from current face)</td>
-              <td>
-                <div><code>Save &lt;b&gt;$500&lt;/b&gt; today</code></div>
-                <div><code>&lt;b&gt;LIMITED&lt;/b&gt; offer</code></div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;i&gt;…&lt;/i&gt;</code></td>
-              <td>Italic (faux — slants the current face)</td>
-              <td>
-                <div><code>For a &lt;i&gt;limited&lt;/i&gt; time</code></div>
-                <div><code>&lt;i&gt;Terms apply&lt;/i&gt;</code></div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;sup&gt;…&lt;/sup&gt;</code></td>
-              <td>Superscript — small + raised baseline</td>
-              <td>
-                <div><code>Area: 12 m&lt;sup&gt;2&lt;/sup&gt;</code></div>
-                <div><code>Honda&lt;sup&gt;®&lt;/sup&gt;</code></div>
-                <div><code>E = mc&lt;sup&gt;2&lt;/sup&gt;</code></div>
-                <div><code>Conditions apply&lt;sup&gt;*&lt;/sup&gt;</code></div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;sub&gt;…&lt;/sub&gt;</code></td>
-              <td>Subscript — small + lowered baseline</td>
-              <td>
-                <div><code>H&lt;sub&gt;2&lt;/sub&gt;O</code></div>
-                <div><code>CO&lt;sub&gt;2&lt;/sub&gt; emissions</code></div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;color=#hex&gt;…&lt;/color&gt;</code></td>
-              <td>Change text color. 3- or 6-digit hex, optional <code>#</code>.</td>
-              <td>
-                <div><code>&lt;color=#ff0000&gt;SALE&lt;/color&gt;</code></div>
-                <div><code>&lt;color=#0066ff&gt;link&lt;/color&gt;</code></div>
-                <div><code>&lt;color=#f00&gt;hot&lt;/color&gt;</code> (short form)</div>
-                <div><code>&lt;color=00aa00&gt;safe&lt;/color&gt;</code> (no #)</div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;font="Style"&gt;…&lt;/font&gt;</code></td>
-              <td>Switch style within the current family. Use the style name from Photoshop's Character panel.</td>
-              <td>
-                <div><code>&lt;font="Bold"&gt;Pioneer&lt;/font&gt;</code></div>
-                <div><code>&lt;font="Medium"&gt;subtitle&lt;/font&gt;</code></div>
-                <div><code>&lt;font="Light"&gt;thin&lt;/font&gt;</code></div>
-                <div><code>&lt;font="Black"&gt;HEAVY&lt;/font&gt;</code></div>
-                <div><code>&lt;font="Bold Italic"&gt;mixed&lt;/font&gt;</code></div>
-                <div><code>&lt;font="Condensed Medium"&gt;x&lt;/font&gt;</code></div>
-              </td>
-            </tr>
-            <tr>
-              <td><code>&lt;font=PSName&gt;…&lt;/font&gt;</code></td>
-              <td>Switch to a completely different face by PostScript name (must be installed on this machine).</td>
-              <td>
-                <div><code>&lt;font=Roboto-Bold&gt;x&lt;/font&gt;</code></div>
-                <div><code>&lt;font="ArialMT"&gt;x&lt;/font&gt;</code></div>
-                <div><code>&lt;font=Helvetica-Oblique&gt;x&lt;/font&gt;</code></div>
-                <div><code>&lt;font="TimesNewRomanPS-BoldMT"&gt;x&lt;/font&gt;</code></div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="tag-help-notes">
-          <div><strong>Nesting:</strong> tags can be combined. <code>&lt;b&gt;&lt;color=#f00&gt;BOLD RED&lt;/color&gt;&lt;/b&gt;</code> → bold + red at the same time.</div>
-          <div><strong>Case-insensitive:</strong> <code>&lt;B&gt;</code>, <code>&lt;Color=#FFF&gt;</code>, <code>&lt;FONT="bold"&gt;</code> all work the same.</div>
-          <div><strong>Quoting:</strong> any attribute value with spaces must be quoted — <code>&lt;font="Bold Italic"&gt;</code>, not <code>&lt;font=Bold Italic&gt;</code>.</div>
-          <div><strong>Font tag auto-detect:</strong> values containing <code>-</code> or ending in <code>MT</code>/<code>PS</code> are treated as PostScript names (full face switch); plain words (<code>Bold</code>, <code>Light</code>, etc.) keep the current family and just change the style.</div>
-          <div><strong>Bold/italic fallback:</strong> if a style face is not installed (e.g. <code>&lt;font="Italic"&gt;</code> on a family without an Italic face), Photoshop falls back to Regular and faux bold/italic is applied so the look is preserved.</div>
-          <div><strong>Validation:</strong> bad syntax is highlighted under the input and Apply stays disabled until you fix it. Errors caught: unknown tags, unclosed/unmatched tags, nested duplicates, bad hex, missing attributes.</div>
-          <div class="tag-help-sample"><strong>Full example:</strong><br>
-            <code>SAVE &lt;b&gt;&lt;color=#ff0000&gt;$1,500&lt;/color&gt;&lt;/b&gt; on the all-new &lt;font="Bold"&gt;Pioneer 1000&lt;/font&gt;&lt;sup&gt;®&lt;/sup&gt;. &lt;i&gt;Limited time&lt;/i&gt; — APR from &lt;b&gt;1.9%&lt;/b&gt; for 72 months&lt;sup&gt;*&lt;/sup&gt;</code>
-          </div>
-        </div>
-      </div>
-      <div class="layers-toggle" id="layersToggle">
-        <span>Layers</span>
-        <span id="layersToggleCount" class="sizes-count"></span>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div id="layerList"></div>
-    </div>
-
-    <div id="noResultsState" class="section empty-state" style="display:none;">
-      <strong>No layers found</strong>
-      Scan found no layers in the open documents.
-    </div>
-
-    <div class="section" id="logsSection">
-      <div class="log-header">
-        <div class="label" id="logToggle">Logs <span class="toggle-icon">▼</span></div>
-        <div class="log-btn-group">
-          <button id="logCopyBtn" class="btn btn-tertiary">Copy</button>
-          <button id="logClearBtn" class="btn btn-tertiary">Clear</button>
-        </div>
-      </div>
-      <pre id="logBox" class="log-box"><div>Ready.</div></pre>
-    </div>
-
-    <footer class="app-footer">
-      <div class="footer-title">Content Replacer <span class="footer-version">v0.2.2</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
-      <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
-    </footer>
-</div>
-    <div id="stickyCta" class="sticky-cta" style="display:none;">
-      <button id="applyBtn" class="btn btn-primary btn-full btn-lg replace-only is-disabled" disabled>Apply</button>
-      <button id="saveBtn" class="btn btn-primary btn-full btn-lg is-disabled" style="display:none;" disabled>Save</button>
-    </div>
-  </div>
-  <script src="main.js"></script>
-</body>
+    <script src="main.js"></script>
+  </body>
 </html>

@@ -1,190 +1,406 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Banner Cloner</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div class="app">
-    <div class="action-bar">
-      <button id="cloneBtn" class="primary">Clone Artboards</button>
-      <button id="exportBtn" class="primary export-all-btn" style="display:none;">Export</button>
-      <button id="splitBtn" class="primary split-btn" style="display:none;">Split to Documents</button>
-    </div>
-
-    <div class="tab-bar">
-      <button class="tab-btn" data-mode="documents" style="display:none;">Documents</button>
-      <button class="tab-btn active" data-mode="settings">Settings</button>
-      <button class="tab-btn" data-mode="exportAssets">Assets</button>
-    </div>
-
-    <div class="section shared-section" id="targetSizesSection">
-      <label class="label" for="sizesInput">Target Sizes <span id="sizesCountLabel" class="sizes-count"></span></label>
-      <sp-textfield id="sizesInput" value="300x250"></sp-textfield>
-      <div class="hint">Enter sizes separated by spaces or commas</div>
-      <div id="presetWrap" class="preset-wrap"></div>
-    </div>
-
-    <div id="cloneProgress" class="section shared-section clone-progress" style="display:none;">
-      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
-      <div id="progressText" class="progress-text">Cloning...</div>
-    </div>
-
-    <div class="section" id="splitSection" style="display:none;">
-      <div class="hint">Split each artboard into a separate document and save as PSD.</div>
-    </div>
-
-    <!-- Export Assets Panel (hidden by default) -->
-    <div id="exportAssetsPanel" style="display:none;">
-      <div class="section artboard-picker-section">
-        <div class="artboard-picker-header">
-          <button id="artboardPickerToggle" class="artboard-picker-title" type="button">
-            <span id="artboardPickerArrow" class="artboard-picker-arrow">▼</span>
-            <span>Artboards (<span id="artboardPickerCount">0/0</span>)</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Banner Cloner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <div class="fixed-top">
+        <div class="action-bar">
+          <button id="cloneBtn" class="primary">Clone Artboards</button>
+          <button
+            id="exportBtn"
+            class="primary export-all-btn"
+            style="display: none"
+          >
+            Export
           </button>
-          <div class="artboard-picker-actions">
-            <button id="artboardPickerRefresh" class="link-btn" type="button">Refresh</button>
-            <button id="artboardPickerAll" class="link-btn" type="button">All</button>
-            <button id="artboardPickerNone" class="link-btn" type="button">None</button>
+          <button id="splitBtn" class="primary split-btn" style="display: none">
+            Split to Documents
+          </button>
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn" data-mode="documents" style="display: none">
+            Documents
+          </button>
+          <button class="tab-btn active" data-mode="settings">Settings</button>
+          <button class="tab-btn" data-mode="exportAssets">Assets</button>
+        </div>
+      </div>
+      <div class="app-scroll">
+        <div class="section shared-section" id="targetSizesSection">
+          <label class="label" for="sizesInput"
+            >Target Sizes <span id="sizesCountLabel" class="sizes-count"></span
+          ></label>
+          <sp-textfield id="sizesInput" value="300x250"></sp-textfield>
+          <div class="hint">Enter sizes separated by spaces or commas</div>
+          <div id="presetWrap" class="preset-wrap"></div>
+        </div>
+
+        <div
+          id="cloneProgress"
+          class="section shared-section clone-progress"
+          style="display: none"
+        >
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div id="progressText" class="progress-text">Cloning...</div>
+        </div>
+
+        <div class="section" id="splitSection" style="display: none">
+          <div class="hint">
+            Split each artboard into a separate document and save as PSD.
           </div>
         </div>
-        <div id="artboardPickerBody" class="artboard-picker-body">
-          <sp-textfield id="artboardPickerSearch" placeholder="Search artboards..."></sp-textfield>
-          <div id="artboardPickerList" class="artboard-picker-list"></div>
-        </div>
-      </div>
-      <div class="section">
-        <label class="label" for="ignoreLayerInput">Ignore layers</label>
-        <sp-textfield id="ignoreLayerInput" value=""></sp-textfield>
-        <div class="hint">Layer names containing these keywords will be skipped (comma-separated)</div>
-      </div>
-      <div class="section">
-        <label class="checkbox-row"><input id="advancedOptionsEnabled" type="checkbox" /> <span>Advanced options</span></label>
-      </div>
-      <div id="advancedOptionsPanel" style="display:none;">
-        <div class="section">
-          <label class="label" for="customExportPath">Custom output path <span style="color:#e88">*</span></label>
-          <div class="path-row">
-            <sp-textfield id="customExportPath" placeholder="/Users/.../export  or  C:\Users\...\export"></sp-textfield>
-            <button id="browseExportPathBtn" class="path-browse-btn" title="Browse folder…">Browse…</button>
+
+        <!-- Export Assets Panel (hidden by default) -->
+        <div id="exportAssetsPanel" style="display: none">
+          <div class="section artboard-picker-section">
+            <div class="artboard-picker-header">
+              <button
+                id="artboardPickerToggle"
+                class="artboard-picker-title"
+                type="button"
+              >
+                <span id="artboardPickerArrow" class="artboard-picker-arrow"
+                  >▼</span
+                >
+                <span
+                  >Artboards (<span id="artboardPickerCount">0/0</span>)</span
+                >
+              </button>
+              <div class="artboard-picker-actions">
+                <button
+                  id="artboardPickerRefresh"
+                  class="link-btn"
+                  type="button"
+                >
+                  Refresh
+                </button>
+                <button id="artboardPickerAll" class="link-btn" type="button">
+                  All
+                </button>
+                <button id="artboardPickerNone" class="link-btn" type="button">
+                  None
+                </button>
+              </div>
+            </div>
+            <div id="artboardPickerBody" class="artboard-picker-body">
+              <sp-textfield
+                id="artboardPickerSearch"
+                placeholder="Search artboards..."
+              ></sp-textfield>
+              <div id="artboardPickerList" class="artboard-picker-list"></div>
+            </div>
           </div>
-          <div class="hint">Export per-artboard: {path}/{size}/assets/ — folder sẽ được tạo nếu chưa tồn tại. Hỗ trợ cả macOS (/Users/…) và Windows (C:\Users\…).</div>
+          <div class="section">
+            <label class="label" for="ignoreLayerInput">Ignore layers</label>
+            <sp-textfield id="ignoreLayerInput" value=""></sp-textfield>
+            <div class="hint">
+              Layer names containing these keywords will be skipped
+              (comma-separated)
+            </div>
+          </div>
+          <div class="section">
+            <label class="checkbox-row"
+              ><input id="advancedOptionsEnabled" type="checkbox" />
+              <span>Advanced options</span></label
+            >
+          </div>
+          <div id="advancedOptionsPanel" style="display: none">
+            <div class="section">
+              <label class="label" for="customExportPath"
+                >Custom output path <span style="color: #e88">*</span></label
+              >
+              <div class="path-row">
+                <sp-textfield
+                  id="customExportPath"
+                  placeholder="/Users/.../export  or  C:\Users\...\export"
+                ></sp-textfield>
+                <button
+                  id="browseExportPathBtn"
+                  class="path-browse-btn"
+                  title="Browse folder…"
+                >
+                  Browse…
+                </button>
+              </div>
+              <div class="hint">
+                Export per-artboard: {path}/{size}/assets/ — folder sẽ được tạo
+                nếu chưa tồn tại. Hỗ trợ cả macOS (/Users/…) và Windows
+                (C:\Users\…).
+              </div>
+            </div>
+            <div class="section">
+              <label class="label" for="jpgQuality"
+                >JPG quality (0-100) <span style="color: #e88">*</span></label
+              >
+              <sp-textfield
+                id="jpgQuality"
+                type="number"
+                value="75"
+              ></sp-textfield>
+            </div>
+            <div class="section checkboxes">
+              <label class="checkbox-row"
+                ><input id="filterGgPrefix" type="checkbox" />
+                <span
+                  >Only export layers/groups starting with "gg-"</span
+                ></label
+              >
+              <label class="checkbox-row"
+                ><input id="generateInfoHtml" type="checkbox" />
+                <span>Generate info-image.html gallery at root</span></label
+              >
+              <label class="checkbox-row"
+                ><input id="useNoSizeDetected" type="checkbox" />
+                <span>Use no size detected</span></label
+              >
+            </div>
+          </div>
+          <div class="section btn-row">
+            <button id="getImagesBtn" class="primary">Get Images</button>
+            <button id="addGroupBtn" class="primary">+ Add Group</button>
+          </div>
+          <div id="assetSearchRow" class="section" style="display: none">
+            <sp-textfield
+              id="assetSearch"
+              placeholder="Search assets..."
+            ></sp-textfield>
+            <button
+              id="assetToggleAllBtn"
+              class="asset-toggle-all-btn"
+              title="Collapse / expand all"
+            >
+              Collapse all
+            </button>
+          </div>
+          <div id="imageListContainer"></div>
+          <div class="section" id="exportAssetsAction" style="display: none">
+            <button id="exportAssetsBtn" class="primary export-all-btn full">
+              Export Assets
+            </button>
+          </div>
         </div>
-        <div class="section">
-          <label class="label" for="jpgQuality">JPG quality (0-100) <span style="color:#e88">*</span></label>
-          <sp-textfield id="jpgQuality" type="number" value="75"></sp-textfield>
+
+        <!-- Settings Panel (hidden by default) -->
+        <div id="settingsPanel" class="settings-panel" style="display: none">
+          <div class="section info-card">
+            <div><strong>Source:</strong> <span id="sourceName">-</span></div>
+            <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
+            <div class="hint">
+              Tip: Cmd/Ctrl-click trong Layers panel để chọn nhiều artboard
+              nguồn (vd F1, F2, F3) → mỗi artboard sẽ được clone ra đủ tập
+              sizes.
+            </div>
+            <div id="jsonStatus" class="json-status">No JSON imported</div>
+            <button id="refreshBtn" class="link-btn">Refresh Source</button>
+          </div>
+
+          <div class="section checkboxes">
+            <label class="checkbox-row"
+              ><input id="uniformScaleEnabled" type="checkbox" />
+              <span
+                >Uniform scale (preserve ratio — bỏ qua smart match & JSON
+                rules)</span
+              ></label
+            >
+            <label class="checkbox-row"
+              ><input id="smartMatchEnabled" type="checkbox" />
+              <span
+                >Smart match (auto resize/move/bg cover khi không có JSON
+                rule)</span
+              ></label
+            >
+            <label class="row" style="margin-left: 22px"
+              ><span style="font-size: 10px; color: #aaa"
+                >Auto-fit suffix(es):</span
+              ><input
+                id="autoFitSuffix"
+                type="text"
+                placeholder="-auto-fit, -stretch, -hero"
+                style="margin-left: 6px; flex: 1"
+            /></label>
+            <label class="checkbox-row"
+              ><input id="requireGGPrefix" type="checkbox" />
+              <span>Require GG- prefix for layer rules</span></label
+            >
+            <label class="checkbox-row"
+              ><input id="matchFrameTokenEnabled" type="checkbox" checked />
+              <span
+                >Match source frame token (e.g. "...-F2" source → only "F2-*"
+                targets)</span
+              ></label
+            >
+          </div>
+
+          <div class="section">
+            <label class="label" for="skipLayerInput">Background Layer</label>
+            <sp-textfield
+              id="skipLayerInput"
+              value="GG-background"
+            ></sp-textfield>
+            <div class="hint">
+              This layer/group will be scaled as cover instead of repositioned
+            </div>
+          </div>
+
+          <div class="section">
+            <label class="label">Layer Rules</label>
+            <div class="hint">
+              Auto-synced from Target Sizes. Import JSON to populate all rules.
+            </div>
+          </div>
+
+          <div class="section" id="exportModeSection" style="display: none">
+            <label class="label">Export mode</label>
+            <div class="hint" id="exportModeDetected">-</div>
+            <label class="checkbox-row"
+              ><input id="exportModeOverrideEnabled" type="checkbox" />
+              <span>Override auto-detection</span></label
+            >
+            <div
+              id="exportModeOverridePanel"
+              style="display: none; margin-top: 6px"
+            >
+              <select
+                id="exportModeOverrideSelect"
+                style="
+                  width: 100%;
+                  padding: 6px;
+                  background: #222;
+                  color: #ccc;
+                  border: 1px solid #444;
+                  border-radius: 4px;
+                "
+              >
+                <option value="single">
+                  single — 1 base size, will reflow to other sizes
+                </option>
+                <option value="multi-frame">
+                  multi-frame — N frames same size (F1/F2/...)
+                </option>
+                <option value="layer-full">
+                  layer-full — N artboards already reflowed
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="section">
+            <label class="checkbox-row"
+              ><input id="autoRenameDupsEnabled" type="checkbox" checked />
+              <span
+                >Auto-rename duplicate layers before export (within each
+                artboard)</span
+              ></label
+            >
+          </div>
+          <div class="section btn-row">
+            <div id="importJsonWrap" class="import-json-wrap">
+              <button
+                id="importJsonBtn"
+                class="primary import-json-btn"
+                type="button"
+              >
+                <span id="importJsonLabel">Import JSON</span>
+              </button>
+              <button
+                id="importJsonClearBtn"
+                class="import-json-clear-btn"
+                type="button"
+                title="Clear imported JSON"
+                style="display: none"
+              >
+                ×
+              </button>
+            </div>
+            <button id="exportLayerJsonBtn" class="primary export-all-btn">
+              Export Layer JSON
+            </button>
+          </div>
+          <div
+            class="section btn-row"
+            id="applyRulesSection"
+            style="display: none"
+          >
+            <button id="applyRulesBtn" class="primary">
+              Apply Rules to Existing
+            </button>
+          </div>
+          <!-- Debug/test buttons — hidden in production. Logic stays for dev/debug. -->
+          <div class="section btn-row" style="display: none">
+            <button
+              id="createTestFileBtn"
+              class="primary"
+              title="Tạo file PSD test với 5 case risk cao (smart object mask, layer effects, raster mask, warped text, clipping chain)"
+            >
+              Create Test File
+            </button>
+            <button
+              id="testGroupResizeBtn"
+              class="primary"
+              title="Test pipeline group-resize-scale-ungroup: bọc children vào temp group → resize artboard → scale group → ungroup. Bypass auto-eject của PS."
+            >
+              Test Group-Resize
+            </button>
+            <button
+              id="testTempDocBtn"
+              class="primary"
+              title="Test pipeline với temp document: copy artboard sang doc tạm (size = source) → resize + scale → copy về doc gốc. Isolate canvas-grow side-effects."
+            >
+              Test Temp-Doc
+            </button>
+          </div>
+          <div class="section" style="display: none">
+            <label class="checkbox-row"
+              ><input id="keepTempDocOpen" type="checkbox" />
+              <span>Keep temp doc open (debug)</span></label
+            >
+          </div>
+
+          <div
+            id="importInfoCard"
+            class="section info-card"
+            style="display: none"
+          >
+            <div>
+              <strong>Module:</strong> <span id="importModuleName">-</span>
+            </div>
+            <div>
+              <strong>Sizes:</strong> <span id="importSizeCount">-</span>
+            </div>
+          </div>
+
+          <div id="sizeGroupsContainer"></div>
         </div>
-        <div class="section checkboxes">
-          <label class="checkbox-row"><input id="filterGgPrefix" type="checkbox" /> <span>Only export layers/groups starting with "gg-"</span></label>
-          <label class="checkbox-row"><input id="generateInfoHtml" type="checkbox" /> <span>Generate info-image.html gallery at root</span></label>
-          <label class="checkbox-row"><input id="useNoSizeDetected" type="checkbox" /> <span>Use no size detected</span></label>
+
+        <!-- Logs (always visible at the bottom of all tabs) -->
+        <div class="section shared-section" id="logsSection">
+          <div class="log-header">
+            <label class="label" id="logToggle">Logs</label>
+            <button id="logCopyBtn" class="log-clear-btn">Copy</button>
+            <button id="logClearBtn" class="log-clear-btn">Clear</button>
+          </div>
+          <pre id="logBox" class="log-box"><div>Ready.</div></pre>
         </div>
-      </div>
-      <div class="section btn-row">
-        <button id="getImagesBtn" class="primary">Get Images</button>
-        <button id="addGroupBtn" class="primary">+ Add Group</button>
-      </div>
-      <div id="assetSearchRow" class="section" style="display:none;">
-        <sp-textfield id="assetSearch" placeholder="Search assets..."></sp-textfield>
-        <button id="assetToggleAllBtn" class="asset-toggle-all-btn" title="Collapse / expand all">Collapse all</button>
-      </div>
-      <div id="imageListContainer"></div>
-      <div class="section" id="exportAssetsAction" style="display:none;">
-        <button id="exportAssetsBtn" class="primary export-all-btn full">Export Assets</button>
+
+        <footer class="app-footer">
+          <div class="footer-title">
+            Banner Cloner <span class="footer-version">v1.3.0</span>
+            <span class="footer-sep">-</span>
+            <span class="footer-copyright">© 2026</span>
+          </div>
+          <div class="footer-credit">
+            by <span class="footer-author">Thien Ho</span> · Technical Solution
+          </div>
+        </footer>
       </div>
     </div>
-
-    <!-- Settings Panel (hidden by default) -->
-    <div id="settingsPanel" class="settings-panel" style="display:none;">
-      <div class="section info-card">
-        <div><strong>Source:</strong> <span id="sourceName">-</span></div>
-        <div><strong>Size:</strong> <span id="sourceSize">-</span></div>
-        <div class="hint">Tip: Cmd/Ctrl-click trong Layers panel để chọn nhiều artboard nguồn (vd F1, F2, F3) → mỗi artboard sẽ được clone ra đủ tập sizes.</div>
-        <div id="jsonStatus" class="json-status">No JSON imported</div>
-        <button id="refreshBtn" class="link-btn">Refresh Source</button>
-      </div>
-
-      <div class="section checkboxes">
-        <label class="checkbox-row"><input id="uniformScaleEnabled" type="checkbox" /> <span>Uniform scale (preserve ratio — bỏ qua smart match & JSON rules)</span></label>
-        <label class="checkbox-row"><input id="smartMatchEnabled" type="checkbox" /> <span>Smart match (auto resize/move/bg cover khi không có JSON rule)</span></label>
-        <label class="row" style="margin-left: 22px;"><span style="font-size:10px; color:#aaa;">Auto-fit suffix(es):</span><input id="autoFitSuffix" type="text" placeholder="-auto-fit, -stretch, -hero" style="margin-left:6px; flex:1;" /></label>
-        <label class="checkbox-row"><input id="requireGGPrefix" type="checkbox" /> <span>Require GG- prefix for layer rules</span></label>
-        <label class="checkbox-row"><input id="matchFrameTokenEnabled" type="checkbox" checked /> <span>Match source frame token (e.g. "...-F2" source → only "F2-*" targets)</span></label>
-      </div>
-
-      <div class="section">
-        <label class="label" for="skipLayerInput">Background Layer</label>
-        <sp-textfield id="skipLayerInput" value="GG-background"></sp-textfield>
-        <div class="hint">This layer/group will be scaled as cover instead of repositioned</div>
-      </div>
-
-      <div class="section">
-        <label class="label">Layer Rules</label>
-        <div class="hint">Auto-synced from Target Sizes. Import JSON to populate all rules.</div>
-      </div>
-
-      <div class="section" id="exportModeSection" style="display:none;">
-        <label class="label">Export mode</label>
-        <div class="hint" id="exportModeDetected">-</div>
-        <label class="checkbox-row"><input id="exportModeOverrideEnabled" type="checkbox" /> <span>Override auto-detection</span></label>
-        <div id="exportModeOverridePanel" style="display:none; margin-top:6px;">
-          <select id="exportModeOverrideSelect" style="width:100%; padding:6px; background:#222; color:#ccc; border:1px solid #444; border-radius:4px;">
-            <option value="single">single — 1 base size, will reflow to other sizes</option>
-            <option value="multi-frame">multi-frame — N frames same size (F1/F2/...) </option>
-            <option value="layer-full">layer-full — N artboards already reflowed</option>
-          </select>
-        </div>
-      </div>
-      <div class="section">
-        <label class="checkbox-row"><input id="autoRenameDupsEnabled" type="checkbox" checked /> <span>Auto-rename duplicate layers before export (within each artboard)</span></label>
-      </div>
-      <div class="section btn-row">
-        <div id="importJsonWrap" class="import-json-wrap">
-          <button id="importJsonBtn" class="primary import-json-btn" type="button">
-            <span id="importJsonLabel">Import JSON</span>
-          </button>
-          <button id="importJsonClearBtn" class="import-json-clear-btn" type="button" title="Clear imported JSON" style="display:none;">×</button>
-        </div>
-        <button id="exportLayerJsonBtn" class="primary export-all-btn">Export Layer JSON</button>
-      </div>
-      <div class="section btn-row" id="applyRulesSection" style="display:none;">
-        <button id="applyRulesBtn" class="primary">Apply Rules to Existing</button>
-      </div>
-      <!-- Debug/test buttons — hidden in production. Logic stays for dev/debug. -->
-      <div class="section btn-row" style="display:none;">
-        <button id="createTestFileBtn" class="primary" title="Tạo file PSD test với 5 case risk cao (smart object mask, layer effects, raster mask, warped text, clipping chain)">Create Test File</button>
-        <button id="testGroupResizeBtn" class="primary" title="Test pipeline group-resize-scale-ungroup: bọc children vào temp group → resize artboard → scale group → ungroup. Bypass auto-eject của PS.">Test Group-Resize</button>
-        <button id="testTempDocBtn" class="primary" title="Test pipeline với temp document: copy artboard sang doc tạm (size = source) → resize + scale → copy về doc gốc. Isolate canvas-grow side-effects.">Test Temp-Doc</button>
-      </div>
-      <div class="section" style="display:none;">
-        <label class="checkbox-row"><input id="keepTempDocOpen" type="checkbox" /> <span>Keep temp doc open (debug)</span></label>
-      </div>
-
-      <div id="importInfoCard" class="section info-card" style="display:none;">
-        <div><strong>Module:</strong> <span id="importModuleName">-</span></div>
-        <div><strong>Sizes:</strong> <span id="importSizeCount">-</span></div>
-      </div>
-
-      <div id="sizeGroupsContainer"></div>
-    </div>
-
-    <!-- Logs (always visible at the bottom of all tabs) -->
-    <div class="section shared-section" id="logsSection">
-      <div class="log-header">
-        <label class="label" id="logToggle">Logs</label>
-        <button id="logCopyBtn" class="log-clear-btn">Copy</button>
-        <button id="logClearBtn" class="log-clear-btn">Clear</button>
-      </div>
-      <pre id="logBox" class="log-box"><div>Ready.</div></pre>
-    </div>
-
-    <footer class="app-footer">
-      <div class="footer-title">Banner Cloner <span class="footer-version">v1.3.0</span> <span class="footer-sep">-</span> <span class="footer-copyright">© 2026</span></div>
-      <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
-    </footer>
-  </div>
-  <script src="main.js"></script>
-</body>
+    <script src="main.js"></script>
+  </body>
 </html>
