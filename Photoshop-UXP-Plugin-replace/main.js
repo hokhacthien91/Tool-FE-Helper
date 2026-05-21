@@ -31,6 +31,9 @@ const state = {
 
 function nextLinkId() { return `#${++state.idCounter}`; }
 function entryDisplayName(entry) {
+  // Merged shared-SO entries always show the combined name (e.g. "A + B"),
+  // not the inherited displayPath (which is only one of the share-mates).
+  if (entry.sharedNames && entry.sharedNames.length > 1) return entry.name;
   return state.matchByNameOnly ? entry.name : (entry.displayPath || entry.name);
 }
 
@@ -367,6 +370,81 @@ async function scanDocuments() {
     } catch (e) { /* keep plain currentText on error */ }
   }
 
+  // POST-SCAN MERGE: detect cross-name share-edit groups via smartObjectMore.ID
+  // and merge them into a single entry. Same-name occurrences ALREADY share an
+  // entry (default behavior — see collectNode keying by name); this pass only
+  // handles the "different names that secretly share edit" case.
+  //
+  // Algorithm:
+  //   1. Read instance ID for every occurrence across all image entries.
+  //   2. Bucket by instance ID. If a bucket spans 2+ DIFFERENT entries (= different
+  //      names), those entries share edit and must be merged.
+  //   3. For each cross-name bucket, MOVE the share-mate occurrences out of their
+  //      original entries into one merged entry. Leftover occurrences in the
+  //      original entries stay put (preserves same-name grouping for non-sharing
+  //      occurrences of the same name).
+  const imageEntries = state.allEntries.filter(e => e.kind === "image");
+  if (imageEntries.length > 1) {
+    // occ → instance-ID key (null if unreadable).
+    const occIid = new Map();
+    for (const entry of imageEntries) {
+      for (const occ of entry.occurrences) {
+        try {
+          await switchActiveDoc(occ.docId);
+          const d = await getLayerDescriptorById(occ.layerId);
+          const iid = getSoInstanceId(d);
+          if (iid) occIid.set(occ, `${occ.docId}|${iid}`);
+        } catch (e) { /* skip */ }
+      }
+    }
+
+    // Bucket: iidKey → { entryToOccs: Map<entry, occ[]> }
+    const buckets = new Map();
+    for (const [occ, key] of occIid) {
+      // Find which entry owns this occ.
+      const ownerEntry = imageEntries.find(e => e.occurrences.includes(occ));
+      if (!ownerEntry) continue;
+      if (!buckets.has(key)) buckets.set(key, new Map());
+      const m = buckets.get(key);
+      if (!m.has(ownerEntry)) m.set(ownerEntry, []);
+      m.get(ownerEntry).push(occ);
+    }
+
+    // Find cross-name buckets (= bucket spans 2+ distinct entries with different names).
+    const newMergedEntries = [];
+    for (const [iidKey, entryToOccs] of buckets) {
+      if (entryToOccs.size < 2) continue; // single-entry bucket → no cross-name merge
+      const names = [...entryToOccs.keys()].map(e => e.name);
+      const uniqueNames = [...new Set(names)];
+      if (uniqueNames.length < 2) continue; // same name across entries — already grouped elsewhere
+
+      // Cross-name share: merge.
+      const namesSorted = uniqueNames.sort((a, c) => a.localeCompare(c, undefined, { numeric: true, sensitivity: "base" }));
+      const primaryEntry = [...entryToOccs.keys()].find(e => e.name === namesSorted[0]) || [...entryToOccs.keys()][0];
+      const sharedOccs = [];
+      for (const [entry, occs] of entryToOccs) {
+        for (const occ of occs) sharedOccs.push(occ);
+        // Remove the moved occurrences from the original entry.
+        entry.occurrences = entry.occurrences.filter(o => !occs.includes(o));
+      }
+      newMergedEntries.push({
+        ...primaryEntry,
+        name: namesSorted.join(" + "),
+        sharedNames: namesSorted,
+        occurrences: sharedOccs,
+        newContent: "", file: null, token: null, newName: "", linkId: "", selected: false,
+      });
+      log(`[SCAN] merged shared-SO occurrences → "${namesSorted.join(" + ")}" (${sharedOccs.length} occurrence${sharedOccs.length > 1 ? "s" : ""}, instance=${iidKey.split("|")[1].slice(0, 8)}…)`);
+    }
+
+    if (newMergedEntries.length) {
+      // Drop now-empty source entries; keep entries that still have occurrences.
+      state.allEntries = state.allEntries.filter(e => e.kind !== "image" || e.occurrences.length > 0);
+      state.allEntries.push(...newMergedEntries);
+      state.allEntries.sort(sortByPath);
+    }
+  }
+
   state.hasScanned = true;
   state.idCounter = 0;
 
@@ -612,27 +690,6 @@ function buildUnifiedRow(entry, idx) {
       }
     };
     runValidate();
-
-    // UXP Chromium's native paste drops the whole buffer when clipboard
-    // contains variation selectors (U+FE0F etc). Insert manually; blur+focus
-    // after so Spectrum widget re-syncs and typing keeps working.
-    input.addEventListener("paste", (e) => {
-      const cd = e.clipboardData;
-      if (!cd) return;
-      const text = cd.getData("text/plain");
-      if (!text) return;
-      e.preventDefault();
-      const start = input.selectionStart ?? input.value.length;
-      const end   = input.selectionEnd   ?? input.value.length;
-      input.value = input.value.slice(0, start) + text + input.value.slice(end);
-      const pos = start + text.length;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      setTimeout(() => {
-        input.blur();
-        input.focus();
-        try { input.setSelectionRange(pos, pos); } catch (_) {}
-      }, 0);
-    });
 
     // Keep state in sync synchronously so Apply reads the latest value,
     // but coalesce heavy UI updates so fast typing doesn't starve UXP's
@@ -2087,7 +2144,12 @@ function parseHexColor(s) {
 //
 // Returns plain text if no styled ranges deviate from base.
 function encodeStyleTags(tk) {
-  const text = (tk?.textKey || "").replace(/\r/g, "\n");
+  // PS uses \r for paragraph breaks (Enter) and \x03 (ETX) for soft returns
+  // (Shift+Enter). Expose paragraph breaks as real newlines and soft returns
+  // as the literal "\n" sequence so users can re-type the same convention.
+  const text = (tk?.textKey || "")
+    .replace(new RegExp("\\x03", "g"), "\\n")
+    .replace(/\r/g, "\n");
   const ranges = tk?.textStyleRange || [];
   if (!text || !ranges.length) return text;
 
@@ -2428,7 +2490,16 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
   }
   const wasVisible = preDesc.visible !== false;
   const { clean: rawClean, spans: markerSpans } = stripStyleMarkers(newContent);
-  const psContent = rawClean.replace(/\r?\n/g, "\r");
+  // Convention: Enter in textarea → paragraph break (\r). Literal "\n" (2 chars:
+  // backslash + n) → soft return (ETX, char code 3), the same char PS writes
+  // for Shift+Enter. Protect literal "\\" via a placeholder first, then "\n" → ETX.
+  const ETX = String.fromCharCode(3);
+  const PH = String.fromCharCode(1);
+  const psContent = rawClean
+    .replace(/\\\\/g, PH)              // protect literal "\\"
+    .replace(/\\n/g, ETX)              // "\n" literal → soft return
+    .split(PH).join("\\")        // restore literal backslash
+    .replace(/\r?\n/g, "\r");       // real newline → paragraph break
   if (markerSpans.length) {
     const counts = markerSpans.reduce((a, s) => (a[s.kind] = (a[s.kind] || 0) + 1, a), {});
     log(`  [TXT] style markers stripped: ${JSON.stringify(counts)}`);
@@ -2755,10 +2826,16 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
 
 // Poll bounds until they stop changing — handles async vector render (EPS/AI/PDF).
 async function waitStableBounds(_tag, maxTries = 12, intervalMs = 60) {
-  let prev = rectSize((await getTargetLayerDescriptor()).bounds);
+  // Use smartObjectMore.transform bbox (content frame) — same source-of-truth
+  // as pre-capture, so fit math is apples-to-apples and ignores FX/filter halos.
+  const readBounds = async () => {
+    const d = await getTargetLayerDescriptor();
+    return getSoContentBoundsBBox(d) || rectSize(d.boundsNoEffects || d.bounds);
+  };
+  let prev = await readBounds();
   for (let i = 0; i < maxTries; i++) {
     await new Promise(r => setTimeout(r, intervalMs));
-    const cur = rectSize((await getTargetLayerDescriptor()).bounds);
+    const cur = await readBounds();
     if (Math.abs(cur.width - prev.width) < 0.5 && Math.abs(cur.height - prev.height) < 0.5) {
       return cur;
     }
@@ -2827,6 +2904,32 @@ function getSoDocumentId(desc) {
   const so = desc && desc.smartObject;
   if (!so) return null;
   return (typeof so.documentID === "string" && so.documentID) ? so.documentID : null;
+}
+
+// Read a layer's smartObjectMore.ID — the TRUE share-edit instance key.
+// Layers with the same smartObjectMore.ID share content: edit one → updates all.
+// (Verified empirically: documentID + fileReference both lie — they can match across
+// layers that DON'T share. Only smartObjectMore.ID flags real Alt+drag clones.)
+function getSoInstanceId(desc) {
+  const more = desc && desc.smartObjectMore;
+  if (!more) return null;
+  return (typeof more.ID === "string" && more.ID) ? more.ID : null;
+}
+
+// Bounding box of the SO content frame from smartObjectMore.transform
+// (8-number array: tlX,tlY, trX,trY, brX,brY, blX,blY).
+// Source-of-truth for content rect — unaffected by Layer FX or Smart Filter halos.
+// Returns null if not an SO or transform missing.
+function getSoContentBoundsBBox(desc) {
+  const t = desc && desc.smartObjectMore && desc.smartObjectMore.transform;
+  if (!Array.isArray(t) || t.length < 8) return null;
+  const xs = [t[0], t[2], t[4], t[6]];
+  const ys = [t[1], t[3], t[5], t[7]];
+  const minX = Math.min(xs[0], xs[1], xs[2], xs[3]);
+  const maxX = Math.max(xs[0], xs[1], xs[2], xs[3]);
+  const minY = Math.min(ys[0], ys[1], ys[2], ys[3]);
+  const maxY = Math.max(ys[0], ys[1], ys[2], ys[3]);
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
 }
 
 // Capture attributes worth preserving when we replace a layer (delete + place flow,
@@ -2909,18 +3012,46 @@ async function restoreLayerAttrs(layerId, attrs) {
   }
 }
 
+// Read layer lock state.
+async function readLayerLocking(layerId) {
+  try {
+    const d = await getLayerDescriptorById(layerId);
+    return d?.layerLocking || null;
+  } catch (e) { return null; }
+}
+
+// Apply or clear layer locking by explicit ID. Pass null to fully unlock.
+async function setLayerLocking(layerId, layerLocking) {
+  await bp([{
+    _obj: "applyLocking",
+    _target: [{ _ref: "layer", _id: layerId }],
+    layerLocking: layerLocking || { _obj: "layerLocking", protectNone: true },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Check if a layerLocking descriptor represents any lock.
+function isLayerLocked(locking) {
+  return !!(locking && (
+    locking.protectAll === true ||
+    locking.protectTransparency === true ||
+    locking.protectComposite === true ||
+    locking.protectPosition === true
+  ));
+}
+
 // Native PS Smart Object content replacement. Equivalent to Layer > Smart Objects >
-// Replace Contents... in the menu. Preserves EVERYTHING: layer name, position, scale/
-// rotate/skew transform, blend mode, opacity, layer effects, clipping mask, layer mask,
-// smart filters, layer ID, artboard membership, lock state, smartObject.documentID.
+// Replace Contents... in the menu. Preserves layer name, position, transform, blend,
+// opacity, layer effects, clipping mask, layer mask, smart filters, layer ID, artboard
+// membership, smartObject.documentID.
 //
-// If multiple SO layers share documentID, PS auto-propagates the new content to ALL of
-// them — so calling this on one master replaces all siblings without us touching them.
-//
-// Caveat: the layer's bounding box stays at the OLD bounds; new content is fit inside
-// that box according to the SO's transform. So if the user resizes the new SVG to look
-// the same as the old, just calling this is enough — no post-fit needed.
+// PS refuses placedLayerReplaceContents on locked layers — this helper auto-unlocks
+// before replacing. Caller is responsible for re-locking after all post-replace ops.
 async function replaceContentsNative(layerId, token) {
+  const savedLocking = await readLayerLocking(layerId);
+  if (isLayerLocked(savedLocking)) {
+    try { await setLayerLocking(layerId, null); } catch (e) { /* ignore */ }
+  }
   await selectLayerById(layerId);
   await bp([{
     _obj: "placedLayerReplaceContents",
@@ -3093,7 +3224,11 @@ async function runImageOps(imageOps, step, totalSteps) {
         await switchActiveDoc(occ.docId);
         const d = await getLayerDescriptorById(occ.layerId);
         if (d) {
-          occ.preCapturedBounds = rectSize(d.bounds);
+          // Prefer smartObjectMore.transform (content frame, ignores Layer FX +
+          // Smart Filter halos). Fall back to boundsNoEffects (loses Smart Filter
+          // robustness), then bounds.
+          occ.preCapturedBounds = getSoContentBoundsBBox(d)
+            || rectSize(d.boundsNoEffects || d.bounds);
           occ.preCapturedName = d.name || "";
           occ.preCapturedVisible = d.visible !== false;
           occ.preCapturedAttrs = captureLayerAttrs(d);
@@ -3129,14 +3264,8 @@ async function runImageOps(imageOps, step, totalSteps) {
     for (const [docId, docOccs] of byDoc) {
       try {
         await switchActiveDoc(docId);
-        const master = docOccs[0];
 
-        // Detect CASE A: all occs are SOs sharing the same non-null documentID.
-        const masterDocId = master.preCapturedDocId;
-        const allShared = !!masterDocId
-          && docOccs.every(o => o.preCapturedIsSO && o.preCapturedDocId === masterDocId);
-
-        if (allShared) {
+        if (false) {
           // CASE A — all picked occs share documentID. Native replace on master;
           // PS auto-propagates to siblings. Re-fit each instance (incl. ghost siblings
           // sharing documentID but not picked) to its own captured bounds (width-only).
@@ -3160,7 +3289,6 @@ async function runImageOps(imageOps, step, totalSteps) {
           }
           if (ghostSiblings.length) log(`[IMG]  found ${ghostSiblings.length} ghost sibling(s) sharing documentID — will auto-fit`);
 
-          await replaceContentsNative(master.layerId, entry.token);
           state.modifiedDocIds.add(docId);
 
           const allToFit = [...docOccs, ...ghostSiblings];
@@ -3175,6 +3303,10 @@ async function runImageOps(imageOps, step, totalSteps) {
               const beforeRA = beforeDescA?.bounds ? rectSize(beforeDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
               log(`[DBG]  BEFORE id=${o.layerId} ${o.target}: name="${beforeNameA}" preCapturedName="${o.preCapturedName || ""}" L=${Math.round(beforeRA.left)} T=${Math.round(beforeRA.top)} W=${Math.round(beforeRA.width)} H=${Math.round(beforeRA.height)}`);
 
+              // Replace content on THIS specific layer. PS doesn't reliably propagate
+              // placedLayerReplaceContents across shared-documentID siblings within a
+              // single modal, so we must call it per layer (incl. ghost siblings).
+              await replaceContentsNative(o.layerId, entry.token);
               await selectLayerById(o.layerId);
               const after = await waitStableBounds();
               const fit = await applyWidthFitTopLeft(wantBounds, after);
@@ -3191,13 +3323,16 @@ async function runImageOps(imageOps, step, totalSteps) {
               if (o.preCapturedVisible !== undefined) {
                 try { await setLayerVisibilityById(o.layerId, o.preCapturedVisible); } catch (e) { /* ignore */ }
               }
-              const tag = isGhost ? "ghost auto-fit" : "native replace, shared SO";
+              const tag = isGhost ? "ghost replace+fit" : "native replace, shared SO";
               log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${o.target}) [${tag}] [${Math.round(wantBounds.width)}×${Math.round(wantBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
 
               const afterDescA = await getLayerDescriptorById(o.layerId);
               const afterNameA = afterDescA?.name || "";
               const afterRA = afterDescA?.bounds ? rectSize(afterDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
-              log(`[DBG]  AFTER  id=${o.layerId} ${o.target}: name="${afterNameA}" wantName="${wantName}" L=${Math.round(afterRA.left)} T=${Math.round(afterRA.top)} W=${Math.round(afterRA.width)} H=${Math.round(afterRA.height)} | ΔL=${Math.round(afterRA.left - wantBounds.left)} ΔT=${Math.round(afterRA.top - wantBounds.top)} ΔW=${Math.round(afterRA.width - wantBounds.width)}`);
+              const afterSO = afterDescA?.smartObject || {};
+              const afterFileRef = afterSO.fileReference || "(none)";
+              const afterDocID = afterSO.documentID || "(none)";
+              log(`[DBG]  AFTER  id=${o.layerId} ${o.target}: name="${afterNameA}" wantName="${wantName}" L=${Math.round(afterRA.left)} T=${Math.round(afterRA.top)} W=${Math.round(afterRA.width)} H=${Math.round(afterRA.height)} | ΔL=${Math.round(afterRA.left - wantBounds.left)} ΔT=${Math.round(afterRA.top - wantBounds.top)} ΔW=${Math.round(afterRA.width - wantBounds.width)} | fileRef="${afterFileRef}" docID="${afterDocID.slice(0, 30)}..."`);
             } catch (e) {
               log(`[IMG]  re-fit error "${entry.name}" in ${o.target}: ${e.message || e}`);
             }
@@ -3218,33 +3353,40 @@ async function runImageOps(imageOps, step, totalSteps) {
         // Raster (non-SO) occurrences fall back to place+delete + attrs restore.
         for (const occ of docOccs) {
           try {
-            // BEFORE snapshot (name + bounds) for diagnostic logging.
+            // BEFORE snapshot (name + bounds + lock) for diagnostic logging.
             const beforeDesc = await getLayerDescriptorById(occ.layerId);
             const beforeName = beforeDesc?.name || "";
             const beforeR = beforeDesc?.bounds ? rectSize(beforeDesc.bounds) : { left: 0, top: 0, width: 0, height: 0 };
-            log(`[DBG]  BEFORE ${occ.target}: name="${beforeName}" L=${Math.round(beforeR.left)} T=${Math.round(beforeR.top)} W=${Math.round(beforeR.width)} H=${Math.round(beforeR.height)}`);
+            const beforeLocking = beforeDesc?.layerLocking || null;
+            log(`[DBG]  BEFORE id=${occ.layerId} ${occ.target}: name="${beforeName}" L=${Math.round(beforeR.left)} T=${Math.round(beforeR.top)} W=${Math.round(beforeR.width)} H=${Math.round(beforeR.height)} locked=${isLayerLocked(beforeLocking)}`);
 
             if (occ.preCapturedIsSO) {
               await replaceContentsNative(occ.layerId, entry.token);
-              // Re-fit to captured bounds (width-only). PS keeps the wrapper's transform
-              // but the new content's native size is different, so visible bounds drift.
+              // Re-fit to captured bounds (width-only).
               await selectLayerById(occ.layerId);
+              // PS refuses Transform on hidden layers. Temp-show before fit;
+              // visibility restored to preCapturedVisible after the fit below.
+              if (occ.preCapturedVisible === false) {
+                try { await setLayerVisibilityById(occ.layerId, true); } catch (e) { /* ignore */ }
+              }
               const after = await waitStableBounds();
               const fit = await applyWidthFitTopLeft(occ.preCapturedBounds, after);
-              // Force-restore original layer name by explicit layer ID (double-pass with
-              // small delay to defeat PS late auto-rename).
+              // Force-restore original layer name.
               const wantName = occ.preCapturedName || beforeName;
               if (wantName) {
                 try { await renameLayerById(occ.layerId, wantName); } catch (e) { /* ignore */ }
                 await new Promise(r => setTimeout(r, 50));
                 try { await renameLayerById(occ.layerId, wantName); } catch (e) { /* ignore */ }
               }
-              // Restore visibility (hide/show) to match captured state.
               if (occ.preCapturedVisible !== undefined) {
                 try { await setLayerVisibilityById(occ.layerId, occ.preCapturedVisible); } catch (e) { /* ignore */ }
               }
+              // Re-lock if layer was originally locked (replaceContentsNative unlocked it).
+              if (isLayerLocked(beforeLocking)) {
+                try { await setLayerLocking(occ.layerId, beforeLocking); } catch (e) { /* ignore */ }
+              }
               state.modifiedDocIds.add(docId);
-              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target}) [native replace, in-place] [${Math.round(occ.preCapturedBounds.width)}×${Math.round(occ.preCapturedBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
+              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target}) [native replace] [${Math.round(occ.preCapturedBounds.width)}×${Math.round(occ.preCapturedBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
             } else {
               // Raster layer → place+delete + restore captured attrs.
               const result = await replaceImageOnLayer(occ, entry.token);
@@ -3256,8 +3398,11 @@ async function runImageOps(imageOps, step, totalSteps) {
             const afterDesc = await getLayerDescriptorById(occ.layerId);
             const afterName = afterDesc?.name || "";
             const afterR = afterDesc?.bounds ? rectSize(afterDesc.bounds) : { left: 0, top: 0, width: 0, height: 0 };
+            const afterSO = afterDesc?.smartObject || {};
+            const afterFileRef = afterSO.fileReference || "(none)";
+            const afterLocking = afterDesc?.layerLocking || null;
             const want = occ.preCapturedBounds;
-            log(`[DBG]  AFTER  ${occ.target}: name="${afterName}" L=${Math.round(afterR.left)} T=${Math.round(afterR.top)} W=${Math.round(afterR.width)} H=${Math.round(afterR.height)} | ΔL=${Math.round(afterR.left - want.left)} ΔT=${Math.round(afterR.top - want.top)} ΔW=${Math.round(afterR.width - want.width)}`);
+            log(`[DBG]  AFTER  id=${occ.layerId} ${occ.target}: name="${afterName}" L=${Math.round(afterR.left)} T=${Math.round(afterR.top)} W=${Math.round(afterR.width)} H=${Math.round(afterR.height)} | ΔL=${Math.round(afterR.left - want.left)} ΔT=${Math.round(afterR.top - want.top)} ΔW=${Math.round(afterR.width - want.width)} | fileRef="${afterFileRef}" locked=${isLayerLocked(afterLocking)}`);
           } catch (e) {
             log(`[IMG]  ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
           }
