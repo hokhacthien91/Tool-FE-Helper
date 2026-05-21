@@ -3212,12 +3212,10 @@ async function runOneTextOp(entry, occ) {
 }
 
 async function runImageOps(imageOps, step, totalSteps) {
-  // PRE-CAPTURE: bounds/name/visible + layer attrs (clipping, blend, opacity, fx) +
-  // smartObject.documentID for every occurrence. documentID lets us detect whether
-  // all 3 (or N) layers already share content (= a true shared embedded SO group).
-  // Shared → use native placedLayerReplaceContents (preserves 100% of attrs natively).
-  // Not shared → first-time setup: native-replace the master, then duplicate-and-restore
-  // for the others to convert them into a shared SO group going forward.
+  // PRE-CAPTURE per occurrence: content-frame bounds (from smartObjectMore.transform,
+  // ignores Layer FX + Smart Filter halos), name, visibility, layer attrs (clipping,
+  // blend, opacity, fx), isSO flag. Used after placedLayerReplaceContents to re-fit
+  // each layer to its original width and restore name/visibility/lock.
   for (const entry of imageOps) {
     for (const occ of visibleOccurrences(entry)) {
       try {
@@ -3232,7 +3230,6 @@ async function runImageOps(imageOps, step, totalSteps) {
           occ.preCapturedName = d.name || "";
           occ.preCapturedVisible = d.visible !== false;
           occ.preCapturedAttrs = captureLayerAttrs(d);
-          occ.preCapturedDocId = getSoDocumentId(d);
           occ.preCapturedIsSO = !!d.smartObject;
         }
       } catch (e) { /* skip */ }
@@ -3265,90 +3262,11 @@ async function runImageOps(imageOps, step, totalSteps) {
       try {
         await switchActiveDoc(docId);
 
-        if (false) {
-          // CASE A — all picked occs share documentID. Native replace on master;
-          // PS auto-propagates to siblings. Re-fit each instance (incl. ghost siblings
-          // sharing documentID but not picked) to its own captured bounds (width-only).
-          // Wrapper layer's position/clipping/fx/mask/transform stay 100% native.
-          const pickedIds = new Set(docOccs.map(o => o.layerId));
-          const ghostSiblings = [];
-          for (const id of collectAllSmartObjectIds()) {
-            if (pickedIds.has(id)) continue;
-            try {
-              const d = await getLayerDescriptorById(id);
-              if (!d || !d.smartObject) continue;
-              if (getSoDocumentId(d) !== masterDocId) continue;
-              ghostSiblings.push({
-                layerId: id,
-                target: `${d.name || `id=${id}`} (ghost)`,
-                preCapturedBounds: rectSize(d.bounds),
-                preCapturedName: d.name || "",
-                preCapturedVisible: d.visible !== false
-              });
-            } catch (e) { /* skip */ }
-          }
-          if (ghostSiblings.length) log(`[IMG]  found ${ghostSiblings.length} ghost sibling(s) sharing documentID — will auto-fit`);
-
-          state.modifiedDocIds.add(docId);
-
-          const allToFit = [...docOccs, ...ghostSiblings];
-          for (const o of allToFit) {
-            try {
-              // BEFORE snapshot (already done in pre-capture for docOccs; for ghosts
-              // we read fresh since they weren't pre-captured).
-              const isGhost = ghostSiblings.includes(o);
-              const wantBounds = o.preCapturedBounds;
-              const beforeDescA = await getLayerDescriptorById(o.layerId);
-              const beforeNameA = beforeDescA?.name || "";
-              const beforeRA = beforeDescA?.bounds ? rectSize(beforeDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
-              log(`[DBG]  BEFORE id=${o.layerId} ${o.target}: name="${beforeNameA}" preCapturedName="${o.preCapturedName || ""}" L=${Math.round(beforeRA.left)} T=${Math.round(beforeRA.top)} W=${Math.round(beforeRA.width)} H=${Math.round(beforeRA.height)}`);
-
-              // Replace content on THIS specific layer. PS doesn't reliably propagate
-              // placedLayerReplaceContents across shared-documentID siblings within a
-              // single modal, so we must call it per layer (incl. ghost siblings).
-              await replaceContentsNative(o.layerId, entry.token);
-              await selectLayerById(o.layerId);
-              const after = await waitStableBounds();
-              const fit = await applyWidthFitTopLeft(wantBounds, after);
-              // Force-restore original layer name by explicit layer ID. Some PS builds
-              // auto-rename the layer to the new file's name after the transform settles
-              // — wait briefly then rename twice with a short pause between.
-              const wantName = o.preCapturedName || beforeNameA;
-              if (wantName) {
-                try { await renameLayerById(o.layerId, wantName); } catch (e) { /* ignore */ }
-                await new Promise(r => setTimeout(r, 50));
-                try { await renameLayerById(o.layerId, wantName); } catch (e) { /* ignore */ }
-              }
-              // Restore visibility (hide/show) to match captured state.
-              if (o.preCapturedVisible !== undefined) {
-                try { await setLayerVisibilityById(o.layerId, o.preCapturedVisible); } catch (e) { /* ignore */ }
-              }
-              const tag = isGhost ? "ghost replace+fit" : "native replace, shared SO";
-              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${o.target}) [${tag}] [${Math.round(wantBounds.width)}×${Math.round(wantBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
-
-              const afterDescA = await getLayerDescriptorById(o.layerId);
-              const afterNameA = afterDescA?.name || "";
-              const afterRA = afterDescA?.bounds ? rectSize(afterDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
-              const afterSO = afterDescA?.smartObject || {};
-              const afterFileRef = afterSO.fileReference || "(none)";
-              const afterDocID = afterSO.documentID || "(none)";
-              log(`[DBG]  AFTER  id=${o.layerId} ${o.target}: name="${afterNameA}" wantName="${wantName}" L=${Math.round(afterRA.left)} T=${Math.round(afterRA.top)} W=${Math.round(afterRA.width)} H=${Math.round(afterRA.height)} | ΔL=${Math.round(afterRA.left - wantBounds.left)} ΔT=${Math.round(afterRA.top - wantBounds.top)} ΔW=${Math.round(afterRA.width - wantBounds.width)} | fileRef="${afterFileRef}" docID="${afterDocID.slice(0, 30)}..."`);
-            } catch (e) {
-              log(`[IMG]  re-fit error "${entry.name}" in ${o.target}: ${e.message || e}`);
-            }
-            if (!ghostSiblings.includes(o)) {
-              step++; await setProgress(step, totalSteps, "Replacing images");
-            }
-          }
-          continue;
-        }
-
-        // CASE B — not shared. Do a NATIVE in-place replace on EACH occurrence
-        // independently. This is the only way to preserve position-in-panel, artboard
-        // membership, clipping mask, layer effects, mask data, smart filters, and the
-        // layer ID exactly. Trade-off: occurrences remain INDEPENDENT SOs after this
-        // pass (no edit-syncs-all). If user wants sync, they must set up shared SO
-        // manually (Alt+drag duplicate the layer); from then on Apply hits CASE A.
+        // NATIVE in-place replace on EACH occurrence independently — preserves
+        // position-in-panel, artboard membership, clipping mask, layer effects,
+        // mask data, smart filters, and the layer ID exactly. True share-edit
+        // groups (same smartObjectMore.ID) are already merged into one entry
+        // at scan time, so the loop just iterates the share-mates here.
         //
         // Raster (non-SO) occurrences fall back to place+delete + attrs restore.
         for (const occ of docOccs) {
