@@ -194,6 +194,17 @@ async function switchActiveDoc(docId) {
   }]);
 }
 
+async function revealArtboard(ab) {
+  await switchActiveDoc(ab.docId);
+  await selectLayerById(ab.id);
+  // Fit on screen — works for active layer/artboard selection.
+  await bp([{
+    _obj: "select",
+    _target: [{ _ref: "menuItemClass", _enum: "menuItemType", _value: "fitOnScreen" }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
 function rectSize(rect) {
   if (!rect) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   const left   = Number(rect.left?._value   ?? rect.left   ?? 0);
@@ -997,11 +1008,14 @@ function renderArtboardsList() {
   for (const ab of visible) {
     const row = document.createElement("label");
     row.className = "artboard-row";
+    row.dataset.abId = String(ab.id);
+    row.dataset.docId = String(ab.docId);
     const checked = state.enabledArtboards.has(ab.id);
     row.innerHTML = `
       <input type="checkbox" ${checked ? "checked" : ""} />
       <span class="ab-name"></span>
       <span class="ab-meta">${ab.width}×${ab.height}</span>
+      <button type="button" class="ab-reveal-btn" title="Reveal in Photoshop">Reveal</button>
     `;
     row.querySelector(".ab-name").textContent = ab.name + (showDocName && ab.docName ? `  · ${ab.docName}` : "");
     row.querySelector("input").addEventListener("change", e => {
@@ -1014,9 +1028,71 @@ function renderArtboardsList() {
       refreshApplyEnabled();
       refreshRunBtn();
     });
+    const revealBtn = row.querySelector(".ab-reveal-btn");
+    const onReveal = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await core.executeAsModal(async () => { await revealArtboard(ab); },
+          { commandName: "Reveal artboard" });
+        log(`[REVEAL] → "${ab.name}"${showDocName && ab.docName ? ` in ${ab.docName}` : ""}`);
+      } catch (err) {
+        log(`[REVEAL] ERROR "${ab.name}": ${err.message || err}`);
+      }
+    };
+    revealBtn.addEventListener("mousedown", e => { e.preventDefault(); e.stopPropagation(); });
+    revealBtn.addEventListener("click", onReveal);
     artboardsList.appendChild(row);
   }
+  refreshActiveArtboardHighlight();
 }
+
+function getActiveArtboardId() {
+  const doc = app.activeDocument;
+  if (!doc) return { docId: null, abId: null };
+  const active = doc.activeLayers && doc.activeLayers[0];
+  if (!active) return { docId: doc.id, abId: null };
+  const abIdsInDoc = new Set(
+    state.artboardList.filter(a => a.docId === doc.id).map(a => a.id)
+  );
+  let l = active;
+  let hops = 0;
+  while (l && hops < 20) {
+    if (abIdsInDoc.has(l.id)) return { docId: doc.id, abId: l.id };
+    l = l.parent;
+    hops++;
+  }
+  return { docId: doc.id, abId: null };
+}
+
+function refreshActiveArtboardHighlight() {
+  const { docId, abId } = getActiveArtboardId();
+  const rows = artboardsList.querySelectorAll(".artboard-row");
+  rows.forEach(r => {
+    const match = abId != null
+      && r.dataset.abId === String(abId)
+      && r.dataset.docId === String(docId);
+    r.classList.toggle("is-active", match);
+  });
+}
+
+let _highlightTimer = null;
+function scheduleHighlightRefresh() {
+  if (_highlightTimer) return;
+  _highlightTimer = setTimeout(() => {
+    _highlightTimer = null;
+    try { refreshActiveArtboardHighlight(); } catch (e) {}
+  }, 50);
+}
+
+(function registerActiveLayerListener() {
+  try {
+    action.addNotificationListener(
+      [{ event: "select" }, { event: "make" }, { event: "open" }, { event: "close" }],
+      () => scheduleHighlightRefresh()
+    );
+  } catch (e) { /* listener not available — silent */ }
+})();
 
 // ─── Append Text Layer ───────────────────────────────
 const appendTextSection  = document.getElementById("appendTextSection");
@@ -1676,6 +1752,16 @@ async function hideTargetLayer() {
   }]);
 }
 
+// Set visibility (hide/show) by explicit layer ID — safer than targetEnum when
+// selection may have shifted during prior transforms.
+async function setLayerVisibilityById(layerId, visible) {
+  await bp([{
+    _obj: visible ? "show" : "hide",
+    null: [{ _ref: "layer", _id: layerId }],
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
 // ─── Rename helpers ────────────────────────────────────
 async function renameNow(entry, btnEl, nameLabel, nameInput) {
   const name = entry.newName;
@@ -1721,6 +1807,17 @@ async function renameTargetLayer(newName) {
   await bp([{
     _obj: "set",
     _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "layer", name: newName },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Rename a layer by its explicit layerID (safer than targetEnum when selection state
+// is uncertain — e.g. after a transform or replaceContents that may reorder selection).
+async function renameLayerById(layerId, newName) {
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "layer", _id: layerId }],
     to: { _obj: "layer", name: newName },
     _options: { dialogOptions: "dontDisplay" }
   }]);
@@ -2724,16 +2821,114 @@ async function getLayerDescriptorById(layerId) {
   return r?.[0] || null;
 }
 
-// Extract SO source identifier — used to group linked SO instances.
-// PS stores `documentID` as a UUID per SO source (e.g. "uuid:..." or "xmp.did:...").
-// Two SOs sharing content always share documentID even if their layer names differ.
-function getSoSourceKey(desc) {
+// Read a layer's smartObject.documentID (the key that identifies shared SO content).
+// Returns null if the layer isn't an SO or doesn't have a documentID.
+function getSoDocumentId(desc) {
   const so = desc && desc.smartObject;
   if (!so) return null;
-  if (typeof so.documentID === "string" && so.documentID) return so.documentID;
-  // Fallbacks (rarely needed in practice).
-  if (typeof so.fileReference === "string" && so.fileReference) return `ref:${so.fileReference}`;
-  return null;
+  return (typeof so.documentID === "string" && so.documentID) ? so.documentID : null;
+}
+
+// Capture attributes worth preserving when we replace a layer (delete + place flow,
+// or duplicate a master into a non-shared occurrence). Snapshot the descriptor BEFORE
+// the layer is destroyed.
+//
+// Note: We don't capture the layer's transform matrix (rotate/skew/flip) because the
+// new SO's content has different native dimensions — applying the old transform to new
+// content would distort it. The runImageOps loop fits via applyWidthFitTopLeft instead.
+function captureLayerAttrs(desc) {
+  if (!desc) return null;
+  return {
+    clipping: desc.group === true || desc.clipping === true,
+    blendMode: desc.mode || null,                 // enum descriptor e.g. {_enum:"blendMode",_value:"multiply"}
+    opacity: typeof desc.opacity === "number" ? desc.opacity : null,        // 0..255
+    fillOpacity: typeof desc.fillOpacity === "number" ? desc.fillOpacity : null,
+    layerEffects: desc.layerEffects || null,      // entire effects descriptor (drop shadow, stroke, glow, ...)
+    userMaskEnabled: desc.userMaskEnabled === true,
+    vectorMaskEnabled: desc.vectorMaskEnabled === true,
+    layerLocking: desc.layerLocking || null       // { protectAll, protectTransparency, protectComposite, protectPosition }
+  };
+}
+
+// Apply captured attrs to the currently-selected layer (or layer by id).
+async function restoreLayerAttrs(layerId, attrs) {
+  if (!attrs) return;
+  const target = [{ _ref: "layer", _id: layerId }];
+
+  // Blend mode + opacity + fillOpacity in one set (PS rejects mixed empty values).
+  const setProps = {};
+  if (attrs.blendMode) setProps.mode = attrs.blendMode;
+  if (attrs.opacity !== null) setProps.opacity = { _unit: "percentUnit", _value: (attrs.opacity / 255) * 100 };
+  if (attrs.fillOpacity !== null) setProps.fillOpacity = { _unit: "percentUnit", _value: (attrs.fillOpacity / 255) * 100 };
+  if (Object.keys(setProps).length) {
+    try {
+      await bp([{
+        _obj: "set",
+        _target: target,
+        to: { _obj: "layer", ...setProps },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[IMG]  restore blend/opacity failed id=${layerId}: ${e.message || e}`); }
+  }
+
+  // Layer effects (drop shadow, stroke, glow, etc.)
+  if (attrs.layerEffects) {
+    try {
+      await bp([{
+        _obj: "set",
+        _target: target,
+        to: { _obj: "layer", layerEffects: attrs.layerEffects },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[IMG]  restore layerEffects failed id=${layerId}: ${e.message || e}`); }
+  }
+
+  // Clipping mask: select layer then issue groupEvent (Alt+click between layers).
+  // PS needs the layer SELECTED for this command.
+  if (attrs.clipping) {
+    try {
+      await selectLayerById(layerId);
+      await bp([{
+        _obj: "groupEvent",
+        _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[IMG]  restore clipping failed id=${layerId}: ${e.message || e}`); }
+  }
+
+  // Lock state (protect transparency/composite/position/all)
+  if (attrs.layerLocking) {
+    try {
+      await bp([{
+        _obj: "applyLocking",
+        _target: target,
+        layerLocking: attrs.layerLocking,
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[IMG]  restore lock failed id=${layerId}: ${e.message || e}`); }
+  }
+}
+
+// Native PS Smart Object content replacement. Equivalent to Layer > Smart Objects >
+// Replace Contents... in the menu. Preserves EVERYTHING: layer name, position, scale/
+// rotate/skew transform, blend mode, opacity, layer effects, clipping mask, layer mask,
+// smart filters, layer ID, artboard membership, lock state, smartObject.documentID.
+//
+// If multiple SO layers share documentID, PS auto-propagates the new content to ALL of
+// them — so calling this on one master replaces all siblings without us touching them.
+//
+// Caveat: the layer's bounding box stays at the OLD bounds; new content is fit inside
+// that box according to the SO's transform. So if the user resizes the new SVG to look
+// the same as the old, just calling this is enough — no post-fit needed.
+async function replaceContentsNative(layerId, token) {
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "placedLayerReplaceContents",
+    null: { _path: token, _kind: "local" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  // Vector/SVG/EPS content renders async — let bounds settle before returning.
+  await waitStableBounds();
 }
 
 async function replaceImageOnLayer(occ, token) {
@@ -2751,7 +2946,7 @@ async function replaceImageOnLayer(occ, token) {
   // wrongly skip fitting it. Pre-captured oldBounds locks in the true before-state.
   const oldBounds = occ.preCapturedBounds || rectSize(oldDesc.bounds);
   const wasVisible = occ.preCapturedVisible !== undefined ? occ.preCapturedVisible : (oldDesc.visible !== false);
-  const isSmartObject = !!oldDesc.smartObject;
+  const oldAttrs = occ.preCapturedAttrs || captureLayerAttrs(oldDesc);
   let oldName = occ.preCapturedName || oldDesc.name || "";
   if (!oldName) {
     try {
@@ -2764,27 +2959,11 @@ async function replaceImageOnLayer(occ, token) {
     } catch (e) { /* leave empty */ }
   }
 
-  // SO path: replace contents in place — keeps layer styles, masks, blend mode, opacity, smart filters.
-  if (isSmartObject) {
-    try {
-      await bp([{
-        _obj: "placedLayerReplaceContents",
-        null: { _path: token, _kind: "local" },
-        _options: { dialogOptions: "dontDisplay" }
-      }]);
-      // PS renders SO content async (especially vector EPS/AI/PDF). Poll until bounds settle.
-      const afterBounds = await waitStableBounds();
-      const fitResult = await applyWidthFitTopLeft(oldBounds, afterBounds);
-      if (oldName) { try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ } }
-      if (!wasVisible) await hideTargetLayer();
-      return { oldW: oldBounds.width, oldH: oldBounds.height, scale: fitResult.scale, finalW: fitResult.finalW, finalH: fitResult.finalH, wasHidden: !wasVisible, mode: "so-replace" };
-    } catch (e) {
-      // Fall through to place+delete if replaceContents fails (e.g. linked SO, unsupported format).
-      log(`[IMG]  SO replace failed, falling back to place+delete: ${e.message || e}`);
-    }
-  }
-
-  // Raster (or SO fallback) path: place new SO, delete old layer.
+  // Place as Embedded Smart Object (content nhúng trong PSD).
+  // Multiple occurrences of the same entry are handled by runImageOps: it places
+  // ONCE per entry (master), then duplicates the master layer into each other
+  // occurrence's parent (artboard). Duplicates share documentID with the master
+  // → edit one → all auto-sync (Alt+drag clone behavior).
   const oldLayerId = occ.layerId;
   await bp([{
     _obj: "placeEvent",
@@ -2813,7 +2992,9 @@ async function replaceImageOnLayer(occ, token) {
   // Preserve original layer name (placeEvent uses the new file's name).
   if (oldName) { try { await renameTargetLayer(oldName); } catch (e) { /* ignore */ } }
   if (!wasVisible) await hideTargetLayer();
-  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: fitResult.scale, finalW: fitResult.finalW, finalH: fitResult.finalH, wasHidden: !wasVisible, mode: "place-delete" };
+  // Restore blend mode, opacity, layer effects, clipping mask from the old layer.
+  await restoreLayerAttrs(occ.layerId, oldAttrs);
+  return { oldW: oldBounds.width, oldH: oldBounds.height, scale: fitResult.scale, finalW: fitResult.finalW, finalH: fitResult.finalH, wasHidden: !wasVisible, mode: "place-embedded", newLayerId: occ.layerId };
 }
 
 // Resolve link IDs: rows with same linkId inherit values from first row that has content
@@ -2900,10 +3081,12 @@ async function runOneTextOp(entry, occ) {
 }
 
 async function runImageOps(imageOps, step, totalSteps) {
-  // PRE-CAPTURE phase 1: bounds/name/visible for every occurrence the user picked.
-  // Shared-content SOs auto-update when one sibling is replaced — by the time we
-  // process occurrence #2, its bounds already reflect the new content. Capturing up
-  // front locks in the true before-state for each occurrence.
+  // PRE-CAPTURE: bounds/name/visible + layer attrs (clipping, blend, opacity, fx) +
+  // smartObject.documentID for every occurrence. documentID lets us detect whether
+  // all 3 (or N) layers already share content (= a true shared embedded SO group).
+  // Shared → use native placedLayerReplaceContents (preserves 100% of attrs natively).
+  // Not shared → first-time setup: native-replace the master, then duplicate-and-restore
+  // for the others to convert them into a shared SO group going forward.
   for (const entry of imageOps) {
     for (const occ of visibleOccurrences(entry)) {
       try {
@@ -2913,101 +3096,180 @@ async function runImageOps(imageOps, step, totalSteps) {
           occ.preCapturedBounds = rectSize(d.bounds);
           occ.preCapturedName = d.name || "";
           occ.preCapturedVisible = d.visible !== false;
+          occ.preCapturedAttrs = captureLayerAttrs(d);
+          occ.preCapturedDocId = getSoDocumentId(d);
+          occ.preCapturedIsSO = !!d.smartObject;
         }
       } catch (e) { /* skip */ }
     }
   }
 
-  // PRE-CAPTURE phase 2: scan every SO in each touched doc, group by documentID.
-  // When a user-picked occurrence is replaced, PS auto-propagates content to all SOs
-  // sharing the same documentID (even ones the user didn't pick a file for). We need
-  // their original bounds captured here, before any replace runs, to re-fit them after.
-  const docIds = new Set(imageOps.flatMap(e => visibleOccurrences(e)).map(o => o.docId));
-  const sharedSoIndex = new Map(); // docId → Map<documentID, Array<{layerId,oldBounds,oldName,wasVisible}>>
-  for (const docId of docIds) {
-    try {
-      await switchActiveDoc(docId);
-      const groups = new Map();
-      for (const id of collectAllSmartObjectIds()) {
-        try {
-          const d = await getLayerDescriptorById(id);
-          const key = getSoSourceKey(d);
-          if (!key) continue;
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push({
-            layerId: id,
-            oldBounds: rectSize(d.bounds),
-            oldName: d.name || "",
-            wasVisible: d.visible !== false
-          });
-        } catch (e) { /* skip */ }
-      }
-      sharedSoIndex.set(docId, groups);
-    } catch (e) { /* skip */ }
-  }
-
-  // Track layers already fit so we don't process the same shared-SO group twice
-  // (e.g. when the user picked file for 2 occurrences in the same group).
-  const fittedLayerIds = new Set();
-
+  // Strategy depends on whether the user's occurrences already share documentID:
+  //   CASE A (shared SO group) — all SO layers in the doc-occ batch have the same
+  //     documentID. Issue placedLayerReplaceContents ONCE on the master; PS auto-
+  //     propagates new content to every sibling. Nothing else touched → 100% of
+  //     layer attrs preserved natively (transform, mask, fx, blend, smart filters).
+  //
+  //   CASE B (mixed / not shared) — typical first-time Apply. Master gets native
+  //     placedLayerReplaceContents (preserves its attrs). Other occurrences get
+  //     duplicate-from-master so they share documentID going forward, then we
+  //     manually restore captured attrs onto each duplicate. From the SECOND Apply
+  //     onward, they'll be in CASE A and stay 100% native.
   for (const entry of imageOps) {
-    for (const occ of visibleOccurrences(entry)) {
-      if (fittedLayerIds.has(occ.layerId)) {
-        step++; await setProgress(step, totalSteps, "Replacing images");
-        continue;
+    const occs = visibleOccurrences(entry);
+    if (!occs.length) continue;
+
+    // Group occurrences by docId — cross-doc clone via batchPlay isn't reliable.
+    const byDoc = new Map();
+    for (const o of occs) {
+      if (!byDoc.has(o.docId)) byDoc.set(o.docId, []);
+      byDoc.get(o.docId).push(o);
+    }
+
+    for (const [docId, docOccs] of byDoc) {
+      try {
+        await switchActiveDoc(docId);
+        const master = docOccs[0];
+
+        // Detect CASE A: all occs are SOs sharing the same non-null documentID.
+        const masterDocId = master.preCapturedDocId;
+        const allShared = !!masterDocId
+          && docOccs.every(o => o.preCapturedIsSO && o.preCapturedDocId === masterDocId);
+
+        if (allShared) {
+          // CASE A — all picked occs share documentID. Native replace on master;
+          // PS auto-propagates to siblings. Re-fit each instance (incl. ghost siblings
+          // sharing documentID but not picked) to its own captured bounds (width-only).
+          // Wrapper layer's position/clipping/fx/mask/transform stay 100% native.
+          const pickedIds = new Set(docOccs.map(o => o.layerId));
+          const ghostSiblings = [];
+          for (const id of collectAllSmartObjectIds()) {
+            if (pickedIds.has(id)) continue;
+            try {
+              const d = await getLayerDescriptorById(id);
+              if (!d || !d.smartObject) continue;
+              if (getSoDocumentId(d) !== masterDocId) continue;
+              ghostSiblings.push({
+                layerId: id,
+                target: `${d.name || `id=${id}`} (ghost)`,
+                preCapturedBounds: rectSize(d.bounds),
+                preCapturedName: d.name || "",
+                preCapturedVisible: d.visible !== false
+              });
+            } catch (e) { /* skip */ }
+          }
+          if (ghostSiblings.length) log(`[IMG]  found ${ghostSiblings.length} ghost sibling(s) sharing documentID — will auto-fit`);
+
+          await replaceContentsNative(master.layerId, entry.token);
+          state.modifiedDocIds.add(docId);
+
+          const allToFit = [...docOccs, ...ghostSiblings];
+          for (const o of allToFit) {
+            try {
+              // BEFORE snapshot (already done in pre-capture for docOccs; for ghosts
+              // we read fresh since they weren't pre-captured).
+              const isGhost = ghostSiblings.includes(o);
+              const wantBounds = o.preCapturedBounds;
+              const beforeDescA = await getLayerDescriptorById(o.layerId);
+              const beforeNameA = beforeDescA?.name || "";
+              const beforeRA = beforeDescA?.bounds ? rectSize(beforeDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
+              log(`[DBG]  BEFORE id=${o.layerId} ${o.target}: name="${beforeNameA}" preCapturedName="${o.preCapturedName || ""}" L=${Math.round(beforeRA.left)} T=${Math.round(beforeRA.top)} W=${Math.round(beforeRA.width)} H=${Math.round(beforeRA.height)}`);
+
+              await selectLayerById(o.layerId);
+              const after = await waitStableBounds();
+              const fit = await applyWidthFitTopLeft(wantBounds, after);
+              // Force-restore original layer name by explicit layer ID. Some PS builds
+              // auto-rename the layer to the new file's name after the transform settles
+              // — wait briefly then rename twice with a short pause between.
+              const wantName = o.preCapturedName || beforeNameA;
+              if (wantName) {
+                try { await renameLayerById(o.layerId, wantName); } catch (e) { /* ignore */ }
+                await new Promise(r => setTimeout(r, 50));
+                try { await renameLayerById(o.layerId, wantName); } catch (e) { /* ignore */ }
+              }
+              // Restore visibility (hide/show) to match captured state.
+              if (o.preCapturedVisible !== undefined) {
+                try { await setLayerVisibilityById(o.layerId, o.preCapturedVisible); } catch (e) { /* ignore */ }
+              }
+              const tag = isGhost ? "ghost auto-fit" : "native replace, shared SO";
+              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${o.target}) [${tag}] [${Math.round(wantBounds.width)}×${Math.round(wantBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
+
+              const afterDescA = await getLayerDescriptorById(o.layerId);
+              const afterNameA = afterDescA?.name || "";
+              const afterRA = afterDescA?.bounds ? rectSize(afterDescA.bounds) : { left: 0, top: 0, width: 0, height: 0 };
+              log(`[DBG]  AFTER  id=${o.layerId} ${o.target}: name="${afterNameA}" wantName="${wantName}" L=${Math.round(afterRA.left)} T=${Math.round(afterRA.top)} W=${Math.round(afterRA.width)} H=${Math.round(afterRA.height)} | ΔL=${Math.round(afterRA.left - wantBounds.left)} ΔT=${Math.round(afterRA.top - wantBounds.top)} ΔW=${Math.round(afterRA.width - wantBounds.width)}`);
+            } catch (e) {
+              log(`[IMG]  re-fit error "${entry.name}" in ${o.target}: ${e.message || e}`);
+            }
+            if (!ghostSiblings.includes(o)) {
+              step++; await setProgress(step, totalSteps, "Replacing images");
+            }
+          }
+          continue;
+        }
+
+        // CASE B — not shared. Do a NATIVE in-place replace on EACH occurrence
+        // independently. This is the only way to preserve position-in-panel, artboard
+        // membership, clipping mask, layer effects, mask data, smart filters, and the
+        // layer ID exactly. Trade-off: occurrences remain INDEPENDENT SOs after this
+        // pass (no edit-syncs-all). If user wants sync, they must set up shared SO
+        // manually (Alt+drag duplicate the layer); from then on Apply hits CASE A.
+        //
+        // Raster (non-SO) occurrences fall back to place+delete + attrs restore.
+        for (const occ of docOccs) {
+          try {
+            // BEFORE snapshot (name + bounds) for diagnostic logging.
+            const beforeDesc = await getLayerDescriptorById(occ.layerId);
+            const beforeName = beforeDesc?.name || "";
+            const beforeR = beforeDesc?.bounds ? rectSize(beforeDesc.bounds) : { left: 0, top: 0, width: 0, height: 0 };
+            log(`[DBG]  BEFORE ${occ.target}: name="${beforeName}" L=${Math.round(beforeR.left)} T=${Math.round(beforeR.top)} W=${Math.round(beforeR.width)} H=${Math.round(beforeR.height)}`);
+
+            if (occ.preCapturedIsSO) {
+              await replaceContentsNative(occ.layerId, entry.token);
+              // Re-fit to captured bounds (width-only). PS keeps the wrapper's transform
+              // but the new content's native size is different, so visible bounds drift.
+              await selectLayerById(occ.layerId);
+              const after = await waitStableBounds();
+              const fit = await applyWidthFitTopLeft(occ.preCapturedBounds, after);
+              // Force-restore original layer name by explicit layer ID (double-pass with
+              // small delay to defeat PS late auto-rename).
+              const wantName = occ.preCapturedName || beforeName;
+              if (wantName) {
+                try { await renameLayerById(occ.layerId, wantName); } catch (e) { /* ignore */ }
+                await new Promise(r => setTimeout(r, 50));
+                try { await renameLayerById(occ.layerId, wantName); } catch (e) { /* ignore */ }
+              }
+              // Restore visibility (hide/show) to match captured state.
+              if (occ.preCapturedVisible !== undefined) {
+                try { await setLayerVisibilityById(occ.layerId, occ.preCapturedVisible); } catch (e) { /* ignore */ }
+              }
+              state.modifiedDocIds.add(docId);
+              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target}) [native replace, in-place] [${Math.round(occ.preCapturedBounds.width)}×${Math.round(occ.preCapturedBounds.height)} → ${Math.round(fit.finalW)}×${Math.round(fit.finalH)} @ ${(fit.scale * 100).toFixed(0)}%]`);
+            } else {
+              // Raster layer → place+delete + restore captured attrs.
+              const result = await replaceImageOnLayer(occ, entry.token);
+              state.modifiedDocIds.add(docId);
+              log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target}) [raster → SO]${formatImageInfo(result)}`);
+            }
+
+            // AFTER snapshot (name + bounds) for diagnostic.
+            const afterDesc = await getLayerDescriptorById(occ.layerId);
+            const afterName = afterDesc?.name || "";
+            const afterR = afterDesc?.bounds ? rectSize(afterDesc.bounds) : { left: 0, top: 0, width: 0, height: 0 };
+            const want = occ.preCapturedBounds;
+            log(`[DBG]  AFTER  ${occ.target}: name="${afterName}" L=${Math.round(afterR.left)} T=${Math.round(afterR.top)} W=${Math.round(afterR.width)} H=${Math.round(afterR.height)} | ΔL=${Math.round(afterR.left - want.left)} ΔT=${Math.round(afterR.top - want.top)} ΔW=${Math.round(afterR.width - want.width)}`);
+          } catch (e) {
+            log(`[IMG]  ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
+          }
+          step++; await setProgress(step, totalSteps, "Replacing images");
+        }
+      } catch (e) {
+        log(`[IMG]  ERROR "${entry.name}" in doc ${docId}: ${e.message || e}`);
+        step += docOccs.length; await setProgress(step, totalSteps, "Replacing images");
       }
-      await runOneImageOp(entry, occ, sharedSoIndex, fittedLayerIds);
-      step++; await setProgress(step, totalSteps, "Replacing images");
     }
   }
   return step;
-}
-
-async function runOneImageOp(entry, occ, sharedSoIndex, fittedLayerIds) {
-  try {
-    await switchActiveDoc(occ.docId);
-    const result = await replaceImageOnLayer(occ, entry.token);
-    state.modifiedDocIds.add(occ.docId);
-    log(`[IMG]  ${entry.name} ← ${entry.file.name}  (${occ.target})${formatImageInfo(result)}`);
-
-    // PS auto-propagates content to all SOs sharing the master's documentID — they
-    // weren't picked by the user but their bounds ballooned to the new vector's native
-    // size. Shrink each one back to its own pre-captured oldBounds. No duplicate/move:
-    // that would break the shared-SO link and edit-in-sync behavior.
-    if (sharedSoIndex && fittedLayerIds) {
-      await refitSharedSiblingsAfterReplace(occ, sharedSoIndex, fittedLayerIds);
-    }
-  } catch (e) {
-    log(`[IMG]  ERROR "${entry.name}" in ${occ.target}: ${e.message || e}`);
-  }
-}
-
-// Re-fit shared SO siblings (same documentID as target) to their pre-captured oldBounds.
-async function refitSharedSiblingsAfterReplace(occ, sharedSoIndex, fittedLayerIds) {
-  const docGroups = sharedSoIndex.get(occ.docId);
-  if (!docGroups) return;
-  let targetGroup = null;
-  for (const [, members] of docGroups) {
-    if (members.some(m => m.layerId === occ.layerId)) { targetGroup = members; break; }
-  }
-  if (!targetGroup || targetGroup.length <= 1) return;
-  fittedLayerIds.add(occ.layerId);
-
-  for (const m of targetGroup) {
-    if (m.layerId === occ.layerId) continue;
-    if (fittedLayerIds.has(m.layerId)) continue;
-    try {
-      await selectLayerById(m.layerId);
-      const after = await waitStableBounds();
-      await applyWidthFitTopLeft(m.oldBounds, after);
-      if (m.oldName) { try { await renameTargetLayer(m.oldName); } catch (e) { /* ignore */ } }
-      if (!m.wasVisible) await hideTargetLayer();
-      fittedLayerIds.add(m.layerId);
-    } catch (e) {
-      log(`[IMG]  sibling re-fit error id=${m.layerId}: ${e.message || e}`);
-    }
-  }
-  try { await selectLayerById(occ.layerId); } catch (e) { /* ignore */ }
 }
 
 

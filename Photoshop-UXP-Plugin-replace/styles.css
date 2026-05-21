@@ -1246,6 +1246,15 @@ body.mode-replace #actionBar {
 .artboard-row:hover {
   background: rgba(255, 255, 255, 0.04);
 }
+.artboard-row.is-active {
+  background: rgba(183, 227, 155, 0.10);
+  border-left: 2px solid var(--gg-green);
+  padding-left: 4px;
+}
+.artboard-row.is-active .ab-name {
+  color: var(--gg-green);
+  font-weight: 600;
+}
 .artboard-row > input[type="checkbox"] {
   margin-right: 8px;
 }
@@ -1258,6 +1267,27 @@ body.mode-replace #actionBar {
   color: var(--muted);
   font-size: 10px;
   margin-left: 8px;
+}
+.artboard-row .ab-reveal-btn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: transparent !important;
+  color: var(--muted) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.artboard-row:hover .ab-reveal-btn {
+  color: var(--gg-green) !important;
+  border-color: var(--gg-green) !important;
+}
+.artboard-row .ab-reveal-btn:hover {
+  background: rgba(183, 227, 155, 0.12) !important;
 }
 
 /* ─── Artboard rename ─── */
