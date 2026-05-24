@@ -1,6 +1,6 @@
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
-const { app, core, action, constants } = require("photoshop");
+const { app, core, action, constants, imaging } = require("photoshop");
 
 uxp.entrypoints.setup({
   panels: {
@@ -487,43 +487,77 @@ async function detectDuplicateImages() {
 
   for (const doc of docs) {
     await switchActiveDoc(doc.id);
-    const soIds = [];
-    const walk = (container) => {
+    // Track each SO with its effective visibility: hidden if itself or any ancestor
+    // (group/artboard) is hidden. UXP DOM `layer.visible` reflects the layer's own
+    // checkbox; effective visibility on canvas requires walking ancestors.
+    const soIds = []; // [{ id, effectiveHidden, hiddenReason }]
+    const walk = (container, parentHidden, parentHiddenName) => {
       for (const c of (container.layers || [])) {
-        if (c.kind === "smartObject") soIds.push(c.id);
-        if (Array.isArray(c.layers) && c.layers.length > 0) walk(c);
+        const selfHidden = c.visible === false;
+        const effHidden = parentHidden || selfHidden;
+        const reason = parentHidden
+          ? parentHiddenName
+          : (selfHidden ? null : null);
+        if (c.kind === "smartObject") {
+          soIds.push({
+            id: c.id,
+            effectiveHidden: effHidden,
+            hiddenReason: selfHidden ? "layer hidden"
+                        : parentHidden ? `parent "${parentHiddenName}" hidden`
+                        : null,
+          });
+        }
+        if (Array.isArray(c.layers) && c.layers.length > 0) {
+          walk(c, effHidden, parentHidden ? parentHiddenName : (selfHidden ? c.name : null));
+        }
       }
     };
-    walk(doc);
+    walk(doc, false, null);
 
-    for (const layerId of soIds) {
+    for (const soInfo of soIds) {
+      const layerId = soInfo.id;
       try {
         const d = await getLayerDescriptorById(layerId);
         const fileRef = d?.smartObject?.fileReference;
         const iid = getSoInstanceId(d);
         if (!fileRef || !iid) continue;
-        if (!byFile.has(fileRef)) byFile.set(fileRef, new Map());
-        const grp = byFile.get(fileRef);
-        if (!grp.has(iid)) grp.set(iid, []);
-        grp.get(iid).push({
+        // Composite key: fileReference + native size (W,H rounded).
+        // - fileReference alone false-positives for .ai placeholder name
+        //   (e.g. logo + arrow both named "Vector Smart Object.ai")
+        // - size distinguishes: .ai logo (71×47) vs arrow (1150×1053);
+        //   also catches edit-divergent instances (same fileRef but resized).
+        // - documentID NOT used: would false-negative when user Place same file
+        //   2 separate times (PS sinh new docID per Place) — those instances
+        //   are still convertible since content is identical.
+        const sz = d?.smartObjectMore?.size;
+        const sizeKey = sz ? `${Math.round(sz.width)}x${Math.round(sz.height)}` : "(no-size)";
+        const groupKey = `${fileRef}|${sizeKey}`;
+        if (!byFile.has(groupKey)) byFile.set(groupKey, { fileRef, sizeKey, shareGroups: new Map() });
+        const bucket = byFile.get(groupKey);
+        if (!bucket.shareGroups.has(iid)) bucket.shareGroups.set(iid, []);
+        bucket.shareGroups.get(iid).push({
           docId: doc.id, docName: doc.name, layerId, layerName: d.name || "",
+          hidden: soInfo.effectiveHidden,
+          hiddenReason: soInfo.hiddenReason,
         });
       } catch (e) { /* skip */ }
     }
   }
 
-  // Keep only fileReferences with ≥2 share-groups (= truly duplicated).
-  for (const [fileRef, shareGroups] of byFile) {
-    if (shareGroups.size < 2) continue;
-    const groupsArr = [];
+  // Include all (fileRef + documentID) buckets that appear in ≥2 instances.
+  // 1 share-group + ≥2 instances = already shared. Multiple = duplicate.
+  for (const [groupKey, bucket] of byFile) {
     let totalInstances = 0;
-    for (const [iid, layers] of shareGroups) {
+    const groupsArr = [];
+    for (const [iid, layers] of bucket.shareGroups) {
       groupsArr.push({ instanceId: iid, layers });
       totalInstances += layers.length;
     }
+    if (totalInstances < 2) continue;
     state.duplicateImageGroups.push({
-      fileReference: fileRef,
-      shareGroupCount: shareGroups.size,
+      fileReference: bucket.fileRef,
+      documentID: bucket.docID,
+      shareGroupCount: bucket.shareGroups.size,
       totalInstances,
       shareGroups: groupsArr,
     });
@@ -600,19 +634,24 @@ function renderDuplicateImagesPanel() {
     const scanState = g._scanState || { pendingSafe: 0, pendingWarn: 0, skipCount: 0 };
     const nothingPending = scanState.pendingSafe === 0 && scanState.pendingWarn === 0;
     const isSkipOnly = nothingPending && scanState.skipCount > 0;
+    const isAllShared = g.shareGroupCount === 1; // already fully shared
 
     const block = document.createElement("div");
     block.className = "dup-image-block";
-    const borderColor = isSkipOnly ? "#555" : nothingPending ? "#3a5" : "#c47";
-    const dimStyle = isSkipOnly ? "opacity:0.65;" : "";
+    const borderColor = isAllShared ? "#3a5" : isSkipOnly ? "#555" : nothingPending ? "#3a5" : "#c47";
+    const dimStyle = (isSkipOnly || isAllShared) ? "opacity:0.7;" : "";
     block.style.cssText = `border:1px solid ${borderColor}; border-radius:4px; padding:8px; margin-bottom:8px; ${dimStyle}`;
     block.dataset.groupIdx = String(gIdx);
-    const allNames = [];
-    for (const sg of g.shareGroups) for (const l of sg.layers) allNames.push(l.layerName);
+
+    // Collect layer info (name + docId + layerId) for clickable reveal.
+    const allLayers = [];
+    for (const sg of g.shareGroups) for (const l of sg.layers) allLayers.push(l);
 
     // State badge.
     let badge = "";
-    if (isSkipOnly) {
+    if (isAllShared) {
+      badge = `<div style="color:#7fc97f; font-size:11px; margin-bottom:4px;"><strong>✅ Shared</strong> — all ${g.totalInstances} instance(s) share content; edit one updates all</div>`;
+    } else if (isSkipOnly) {
       badge = `<div style="color:#999; font-size:11px; margin-bottom:4px;"><strong>⚠️ Manual cleanup needed</strong> — ${scanState.skipCount} layer(s) have mask/filter that block auto-convert</div>`;
     } else if (nothingPending) {
       badge = `<div style="color:#7fc97f; font-size:11px; margin-bottom:4px;"><strong>✅ All convertible done</strong></div>`;
@@ -631,16 +670,50 @@ function renderDuplicateImagesPanel() {
         <span class="dup-summary"></span>
       </div>
       <div class="dup-names" style="font-size:11px; opacity:0.8; margin-bottom:8px;"></div>
-      <button class="btn btn-tertiary dup-analyze-btn" style="width:100%;">Analyze conversion</button>
+      ${!isAllShared ? `<button class="btn btn-tertiary dup-analyze-btn" style="width:100%;">Analyze conversion</button>` : ""}
       <div class="dup-analysis" style="display:none; margin-top:8px;"></div>
     `;
     block.querySelector(".dup-filename").textContent = g.fileReference;
-    block.querySelector(".dup-summary").textContent =
-      `${g.totalInstances} instances in ${g.shareGroupCount} independent share-groups`;
-    block.querySelector(".dup-names").textContent = allNames.join(", ");
-    block.querySelector(".dup-analyze-btn").addEventListener("click", () => analyzeDuplicateGroup(gIdx, block));
+    block.querySelector(".dup-summary").textContent = isAllShared
+      ? `${g.totalInstances} instances in 1 share-group`
+      : `${g.totalInstances} instances in ${g.shareGroupCount} independent share-groups`;
+
+    // Render layer names as clickable chips that reveal the layer in PS.
+    // Hidden layers (self or ancestor) get a 🚫 prefix + tooltip explaining.
+    const namesEl = block.querySelector(".dup-names");
+    allLayers.forEach((l, i) => {
+      const chip = document.createElement("a");
+      const hiddenPrefix = l.hidden ? "🚫 " : "";
+      chip.textContent = hiddenPrefix + l.layerName;
+      const hiddenNote = l.hidden ? ` — ${l.hiddenReason || "hidden"}` : "";
+      chip.title = `Click to reveal in Photoshop (${l.docName})${hiddenNote}`;
+      const color = l.hidden ? "#888" : "#9cf";
+      const decoration = l.hidden ? "underline dashed" : "underline";
+      chip.style.cssText = `color:${color}; cursor:pointer; text-decoration:${decoration};`;
+      chip.addEventListener("click", () => revealDupLayer(l));
+      namesEl.appendChild(chip);
+      if (i < allLayers.length - 1) namesEl.appendChild(document.createTextNode(", "));
+    });
+
+    const analyzeBtn = block.querySelector(".dup-analyze-btn");
+    if (analyzeBtn) analyzeBtn.addEventListener("click", () => analyzeDuplicateGroup(gIdx, block));
     dupImageList.appendChild(block);
   });
+}
+
+// Reveal a layer from the duplicate-images panel: switch active doc, select
+// the layer, scroll to it. Reuses the modal pattern from locateLayer().
+async function revealDupLayer(layerInfo) {
+  if (!layerInfo) return;
+  try {
+    await core.executeAsModal(async () => {
+      await switchActiveDoc(layerInfo.docId);
+      await selectLayerById(layerInfo.layerId);
+    }, { commandName: "Reveal duplicate layer" });
+    log(`[REVEAL] ${layerInfo.layerName} (${layerInfo.docName})`);
+  } catch (e) {
+    log(`[REVEAL] FAILED ${layerInfo.layerName}: ${e.message || e}`);
+  }
 }
 
 // Classify each layer in a duplicate group for share-convert safety.
@@ -713,11 +786,13 @@ async function analyzeDuplicateGroup(groupIdx, blockEl) {
               docName: layer.docName,
               docId: layer.docId,
               layerId: layer.layerId,
+              hidden: layer.hidden,
+              hiddenReason: layer.hiddenReason,
               isMaster,
               issues,
             });
           } catch (e) {
-            results.push({ layerName: layer.layerName, docName: layer.docName, docId: layer.docId, layerId: layer.layerId, isMaster: false, issues: [{ tier: "skip", reason: `read error: ${e.message || e}` }] });
+            results.push({ layerName: layer.layerName, docName: layer.docName, docId: layer.docId, layerId: layer.layerId, hidden: layer.hidden, hiddenReason: layer.hiddenReason, isMaster: false, issues: [{ tier: "skip", reason: `read error: ${e.message || e}` }] });
           }
         }
       }
@@ -775,8 +850,9 @@ async function analyzeDuplicateGroup(groupIdx, blockEl) {
     if (!visible.length) return "";
     const lines = visible.map(r => {
       const masterTag = r.isMaster ? " <em>(master)</em>" : "";
+      const hiddenTag = r.hidden ? ` <span style="color:#888;">🚫 ${r.hiddenReason || "hidden"}</span>` : "";
       const reasons = r.issues.length ? ` — ${r.issues.map(i => i.reason).join(", ")}` : "";
-      return `<div style="margin-left:12px;">• ${r.layerName}${masterTag}${reasons}</div>`;
+      return `<div style="margin-left:12px;">• ${r.layerName}${masterTag}${hiddenTag}${reasons}</div>`;
     }).join("");
     return `<div style="color:${color}; margin-top:6px;"><strong>${label} (${visible.length})</strong></div>${lines}`;
   };
@@ -784,6 +860,7 @@ async function analyzeDuplicateGroup(groupIdx, blockEl) {
   // Count layers actually needing conversion (not master, not already shared).
   const safeNeedConvert = safe.filter(r => !r.isMaster && !r.sharedAlready).length;
   const warnNeedConvert = warn.filter(r => !r.sharedAlready).length;
+  const skipNeedConvert = skip.filter(r => !r.sharedAlready).length;
 
   analysisDiv.style.display = "block";
   analysisDiv.innerHTML = `
@@ -807,11 +884,18 @@ async function analyzeDuplicateGroup(groupIdx, blockEl) {
         Convert ${warnNeedConvert} warn layer(s) (risky)
       </button>
     ` : ""}
+    ${skipNeedConvert > 0 ? `
+      <button class="btn btn-tertiary dup-convert-skip-btn" style="width:100%; margin-top:6px; background:#7c2c2c !important; color:#fff !important; border-color:#7c2c2c !important;">
+        Convert ${skipNeedConvert} skip layer(s) (experimental, may lose data)
+      </button>
+    ` : ""}
   `;
   const convertBtn = analysisDiv.querySelector(".dup-convert-btn");
   if (convertBtn) convertBtn.addEventListener("click", () => convertSafeLayersInGroup(groupIdx, blockEl, "safe"));
   const convertWarnBtn = analysisDiv.querySelector(".dup-convert-warn-btn");
   if (convertWarnBtn) convertWarnBtn.addEventListener("click", () => convertSafeLayersInGroup(groupIdx, blockEl, "warn"));
+  const convertSkipBtn = analysisDiv.querySelector(".dup-convert-skip-btn");
+  if (convertSkipBtn) convertSkipBtn.addEventListener("click", () => convertSafeLayersInGroup(groupIdx, blockEl, "skip"));
   btn.disabled = false; btn.textContent = "Re-analyze";
 }
 
@@ -838,6 +922,21 @@ function findLayerIndexInContainer(layerId) {
       if (Array.isArray(l.layers) && l.layers.length) {
         const found = walk(l.layers);
         if (found !== null) return found;
+      }
+    }
+    return null;
+  }
+  return walk(doc.layers);
+}
+
+// Walk doc layer tree to find the DOM Layer object by id. Returns null if not found.
+function findLayerObjById(doc, layerId) {
+  function walk(layers) {
+    for (const l of layers) {
+      if (l.id === layerId) return l;
+      if (Array.isArray(l.layers) && l.layers.length) {
+        const found = walk(l.layers);
+        if (found) return found;
       }
     }
     return null;
@@ -901,39 +1000,21 @@ async function applyAffineToTargetLayer(cloneCorners, targetCorners) {
 async function convertSafeLayersInGroup(groupIdx, blockEl, tier = "safe") {
   const group = state.duplicateImageGroups?.[groupIdx];
   if (!group) return;
-  const sourceLayers = tier === "warn" ? (group._analysis?.warn || []) : (group._analysis?.safe || []);
+  const sourceLayers = tier === "warn" ? (group._analysis?.warn || [])
+                     : tier === "skip" ? (group._analysis?.skip || [])
+                     : (group._analysis?.safe || []);
   if (!sourceLayers.length) { log(`[CONVERT] no ${tier} layers to convert`); return; }
 
   const master = group._analysis.master;
   const safeNonMaster = sourceLayers.filter(l => !(l.docId === master.docId && l.layerId === master.layerId));
   if (!safeNonMaster.length) { log(`[CONVERT] master is the only ${tier} layer — nothing to convert`); return; }
 
-  // Pick the correct button by tier — safe vs warn use different classes.
-  const btnSelector = tier === "warn" ? ".dup-convert-warn-btn" : ".dup-convert-btn";
+  // Pick the correct button by tier — safe vs warn vs skip use different classes.
+  const btnSelector = tier === "warn" ? ".dup-convert-warn-btn"
+                    : tier === "skip" ? ".dup-convert-skip-btn"
+                    : ".dup-convert-btn";
   const convertBtn = blockEl.querySelector(btnSelector);
   if (!convertBtn) { log(`[CONVERT] button missing (${tier}) — abort`); return; }
-
-  // Two-click confirm: first click arms, second click executes.
-  const armedLabel = `Click again to confirm: convert ${safeNonMaster.length} ${tier} layer(s)`;
-  const idleLabel = tier === "warn"
-    ? `Convert ${safeNonMaster.length} warn layer(s) (risky)`
-    : `Convert ${safeNonMaster.length} safe layer(s) to shared`;
-
-  if (convertBtn.dataset.armed !== "1") {
-    convertBtn.dataset.armed = "1";
-    convertBtn.textContent = armedLabel;
-    convertBtn.style.background = "#c47";
-    setTimeout(() => {
-      if (convertBtn.dataset.armed === "1") {
-        convertBtn.dataset.armed = "";
-        convertBtn.textContent = idleLabel;
-        convertBtn.style.background = "";
-      }
-    }, 4000);
-    return;
-  }
-  convertBtn.dataset.armed = "";
-  convertBtn.style.background = "";
 
   log(`[CONVERT] Starting — ${safeNonMaster.length} layer(s) → shared clones of "${master.layerName}"`);
   convertBtn.disabled = true; convertBtn.textContent = "Converting…";
@@ -974,15 +1055,61 @@ async function convertSafeLayersInGroup(groupIdx, blockEl, tier = "safe") {
             continue;
           }
           const tCorners = _soCorners(desc.smartObjectMore.transform);
+
+          // Snapshot source's artboard bounds BEFORE delete. PS auto-shifts
+          // artboard position when layer is removed; using post-delete bounds
+          // makes target position fall outside the artboard → PS auto-reparent
+          // dislocates clone. Compute RELATIVE position (delta from artboard
+          // top-left) so we can re-anchor after artboard shifts.
+          let sourceArtboardId = null;
+          let sourceArtboardL = 0, sourceArtboardT = 0;
+          try {
+            let aId = desc.parentLayerID;
+            for (let d = 0; d < 10 && aId && aId !== -1; d++) {
+              const ad = await getLayerDescriptorById(aId);
+              if (!ad) break;
+              if (ad.artboardEnabled || ad.artboard?.artboardRect) {
+                const ab = ad.artboard?.artboardRect || ad.bounds;
+                sourceArtboardL = ab.left?._value ?? ab.left ?? 0;
+                sourceArtboardT = ab.top?._value ?? ab.top ?? 0;
+                sourceArtboardId = aId;
+                break;
+              }
+              aId = ad.parentLayerID;
+            }
+          } catch (e) {}
+          // Compute relative corners (relative to source artboard origin).
+          const tCornersRel = tCorners.map(p => ({ x: p.x - sourceArtboardL, y: p.y - sourceArtboardT }));
+          log(`[CONVERT]   source artboard id=${sourceArtboardId} origin L${Math.round(sourceArtboardL)} T${Math.round(sourceArtboardT)}; relative corners: [${tCornersRel.map(p=>`(${Math.round(p.x)},${Math.round(p.y)})`).join(", ")}]`);
           const snapName    = desc.name || "";
           const snapVisible = desc.visible !== false;
           const snapLocking = desc.layerLocking || null;
           const snapAttrs   = captureLayerAttrs(desc);
+          // Snapshot Smart Filter (filterFX). Lives in smartObjectMore.filterFX
+          // (filterFXStyle descriptor). Will be re-applied to clone after convert.
+          const snapFilterFX = desc?.smartObjectMore?.filterFX || null;
 
-          // Snapshot stack position: index in sibling container (0 = top).
-          // After dup, clone lands at top of target artboard; move it DOWN
-          // by `stackIndex` steps to land at original slot.
+          // Snapshot raster layer mask if present — single-channel grayscale pixels.
+          let snapMask = null;
+          if (desc.hasUserMask) {
+            try {
+              snapMask = await imaging.getLayerMask({
+                documentID: app.activeDocument.id,
+                layerID: layer.layerId,
+                kind: "user",
+              });
+            } catch (e) {
+              log(`[CONVERT]   mask snapshot FAILED on "${snapName}": ${e.message || e}`);
+            }
+          }
+
+          // Snapshot stack position + parent container ID.
+          // After dup from master, clone lands in master's container — may NOT
+          // be the same container as source (e.g. master in artboard-F2/BG,
+          // source in artboard-F1/BG). We must move clone into source's
+          // parent first, then move-down to original stack index.
           const stackIndex = findLayerIndexInContainer(layer.layerId);
+          const sourceParentId = desc?.parentLayerID || null;
 
           // Temp-unlock locked layer (delete on locked layer fails silently).
           if (snapLocking && (snapLocking.protectAll || snapLocking.protectComposite || snapLocking.protectPosition || snapLocking.protectTransparency)) {
@@ -1012,37 +1139,145 @@ async function convertSafeLayersInGroup(groupIdx, blockEl, tier = "safe") {
           const cloneId = Array.isArray(dupResult?.[0]?.ID) ? dupResult[0].ID[0] : dupResult?.[0]?.ID;
           if (!cloneId) { failed++; log(`[CONVERT] "${layer.layerName}" — clone id missing`); continue; }
 
-          // 4. Apply affine.
+          // Re-read CURRENT artboard bounds (PS shifted after source delete)
+          // and compute NEW absolute target corners = current artboard origin
+          // + relative offset snapshotted before delete.
+          let tCornersAbs = tCorners; // fallback to original if artboard not found
+          try {
+            if (sourceArtboardId !== null) {
+              const curArt = await getLayerDescriptorById(sourceArtboardId);
+              const ab = curArt?.artboard?.artboardRect || curArt?.bounds;
+              if (ab) {
+                const curL = ab.left?._value ?? ab.left ?? 0;
+                const curT = ab.top?._value ?? ab.top ?? 0;
+                const curR = ab.right?._value ?? ab.right ?? 0;
+                const curB = ab.bottom?._value ?? ab.bottom ?? 0;
+                tCornersAbs = tCornersRel.map(p => ({ x: p.x + curL, y: p.y + curT }));
+                log(`[CONVERT]   current artboard bounds: L${Math.round(curL)} T${Math.round(curT)} R${Math.round(curR)} B${Math.round(curB)}`);
+                log(`[CONVERT]   recomputed target corners: [${tCornersAbs.map(p=>`(${Math.round(p.x)},${Math.round(p.y)})`).join(", ")}]`);
+              }
+            }
+          } catch (e) { log(`[CONVERT]   re-anchor failed: ${e.message || e}`); }
+          // Use the recomputed corners for affine.
+          const tCornersForAffine = tCornersAbs;
+
+          // === Approach A: transform-first → PS auto-reparent → nested fixup ===
+          //
+          // PS native: drag layer to artboard area → PS auto-reparents into that
+          // artboard. We mimic via `transform` offset: clone sits at master area
+          // after dup; apply affine to push it to target canvas position → PS
+          // auto-reparents into target artboard.
+          //
+          // 4a. Apply affine FIRST (before any DOM moveInside). Clone slides to
+          //     target position; PS reparents into containing artboard.
           await selectLayerById(cloneId);
           const cloneDesc = await getLayerDescriptorById(cloneId);
           const cCorners = _soCorners(cloneDesc.smartObjectMore.transform);
-          // Temp-unlock if needed (Transform refuses locked layers).
           const cloneLocking = cloneDesc.layerLocking;
           const cloneWasLocked = cloneLocking && (cloneLocking.protectAll || cloneLocking.protectComposite || cloneLocking.protectPosition || cloneLocking.protectTransparency);
           if (cloneWasLocked) {
             try { await setLayerLocking(cloneId, null); } catch (e) {}
           }
-          // PS refuses Transform on hidden layers — temp-show.
           if (cloneDesc.visible === false) {
             try { await setLayerVisibilityById(cloneId, true); } catch (e) {}
           }
-          await applyAffineToTargetLayer(cCorners, tCorners);
+          const bboxOf = (c) => {
+            const xs = c.map(p=>p.x), ys = c.map(p=>p.y);
+            return { L:Math.min(...xs), T:Math.min(...ys), W:Math.max(...xs)-Math.min(...xs), H:Math.max(...ys)-Math.min(...ys) };
+          };
+          const tB = bboxOf(tCornersForAffine);
+          await applyAffineToTargetLayer(cCorners, tCornersForAffine);
+          log(`[CONVERT]   affine done → target L${Math.round(tB.L)} T${Math.round(tB.T)}`);
 
-          // 5. Move clone DOWN to original stack index. After dup + affine,
-          //    PS auto-parents clone into target artboard at TOP (index 0).
-          //    Call move-down N times to land at original slot.
-          if (stackIndex !== null && stackIndex > 0) {
-            await selectLayerById(cloneId);
-            let movedSteps = 0;
-            for (let s = 0; s < stackIndex; s++) {
-              const ok = await moveLayerDownOnce();
-              if (!ok) break;
-              movedSteps++;
-            }
-            if (movedSteps !== stackIndex) {
-              log(`[CONVERT]   stack-move partial for "${snapName}": ${movedSteps}/${stackIndex} steps`);
+          // 4b. Check where PS auto-parented the clone. If sourceParent is a
+          //     NESTED group inside an artboard (e.g. F1/BG), PS only reparents
+          //     to the artboard (F1), not the nested group — need moveInside to
+          //     descend into the nested group.
+          let afterAffineParent = null;
+          try {
+            const pd = await getLayerDescriptorById(cloneId);
+            afterAffineParent = pd?.parentLayerID;
+            log(`[CONVERT]   post-affine parent=${afterAffineParent} (source was ${sourceParentId})`);
+          } catch (e) {}
+
+          if (sourceParentId !== null && afterAffineParent !== sourceParentId) {
+            // PS dropped clone in the wrong container (artboard root instead of
+            // nested group). Use moveInside to descend.
+            try {
+              const cloneLayerObj = findLayerObjById(app.activeDocument, cloneId);
+              const targetGroup = findLayerObjById(app.activeDocument, sourceParentId);
+              if (cloneLayerObj && targetGroup) {
+                await cloneLayerObj.moveInside(targetGroup);
+                log(`[CONVERT]   nested moveInside → id=${sourceParentId} "${targetGroup.name}"`);
+              }
+            } catch (e) {
+              log(`[CONVERT]   nested moveInside failed: ${e.message || e}`);
             }
           }
+
+          // 4c. Stack-move within parent to original index. PS auto-parent may
+          //     place clone at any index (not necessarily 0). Find current idx
+          //     and pick correct sibling target. To land at idx `stackIndex`:
+          //     - if currentIdx < stackIndex: placeAfter sibling at stackIndex
+          //       (siblings below clone shift up by 1 when clone leaves)
+          //     - if currentIdx > stackIndex: placeAfter sibling at stackIndex-1
+          //       (siblings above clone unchanged; clone slots in after stackIndex-1)
+          if (stackIndex !== null) {
+            try {
+              const cloneLayerObj = findLayerObjById(app.activeDocument, cloneId);
+              const parentLayer = findLayerObjById(app.activeDocument, sourceParentId);
+              if (cloneLayerObj && parentLayer?.layers) {
+                const currentIdx = parentLayer.layers.findIndex(l => l.id === cloneId);
+                log(`[CONVERT]   stack-move: clone currently at idx=${currentIdx}, want idx=${stackIndex}`);
+                if (currentIdx !== stackIndex && currentIdx !== -1) {
+                  // Sibling target depends on direction.
+                  const refIdx = currentIdx < stackIndex ? stackIndex : stackIndex - 1;
+                  const targetSibling = parentLayer.layers[refIdx];
+                  if (targetSibling && targetSibling.id !== cloneId) {
+                    await cloneLayerObj.move(targetSibling, "placeAfter");
+                    log(`[CONVERT]   stack-move: placeAfter id=${targetSibling.id} (refIdx=${refIdx})`);
+                  }
+                }
+              }
+            } catch (e) {
+              log(`[CONVERT]   stack-move failed: ${e.message || e}`);
+            }
+          }
+
+          // 4d. Re-apply affine if stack-move or moveInside dislocated position.
+          //     Check drift via descriptor (source of truth, not DOM cache).
+          try {
+            const checkDesc = await getLayerDescriptorById(cloneId);
+            const cT = checkDesc?.smartObjectMore?.transform;
+            const cP = checkDesc?.parentLayerID;
+            if (cT) {
+              const cC = _soCorners(cT);
+              const cB = bboxOf(cC);
+              const dx = cB.L - tB.L, dy = cB.T - tB.T;
+              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                log(`[CONVERT]   drift after stack-move: ΔL=${Math.round(dx)} ΔT=${Math.round(dy)} — correcting`);
+                await selectLayerById(cloneId);
+                await applyAffineToTargetLayer(cC, tCornersForAffine);
+              }
+            }
+            // Re-verify parent: if affine correction kicked clone back out, force
+            // moveInside one last time. ONE recovery pass — no infinite loop.
+            const finalDesc = await getLayerDescriptorById(cloneId);
+            if (sourceParentId !== null && finalDesc?.parentLayerID !== sourceParentId) {
+              log(`[CONVERT]   clone re-escaped to parent=${finalDesc.parentLayerID} — final moveInside`);
+              const cloneLayerObj = findLayerObjById(app.activeDocument, cloneId);
+              const targetGroup = findLayerObjById(app.activeDocument, sourceParentId);
+              if (cloneLayerObj && targetGroup) {
+                try { await cloneLayerObj.moveInside(targetGroup); } catch (e) {}
+              }
+              // Final affine after final moveInside.
+              const lastD = await getLayerDescriptorById(cloneId);
+              if (lastD?.smartObjectMore?.transform) {
+                await selectLayerById(cloneId);
+                await applyAffineToTargetLayer(_soCorners(lastD.smartObjectMore.transform), tCornersForAffine);
+              }
+            }
+          } catch (e) { log(`[CONVERT]   verify error: ${e.message || e}`); }
 
           // 6. Restore attrs (name, visibility, lock, blend, opacity, fx, clipping).
           try { await renameLayerById(cloneId, snapName); } catch (e) {}
@@ -1055,6 +1290,65 @@ async function convertSafeLayersInGroup(groupIdx, blockEl, tier = "safe") {
           if (snapLocking && (snapLocking.protectAll || snapLocking.protectComposite || snapLocking.protectPosition || snapLocking.protectTransparency)) {
             try { await setLayerLocking(cloneId, snapLocking); } catch (e) {}
           }
+          // Re-apply Smart Filter if instance had one. Strategy: run each filter
+          // command from filterFXList against the clone — same as user manually
+          // re-applying. `set filterFX` descriptor alone doesn't materialize the
+          // filter render. Must invoke the filter event (gaussianBlur, etc.)
+          // for each entry in filterFXList while clone is selected.
+          if (snapFilterFX && Array.isArray(snapFilterFX.filterFXList)) {
+            try {
+              await selectLayerById(cloneId);
+              for (const fx of snapFilterFX.filterFXList) {
+                if (!fx?.filter?._obj) continue;
+                try {
+                  await bp([{
+                    ...fx.filter,
+                    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                    _options: { dialogOptions: "dontDisplay" }
+                  }]);
+                  log(`[CONVERT]   ran ${fx.filter._obj} on "${snapName}"`);
+                } catch (e) {
+                  log(`[CONVERT]   filter ${fx.filter._obj} FAILED on "${snapName}": ${e.message || e}`);
+                }
+              }
+            } catch (e) {
+              log(`[CONVERT]   smart filter loop FAILED on "${snapName}": ${e.message || e}`);
+            }
+          }
+
+          // Re-apply raster layer mask if snapshotted. `replace: true` creates
+          // mask if clone has none, or replaces existing mask pixels.
+          if (snapMask?.imageData) {
+            try {
+              await imaging.putLayerMask({
+                documentID: app.activeDocument.id,
+                layerID: cloneId,
+                kind: "user",
+                imageData: snapMask.imageData,
+                replace: true,
+              });
+              log(`[CONVERT]   layer mask restored on "${snapName}"`);
+              // Free memory held by ImageData.
+              try { snapMask.imageData.dispose(); } catch (e) {}
+            } catch (e) {
+              log(`[CONVERT]   layer mask restore FAILED on "${snapName}": ${e.message || e}`);
+            }
+          }
+          // Final position check — measure after everything (stack-move, attrs, mask).
+          try {
+            const finalDesc = await getLayerDescriptorById(cloneId);
+            const ft = finalDesc?.smartObjectMore?.transform;
+            if (ft) {
+              const fc = _soCorners(ft);
+              const fB = bboxOf(fc);
+              log(`[CONVERT]   FINAL clone bbox=${Math.round(fB.W)}×${Math.round(fB.H)} @L${Math.round(fB.L)} T${Math.round(fB.T)} (source was L${Math.round(tB.L)} T${Math.round(tB.T)} ${Math.round(tB.W)}×${Math.round(tB.H)})`);
+              const dx = Math.round(fB.L - tB.L), dy = Math.round(fB.T - tB.T), dw = Math.round(fB.W - tB.W), dh = Math.round(fB.H - tB.H);
+              if (dx || dy || dw || dh) log(`[CONVERT]   ⚠ drift: ΔL=${dx} ΔT=${dy} ΔW=${dw} ΔH=${dh}`);
+            }
+            const finalB = finalDesc?.bounds ? rectSize(finalDesc.bounds) : null;
+            if (finalB) log(`[CONVERT]   FINAL layer.bounds=${Math.round(finalB.width)}×${Math.round(finalB.height)} @L${Math.round(finalB.left)} T${Math.round(finalB.top)}`);
+          } catch (e) {}
+
           state.modifiedDocIds.add(layer.docId);
           done++;
           log(`[CONVERT] ✓ "${snapName}" → shared clone of "${master.layerName}" (new id=${cloneId})`);
@@ -3605,14 +3899,15 @@ async function restoreLayerAttrs(layerId, attrs) {
   }
 
   // Clipping mask: select layer then issue groupEvent (Alt+click between layers).
-  // PS needs the layer SELECTED for this command.
+  // PS needs the layer SELECTED + a non-clip base layer below. Use "silent" to
+  // suppress popup alert if base not available (logged but doesn't break flow).
   if (attrs.clipping) {
     try {
       await selectLayerById(layerId);
       await bp([{
         _obj: "groupEvent",
         _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
-        _options: { dialogOptions: "dontDisplay" }
+        _options: { dialogOptions: "silent" }
       }]);
     } catch (e) { log(`[IMG]  restore clipping failed id=${layerId}: ${e.message || e}`); }
   }
