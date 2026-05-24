@@ -27,6 +27,7 @@ const state = {
   artboardList: [],     // [{ id, name, docId, docName, width, height }]
   enabledArtboards: new Set(), // Set<artboardId>
   artboardSearch: "",
+  duplicateImageGroups: [], // [{ fileReference, shareGroupCount, totalInstances, shareGroups }]
 };
 
 function nextLinkId() { return `#${++state.idCounter}`; }
@@ -445,6 +446,12 @@ async function scanDocuments() {
     }
   }
 
+  // Detect "same image, but independent SO instances" — SO layers with identical
+  // fileReference but different smartObjectMore.ID. Useful info: PSD is heavier
+  // than it needs to be (each independent SO embeds the full content bytes), and
+  // editing one does NOT propagate to the others.
+  await detectDuplicateImages();
+
   state.hasScanned = true;
   state.idCounter = 0;
 
@@ -461,6 +468,617 @@ async function scanDocuments() {
   scanStatus.textContent = `Found ${tCount} text, ${iCount} image, ${gCount} group, ${oCount} other layers`;
   scanStatus.className = "json-status loaded";
   log(`Scan (${state.scanMode}): ${openDocs.length} doc(s), ${totalTargets} target(s) → ${tCount} text + ${iCount} image + ${gCount} group + ${oCount} other`);
+}
+
+// ─── Detect duplicate images (same file, independent SO instances) ────
+// Walks every SO layer in every open doc, buckets by fileReference. Within each
+// bucket, sub-buckets by smartObjectMore.ID (the real share-edit key). A bucket
+// with >1 share-groups means the same image is embedded multiple times as
+// independent SO instances — bloats PSD size + breaks edit-once-update-all.
+async function detectDuplicateImages() {
+  state.duplicateImageGroups = [];
+  const docs = state.scanMode === "all"
+    ? Array.from(app.documents)
+    : (app.activeDocument ? [app.activeDocument] : []);
+  if (!docs.length) { renderDuplicateImagesPanel(); return; }
+
+  // fileReference → Map<instanceID, [{docId, docName, layerId, layerName}]>
+  const byFile = new Map();
+
+  for (const doc of docs) {
+    await switchActiveDoc(doc.id);
+    const soIds = [];
+    const walk = (container) => {
+      for (const c of (container.layers || [])) {
+        if (c.kind === "smartObject") soIds.push(c.id);
+        if (Array.isArray(c.layers) && c.layers.length > 0) walk(c);
+      }
+    };
+    walk(doc);
+
+    for (const layerId of soIds) {
+      try {
+        const d = await getLayerDescriptorById(layerId);
+        const fileRef = d?.smartObject?.fileReference;
+        const iid = getSoInstanceId(d);
+        if (!fileRef || !iid) continue;
+        if (!byFile.has(fileRef)) byFile.set(fileRef, new Map());
+        const grp = byFile.get(fileRef);
+        if (!grp.has(iid)) grp.set(iid, []);
+        grp.get(iid).push({
+          docId: doc.id, docName: doc.name, layerId, layerName: d.name || "",
+        });
+      } catch (e) { /* skip */ }
+    }
+  }
+
+  // Keep only fileReferences with ≥2 share-groups (= truly duplicated).
+  for (const [fileRef, shareGroups] of byFile) {
+    if (shareGroups.size < 2) continue;
+    const groupsArr = [];
+    let totalInstances = 0;
+    for (const [iid, layers] of shareGroups) {
+      groupsArr.push({ instanceId: iid, layers });
+      totalInstances += layers.length;
+    }
+    state.duplicateImageGroups.push({
+      fileReference: fileRef,
+      shareGroupCount: shareGroups.size,
+      totalInstances,
+      shareGroups: groupsArr,
+    });
+  }
+  state.duplicateImageGroups.sort((a, b) => b.totalInstances - a.totalInstances);
+
+  // Eager classify: for each group, compute how many layers are still
+  // convertible (safe/warn, not already shared with master). Skip-only groups
+  // get rendered as "Manual cleanup needed" (no action button).
+  for (const group of state.duplicateImageGroups) {
+    // Master = the share-group with the most layers (same rule as analyze).
+    const sortedGroups = [...group.shareGroups].sort((a, b) => b.layers.length - a.layers.length);
+    const master = sortedGroups[0].layers[0];
+    let masterDesc = null;
+    let pendingSafe = 0, pendingWarn = 0, skipCount = 0;
+    try {
+      await switchActiveDoc(master.docId);
+      masterDesc = await getLayerDescriptorById(master.layerId);
+      const masterIid = getSoInstanceId(masterDesc);
+      for (const sg of group.shareGroups) {
+        for (const l of sg.layers) {
+          if (l.docId === master.docId && l.layerId === master.layerId) continue;
+          try {
+            await switchActiveDoc(l.docId);
+            const d = await getLayerDescriptorById(l.layerId);
+            const iid = getSoInstanceId(d);
+            const issues = classifyLayerForConvert(d, masterDesc, false);
+            const tier = issues.some(i => i.tier === "skip") ? "skip"
+                       : issues.some(i => i.tier === "warn") ? "warn"
+                       : "safe";
+            const alreadyShared = iid && iid === masterIid;
+            if (alreadyShared) continue;
+            if (tier === "skip") skipCount++;
+            else if (tier === "warn") pendingWarn++;
+            else pendingSafe++;
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    group._scanState = { pendingSafe, pendingWarn, skipCount, master };
+    log(`[SCAN-DUP] "${group.fileReference}": pendingSafe=${pendingSafe} pendingWarn=${pendingWarn} skip=${skipCount} (master id=${master.layerId})`);
+  }
+
+  renderDuplicateImagesPanel();
+}
+
+const dupImageSection = document.getElementById("dupImageSection");
+const dupImageToggle  = document.getElementById("dupImageToggle");
+const dupImageBody    = document.getElementById("dupImageBody");
+const dupImageCountEl = document.getElementById("dupImageCount");
+const dupImageList    = document.getElementById("dupImageList");
+
+if (dupImageToggle && dupImageBody) {
+  dupImageToggle.addEventListener("click", () => {
+    const open = dupImageBody.style.display !== "none";
+    dupImageBody.style.display = open ? "none" : "block";
+    const icon = dupImageToggle.querySelector(".toggle-icon");
+    if (icon) icon.textContent = open ? "▶" : "▼";
+  });
+}
+
+function renderDuplicateImagesPanel() {
+  if (!dupImageSection || !dupImageList) return;
+  const groups = state.duplicateImageGroups || [];
+  if (!groups.length) {
+    dupImageSection.style.display = "none";
+    return;
+  }
+  dupImageSection.style.display = "block";
+  if (dupImageCountEl) dupImageCountEl.textContent = `(${groups.length})`;
+
+  dupImageList.innerHTML = "";
+  groups.forEach((g, gIdx) => {
+    const scanState = g._scanState || { pendingSafe: 0, pendingWarn: 0, skipCount: 0 };
+    const nothingPending = scanState.pendingSafe === 0 && scanState.pendingWarn === 0;
+    const isSkipOnly = nothingPending && scanState.skipCount > 0;
+
+    const block = document.createElement("div");
+    block.className = "dup-image-block";
+    const borderColor = isSkipOnly ? "#555" : nothingPending ? "#3a5" : "#c47";
+    const dimStyle = isSkipOnly ? "opacity:0.65;" : "";
+    block.style.cssText = `border:1px solid ${borderColor}; border-radius:4px; padding:8px; margin-bottom:8px; ${dimStyle}`;
+    block.dataset.groupIdx = String(gIdx);
+    const allNames = [];
+    for (const sg of g.shareGroups) for (const l of sg.layers) allNames.push(l.layerName);
+
+    // State badge.
+    let badge = "";
+    if (isSkipOnly) {
+      badge = `<div style="color:#999; font-size:11px; margin-bottom:4px;"><strong>⚠️ Manual cleanup needed</strong> — ${scanState.skipCount} layer(s) have mask/filter that block auto-convert</div>`;
+    } else if (nothingPending) {
+      badge = `<div style="color:#7fc97f; font-size:11px; margin-bottom:4px;"><strong>✅ All convertible done</strong></div>`;
+    } else {
+      const parts = [];
+      if (scanState.pendingSafe) parts.push(`${scanState.pendingSafe} safe`);
+      if (scanState.pendingWarn) parts.push(`${scanState.pendingWarn} warn`);
+      if (scanState.skipCount)   parts.push(`${scanState.skipCount} skip`);
+      badge = `<div style="color:#e8c468; font-size:11px; margin-bottom:4px;"><strong>⚡ Action needed</strong> — ${parts.join(", ")}</div>`;
+    }
+
+    block.innerHTML = `
+      ${badge}
+      <div class="dup-filename" style="font-weight:600; margin-bottom:4px; word-break:break-all;"></div>
+      <div class="hint" style="margin-bottom:6px;">
+        <span class="dup-summary"></span>
+      </div>
+      <div class="dup-names" style="font-size:11px; opacity:0.8; margin-bottom:8px;"></div>
+      <button class="btn btn-tertiary dup-analyze-btn" style="width:100%;">Analyze conversion</button>
+      <div class="dup-analysis" style="display:none; margin-top:8px;"></div>
+    `;
+    block.querySelector(".dup-filename").textContent = g.fileReference;
+    block.querySelector(".dup-summary").textContent =
+      `${g.totalInstances} instances in ${g.shareGroupCount} independent share-groups`;
+    block.querySelector(".dup-names").textContent = allNames.join(", ");
+    block.querySelector(".dup-analyze-btn").addEventListener("click", () => analyzeDuplicateGroup(gIdx, block));
+    dupImageList.appendChild(block);
+  });
+}
+
+// Classify each layer in a duplicate group for share-convert safety.
+// Tier 1 (skip) — convert would lose data:
+//   - has non-empty raster layer mask
+//   - has non-empty vector mask
+//   - has Smart Filter different from master's
+// Tier 2 (warn) — convert may have issues but is doable:
+//   - non-trivial warp (warpStyle ≠ warpNone)
+//   - clipping mask (depends on stack order)
+//   - locked layer
+// Tier 3 (safe) — no concerns.
+function classifyLayerForConvert(desc, masterDesc, isMaster) {
+  const issues = [];
+  if (desc.hasUserMask) issues.push({ tier: "skip", reason: "has raster layer mask" });
+  if (desc.hasVectorMask && desc.vectorMaskEmpty === false) issues.push({ tier: "skip", reason: "has vector mask" });
+
+  // Smart Filter: compare instance's filterFX list to master's. If different (incl.
+  // present-on-one-side-only), the master's filters will overwrite on convert.
+  if (!isMaster) {
+    const myFx     = JSON.stringify(desc?.smartObject?.filterFX || null);
+    const masterFx = JSON.stringify(masterDesc?.smartObject?.filterFX || null);
+    if (myFx !== masterFx) {
+      issues.push({ tier: "skip", reason: "smart filter differs from master" });
+    }
+  }
+
+  const warpStyle = desc?.smartObjectMore?.warp?.warpStyle?._value;
+  if (warpStyle && warpStyle !== "warpNone") issues.push({ tier: "warn", reason: `warp=${warpStyle}` });
+
+  if (desc.group === true || desc.clipping === true) issues.push({ tier: "warn", reason: "clipping mask (stack-order sensitive)" });
+
+  const locking = desc.layerLocking;
+  if (locking && (locking.protectAll || locking.protectComposite || locking.protectPosition || locking.protectTransparency)) {
+    issues.push({ tier: "warn", reason: "locked" });
+  }
+
+  return issues;
+}
+
+async function analyzeDuplicateGroup(groupIdx, blockEl) {
+  const group = state.duplicateImageGroups?.[groupIdx];
+  if (!group) return;
+  const btn = blockEl.querySelector(".dup-analyze-btn");
+  const analysisDiv = blockEl.querySelector(".dup-analysis");
+  btn.disabled = true; btn.textContent = "Analyzing…";
+
+  // Master = the share-group with the most layers (preserves the most edits if
+  // user later runs convert). Tie-break: first by group order.
+  const sortedGroups = [...group.shareGroups].sort((a, b) => b.layers.length - a.layers.length);
+  const master = sortedGroups[0].layers[0];
+
+  // Read full descriptors for every layer + master.
+  const results = []; // { layerName, docName, isMaster, issues:[{tier,reason}] }
+  let masterDesc = null;
+  try {
+    await core.executeAsModal(async () => {
+      await switchActiveDoc(master.docId);
+      masterDesc = await getLayerDescriptorById(master.layerId);
+
+      for (const sg of group.shareGroups) {
+        for (const layer of sg.layers) {
+          try {
+            await switchActiveDoc(layer.docId);
+            const d = await getLayerDescriptorById(layer.layerId);
+            const isMaster = (layer.docId === master.docId && layer.layerId === master.layerId);
+            const issues = classifyLayerForConvert(d, masterDesc, isMaster);
+            results.push({
+              layerName: layer.layerName,
+              docName: layer.docName,
+              docId: layer.docId,
+              layerId: layer.layerId,
+              isMaster,
+              issues,
+            });
+          } catch (e) {
+            results.push({ layerName: layer.layerName, docName: layer.docName, docId: layer.docId, layerId: layer.layerId, isMaster: false, issues: [{ tier: "skip", reason: `read error: ${e.message || e}` }] });
+          }
+        }
+      }
+    }, { commandName: "Content Replacer: Analyze share conversion" });
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Analyze conversion";
+    analysisDiv.style.display = "block";
+    analysisDiv.innerHTML = `<div class="hint" style="color:#e88;">Error: ${e.message || e}</div>`;
+    return;
+  }
+
+  // Tally — docId/layerId already stored per result.
+  const safe = [], warn = [], skip = [];
+  for (const r of results) {
+    const worstTier = r.issues.some(it => it.tier === "skip") ? "skip"
+                    : r.issues.some(it => it.tier === "warn") ? "warn"
+                    : "safe";
+    if (worstTier === "skip") skip.push(r);
+    else if (worstTier === "warn") warn.push(r);
+    else safe.push(r);
+  }
+
+  // Compute share-group keys to detect "already shared with master" cases —
+  // these layers count as safe but don't actually need converting.
+  let masterIid = null;
+  const layerIids = new Map(); // layerId → iidKey
+  try {
+    await core.executeAsModal(async () => {
+      await switchActiveDoc(master.docId);
+      const mD = await getLayerDescriptorById(master.layerId);
+      masterIid = getSoInstanceId(mD);
+      // Read iid for safe + warn + skip — need sharedAlready flag on all tiers.
+      for (const r of [...safe, ...warn, ...skip]) {
+        try {
+          await switchActiveDoc(r.docId);
+          const d = await getLayerDescriptorById(r.layerId);
+          layerIids.set(r.layerId, getSoInstanceId(d));
+        } catch (e) {}
+      }
+    }, { commandName: "Check share-edit status" });
+  } catch (e) { /* fall through */ }
+
+  // Annotate all tiers with sharedAlready flag.
+  for (const r of [...safe, ...warn, ...skip]) {
+    r.sharedAlready = layerIids.get(r.layerId) === masterIid;
+  }
+
+  // Stash for convert step.
+  group._analysis = { master, safe, warn, skip };
+
+  const formatList = (arr, label, color) => {
+    // Hide layers that are already shared with master — they don't need action.
+    // Keep master visible in safe list (with tag).
+    const visible = arr.filter(r => r.isMaster || !r.sharedAlready);
+    if (!visible.length) return "";
+    const lines = visible.map(r => {
+      const masterTag = r.isMaster ? " <em>(master)</em>" : "";
+      const reasons = r.issues.length ? ` — ${r.issues.map(i => i.reason).join(", ")}` : "";
+      return `<div style="margin-left:12px;">• ${r.layerName}${masterTag}${reasons}</div>`;
+    }).join("");
+    return `<div style="color:${color}; margin-top:6px;"><strong>${label} (${visible.length})</strong></div>${lines}`;
+  };
+
+  // Count layers actually needing conversion (not master, not already shared).
+  const safeNeedConvert = safe.filter(r => !r.isMaster && !r.sharedAlready).length;
+  const warnNeedConvert = warn.filter(r => !r.sharedAlready).length;
+
+  analysisDiv.style.display = "block";
+  analysisDiv.innerHTML = `
+    <div style="font-size:11px;">
+      <div style="margin-bottom:4px;"><strong>Master</strong>: ${master.layerName} (${master.docName})</div>
+      ${formatList(safe, "✅ Safe to convert", "#7fc97f")}
+      ${formatList(warn, "⚠️ Convertible with warnings", "#e8c468")}
+      ${formatList(skip, "❌ Cannot convert (would lose data)", "#e88")}
+    </div>
+    ${safeNeedConvert > 0 ? `
+      <button class="btn btn-primary dup-convert-btn" style="width:100%; margin-top:8px;">
+        Convert ${safeNeedConvert} safe layer(s) to shared
+      </button>
+    ` : `
+      <div class="hint" style="margin-top:8px; color:#7fc97f;">
+        All safe layers already share with master.
+      </div>
+    `}
+    ${warnNeedConvert > 0 ? `
+      <button class="btn btn-tertiary dup-convert-warn-btn" style="width:100%; margin-top:6px; background:#8a6d3b !important; color:#fff !important; border-color:#8a6d3b !important;">
+        Convert ${warnNeedConvert} warn layer(s) (risky)
+      </button>
+    ` : ""}
+  `;
+  const convertBtn = analysisDiv.querySelector(".dup-convert-btn");
+  if (convertBtn) convertBtn.addEventListener("click", () => convertSafeLayersInGroup(groupIdx, blockEl, "safe"));
+  const convertWarnBtn = analysisDiv.querySelector(".dup-convert-warn-btn");
+  if (convertWarnBtn) convertWarnBtn.addEventListener("click", () => convertSafeLayersInGroup(groupIdx, blockEl, "warn"));
+  btn.disabled = false; btn.textContent = "Re-analyze";
+}
+
+// Dump layer tree (panel order: top to bottom) into Logs. Indents per nesting
+// level. Used for before/after diff of convert operation.
+function dumpLayerTree(layers, indent) {
+  for (const l of layers) {
+    const kindTag = l.kind === "smartObject" ? "[SO]" : l.kind === "pixel" ? "[PX]" : l.kind === "text" ? "[TX]" : (Array.isArray(l.layers) && l.layers.length ? "[GR]" : `[${l.kind || "?"}]`);
+    log(`${indent}${kindTag} id=${l.id} "${l.name}"`);
+    if (Array.isArray(l.layers) && l.layers.length) dumpLayerTree(l.layers, indent + "  ");
+  }
+}
+
+// ─── Convert duplicate SO to shared (Phase 2) ─────────
+// Find index of layerId within its sibling container, counting from TOP (0-based).
+// Returns null if not found.
+function findLayerIndexInContainer(layerId) {
+  const doc = app.activeDocument;
+  if (!doc) return null;
+  function walk(layers) {
+    for (let i = 0; i < layers.length; i++) {
+      const l = layers[i];
+      if (l.id === layerId) return i;
+      if (Array.isArray(l.layers) && l.layers.length) {
+        const found = walk(l.layers);
+        if (found !== null) return found;
+      }
+    }
+    return null;
+  }
+  return walk(doc.layers);
+}
+
+// Move active layer DOWN by one step in panel stack (sends behind next layer).
+// Uses `_enum: "previous"` reference (= layer below current).
+async function moveLayerDownOnce() {
+  try {
+    await bp([{
+      _obj: "move",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+      to: { _ref: "layer", _enum: "ordinal", _value: "previous" },
+      _options: { dialogOptions: "silent" }
+    }]);
+    return true;
+  } catch (e) { return false; }
+}
+
+// Math helpers for affine transform between two SO content frames (4 corners).
+const _soCorners    = (t) => [{x:t[0],y:t[1]}, {x:t[2],y:t[3]}, {x:t[4],y:t[5]}, {x:t[6],y:t[7]}];
+const _soAngleDeg   = (c) => Math.atan2(c[1].y - c[0].y, c[1].x - c[0].x) * 180 / Math.PI;
+const _soTopEdgeLen = (c) => Math.hypot(c[1].x - c[0].x, c[1].y - c[0].y);
+const _soCenter     = (c) => ({ x: (c[0].x+c[1].x+c[2].x+c[3].x)/4, y: (c[0].y+c[1].y+c[2].y+c[3].y)/4 });
+
+// Apply affine to currently-selected layer: rotate around its own center by
+// deltaAngle, scale uniformly, then offset so new center lands on targetCenter.
+async function applyAffineToTargetLayer(cloneCorners, targetCorners) {
+  const cloneAngle  = _soAngleDeg(cloneCorners);
+  const targetAngle = _soAngleDeg(targetCorners);
+  const deltaAngle  = targetAngle - cloneAngle;
+  const scale       = _soTopEdgeLen(targetCorners) / _soTopEdgeLen(cloneCorners);
+  const cc = _soCenter(cloneCorners), tc = _soCenter(targetCorners);
+  const dx = tc.x - cc.x, dy = tc.y - cc.y;
+
+  await bp([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: { _obj: "offset",
+              horizontal: { _unit: "pixelsUnit", _value: dx },
+              vertical:   { _unit: "pixelsUnit", _value: dy } },
+    width:  { _unit: "percentUnit", _value: scale * 100 },
+    height: { _unit: "percentUnit", _value: scale * 100 },
+    angle:  { _unit: "angleUnit", _value: deltaAngle },
+    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  return { deltaAngle, scale, dx, dy };
+}
+
+// Run convert for the SAFE layers in a duplicate-image group.
+// Strategy per safe non-master layer:
+//   1. Snapshot: name, visibility, lock, transform corners, layerAttrs (blend/opacity/fx/clipping).
+//   2. Delete the layer.
+//   3. Select master → duplicate → get clone's new layerId from result.
+//   4. Apply affine transform (clone center → target center, scale uniform, rotate by delta).
+//   5. Re-apply attrs + name + visibility + lock.
+async function convertSafeLayersInGroup(groupIdx, blockEl, tier = "safe") {
+  const group = state.duplicateImageGroups?.[groupIdx];
+  if (!group) return;
+  const sourceLayers = tier === "warn" ? (group._analysis?.warn || []) : (group._analysis?.safe || []);
+  if (!sourceLayers.length) { log(`[CONVERT] no ${tier} layers to convert`); return; }
+
+  const master = group._analysis.master;
+  const safeNonMaster = sourceLayers.filter(l => !(l.docId === master.docId && l.layerId === master.layerId));
+  if (!safeNonMaster.length) { log(`[CONVERT] master is the only ${tier} layer — nothing to convert`); return; }
+
+  // Pick the correct button by tier — safe vs warn use different classes.
+  const btnSelector = tier === "warn" ? ".dup-convert-warn-btn" : ".dup-convert-btn";
+  const convertBtn = blockEl.querySelector(btnSelector);
+  if (!convertBtn) { log(`[CONVERT] button missing (${tier}) — abort`); return; }
+
+  // Two-click confirm: first click arms, second click executes.
+  const armedLabel = `Click again to confirm: convert ${safeNonMaster.length} ${tier} layer(s)`;
+  const idleLabel = tier === "warn"
+    ? `Convert ${safeNonMaster.length} warn layer(s) (risky)`
+    : `Convert ${safeNonMaster.length} safe layer(s) to shared`;
+
+  if (convertBtn.dataset.armed !== "1") {
+    convertBtn.dataset.armed = "1";
+    convertBtn.textContent = armedLabel;
+    convertBtn.style.background = "#c47";
+    setTimeout(() => {
+      if (convertBtn.dataset.armed === "1") {
+        convertBtn.dataset.armed = "";
+        convertBtn.textContent = idleLabel;
+        convertBtn.style.background = "";
+      }
+    }, 4000);
+    return;
+  }
+  convertBtn.dataset.armed = "";
+  convertBtn.style.background = "";
+
+  log(`[CONVERT] Starting — ${safeNonMaster.length} layer(s) → shared clones of "${master.layerName}"`);
+  convertBtn.disabled = true; convertBtn.textContent = "Converting…";
+
+  // Dump layer tree BEFORE for diff.
+  try {
+    await switchActiveDoc(master.docId);
+    log(`[CONVERT] === LAYER TREE BEFORE ===`);
+    dumpLayerTree(app.activeDocument.layers, "");
+  } catch (e) {}
+
+  let done = 0, failed = 0, skipped = 0;
+  try {
+    // Read master's instance id ONCE to skip layers already sharing with it.
+    await switchActiveDoc(master.docId);
+    const masterDescPre = await getLayerDescriptorById(master.layerId);
+    const masterIid = getSoInstanceId(masterDescPre);
+
+    await core.executeAsModal(async () => {
+      for (const layer of safeNonMaster) {
+        try {
+          log(`[CONVERT] processing "${layer.layerName}" id=${layer.layerId} doc=${layer.docName}`);
+          await switchActiveDoc(layer.docId);
+          // 1. Snapshot — also check that layer still exists + isn't already sharing master.
+          let desc;
+          try {
+            desc = await getLayerDescriptorById(layer.layerId);
+          } catch (e) {
+            skipped++;
+            log(`[CONVERT] skip "${layer.layerName}" (id=${layer.layerId}) — get failed: ${e.message || e}`);
+            continue;
+          }
+          if (!desc) { skipped++; log(`[CONVERT] skip "${layer.layerName}" — read returned null`); continue; }
+          const myIid = getSoInstanceId(desc);
+          if (myIid && myIid === masterIid) {
+            skipped++;
+            log(`[CONVERT] skip "${layer.layerName}" — already shares with master`);
+            continue;
+          }
+          const tCorners = _soCorners(desc.smartObjectMore.transform);
+          const snapName    = desc.name || "";
+          const snapVisible = desc.visible !== false;
+          const snapLocking = desc.layerLocking || null;
+          const snapAttrs   = captureLayerAttrs(desc);
+
+          // Snapshot stack position: index in sibling container (0 = top).
+          // After dup, clone lands at top of target artboard; move it DOWN
+          // by `stackIndex` steps to land at original slot.
+          const stackIndex = findLayerIndexInContainer(layer.layerId);
+
+          // Temp-unlock locked layer (delete on locked layer fails silently).
+          if (snapLocking && (snapLocking.protectAll || snapLocking.protectComposite || snapLocking.protectPosition || snapLocking.protectTransparency)) {
+            try { await setLayerLocking(layer.layerId, null); } catch (e) { /* ignore */ }
+          }
+
+          // 2. Delete.
+          await bp([{
+            _obj: "delete",
+            _target: [{ _ref: "layer", _id: layer.layerId }],
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+
+          // 3. Duplicate master.
+          // Need master in active doc — they should be same doc (cross-doc skipped by safety check).
+          if (master.docId !== layer.docId) {
+            failed++;
+            log(`[CONVERT] skip "${layer.layerName}" — cross-doc not supported`);
+            continue;
+          }
+          await selectLayerById(master.layerId);
+          const dupResult = await bp([{
+            _obj: "duplicate",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          const cloneId = Array.isArray(dupResult?.[0]?.ID) ? dupResult[0].ID[0] : dupResult?.[0]?.ID;
+          if (!cloneId) { failed++; log(`[CONVERT] "${layer.layerName}" — clone id missing`); continue; }
+
+          // 4. Apply affine.
+          await selectLayerById(cloneId);
+          const cloneDesc = await getLayerDescriptorById(cloneId);
+          const cCorners = _soCorners(cloneDesc.smartObjectMore.transform);
+          // Temp-unlock if needed (Transform refuses locked layers).
+          const cloneLocking = cloneDesc.layerLocking;
+          const cloneWasLocked = cloneLocking && (cloneLocking.protectAll || cloneLocking.protectComposite || cloneLocking.protectPosition || cloneLocking.protectTransparency);
+          if (cloneWasLocked) {
+            try { await setLayerLocking(cloneId, null); } catch (e) {}
+          }
+          // PS refuses Transform on hidden layers — temp-show.
+          if (cloneDesc.visible === false) {
+            try { await setLayerVisibilityById(cloneId, true); } catch (e) {}
+          }
+          await applyAffineToTargetLayer(cCorners, tCorners);
+
+          // 5. Move clone DOWN to original stack index. After dup + affine,
+          //    PS auto-parents clone into target artboard at TOP (index 0).
+          //    Call move-down N times to land at original slot.
+          if (stackIndex !== null && stackIndex > 0) {
+            await selectLayerById(cloneId);
+            let movedSteps = 0;
+            for (let s = 0; s < stackIndex; s++) {
+              const ok = await moveLayerDownOnce();
+              if (!ok) break;
+              movedSteps++;
+            }
+            if (movedSteps !== stackIndex) {
+              log(`[CONVERT]   stack-move partial for "${snapName}": ${movedSteps}/${stackIndex} steps`);
+            }
+          }
+
+          // 6. Restore attrs (name, visibility, lock, blend, opacity, fx, clipping).
+          try { await renameLayerById(cloneId, snapName); } catch (e) {}
+          await new Promise(r => setTimeout(r, 30));
+          try { await renameLayerById(cloneId, snapName); } catch (e) {}
+          if (!snapVisible) {
+            try { await setLayerVisibilityById(cloneId, false); } catch (e) {}
+          }
+          await restoreLayerAttrs(cloneId, snapAttrs);
+          if (snapLocking && (snapLocking.protectAll || snapLocking.protectComposite || snapLocking.protectPosition || snapLocking.protectTransparency)) {
+            try { await setLayerLocking(cloneId, snapLocking); } catch (e) {}
+          }
+          state.modifiedDocIds.add(layer.docId);
+          done++;
+          log(`[CONVERT] ✓ "${snapName}" → shared clone of "${master.layerName}" (new id=${cloneId})`);
+        } catch (e) {
+          failed++;
+          log(`[CONVERT] ✗ "${layer.layerName}": ${e.message || e}`);
+        }
+      }
+    }, { commandName: `Convert ${safeNonMaster.length} layer(s) to shared SO` });
+  } catch (e) {
+    log(`[CONVERT] ERROR: ${e.message || e}`);
+  }
+
+  log(`[CONVERT] Done: ${done} converted, ${skipped} skipped (already shared or missing), ${failed} failed.`);
+
+  // Dump layer tree AFTER for diff.
+  try {
+    await switchActiveDoc(master.docId);
+    log(`[CONVERT] === LAYER TREE AFTER ===`);
+    dumpLayerTree(app.activeDocument.layers, "");
+  } catch (e) {}
+  // Re-scan to refresh the duplicate-images panel + main layer list.
+  try { await scanDocuments(); renderLayerList(); } catch (e) {}
+  refreshSaveEnabled();
 }
 
 // ─── Locate layer (Show button) ────────────────────────

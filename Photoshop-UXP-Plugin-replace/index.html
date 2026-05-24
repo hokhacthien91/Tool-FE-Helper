@@ -342,6 +342,27 @@
           Switch to <b>All open documents</b> if each size is a separate PSD.
         </div>
 
+        <div
+          id="dupImageSection"
+          class="section collapsible-section"
+          style="display: none"
+        >
+          <div class="log-header" id="dupImageToggle">
+            <div class="label">
+              Duplicate images
+              <span id="dupImageCount" class="sizes-count"></span>
+              <span class="toggle-icon">▶</span>
+            </div>
+          </div>
+          <div id="dupImageBody" style="display: none">
+            <div class="hint" style="margin-bottom: 8px;">
+              Same image file but each instance is an independent Smart Object —
+              edit one does NOT update the others, and PSD size grows with each copy.
+            </div>
+            <div id="dupImageList"></div>
+          </div>
+        </div>
+
         <div id="layerSection" class="section" style="display: none">
           <div class="label">What to do</div>
           <div class="mode-tabs">
