@@ -23,7 +23,10 @@
   "requiredPermissions": {
     "localFileSystem": "fullAccess",
     "allowCodeGenerationFromStrings": true,
-    "clipboard": "readAndWrite"
+    "clipboard": "readAndWrite",
+    "network": {
+      "domains": ["https://api.openai.com"]
+    }
   },
   "entrypoints": [
     {

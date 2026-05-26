@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page Guides Inspector</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="panel">
+
+    <div class="header">
+      <div class="title">Page Guides Inspector</div>
+      <button id="btnRefresh" class="btn btn-ghost" title="Refresh">↻</button>
+    </div>
+
+    <div class="doc-info">
+      <div class="row">
+        <span class="muted">Document</span>
+        <span id="docName" class="value-strong">—</span>
+      </div>
+      <div class="row">
+        <span class="muted">Unit</span>
+        <span id="docUnit" class="value-strong">—</span>
+      </div>
+    </div>
+
+    <div class="scope-toggle">
+      <button id="tabActive" class="tab-btn active">Active page</button>
+      <button id="tabAll" class="tab-btn">All pages</button>
+    </div>
+
+    <div id="pagePicker" class="page-picker hidden">
+      <span class="muted">Page</span>
+      <select id="selPage"></select>
+    </div>
+
+    <!-- TRIM / PAGE SIZE -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-trim"></span>
+        Trim (Page size)
+      </div>
+      <div class="grid-2">
+        <label>Width<input type="text" inputmode="decimal" id="inpPageW" /></label>
+        <label>Height<input type="text" inputmode="decimal" id="inpPageH" /></label>
+      </div>
+      <div class="hint">Áp dụng cho toàn document.</div>
+    </div>
+
+    <!-- BLEED -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-bleed"></span>
+        Bleed
+      </div>
+      <div class="grid-2">
+        <label>Top<input type="text" inputmode="decimal" id="inpBleedT" /></label>
+        <label>Bottom<input type="text" inputmode="decimal" id="inpBleedB" /></label>
+        <label>Inside / Left<input type="text" inputmode="decimal" id="inpBleedI" /></label>
+        <label>Outside / Right<input type="text" inputmode="decimal" id="inpBleedO" /></label>
+      </div>
+      <div class="hint">Áp dụng cho toàn document.</div>
+    </div>
+
+    <!-- MARGIN -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-margin"></span>
+        Margin
+        <span id="marginScope" class="badge">active page</span>
+      </div>
+      <div class="grid-2">
+        <label>Top<input type="text" inputmode="decimal" id="inpMarginT" /></label>
+        <label>Bottom<input type="text" inputmode="decimal" id="inpMarginB" /></label>
+        <label>Inside / Left<input type="text" inputmode="decimal" id="inpMarginL" /></label>
+        <label>Outside / Right<input type="text" inputmode="decimal" id="inpMarginR" /></label>
+      </div>
+    </div>
+
+    <!-- COLUMNS -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-column"></span>
+        Columns
+        <span id="columnScope" class="badge">active page</span>
+      </div>
+      <div class="grid-2">
+        <label>Count<input type="text" inputmode="numeric" id="inpColCount" /></label>
+        <label>Gutter<input type="text" inputmode="decimal" id="inpColGutter" /></label>
+      </div>
+      <div id="colWidthHint" class="hint">Column width: —</div>
+    </div>
+
+    <div class="actions">
+      <button id="btnApply" class="btn btn-primary">Apply page setup</button>
+      <button id="btnRevert" class="btn btn-ghost">Revert page setup</button>
+    </div>
+
+    <!-- AIRBUS SPACING / COMPONENTS -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-sync"></span>
+        Airbus spacing
+      </div>
+
+      <div class="sync-row">
+        <div class="sync-label">
+          Fit object to column
+          <span id="fitTargetStatus" class="badge sync-badge">not set</span>
+        </div>
+      </div>
+      <div class="name-grid">
+        <label class="name-field">Logo name
+          <div class="name-row">
+            <input type="text" id="inpFitName" placeholder="Logo-airbus" />
+            <button class="btn-set" data-set-for="logo" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">Letter ref name
+          <div class="name-row">
+            <input type="text" id="inpLetterRefName" placeholder="letter-A" />
+            <button class="btn-set" data-set-for="letter" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">URL block name
+          <div class="name-row">
+            <input type="text" id="inpUrlBlockName" placeholder="URL-block" />
+            <button class="btn-set" data-set-for="url" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">QR block name
+          <div class="name-row">
+            <input type="text" id="inpQrBlockName" placeholder="QR-code" />
+            <button class="btn-set" data-set-for="qr" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">Main-headline name
+          <div class="name-row">
+            <input type="text" id="inpMainName" placeholder="Main-headline" />
+            <button class="btn-set" data-set-for="main" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">Campaign-line name
+          <div class="name-row">
+            <input type="text" id="inpCampName" placeholder="campaign-line" />
+            <button class="btn-set" data-set-for="camp" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+        <label class="name-field">Sub-headline name
+          <div class="name-row">
+            <input type="text" id="inpSubName" placeholder="Sub-headline" />
+            <button class="btn-set" data-set-for="sub" title="Apply this name to the selected object">Set</button>
+          </div>
+        </label>
+      </div>
+
+      <div class="layout-checks">
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceLogo" checked /> Logo</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selLogoH" class="anchor-sel"><option value="L">Left</option><option value="R" selected>Right</option></select>
+            <select id="selLogoV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selLogoCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selLogoCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selLogoRefH" class="anchor-sel" data-ref-for="logo"></select>
+            <span class="sub-mini">V</span>
+            <select id="selLogoRefV" class="anchor-sel" data-ref-for="logo"></select>
+          </div>
+        </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceUrl" checked /> URL (½ logo W)</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selUrlH" class="anchor-sel"><option value="L">Left</option><option value="R" selected>Right</option></select>
+            <select id="selUrlV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selUrlCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selUrlCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selUrlRefH" class="anchor-sel" data-ref-for="url"></select>
+            <span class="sub-mini">V</span>
+            <select id="selUrlRefV" class="anchor-sel" data-ref-for="url"></select>
+          </div>
+        </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceQr" checked /> QR (H = 2A)</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selQrH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
+            <select id="selQrV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selQrCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selQrCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selQrRefH" class="anchor-sel" data-ref-for="qr"></select>
+            <span class="sub-mini">V</span>
+            <select id="selQrRefV" class="anchor-sel" data-ref-for="qr"></select>
+          </div>
+        </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceMain" checked /> Main-headline</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selMainH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
+            <select id="selMainV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selMainCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selMainCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selMainRefH" class="anchor-sel" data-ref-for="main"></select>
+            <span class="sub-mini">V</span>
+            <select id="selMainRefV" class="anchor-sel" data-ref-for="main"></select>
+          </div>
+        </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceCamp" checked /> Campaign-line</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selCampH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
+            <select id="selCampV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selCampCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selCampCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selCampRefH" class="anchor-sel" data-ref-for="camp"></select>
+            <span class="sub-mini">V</span>
+            <select id="selCampRefV" class="anchor-sel" data-ref-for="camp"></select>
+          </div>
+        </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceSub" checked /> Sub-headline</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selSubH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
+            <select id="selSubV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <select id="selSubCntH" class="anchor-sel"></select>
+            <span class="sub-mini">V</span>
+            <select id="selSubCntV" class="anchor-sel"></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selSubRefH" class="anchor-sel" data-ref-for="sub"></select>
+            <span class="sub-mini">V</span>
+            <select id="selSubRefV" class="anchor-sel" data-ref-for="sub"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="sync-actions">
+        <button id="btnApplyLayout" class="btn btn-primary btn-sm">Apply spacing</button>
+        <button id="btnUndoLayout" class="btn btn-ghost btn-sm" disabled>Undo spacing</button>
+        <button id="btnResetOptions" class="btn btn-ghost btn-sm">Reset options</button>
+      </div>
+
+      <div class="hint">Scale + position các thành phần (Logo/URL/QR/Main/Camp/Sub) theo Airbus brand spacing. Anchor + padding configurable per component.</div>
+    </div>
+
+    <!-- ALL PAGES TABLE -->
+    <div id="allPagesView" class="hidden">
+      <div class="card">
+        <div class="card-title">All pages</div>
+        <div id="allPagesList" class="all-pages-list"></div>
+      </div>
+    </div>
+
+    <div id="statusBar" class="status-bar"></div>
+
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

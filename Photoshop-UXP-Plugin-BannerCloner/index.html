@@ -29,6 +29,7 @@
           </button>
           <button class="tab-btn active" data-mode="settings">Settings</button>
           <button class="tab-btn" data-mode="exportAssets">Assets</button>
+          <button class="tab-btn" data-mode="chat">Chat</button>
         </div>
       </div>
       <div class="app-scroll">
@@ -114,13 +115,38 @@
           </div>
           <div id="advancedOptionsPanel" style="display: none">
             <div class="section">
+              <label class="label">Output mode</label>
+              <label class="radio-row">
+                <input
+                  type="radio"
+                  name="exportPathMode"
+                  value="single"
+                  checked
+                />
+                <span
+                  >Single path — all artboards export to the same folder</span
+                >
+              </label>
+              <label class="radio-row">
+                <input
+                  type="radio"
+                  name="exportPathMode"
+                  value="perArtboard"
+                />
+                <span
+                  >Per-artboard path — set a folder for each selected
+                  artboard</span
+                >
+              </label>
+            </div>
+            <div id="singlePathPanel" class="section">
               <label class="label" for="customExportPath"
                 >Custom output path <span style="color: #e88">*</span></label
               >
               <div class="path-row">
                 <sp-textfield
                   id="customExportPath"
-                  placeholder="/Users/.../export  or  C:\Users\...\export"
+                  placeholder=""
                 ></sp-textfield>
                 <button
                   id="browseExportPathBtn"
@@ -131,9 +157,15 @@
                 </button>
               </div>
               <div class="hint">
-                Export per-artboard: {path}/{size}/assets/ — folder sẽ được tạo
-                nếu chưa tồn tại. Hỗ trợ cả macOS (/Users/…) và Windows
-                (C:\Users\…).
+                Files are written directly to this folder (no subfolder). Hỗ
+                trợ cả macOS (/Users/…) và Windows (C:\Users\…).
+              </div>
+            </div>
+            <div id="perArtboardPathHint" class="section" style="display: none">
+              <div class="hint">
+                Per-artboard mode: set a folder for each ticked artboard above
+                (path input appears under its row). Files are written directly
+                to that folder.
               </div>
             </div>
             <div class="section">
@@ -185,6 +217,115 @@
             <button id="exportAssetsBtn" class="primary export-all-btn full">
               Export Assets
             </button>
+          </div>
+        </div>
+
+        <!-- Chat Panel (hidden by default) -->
+        <div id="chatPanel" class="chat-panel" style="display: none">
+          <div class="section">
+            <label class="label" for="chatApiKey">OpenAI API Key</label>
+            <div class="path-row">
+              <sp-textfield
+                id="chatApiKey"
+                type="password"
+                placeholder="sk-..."
+              ></sp-textfield>
+              <button id="chatSaveKeyBtn" class="path-browse-btn">Save</button>
+            </div>
+            <div class="hint">
+              Key is stored in localStorage on this machine only. Get one at
+              platform.openai.com/api-keys.
+            </div>
+          </div>
+
+          <div class="section chat-controls">
+            <label class="label" for="chatModel">Model</label>
+            <select id="chatModel" class="chat-select">
+              <option value="gpt-4o-mini">gpt-4o-mini (fast, cheap)</option>
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            </select>
+          </div>
+
+          <div class="section">
+            <label class="label">Layer JSON Context</label>
+            <div class="btn-row">
+              <button id="chatAttachDocBtn" class="split-btn">
+                From PS Doc
+              </button>
+              <button id="chatAttachFileBtn" class="split-btn">
+                From File…
+              </button>
+            </div>
+            <div id="chatAttachStatus" class="chat-attach-status">
+              No JSON attached.
+            </div>
+          </div>
+
+          <div class="section">
+            <label class="label">Quick Audits</label>
+            <div class="chat-preset-grid">
+              <button class="chat-preset-btn" data-preset="names">
+                Audit Layer Names
+              </button>
+              <button class="chat-preset-btn" data-preset="fonts">
+                Check Font Sizes
+              </button>
+              <button class="chat-preset-btn" data-preset="dupes">
+                Find Duplicates
+              </button>
+              <button class="chat-preset-btn" data-preset="general">
+                General Audit
+              </button>
+            </div>
+            <div class="hint">
+              Type any command in chat. Examples: "clone banner ra 300x250 728x90",
+              "logo to 50px wide", "scale GG-cta up 20%", "center logo vs canvas",
+              "all text layers opacity 80", "GG-bg color #ddd", "hide background
+              layers", "change CTA font to Helvetica".
+            </div>
+          </div>
+
+          <div class="section">
+            <label class="label" for="chatSessionPicker">Conversation history</label>
+            <select id="chatSessionPicker" class="chat-select"></select>
+            <div class="hint">Switch between past chats. "New Chat" creates a new entry here.</div>
+          </div>
+
+          <div class="section chat-artboard-picker-section">
+            <div class="chat-artboard-picker-header">
+              <button id="chatArtboardPickerToggle" class="chat-artboard-picker-title" type="button">
+                <span id="chatArtboardPickerArrow" class="chat-artboard-picker-arrow">▶</span>
+                <span>Apply to artboards (<span id="chatArtboardPickerCount">0/0</span>)</span>
+              </button>
+              <div class="chat-artboard-picker-actions">
+                <button id="chatArtboardPickerRefresh" class="link-btn" type="button">Refresh</button>
+                <button id="chatArtboardPickerAll" class="link-btn" type="button">All</button>
+                <button id="chatArtboardPickerNone" class="link-btn" type="button">None</button>
+              </div>
+            </div>
+            <div id="chatArtboardPickerBody" style="display: none">
+              <div id="chatArtboardPickerList" class="chat-artboard-picker-list"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div id="chatMessages" class="chat-messages">
+              <div class="chat-msg chat-msg-system">
+                Ready. Type a question below.
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <sp-textfield
+              id="chatInput"
+              placeholder="Ask anything..."
+            ></sp-textfield>
+            <div class="btn-row" style="margin-top: 8px">
+              <button id="chatSendBtn" class="primary">Send</button>
+              <button id="chatClearBtn" class="split-btn">New Chat</button>
+            </div>
           </div>
         </div>
 
@@ -247,6 +388,30 @@
             ></sp-textfield>
             <div class="hint">
               This layer/group will be scaled as cover instead of repositioned
+            </div>
+          </div>
+
+          <div class="section">
+            <label class="label" for="contentGroupInput">Content Group</label>
+            <sp-textfield
+              id="contentGroupInput"
+              value="/^(content|main|items?)$/i"
+              placeholder="content or /regex/i"
+            ></sp-textfield>
+            <div class="hint">
+              Group name (exact) or /regex/i pattern. Children get smart layout (anchor + %-position).
+            </div>
+          </div>
+
+          <div class="section">
+            <label class="label" for="guidelineGroupInput">Guideline Group (skip)</label>
+            <sp-textfield
+              id="guidelineGroupInput"
+              value="/^(guide|guideline|guidline|guides)$/i"
+              placeholder="guideline or /regex/i"
+            ></sp-textfield>
+            <div class="hint">
+              Group name (exact) or /regex/i pattern. Skipped by smart match (design helpers).
             </div>
           </div>
 

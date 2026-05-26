@@ -64,6 +64,16 @@ function passesGGFilter(name) {
 // Toggle perf timing logs (and extra verification round-trips in setTextFontSize).
 // Leave true while tuning clone speed; set to false once happy to cut a few round-trips.
 const DEBUG_PERF = true;
+// Toggle verbose rule diagnostics (CHAIN-DIAG, SIZE-DEBUG, POS-DEBUG, MOVE-DIAG).
+// Each layer triggers extra bounds reads + a full doc tree dump after every move,
+// adding hundreds of round-trips per clone. Turn ON only when debugging
+// position/size drift; leave OFF for normal use.
+const DEBUG_RULES = false;
+// Toggle [MASK] gradient analysis logs. analyzeMaskGradient runs for every
+// masked layer on every JSON read (chat attach, clone, export, etc.) — easily
+// 50+ lines per attach in multi-artboard docs. OFF by default; turn ON if
+// debugging gradient mask detection.
+const DEBUG_MASK = false;
 function perfNow() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
 function perfLog(label, startMs) {
   if (!DEBUG_PERF) return;
@@ -85,6 +95,8 @@ const uniformScaleEl = document.getElementById("uniformScaleEnabled");
 const autoFitSuffixEl = document.getElementById("autoFitSuffix");
 const matchFrameTokenEnabled = document.getElementById("matchFrameTokenEnabled");
 const skipLayerInput = document.getElementById("skipLayerInput");
+const contentGroupInput = document.getElementById("contentGroupInput");
+const guidelineGroupInput = document.getElementById("guidelineGroupInput");
 const logBox = document.getElementById("logBox");
 const exportBtn = document.getElementById("exportBtn");
 const tabBtns = document.querySelectorAll(".tab-btn");
@@ -145,8 +157,9 @@ function log(message) {
     line.className = "log-success";
   }
   logBox.appendChild(line);
-  // Scroll to the new line
-  line.scrollIntoView({ block: "nearest" });
+  // Keep log scrolled to latest line — scoped to logBox only, never scroll
+  // the parent panel (would yank user out of whatever section they're editing).
+  logBox.scrollTop = logBox.scrollHeight;
 }
 
 function setProgress(current, total, sizeLabel) {
@@ -378,6 +391,8 @@ const SUFFIX_KEY = "bannerCloner.suffixName";
 const SMART_MATCH_KEY = "bannerCloner.smartMatch";
 const UNIFORM_SCALE_KEY = "bannerCloner.uniformScale";
 const AUTO_FIT_SUFFIX_KEY = "bannerCloner.autoFitSuffix";
+const CONTENT_GROUP_KEY = "bannerCloner.contentGroupPattern";
+const GUIDELINE_GROUP_KEY = "bannerCloner.guidelineGroupPattern";
 
 function loadBgLayerName() {
   try {
@@ -390,6 +405,58 @@ function saveBgLayerName() {
   try {
     localStorage.setItem(BG_LAYER_KEY, skipLayerInput.value || "background");
   } catch (e) {}
+}
+
+// Match group name against pattern. Pattern can be:
+//   - "/regex/flags" → parsed as RegExp
+//   - plain string → case-insensitive exact match
+// Empty/invalid pattern → returns false (never matches).
+function matchesGroupName(name, pattern) {
+  if (!name || !pattern) return false;
+  const p = String(pattern).trim();
+  if (!p) return false;
+  // Regex form: /pattern/flags
+  const re = /^\/(.+)\/([a-z]*)$/.exec(p);
+  if (re) {
+    try {
+      return new RegExp(re[1], re[2]).test(name);
+    } catch (e) { return false; }
+  }
+  // Plain string: case-insensitive exact match
+  return name.toLowerCase() === p.toLowerCase();
+}
+
+function getContentGroupPattern() {
+  return (contentGroupInput?.value || "/^(content|main|items?)$/i").trim();
+}
+function isContentGroup(layer) {
+  return matchesGroupName(layer?.name, getContentGroupPattern());
+}
+
+function getGuidelineGroupPattern() {
+  return (guidelineGroupInput?.value || "/^(guide|guideline|guidline|guides)$/i").trim();
+}
+function isGuidelineGroup(layer) {
+  return matchesGroupName(layer?.name, getGuidelineGroupPattern());
+}
+
+function loadContentGroupPattern() {
+  try {
+    const saved = localStorage.getItem(CONTENT_GROUP_KEY);
+    if (saved && contentGroupInput) contentGroupInput.value = saved;
+  } catch (e) {}
+}
+function saveContentGroupPattern() {
+  try { localStorage.setItem(CONTENT_GROUP_KEY, contentGroupInput?.value || ""); } catch (e) {}
+}
+function loadGuidelineGroupPattern() {
+  try {
+    const saved = localStorage.getItem(GUIDELINE_GROUP_KEY);
+    if (saved && guidelineGroupInput) guidelineGroupInput.value = saved;
+  } catch (e) {}
+}
+function saveGuidelineGroupPattern() {
+  try { localStorage.setItem(GUIDELINE_GROUP_KEY, guidelineGroupInput?.value || ""); } catch (e) {}
 }
 
 function loadTargetSizes() {
@@ -543,13 +610,17 @@ async function setTextFontSize(layerId, targetPx) {
         _options: { dialogOptions: "dontDisplay" }
       }]);
 
-      if (DEBUG_PERF) {
-        const descAfter = await getLayerDescriptor(layerId);
-        const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
-        if (afterPt) log(`[TEXT]   approach1 verify: raw=${afterPt.toFixed(2)}pt`);
+      // Always verify — PS sometimes silently rejects raw-size writes (e.g. layer
+      // belongs to a linked Character Style). When that happens, fall through
+      // to approach2 (transform-scale) which always works.
+      const descAfter = await getLayerDescriptor(layerId);
+      const afterPt = descAfter.textKey?.textStyleRange?.[0]?.textStyle?.size?._value;
+      if (DEBUG_PERF && afterPt) log(`[TEXT]   approach1 verify: raw=${afterPt.toFixed(2)}pt`);
+      if (afterPt && Math.abs(afterPt - newRawPt) < 0.1) {
+        perfLog(`setTextFontSize approach1 (id=${layerId})`, t0);
+        return;
       }
-      perfLog(`setTextFontSize approach1 (id=${layerId})`, t0);
-      return;
+      log(`[TEXT]   approach1 silently rejected (got ${afterPt?.toFixed(2)}pt, want ${newRawPt.toFixed(2)}pt) — falling through to approach2`);
     } catch (e) {
       log(`[TEXT]   approach1 ERROR: ${e.message} — falling through to approach2`);
     }
@@ -584,6 +655,480 @@ async function setTextFontSize(layerId, targetPx) {
   } catch (e) {
     log(`[TEXT]   approach2 ERROR: ${e.message}`);
   }
+}
+
+// Parse "#rgb", "#rrggbb", "rgb(r,g,b)", or "r, g, b" → { red, green, blue } (0-255).
+function parseHexColor(input) {
+  if (input == null) return null;
+  const s = String(input).trim();
+  // Hex
+  let m = s.match(/^#?([0-9a-f]{3,8})$/i);
+  if (m) {
+    let h = m[1];
+    if (h.length === 3) h = h.split("").map(c => c + c).join("");
+    if (h.length === 6 || h.length === 8) {
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      if ([r, g, b].every(v => Number.isFinite(v))) return { red: r, green: g, blue: b };
+    }
+  }
+  // rgb(...) or "r, g, b"
+  m = s.match(/(\d{1,3})\D+(\d{1,3})\D+(\d{1,3})/);
+  if (m) {
+    const r = +m[1], g = +m[2], b = +m[3];
+    if ([r, g, b].every(v => v >= 0 && v <= 255)) return { red: r, green: g, blue: b };
+  }
+  return null;
+}
+
+async function setTextColor(layerId, hex) {
+  const c = parseHexColor(hex);
+  if (!c) throw new Error(`Invalid color "${hex}"`);
+  const desc = await getLayerDescriptor(layerId);
+  const textKey = desc.textKey;
+  if (!textKey?.textStyleRange?.length) throw new Error("Not a text layer or no style range");
+
+  const newRanges = textKey.textStyleRange.map(r => ({
+    _obj: "textStyleRange",
+    from: r.from,
+    to: r.to,
+    textStyle: {
+      ...r.textStyle,
+      _obj: "textStyle",
+      color: { _obj: "RGBColor", red: c.red, grain: c.green, blue: c.blue },
+    },
+  }));
+
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "textLayer", textStyleRange: newRanges },
+    _options: { dialogOptions: "dontDisplay" },
+  }]);
+}
+
+// Set fill color for a shape layer or solid-color fill (adjustment) layer.
+// PS uses the same descriptor shape for both — batchPlay "set" on layer with
+// fillContents or adjustment.color. Try fillContents path first (works for
+// most shapes), fall back to setting via setLayerFX-style "fill" command.
+async function setShapeFillColor(layerId, hex) {
+  const c = parseHexColor(hex);
+  if (!c) throw new Error(`Invalid color "${hex}"`);
+
+  await selectLayerById(layerId);
+  // Approach: "set" on the contentLayer with new solidColorLayer adjustment.
+  // Works for both shape layers (solidColor kind) and Color Fill adjustment layers.
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "contentLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "solidColorLayer",
+      color: { _obj: "RGBColor", red: c.red, grain: c.green, blue: c.blue },
+    },
+    _options: { dialogOptions: "dontDisplay" },
+  }]);
+}
+
+// Dispatcher: pick the right color API based on layer kind.
+async function setLayerColor(layerId, hex) {
+  const desc = await getLayerDescriptor(layerId);
+  // Text layer
+  if (desc.textKey) return await setTextColor(layerId, hex);
+  // Shape/fill layer (kind "solidColor", "solidFill", or has adjustment.color)
+  const kind = desc.layerKind;
+  // layerKind 1=normal, 3=text, 4=background, 5=shape, 9-12=adjustment, 7=group
+  // Shape layers + Color Fill adjustment both work via setShapeFillColor.
+  if (kind === 5 || kind === 9 || kind === 10 || kind === 11) {
+    return await setShapeFillColor(layerId, hex);
+  }
+  // Generic adjustment with .color (Color Fill, etc.)
+  if (desc.adjustment?.length && desc.adjustment[0]?.color) {
+    return await setShapeFillColor(layerId, hex);
+  }
+  throw new Error(`Layer kind ${kind} doesn't support color change (only text, shape, or fill layers).`);
+}
+
+// Get layer + its bounds (uses DOM layer object directly so bounds reflect
+// current state, not a stale descriptor).
+async function getLayerForOp(layerId) {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No document open");
+  const layer = findLayerById(doc.layers, layerId);
+  if (!layer) throw new Error(`Layer id ${layerId} not found`);
+  return layer;
+}
+
+// Scale a layer by a percent (e.g. 80 → 80% of current size).
+// Uses the same transform pattern as setTextFontSize approach2.
+async function scaleLayerByPercent(layerId, percent) {
+  if (!Number.isFinite(percent) || percent <= 0) throw new Error(`Invalid percent ${percent}`);
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _id: layerId }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    width:  { _unit: "percentUnit", _value: percent },
+    height: { _unit: "percentUnit", _value: percent },
+    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Resize a layer to an absolute target width or height (px).
+//
+// Behavior depends on layer kind:
+// - TEXT layer (paragraph type): adjust the text box bounds via `textShape`
+//   so the text reflows in the new width WITHOUT changing font size. Point
+//   text (no defined box) has no width to set — falls back to transform.
+// - Other layers (smart object, shape, pixel): use PS transform, which scales
+//   everything uniformly (font would scale too on text — that's why we treat
+//   text separately above).
+async function resizeLayerTo(layerId, targetW, targetH) {
+  const layer = await getLayerForOp(layerId);
+  const b = layer.bounds;
+  const curW = b.width, curH = b.height;
+  if (curW <= 0 || curH <= 0) throw new Error("Layer has zero bounds");
+
+  // Try text-box resize for text layers — preserves font size.
+  if (isTextLayer(layer)) {
+    const didTextBoxResize = await tryResizeTextBox(layerId, targetW, targetH, curW, curH);
+    if (didTextBoxResize) return;
+    // Fallthrough to transform if no paragraph box (point text).
+    log(`[RESIZE] "${layer.name}" is point text (no box) — falling back to transform (font WILL scale).`);
+  }
+
+  let ratio;
+  if (targetW && targetH) ratio = Math.min(targetW / curW, targetH / curH);
+  else if (targetW)       ratio = targetW / curW;
+  else if (targetH)       ratio = targetH / curH;
+  else throw new Error("Need width or height");
+  await scaleLayerByPercent(layerId, ratio * 100);
+}
+
+// Resize the text box of a paragraph text layer (font size preserved).
+// Returns true if applied; false if layer is point text (no textShape bounds).
+async function tryResizeTextBox(layerId, targetW, targetH, curW, curH) {
+  const desc = await getLayerDescriptor(layerId);
+  const textKey = desc?.textKey;
+  if (!textKey?.textShape?.length) return false;
+
+  const shape0 = textKey.textShape[0];
+  if (!shape0?.bounds) return false;
+  // Point text has shape type = "point"; box (paragraph) has "box".
+  // textType may be on the shape or top-level — guard both.
+  const shapeType = shape0?.char?._value || shape0?.textType?._value || textKey.textShape[0]?.textType;
+  if (shapeType === "point" || shapeType === "pointText") return false;
+
+  // textShape.bounds is in unscaled internal text coordinates. Scale ratio of
+  // visual width = scaling factor on the bounds rectangle.
+  const widthRatio = targetW ? (targetW / curW) : 1;
+  const heightRatio = targetH ? (targetH / curH) : 1;
+
+  const oldBounds = shape0.bounds;
+  const ol = oldBounds.left?._value ?? oldBounds.left ?? 0;
+  const ot = oldBounds.top?._value ?? oldBounds.top ?? 0;
+  const or = oldBounds.right?._value ?? oldBounds.right ?? 0;
+  const ob = oldBounds.bottom?._value ?? oldBounds.bottom ?? 0;
+  const ow = or - ol, oh = ob - ot;
+
+  const nw = ow * widthRatio;
+  const nh = targetH ? (oh * heightRatio) : oh;
+
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "textLayer",
+      textShape: [{
+        ...shape0,
+        bounds: {
+          _obj: "rectangle",
+          top:    { _unit: "pointsUnit", _value: ot },
+          left:   { _unit: "pointsUnit", _value: ol },
+          right:  { _unit: "pointsUnit", _value: ol + nw },
+          bottom: { _unit: "pointsUnit", _value: ot + nh },
+        },
+      }],
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  log(`[RESIZE] Text box resized via textShape: width ${ow.toFixed(1)} → ${nw.toFixed(1)}, font preserved.`);
+  return true;
+}
+
+// Move layer so its top-left is at (x, y). x and y are in canvas px.
+async function moveLayerToPosition(layerId, x, y) {
+  const layer = await getLayerForOp(layerId);
+  await moveLayerTo(layer, x, y);
+}
+
+// Move layer relative to its current position, by a percentage of that
+// position. E.g. current top=50, dir="up", percent=10 → new top = 50 * (1-0.1)
+// = 45 (moved up 5px). Direction "up"/"down" affects bounds.top, "left"/"right"
+// affects bounds.left.
+//
+// Semantics: percent is a fraction of the current coordinate value, NOT of
+// the canvas or the layer's size. This matches the user's mental model of
+// "shrink the top distance by 10%".
+// Relative move by an absolute number of pixels (not percent). Direction
+// up/down affects bounds.top, left/right affects bounds.left.
+async function nudgeLayerByPixels(layerId, dir, px) {
+  if (!Number.isFinite(px) || px <= 0) throw new Error(`Invalid px ${px}`);
+  const direction = String(dir || "").toLowerCase();
+  const layer = await getLayerForOp(layerId);
+  const b = layer.bounds;
+  let newX = b.left, newY = b.top;
+
+  if (direction === "up")          newY = b.top  - px;
+  else if (direction === "down")   newY = b.top  + px;
+  else if (direction === "left")   newX = b.left - px;
+  else if (direction === "right")  newX = b.left + px;
+  else throw new Error(`Invalid direction "${dir}" (use up/down/left/right)`);
+
+  const nx = Math.round(newX), ny = Math.round(newY);
+  log(`[NUDGE] layer="${layer.name}" id=${layerId} dir=${direction} px=${px} — before(${b.left}, ${b.top}) → after(${nx}, ${ny})`);
+  await moveLayerTo(layer, nx, ny);
+}
+
+// Walk a layer's parents until we find the artboard it belongs to. Returns
+// { rect: { top, left }, name } of the artboard, or null if not under one.
+// Used to compute artboard-relative coordinates from document-absolute bounds.
+async function findEnclosingArtboard(layer) {
+  const doc = app.activeDocument;
+  if (!doc) return null;
+  let current = layer;
+  while (current && current.parent && current.parent !== doc) {
+    current = current.parent;
+  }
+  if (!current) return null;
+  try {
+    const desc = await getLayerDescriptor(current.id);
+    const isArtboard = !!(desc.artboardEnabled || desc.artboard);
+    if (!isArtboard) return null;
+    const rect = desc.artboard?.artboardRect || desc.bounds;
+    if (!rect) return null;
+    return { rect, name: current.name };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function moveLayerByPercent(layerId, dir, percent) {
+  if (!Number.isFinite(percent) || percent <= 0) throw new Error(`Invalid percent ${percent}`);
+  const direction = String(dir || "").toLowerCase();
+  const layer = await getLayerForOp(layerId);
+  const b = layer.bounds;
+  const frac = percent / 100;
+
+  // Compute position RELATIVE to the enclosing artboard, not document origin.
+  // Then apply % to that relative value, and translate back to document coords.
+  // This makes "move up 10%" consistent across banners regardless of where the
+  // artboard sits inside the PSD document.
+  const ab = await findEnclosingArtboard(layer);
+  const abTop  = ab?.rect?.top  ?? 0;
+  const abLeft = ab?.rect?.left ?? 0;
+
+  const relTop  = b.top  - abTop;
+  const relLeft = b.left - abLeft;
+
+  let newRelX = relLeft, newRelY = relTop;
+  if (direction === "up")          newRelY = relTop  * (1 - frac);
+  else if (direction === "down")   newRelY = relTop  * (1 + frac);
+  else if (direction === "left")   newRelX = relLeft * (1 - frac);
+  else if (direction === "right")  newRelX = relLeft * (1 + frac);
+  else throw new Error(`Invalid direction "${dir}" (use up/down/left/right)`);
+
+  // Translate back to document-absolute for moveLayerTo().
+  const nx = Math.round(newRelX + abLeft);
+  const ny = Math.round(newRelY + abTop);
+  const dx = nx - b.left, dy = ny - b.top;
+  log(`[MOVE %] layer="${layer.name}" id=${layerId} dir=${direction} pct=${percent}% — artboard="${ab?.name || "(none)"}" abOrigin=(${abLeft}, ${abTop}) — relBefore=(${relLeft}, ${relTop}) → relAfter=(${Math.round(newRelX)}, ${Math.round(newRelY)}) — dx=${dx} dy=${dy}`);
+  await moveLayerTo(layer, nx, ny);
+}
+
+// Align layer to canvas. Supported anchors:
+//   "center", "left", "right", "top", "bottom",
+//   "top-left", "top-right", "bottom-left", "bottom-right",
+//   "center-horizontal", "center-vertical"
+async function alignLayerToCanvas(layerId, anchor) {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No document open");
+  const layer = await getLayerForOp(layerId);
+  const b = layer.bounds;
+  const cw = doc.width, ch = doc.height;
+  let newX = b.left, newY = b.top;
+  const a = String(anchor || "").toLowerCase().trim();
+
+  // Horizontal
+  if (/(^|-)left($|-)/.test(a))                 newX = 0;
+  else if (/(^|-)right($|-)/.test(a))           newX = cw - b.width;
+  else if (a === "center" || a.includes("center-horizontal") || a === "center-h" || /(^|-)center($|-)/.test(a) || a === "h-center") newX = (cw - b.width) / 2;
+
+  // Vertical
+  if (/(^|-)top($|-)/.test(a))                  newY = 0;
+  else if (/(^|-)bottom($|-)/.test(a))          newY = ch - b.height;
+  else if (a === "center" || a.includes("center-vertical") || a === "center-v" || a === "v-center") newY = (ch - b.height) / 2;
+
+  await moveLayerTo(layer, newX, newY);
+}
+
+// Set layer opacity (0-100).
+async function setLayerOpacity(layerId, opacity) {
+  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 100) {
+    throw new Error(`Invalid opacity ${opacity} (0-100)`);
+  }
+  const layer = await getLayerForOp(layerId);
+  layer.opacity = Math.round(opacity);
+}
+
+// Rotate layer by N degrees around its center.
+async function rotateLayer(layerId, degrees) {
+  if (!Number.isFinite(degrees)) throw new Error(`Invalid rotation ${degrees}`);
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _id: layerId }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    angle: { _unit: "angleUnit", _value: degrees },
+    interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Lock or unlock all transparency/position/composite on a layer.
+async function setLayerLocked(layerId, locked) {
+  const layer = await getLayerForOp(layerId);
+  if (locked) {
+    layer.locked = true;
+  } else {
+    layer.locked = false;
+  }
+}
+
+// Photoshop blend mode names accepted by batchPlay's blendMode enum.
+const BLEND_MODE_MAP = {
+  normal: "normal", dissolve: "dissolve",
+  darken: "darken", multiply: "multiply", "color-burn": "colorBurn", colorburn: "colorBurn", "linear-burn": "linearBurn", linearburn: "linearBurn", "darker-color": "darkerColor",
+  lighten: "lighten", screen: "screen", "color-dodge": "colorDodge", colordodge: "colorDodge", "linear-dodge": "linearDodge", lineardodge: "linearDodge", "lighter-color": "lighterColor",
+  overlay: "overlay", "soft-light": "softLight", softlight: "softLight", "hard-light": "hardLight", hardlight: "hardLight", "vivid-light": "vividLight", vividlight: "vividLight", "linear-light": "linearLight", linearlight: "linearLight", "pin-light": "pinLight", pinlight: "pinLight", "hard-mix": "hardMix", hardmix: "hardMix",
+  difference: "difference", exclusion: "exclusion", subtract: "blendSubtraction", subtraction: "blendSubtraction", divide: "blendDivide",
+  hue: "hue", saturation: "saturation", color: "color", luminosity: "luminosity",
+};
+
+async function setLayerBlendMode(layerId, mode) {
+  const key = String(mode || "").toLowerCase().replace(/\s+/g, "-");
+  const psMode = BLEND_MODE_MAP[key];
+  if (!psMode) throw new Error(`Unsupported blend mode "${mode}". Try: normal, multiply, screen, overlay, soft-light, hard-light, color, luminosity, etc.`);
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "layer", mode: { _enum: "blendMode", _value: psMode } },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Apply a stroke layer effect. width in px, color hex, position "outside"|"center"|"inside".
+async function addLayerStroke(layerId, widthPx, hex, position) {
+  if (!Number.isFinite(widthPx) || widthPx <= 0) throw new Error(`Invalid stroke width ${widthPx}`);
+  const c = parseHexColor(hex);
+  if (!c) throw new Error(`Invalid color "${hex}"`);
+  const pos = String(position || "outside").toLowerCase();
+  const posMap = { outside: "outsetFrame", center: "centeredFrame", inside: "insetFrame" };
+  const psPos = posMap[pos] || "outsetFrame";
+
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "property", _property: "layerEffects" }, { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layerEffects",
+      scale: { _unit: "percentUnit", _value: 100 },
+      frameFX: {
+        _obj: "frameFX",
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        style: { _enum: "frameStyle", _value: psPos },
+        paintType: { _enum: "frameFill", _value: "solidColor" },
+        mode: { _enum: "blendMode", _value: "normal" },
+        opacity: { _unit: "percentUnit", _value: 100 },
+        size: { _unit: "pixelsUnit", _value: widthPx },
+        color: { _obj: "RGBColor", red: c.red, grain: c.green, blue: c.blue },
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Set text content of a text layer.
+async function setTextContent(layerId, content) {
+  const desc = await getLayerDescriptor(layerId);
+  if (!desc.textKey) throw new Error("Not a text layer");
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "textLayer", textKey: String(content) },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+}
+
+// Set font family of a text layer. fontName accepts PostScript name (e.g.
+// "ArialMT") or display name ("Arial"). PS is forgiving for display names but
+// PostScript is safer.
+async function setTextFontFamily(layerId, fontName) {
+  const desc = await getLayerDescriptor(layerId);
+  const textKey = desc.textKey;
+  if (!textKey?.textStyleRange?.length) throw new Error("Not a text layer");
+  const isPostScript = !/\s/.test(fontName) && /[A-Z]/.test(fontName);
+  const newRanges = textKey.textStyleRange.map(r => ({
+    _obj: "textStyleRange",
+    from: r.from,
+    to: r.to,
+    textStyle: {
+      ...r.textStyle,
+      _obj: "textStyle",
+      ...(isPostScript ? { fontPostScriptName: fontName } : { fontName: fontName }),
+    },
+  }));
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "textLayer", textStyleRange: newRanges },
+    _options: { dialogOptions: "dontDisplay" },
+  }]);
+}
+
+// Set text alignment: "left" | "center" | "right" | "justify"
+async function setTextAlignment(layerId, alignment) {
+  const map = { left: "left", center: "center", right: "right", justify: "justifyAll" };
+  const enumVal = map[String(alignment).toLowerCase().trim()];
+  if (!enumVal) throw new Error(`Unsupported alignment: ${alignment}`);
+  const desc = await getLayerDescriptor(layerId);
+  const textKey = desc.textKey;
+  if (!textKey?.paragraphStyleRange?.length) throw new Error("Not a text layer");
+  const newParas = textKey.paragraphStyleRange.map(p => ({
+    _obj: "paragraphStyleRange",
+    from: p.from,
+    to: p.to,
+    paragraphStyle: {
+      ...p.paragraphStyle,
+      _obj: "paragraphStyle",
+      align: { _enum: "alignmentType", _value: enumVal },
+    },
+  }));
+  await selectLayerById(layerId);
+  await bp([{
+    _obj: "set",
+    _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "textLayer", paragraphStyleRange: newParas },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
 }
 
 // Fill/adjustment layers (adjustment-like Color Fill, Gradient Fill, Pattern)
@@ -767,7 +1312,7 @@ function findBgGroup(parent) {
   return findFallback(parent);
 }
 
-async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
+async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY, srcArtRect) {
   originX = originX || 0;
   originY = originY || 0;
   // Group cover: compute ONE scale ratio + ONE translation for the whole BG
@@ -796,44 +1341,114 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
   collect(bgGroup);
   if (!children.length) { log(`[BG] no children`); return; }
 
-  // Find reference bounds — first non-adjustment-fill child with valid size.
-  // If none, fall back to first child.
+  // Find reference bounds. Ported from PSD-To-FE generate.mjs bg detection:
+  //   Tier 1: smartObject/pixel/raster with coverage ≥95% of source artboard
+  //           — that's a "true" background image (designer-intended full cover).
+  //   Tier 2: largest non-fill child by area.
+  //   Tier 3: largest fill-with-mask (gradient/solid shape).
+  //   Tier 4: largest of any kind.
+  // Picking the first child or a small accent leads to wildly inflated
+  // cover scale; the 95%-coverage rule is the most robust signal.
   let refBounds = null;
-  for (const c of children) {
-    const isAdjFill = c.kind === "solidColor" || c.kind === "solidFill"
+  let refName = null;
+  const boundsCache = new Map();
+  async function _b(c) {
+    if (boundsCache.has(c.id)) return boundsCache.get(c.id);
+    try {
+      const b = await getLayerBounds(c.id);
+      boundsCache.set(c.id, b);
+      return b;
+    } catch (e) { return null; }
+  }
+  function isFillKind(c) {
+    return c.kind === "solidColor" || c.kind === "solidFill"
       || c.kind === "gradientFill" || c.kind === "pattern";
-    let hasMask = false;
-    if (isAdjFill) {
+  }
+  function isImageKind(c) {
+    return c.kind === "smartObject" || c.kind === "pixel"
+      || c.kind === "raster" || c.kind === "rasterImage";
+  }
+  // Coverage of a layer over the source artboard rect (intersect / artArea).
+  function coverageOf(b) {
+    if (!srcArtRect || !b) return 0;
+    const ix = Math.max(0, Math.min(b.left + b.width, srcArtRect.left + srcArtRect.width)
+                          - Math.max(b.left, srcArtRect.left));
+    const iy = Math.max(0, Math.min(b.top + b.height, srcArtRect.top + srcArtRect.height)
+                          - Math.max(b.top, srcArtRect.top));
+    const artArea = srcArtRect.width * srcArtRect.height;
+    return artArea > 0 ? (ix * iy) / artArea : 0;
+  }
+  async function pickLargest(filter) {
+    let best = null, bestArea = 0, bestName = null;
+    for (const c of children) {
+      if (!(await filter(c))) continue;
+      const b = await _b(c);
+      if (!b || b.width <= 0 || b.height <= 0) continue;
+      const area = b.width * b.height;
+      if (area > bestArea) { best = b; bestArea = area; bestName = c.name; }
+    }
+    return best ? { bounds: best, name: bestName } : null;
+  }
+  // Tier 1 (NEW): image-kind child with coverage ≥95% of source artboard.
+  // Among multiple matches, pick highest coverage.
+  let pick = null;
+  if (srcArtRect) {
+    let bestCov = 0, bestB = null, bestN = null;
+    for (const c of children) {
+      if (!isImageKind(c)) continue;
+      const b = await _b(c);
+      if (!b || b.width <= 0 || b.height <= 0) continue;
+      const cov = coverageOf(b);
+      if (cov >= 0.95 && cov > bestCov) { bestCov = cov; bestB = b; bestN = c.name; }
+    }
+    if (bestB) {
+      pick = { bounds: bestB, name: bestN };
+      log(`[BG] tier-1 pick (coverage ${(bestCov * 100).toFixed(1)}%)`);
+    }
+  }
+  // Tier 2: largest non-fill child.
+  if (!pick) pick = await pickLargest(async (c) => !isFillKind(c));
+  // Tier 3: largest fill with mask.
+  if (!pick) {
+    pick = await pickLargest(async (c) => {
+      if (!isFillKind(c)) return false;
       try {
         const d = await getLayerDescriptor(c.id);
-        hasMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
-      } catch (e) {}
-    }
-    if (isAdjFill && !hasMask) continue; // skip canvas-cover fills
-    const b = await getLayerBounds(c.id);
-    if (b.width > 0 && b.height > 0) {
-      refBounds = b;
-      log(`[BG] reference layer "${c.name}" bounds=${b.width}x${b.height} at (${b.left},${b.top})`);
-      break;
-    }
+        return !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+      } catch (e) { return false; }
+    });
   }
-  if (!refBounds) {
-    // Fallback: first child with valid bounds.
-    for (const c of children) {
-      const b = await getLayerBounds(c.id);
-      if (b.width > 0 && b.height > 0) { refBounds = b; break; }
-    }
-  }
+  // Tier 4: largest of any kind.
+  if (!pick) pick = await pickLargest(async () => true);
+  if (pick) { refBounds = pick.bounds; refName = pick.name; }
   if (!refBounds) { log(`[BG] no valid reference bounds, skipping`); return; }
+  log(`[BG] reference layer "${refName}" bounds=${refBounds.width}x${refBounds.height} at (${refBounds.left},${refBounds.top})`);
 
-  const scaleX = canvasW / refBounds.width;
-  const scaleY = canvasH / refBounds.height;
+  // Cover scale: use SOURCE ARTBOARD dimensions, not layer bounds. The
+  // designer intent is "fill the artboard"; a single layer's bounds can be
+  // wildly larger or smaller than the artboard (image asset cropped via
+  // smart-object transform, etc.), so layer-derived scale produces wrong
+  // results. Falls back to layer bounds only when srcArtRect missing.
+  const refW = srcArtRect ? srcArtRect.width : refBounds.width;
+  const refH = srcArtRect ? srcArtRect.height : refBounds.height;
+  const scaleX = canvasW / refW;
+  const scaleY = canvasH / refH;
   const scale = Math.max(scaleX, scaleY);
-  const refCenterX = refBounds.left + refBounds.width / 2;
-  const refCenterY = refBounds.top + refBounds.height / 2;
+  // Pivot center: SOURCE ARTBOARD center, not reference layer center. The
+  // reference layer can be a large image asset extending way beyond the
+  // artboard (smart-object crop); its center sits off-axis and pivoting
+  // around it sends every other bg child flying off-canvas. Source artboard
+  // center is the true "design center" — every layer in the bg group was
+  // placed relative to it.
+  const refCenterX = srcArtRect
+    ? srcArtRect.left + srcArtRect.width / 2
+    : refBounds.left + refBounds.width / 2;
+  const refCenterY = srcArtRect
+    ? srcArtRect.top + srcArtRect.height / 2
+    : refBounds.top + refBounds.height / 2;
   const tgtCenterX = originX + canvasW / 2;
   const tgtCenterY = originY + canvasH / 2;
-  log(`[BG] cover scale=${scale.toFixed(4)} refCenter=(${Math.round(refCenterX)},${Math.round(refCenterY)}) tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
+  log(`[BG] cover scale=${scale.toFixed(4)} (ref=${refW}x${refH}${srcArtRect ? " from srcArtRect" : ""}) refCenter=(${Math.round(refCenterX)},${Math.round(refCenterY)})${srcArtRect ? " [srcArt center]" : " [refLayer center]"} tgtCenter=(${Math.round(tgtCenterX)},${Math.round(tgtCenterY)})`);
 
   for (const child of children) {
     try {
@@ -841,13 +1456,97 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
       const bounds = await getLayerBounds(child.id);
       if (bounds.width === 0 || bounds.height === 0) { log(`[BG]   skip: zero bounds`); continue; }
 
-      // Compute child's intended new center (group-pivoted scale).
-      const oldCenterX = bounds.left + bounds.width / 2;
-      const oldCenterY = bounds.top + bounds.height / 2;
-      const newCenterX = tgtCenterX + (oldCenterX - refCenterX) * scale;
-      const newCenterY = tgtCenterY + (oldCenterY - refCenterY) * scale;
-      const newW = bounds.width * scale;
-      const newH = bounds.height * scale;
+      // Port #3: full-canvas helper detection. A FILL layer covering ≥98% of
+      // source artboard (solid color overlay, full-canvas gradient, color
+      // fill adjustment) is a canvas overlay, not a composition element.
+      // Adjustment fills auto-resize to canvas; bounded fills get re-anchored.
+      // Image/smartObject layers are NOT helpers — they need to scale to
+      // cover the new canvas just like the group-pivoted rule does.
+      //
+      // Also detect ADJUSTMENT fill (fill kind with NO vector mask) — those
+      // auto-fill the canvas regardless of bounds, so coverage check might
+      // miss them. Treat them as helpers unconditionally when no mask.
+      const cov = coverageOf(bounds);
+      const isFillHelper = (child.kind === "solidColor" || child.kind === "solidFill"
+        || child.kind === "gradientFill" || child.kind === "pattern");
+      let isAdjFillNoMask = false;
+      if (isFillHelper) {
+        try {
+          const d = await getLayerDescriptor(child.id);
+          const hasMask = !!(d && (d.hasVectorMask === true || d.vectorMaskEnabled === true));
+          isAdjFillNoMask = !hasMask;
+        } catch (e) {}
+      }
+      // GHOST BOUNDS DETECTION: PS can return out-of-canvas bounds for layers
+      // with clipping masks / vector masks / linked shapes — bounds don't
+      // reflect rendered pixels. Indicator: layer entirely outside source
+      // artboard (cov=0%). Such "ghost" bounds scale to absurd positions
+      // when multiplied by cover scale, triggering PS auto-canvas-grow and
+      // breaking downstream coords. Skip transform+move; the layer will
+      // render correctly via its parent clip/mask.
+      const isGhostBounds = !!srcArtRect && cov === 0;
+      log(`[BG]   bounds=${Math.round(bounds.width)}x${Math.round(bounds.height)} at (${Math.round(bounds.left)},${Math.round(bounds.top)}) cov=${(cov * 100).toFixed(1)}% fill=${isFillHelper} adjNoMask=${isAdjFillNoMask}${isGhostBounds ? " GHOST" : ""}`);
+      if (isGhostBounds) {
+        log(`[BG]   ghost bounds (entirely outside source artboard) → skip transform+move`);
+        continue;
+      }
+      if (srcArtRect && isFillHelper && (cov >= 0.98 || isAdjFillNoMask)) {
+        log(`[BG]   full-canvas fill helper (cov=${(cov * 100).toFixed(1)}%${isAdjFillNoMask ? ", adj-no-mask" : ""}) → re-anchor only`);
+        const dx = Math.round(originX - bounds.left);
+        const dy = Math.round(originY - bounds.top);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          try {
+            await selectLayerById(child.id);
+            await bpSafe([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: child.id }],
+              to: { _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: dx },
+                vertical: { _unit: "pixelsUnit", _value: dy } },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+            log(`[BG]   re-anchor move: dx=${dx} dy=${dy}`);
+          } catch (e) { log(`[BG]   re-anchor failed: ${e.message}`); }
+        }
+        continue;
+      }
+
+      // ACCENT DETECTION: bg shape children with coverage < 60% are
+      // decorations (ellipse accents, partial-canvas shapes), NOT part of
+      // the bg cover composition. Cover-scaling them by 6.4× produces giant
+      // shapes off-canvas. Apply CONTAIN scale (min, not max) + relative-%
+      // positioning to keep them sized + placed like content layers.
+      const isAccent = isFillHelper && cov > 0 && cov < 0.6;
+      let childScale = scale; // default: cover scale (max)
+      let newCenterX, newCenterY;
+      if (isAccent) {
+        // Contain scale = min(canvasW/srcW, canvasH/srcH), based on source
+        // artboard dimensions (not layer bounds).
+        childScale = srcArtRect
+          ? Math.min(canvasW / srcArtRect.width, canvasH / srcArtRect.height)
+          : 1;
+        // Relative position: preserve % within source artboard.
+        const oldCx = bounds.left + bounds.width / 2;
+        const oldCy = bounds.top + bounds.height / 2;
+        if (srcArtRect) {
+          const relCx = (oldCx - srcArtRect.left) / srcArtRect.width;
+          const relCy = (oldCy - srcArtRect.top) / srcArtRect.height;
+          newCenterX = originX + relCx * canvasW;
+          newCenterY = originY + relCy * canvasH;
+        } else {
+          newCenterX = tgtCenterX + (oldCx - refCenterX) * childScale;
+          newCenterY = tgtCenterY + (oldCy - refCenterY) * childScale;
+        }
+        log(`[BG]   accent (cov=${(cov * 100).toFixed(1)}%): contain scale=${childScale.toFixed(3)}, rel-position`);
+      } else {
+        // Normal: group-pivoted cover scale.
+        const oldCenterX = bounds.left + bounds.width / 2;
+        const oldCenterY = bounds.top + bounds.height / 2;
+        newCenterX = tgtCenterX + (oldCenterX - refCenterX) * scale;
+        newCenterY = tgtCenterY + (oldCenterY - refCenterY) * scale;
+      }
+      const newW = bounds.width * childScale;
+      const newH = bounds.height * childScale;
       const newLeft = newCenterX - newW / 2;
       const newTop = newCenterY - newH / 2;
 
@@ -868,15 +1567,15 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
 
       await selectLayerById(child.id);
 
-      if (canScale && Math.abs(scale - 1) > 0.01) {
-        log(`[BG]   transform: scale ${(scale * 100).toFixed(1)}%`);
+      if (canScale && Math.abs(childScale - 1) > 0.01) {
+        log(`[BG]   transform: scale ${(childScale * 100).toFixed(1)}%`);
         try {
           await bpSafe([{
             _obj: "transform",
             _target: [{ _ref: "layer", _id: child.id }],
             freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-            width: { _unit: "percentUnit", _value: scale * 100 },
-            height: { _unit: "percentUnit", _value: scale * 100 },
+            width: { _unit: "percentUnit", _value: childScale * 100 },
+            height: { _unit: "percentUnit", _value: childScale * 100 },
             interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
             _options: { dialogOptions: "dontDisplay" }
           }]);
@@ -919,7 +1618,7 @@ async function scaleBgCover(bgGroup, canvasW, canvasH, originX, originY) {
 // Returns { contentBounds, children: [{ name, kind, id, srcLeft, srcTop, srcW, srcH, fontSize }, ...] }
 async function captureContentLayoutV2(artboardLayer, srcArtRect) {
   const contentGroup = artboardLayer.layers
-    ? [...artboardLayer.layers].find(l => l.name.toLowerCase() === "content")
+    ? [...artboardLayer.layers].find(l => isContentGroup(l))
     : null;
   if (!contentGroup || !contentGroup.layers || !contentGroup.layers.length) return null;
 
@@ -1342,7 +2041,7 @@ async function captureContentLayout(artboardLayer, srcW, srcH) {
   const artRect = rectSize(artDesc.artboard?.artboardRect || artDesc.bounds);
 
   const contentGroup = artboardLayer.layers
-    ? [...artboardLayer.layers].find(l => l.name.toLowerCase() === "content")
+    ? [...artboardLayer.layers].find(l => isContentGroup(l))
     : null;
   if (!contentGroup || !contentGroup.layers) return null;
 
@@ -1355,16 +2054,110 @@ async function captureContentLayout(artboardLayer, srcW, srcH) {
         ? await getGroupBounds(child)
         : await getLayerBounds(child.id);
       if (bounds.width === 0 || bounds.height === 0) continue;
+      // Pin distances (px) from each edge — used by auto-anchor detection
+      // (ported from PSD-To-FE generate.mjs). Stored in raw px so target-side
+      // can scale them by targetW/srcW when applying.
+      const localLeft = bounds.left - artRect.left;
+      const localTop = bounds.top - artRect.top;
       layout.push({
         name: child.name.toLowerCase(),
-        relCenterX: (bounds.left + bounds.width / 2 - artRect.left) / srcW,
-        relCenterY: (bounds.top + bounds.height / 2 - artRect.top) / srcH,
+        relCenterX: (localLeft + bounds.width / 2) / srcW,
+        relCenterY: (localTop + bounds.height / 2) / srcH,
         relWidth: bounds.width / srcW,
-        relHeight: bounds.height / srcH
+        relHeight: bounds.height / srcH,
+        srcW, srcH,
+        bWidth: bounds.width,
+        bHeight: bounds.height,
+        leftDist: Math.max(0, localLeft),
+        rightDist: Math.max(0, srcW - (localLeft + bounds.width)),
+        topDist: Math.max(0, localTop),
+        bottomDist: Math.max(0, srcH - (localTop + bounds.height))
       });
     } catch (e) { /* skip */ }
   }
   return layout.length > 0 ? layout : null;
+}
+
+// Scale image/smartObject/pixel leaves under a layer uniformly by `scale`.
+// Used by smart match alongside scaleGroupTextFonts so logos/icons/CTA
+// graphics grow consistently with text. Skip fill kinds (handled by bg
+// pipeline or kept as adjustment layers).
+async function scaleGroupImageLeaves(parent, scale) {
+  if (!scale || Math.abs(scale - 1) < 0.01) return;
+  const targets = [];
+  function walk(l) {
+    if (!l) return;
+    if (l.layers && l.layers.length) {
+      for (const c of l.layers) walk(c);
+      return;
+    }
+    if (isImageLayer(l) || l.kind === "raster" || l.kind === "rasterImage") {
+      targets.push(l);
+    }
+  }
+  if (parent.layers) {
+    for (const c of parent.layers) walk(c);
+  }
+  if (!targets.length) return;
+  log(`[IMG-SCALE] ${targets.length} image leaf/leaves × ${scale.toFixed(3)}`);
+  for (const t of targets) {
+    try {
+      const b = await getLayerBounds(t.id);
+      if (!b || b.width <= 0 || b.height <= 0) continue;
+      log(`[IMG-SCALE] "${t.name}" ${Math.round(b.width)}x${Math.round(b.height)} × ${scale.toFixed(2)}`);
+      await selectLayerById(t.id);
+      await bpSafe([{
+        _obj: "transform",
+        _target: [{ _ref: "layer", _id: t.id }],
+        freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+        width: { _unit: "percentUnit", _value: scale * 100 },
+        height: { _unit: "percentUnit", _value: scale * 100 },
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        _options: { dialogOptions: "dontDisplay" }
+      }]);
+    } catch (e) { log(`[IMG-SCALE] "${t.name}" ERROR: ${e.message}`); }
+  }
+}
+
+// Scale font size of all text leaves under a layer by `fontScale`. Used by
+// smart match to enlarge text uniformly with the canvas (Option A: uniform
+// contain scale = min(canvasW/srcW, canvasH/srcH)). For each text leaf,
+// reads current visual px = rawPt × transform.yy, multiplies by fontScale,
+// then calls setTextFontSize() with the new visual px target.
+async function scaleGroupTextFonts(parent, fontScale) {
+  if (!fontScale || Math.abs(fontScale - 1) < 0.01) return;
+  const texts = [];
+  function walk(l) {
+    if (!l) return;
+    if (isTextLayer(l)) { texts.push(l); return; }
+    if (l.layers && l.layers.length) {
+      for (const c of l.layers) walk(c);
+    }
+  }
+  if (parent.layers) {
+    for (const c of parent.layers) walk(c);
+  } else if (isTextLayer(parent)) {
+    texts.push(parent);
+  }
+  if (!texts.length) return;
+  log(`[FONT-SCALE] ${texts.length} text layer(s) × ${(fontScale).toFixed(3)}`);
+  for (const t of texts) {
+    try {
+      const desc = await getLayerDescriptor(t.id);
+      const tk = desc.textKey;
+      if (!tk?.textStyleRange?.length) continue;
+      const rawPt = tk.textStyleRange[0]?.textStyle?.size?._value;
+      if (!rawPt || rawPt <= 0) continue;
+      const tx = tk.transform;
+      let curScale = 1;
+      if (tx) curScale = Math.abs(tx.yy?._value ?? tx.yy ?? 1);
+      const curVisualPx = rawPt * curScale;
+      const newVisualPx = Math.max(6, Math.round(curVisualPx * fontScale));
+      if (Math.abs(newVisualPx - curVisualPx) < 0.5) continue;
+      log(`[FONT-SCALE] "${t.name}" ${curVisualPx.toFixed(1)}px → ${newVisualPx}px`);
+      await setTextFontSize(t.id, newVisualPx);
+    } catch (e) { log(`[FONT-SCALE] "${t.name}" ERROR: ${e.message}`); }
+  }
 }
 
 async function scaleGroupChildren(group, scale) {
@@ -1473,7 +2266,7 @@ async function getGroupBounds(group) {
 
 // ─── Smart Layout: scale + reposition content groups ───
 
-async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX, originY, sourceLayout, targetSizeKey) {
+async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX, originY, sourceLayout, targetSizeKey, preBoundsByName) {
   originX = originX || 0;
   originY = originY || 0;
 
@@ -1485,15 +2278,16 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
     }
   }
 
-  // Find content group
+  // Find content group (configurable pattern — default matches content/main/items)
   const contentGroup = parent.layers
-    ? [...parent.layers].find(l => l.name.toLowerCase() === "content")
+    ? [...parent.layers].find(l => isContentGroup(l))
     : null;
 
   // Fallback to old fitContentLayers if no content group or no source layout
   if (!contentGroup || !sourceLayout) {
     log(`[LAYOUT] No content group or source layout, fallback to fitContentLayers`);
-    return await fitContentLayers(parent, canvasW, canvasH, originX, originY, false, ruleNames);
+    const srcArtRectFb = { left: originX, top: originY, width: srcW, height: srcH, right: originX + srcW, bottom: originY + srcH };
+    return await fitContentLayers(parent, canvasW, canvasH, originX, originY, false, ruleNames, srcW, srcH, srcArtRectFb, preBoundsByName);
   }
 
   log(`[LAYOUT] Smart layout: ${contentGroup.layers.length} groups, ${srcW}x${srcH} → ${canvasW}x${canvasH}`);
@@ -1547,32 +2341,97 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
       }
       if (bounds.width === 0 || bounds.height === 0) continue;
       log(`[LAYOUT] "${child.name}": actual bounds ${Math.round(bounds.width)}x${Math.round(bounds.height)} at (${Math.round(bounds.left)},${Math.round(bounds.top)})`);
-      log(`[LAYOUT] "${child.name}": src rel cx=${srcInfo.relCenterX.toFixed(3)} cy=${srcInfo.relCenterY.toFixed(3)}`);
 
-      // Target position in artboard coords (0-based)
-      const targetCenterX = canvasLeft + srcInfo.relCenterX * canvasW;
-      const targetCenterY = canvasTop + srcInfo.relCenterY * canvasH;
+      // ─ Auto-anchor positioning (ported from PSD-To-FE generate.mjs) ─
+      // Instead of % center for every layer, detect which edge(s) the layer
+      // was "anchored" to in source by checking pin distances. Apply target
+      // position by:
+      //   right-anchor  → pin to right edge (rightDist × targetW/srcW)
+      //   left-anchor   → pin to left edge  (leftDist × targetW/srcW)
+      //   center-anchor → preserve center ratio (legacy behavior)
+      //   stretch       → proportional left (when layer spans canvas)
+      // Same applies vertically.
+      const pinThreshold = 0.1; // 10% of canvas dim — same default as generate.mjs
+      const detectHAnchor = (leftDist, rightDist, elW) => {
+        if (elW >= srcW * 0.7) return "stretch";
+        const leftNear = leftDist <= srcW * pinThreshold;
+        const rightNear = rightDist <= srcW * pinThreshold;
+        if (leftNear && rightNear) return "stretch";
+        if (rightNear) return "right";
+        if (leftNear) return "left";
+        return "center";
+      };
+      const detectVAnchor = (topDist, bottomDist, elH) => {
+        if (elH >= srcH * 0.7) return "stretch";
+        const topNear = topDist <= srcH * pinThreshold;
+        const bottomNear = bottomDist <= srcH * pinThreshold;
+        if (topNear && bottomNear) return "stretch";
+        if (bottomNear) return "bottom";
+        if (topNear) return "top";
+        return "middle";
+      };
 
-      // Current center (doc coords — move command uses doc coords)
-      const curCenterX = bounds.left + bounds.width / 2;
-      const curCenterY = bounds.top + bounds.height / 2;
+      // Pins from captureContentLayout (raw px relative to source artboard).
+      // Fallback to bounds-derived pins if srcInfo lacks them (older capture).
+      const leftDist = srcInfo.leftDist ?? 0;
+      const rightDist = srcInfo.rightDist ?? 0;
+      const topDist = srcInfo.topDist ?? 0;
+      const bottomDist = srcInfo.bottomDist ?? 0;
+      const srcElW = srcInfo.bWidth ?? bounds.width;
+      const srcElH = srcInfo.bHeight ?? bounds.height;
+      const hAnchor = detectHAnchor(leftDist, rightDist, srcElW);
+      const vAnchor = detectVAnchor(topDist, bottomDist, srcElH);
+      const scaleXAxis = canvasW / srcW;
+      const scaleYAxis = canvasH / srcH;
+      log(`[LAYOUT] "${child.name}": anchor h=${hAnchor} v=${vAnchor} (pins L=${Math.round(leftDist)} R=${Math.round(rightDist)} T=${Math.round(topDist)} B=${Math.round(bottomDist)})`);
 
-      let dx = targetCenterX - curCenterX;
-      let dy = targetCenterY - curCenterY;
-      log(`[LAYOUT] "${child.name}": target=(${Math.round(targetCenterX)},${Math.round(targetCenterY)}) cur=(${Math.round(curCenterX)},${Math.round(curCenterY)}) raw dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+      let targetLeft;
+      if (hAnchor === "right") {
+        targetLeft = canvasLeft + canvasW - bounds.width - rightDist * scaleXAxis;
+      } else if (hAnchor === "left") {
+        targetLeft = canvasLeft + leftDist * scaleXAxis;
+      } else if (hAnchor === "stretch") {
+        targetLeft = canvasLeft + leftDist * scaleXAxis;
+      } else {
+        // center: preserve center ratio
+        targetLeft = canvasLeft + srcInfo.relCenterX * canvasW - bounds.width / 2;
+      }
+      let targetTop;
+      if (vAnchor === "bottom") {
+        targetTop = canvasTop + canvasH - bounds.height - bottomDist * scaleYAxis;
+      } else if (vAnchor === "top") {
+        targetTop = canvasTop + topDist * scaleYAxis;
+      } else if (vAnchor === "stretch") {
+        targetTop = canvasTop + topDist * scaleYAxis;
+      } else {
+        // middle: preserve center ratio
+        targetTop = canvasTop + srcInfo.relCenterY * canvasH - bounds.height / 2;
+      }
 
-      // Clamp: ensure final position within canvas
+      let dx = targetLeft - bounds.left;
+      let dy = targetTop - bounds.top;
+      log(`[LAYOUT] "${child.name}": target=(${Math.round(targetLeft)},${Math.round(targetTop)}) cur=(${Math.round(bounds.left)},${Math.round(bounds.top)}) raw dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+
+      // Clamp: ensure final position within canvas. Skip padding clamp for
+      // edge-anchored layers (right/bottom/stretch) so they flush to their
+      // intended edge instead of being pushed inward.
       const pad = padding;
       let newL = bounds.left + dx;
       let newR = newL + bounds.width;
       let newT = bounds.top + dy;
       let newB = newT + bounds.height;
+      const hardR = canvasLeft + canvasW;
+      const hardB = canvasTop + canvasH;
+      const padR = (hAnchor === "right" || hAnchor === "stretch") ? 0 : pad;
+      const padL = (hAnchor === "left" || hAnchor === "stretch") ? 0 : pad;
+      const padB = (vAnchor === "bottom" || vAnchor === "stretch") ? 0 : pad;
+      const padT = (vAnchor === "top" || vAnchor === "stretch") ? 0 : pad;
 
-      if (newR > canvasLeft + canvasW - pad) { dx -= newR - (canvasLeft + canvasW - pad); newL = bounds.left + dx; }
-      if (newL < canvasLeft + pad) { dx += (canvasLeft + pad) - newL; }
+      if (newR > hardR - padR) { dx -= newR - (hardR - padR); newL = bounds.left + dx; }
+      if (newL < canvasLeft + padL) { dx += (canvasLeft + padL) - newL; }
       newT = bounds.top + dy; newB = newT + bounds.height;
-      if (newB > canvasTop + canvasH - pad) { dy -= newB - (canvasTop + canvasH - pad); newT = bounds.top + dy; }
-      if (newT < canvasTop + pad) { dy += (canvasTop + pad) - newT; }
+      if (newB > hardB - padB) { dy -= newB - (hardB - padB); newT = bounds.top + dy; }
+      if (newT < canvasTop + padT) { dy += (canvasTop + padT) - newT; }
 
       log(`[LAYOUT] "${child.name}": move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
       await moveGroupChildren(child, dx, dy);
@@ -1581,9 +2440,19 @@ async function smartLayoutContent(parent, srcW, srcH, canvasW, canvasH, originX,
     }
   }
 
-  // Handle remaining layers outside content/background groups with fitContentLayers
+  // Handle remaining layers outside content/background groups with fitContentLayers.
+  // Pass source dims + the "source artboard rect" (which equals the target
+  // origin for non-TD flows where bounds were uniform-scaled in place; for TD
+  // flow the parent artboard is at canvasLeft/Top and layers still hold
+  // source-size bounds, so srcW×srcH starting at target origin = correct
+  // reference for pin distance computation).
   log(`[LAYOUT] Fitting remaining layers outside content/background...`);
-  await fitContentLayers(parent, canvasW, canvasH, canvasLeft, canvasTop, true, ruleNames);
+  const srcArtRectForFit = {
+    left: canvasLeft, top: canvasTop,
+    width: srcW, height: srcH,
+    right: canvasLeft + srcW, bottom: canvasTop + srcH
+  };
+  await fitContentLayers(parent, canvasW, canvasH, canvasLeft, canvasTop, true, ruleNames, srcW, srcH, srcArtRectForFit, preBoundsByName);
 }
 
 // ─── Fit content layers inside canvas (fallback) ───
@@ -1648,9 +2517,15 @@ async function fitLockGroup(group, canvasW, canvasH, canvasLeft, canvasTop) {
   }
 }
 
-async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg, ruleNames) {
+async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skipContentBg, ruleNames, srcW, srcH, srcArtRect, preBoundsByName) {
   originX = originX || 0;
   originY = originY || 0;
+  // Auto-anchor enabled when caller provides source dimensions. Without them
+  // we fall back to legacy "push into canvas" clamp behavior.
+  // `preBoundsByName` (optional): map layer name → bounds captured BEFORE
+  // font scale, used so anchor detection sees the layer's original size
+  // relative to source artboard (post-font-scale bounds skew toward stretch).
+  const useAnchor = !!(srcW && srcH && srcArtRect);
   // Collect leaves (individual layers to scale/clamp) + lock-groups (atomic transforms).
   // A *-lock group is treated as a single unit: its whole bbox is fit-and-clamped,
   // and recursion stops at the group so children are NOT collected as leaves.
@@ -1659,10 +2534,7 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
   const lockGroups = [];
   function walk(layer, insideRuledGroup, insideGG) {
     if (isBgGroup(layer)) return;
-    if (skipContentBg && layer.name) {
-      const ln = layer.name.toLowerCase();
-      if (ln === "content" || ln === "guideline" || ln === "guidline") return;
-    }
+    if (skipContentBg && (isContentGroup(layer) || isGuidelineGroup(layer))) return;
     // Skip if this layer or an ancestor has a rule
     const isRuled = insideRuledGroup || (ruleNames && layer.name && ruleNames.has(layer.name.toLowerCase()));
     if (isRuled) return;
@@ -1741,15 +2613,95 @@ async function fitContentLayers(parent, canvasW, canvasH, originX, originY, skip
       const b = await getLayerBounds(layer.id);
       let dx = 0, dy = 0;
 
-      // Horizontal: push into canvas (using absolute artboard bounds)
-      if (b.right <= canvasLeft) dx = canvasLeft - b.left + 10;
-      else if (b.left >= canvasRight) dx = (canvasRight - 10) - b.right;
-      else if (b.left < canvasLeft) dx = canvasLeft - b.left;
+      if (useAnchor) {
+        // Auto-anchor positioning (ported from PSD-To-FE generate.mjs).
+        // Use PRE-SCALE bounds for anchor detection (so font-scaled text
+        // doesn't get misdetected as "stretch" just because its current
+        // width grew past 70% of source). Fall back to current bounds when
+        // pre-bounds not provided.
+        const preB = preBoundsByName?.get(layer.name) || b;
+        const localLeft = preB.left - srcArtRect.left;
+        const localTop = preB.top - srcArtRect.top;
+        const leftDist = Math.max(0, localLeft);
+        const rightDist = Math.max(0, srcW - (localLeft + preB.width));
+        const topDist = Math.max(0, localTop);
+        const bottomDist = Math.max(0, srcH - (localTop + preB.height));
+        const pinThreshold = 0.1;
+        const detectH = () => {
+          if (preB.width >= srcW * 0.7) return "stretch";
+          const ln = leftDist <= srcW * pinThreshold;
+          const rn = rightDist <= srcW * pinThreshold;
+          if (ln && rn) return "stretch";
+          if (rn) return "right";
+          if (ln) return "left";
+          return "center";
+        };
+        const detectV = () => {
+          if (preB.height >= srcH * 0.7) return "stretch";
+          const tn = topDist <= srcH * pinThreshold;
+          const bn = bottomDist <= srcH * pinThreshold;
+          if (tn && bn) return "stretch";
+          if (bn) return "bottom";
+          if (tn) return "top";
+          return "middle";
+        };
+        const hAnc = detectH();
+        const vAnc = detectV();
+        const sX = canvasW / srcW;
+        const sY = canvasH / srcH;
+        log(`[FIT]   anchor h=${hAnc} v=${vAnc} (pins L=${Math.round(leftDist)} R=${Math.round(rightDist)} T=${Math.round(topDist)} B=${Math.round(bottomDist)})`);
 
-      // Vertical: push into canvas
-      if (b.bottom <= canvasTop) dy = canvasTop - b.top + 10;
-      else if (b.top >= canvasBottom) dy = (canvasBottom - 10) - b.bottom;
-      else if (b.top < canvasTop) dy = canvasTop - b.top;
+        // Position computation: use SOURCE center (from pre-bounds) to compute
+        // target center, then anchor current (post-scale) bounds to it. This
+        // keeps spatial relationship intact: layer ends up where designer
+        // placed it in source, regardless of how much it grew during scale.
+        let tgtLeft;
+        if (hAnc === "right") tgtLeft = canvasLeft + canvasW - b.width - rightDist * sX;
+        else if (hAnc === "left" || hAnc === "stretch") tgtLeft = canvasLeft + leftDist * sX;
+        else {
+          // center: target center = source center ratio × canvasW
+          const srcCenterX = localLeft + preB.width / 2;
+          const tgtCenterX = canvasLeft + (srcCenterX / srcW) * canvasW;
+          tgtLeft = tgtCenterX - b.width / 2;
+        }
+        let tgtTop;
+        if (vAnc === "bottom") tgtTop = canvasTop + canvasH - b.height - bottomDist * sY;
+        else if (vAnc === "top" || vAnc === "stretch") tgtTop = canvasTop + topDist * sY;
+        else {
+          // middle: target center = source center ratio × canvasH
+          const srcCenterY = localTop + preB.height / 2;
+          const tgtCenterY = canvasTop + (srcCenterY / srcH) * canvasH;
+          tgtTop = tgtCenterY - b.height / 2;
+        }
+        dx = tgtLeft - b.left;
+        dy = tgtTop - b.top;
+
+        // Soft-clamp: prevent layer from extending past canvas edges. This
+        // handles cases where font-scale expanded a text layer past its
+        // anchored center position. Skip clamp if anchor is stretch (the
+        // layer is intentionally spanning the canvas).
+        const cR = canvasLeft + canvasW;
+        const cB = canvasTop + canvasH;
+        let newL = b.left + dx, newR = newL + b.width;
+        let newT = b.top + dy, newB = newT + b.height;
+        if (hAnc !== "stretch") {
+          if (newR > cR) { dx -= newR - cR; newL = b.left + dx; }
+          if (newL < canvasLeft) dx += canvasLeft - newL;
+        }
+        if (vAnc !== "stretch") {
+          if (newB > cB) { dy -= newB - cB; newT = b.top + dy; }
+          if (newT < canvasTop) dy += canvasTop - newT;
+        }
+      } else {
+        // Legacy: push into canvas if completely outside.
+        if (b.right <= canvasLeft) dx = canvasLeft - b.left + 10;
+        else if (b.left >= canvasRight) dx = (canvasRight - 10) - b.right;
+        else if (b.left < canvasLeft) dx = canvasLeft - b.left;
+
+        if (b.bottom <= canvasTop) dy = canvasTop - b.top + 10;
+        else if (b.top >= canvasBottom) dy = (canvasBottom - 10) - b.bottom;
+        else if (b.top < canvasTop) dy = canvasTop - b.top;
+      }
 
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         log(`[FIT]   move: dx=${Math.round(dx)} dy=${Math.round(dy)}`);
@@ -2180,7 +3132,7 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
         // RIGHT BEFORE we transform/move it. Compare against expected chain
         // (e.g. should be "content" group, not "<root>") to spot mid-loop
         // PS evictions caused by previous rules' moves.
-        try {
+        if (DEBUG_RULES) try {
           const chain = [];
           let p = layer.parent;
           let safety = 10;
@@ -2225,12 +3177,15 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           hasBothWH = hasElemW && hasElemH;
         }
 
-        // SIZE-DEBUG: snapshot bounds BEFORE any size transforms, plus target from rule
-        const isGroupLayer = layer.layers && layer.layers.length > 0;
-        const sizeBefore = isGroupLayer ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
-        const tw = targetW !== undefined ? Math.round(targetW) : "?";
-        const th = targetH !== undefined ? Math.round(targetH) : "?";
-        log(`[SIZE-DEBUG] "${layer.name}" BEFORE: ${Math.round(sizeBefore.width)}x${Math.round(sizeBefore.height)} → target: ${tw}x${th}${isGroupLayer ? " (group — size skipped)" : ""}`);
+        // SIZE-DEBUG: snapshot bounds BEFORE any size transforms, plus target from rule.
+        // Skipped when DEBUG_RULES=false — this read is purely for logging.
+        if (DEBUG_RULES) {
+          const isGroupLayer = layer.layers && layer.layers.length > 0;
+          const sizeBefore = isGroupLayer ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+          const tw = targetW !== undefined ? Math.round(targetW) : "?";
+          const th = targetH !== undefined ? Math.round(targetH) : "?";
+          log(`[SIZE-DEBUG] "${layer.name}" BEFORE: ${Math.round(sizeBefore.width)}x${Math.round(sizeBefore.height)} → target: ${tw}x${th}${isGroupLayer ? " (group — size skipped)" : ""}`);
+        }
 
         // 1. TEXT: set fontSize directly
         const targetFontSize = rule._fontSize;
@@ -2313,25 +3268,29 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           }
         }
 
-        // Position: get current bounds WITHOUT effects for accurate positioning
+        // Position: get current bounds WITHOUT effects for accurate positioning.
+        // boundsWithFx is ONLY used by the diagnostic logs below — skip its read
+        // entirely when DEBUG_RULES=false (saves 1 round-trip per layer).
         const isGroup = layer.layers && layer.layers.length > 0;
-        const boundsWithFx = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
         const boundsNoFx = isGroup ? await getGroupBoundsNoEffects(layer) : await getLayerBoundsNoEffects(layer.id);
-        log(`[RULE]   boundsWithFx: (${Math.round(boundsWithFx.left)},${Math.round(boundsWithFx.top)}) ${Math.round(boundsWithFx.width)}x${Math.round(boundsWithFx.height)}`);
-        log(`[RULE]   boundsNoFx:   (${Math.round(boundsNoFx.left)},${Math.round(boundsNoFx.top)}) ${Math.round(boundsNoFx.width)}x${Math.round(boundsNoFx.height)}`);
+        if (DEBUG_RULES) {
+          const boundsWithFx = isGroup ? await getGroupBounds(layer) : await getLayerBounds(layer.id);
+          log(`[RULE]   boundsWithFx: (${Math.round(boundsWithFx.left)},${Math.round(boundsWithFx.top)}) ${Math.round(boundsWithFx.width)}x${Math.round(boundsWithFx.height)}`);
+          log(`[RULE]   boundsNoFx:   (${Math.round(boundsNoFx.left)},${Math.round(boundsNoFx.top)}) ${Math.round(boundsNoFx.width)}x${Math.round(boundsNoFx.height)}`);
 
-        // SIZE-DEBUG: AFTER all size transforms, compare to target
-        const aw = Math.round(boundsWithFx.width);
-        const ah = Math.round(boundsWithFx.height);
-        if (isGroup) {
-          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (group — size not enforced)`);
-        } else if (targetW !== undefined || targetH !== undefined) {
-          const dW = targetW !== undefined ? aw - Math.round(targetW) : 0;
-          const dH = targetH !== undefined ? ah - Math.round(targetH) : 0;
-          const okSize = Math.abs(dW) <= 1 && Math.abs(dH) <= 1 ? "OK" : "DRIFT";
-          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} | drift: dW=${dW} dH=${dH} ${okSize}`);
-        } else {
-          log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (no size target in rule)`);
+          // SIZE-DEBUG: AFTER all size transforms, compare to target
+          const aw = Math.round(boundsWithFx.width);
+          const ah = Math.round(boundsWithFx.height);
+          if (isGroup) {
+            log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (group — size not enforced)`);
+          } else if (targetW !== undefined || targetH !== undefined) {
+            const dW = targetW !== undefined ? aw - Math.round(targetW) : 0;
+            const dH = targetH !== undefined ? ah - Math.round(targetH) : 0;
+            const okSize = Math.abs(dW) <= 1 && Math.abs(dH) <= 1 ? "OK" : "DRIFT";
+            log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} | drift: dW=${dW} dH=${dH} ${okSize}`);
+          } else {
+            log(`[SIZE-DEBUG] "${layer.name}" AFTER:  ${aw}x${ah} (no size target in rule)`);
+          }
         }
         const bounds = boundsNoFx;
         if (bounds.width === 0 || bounds.height === 0) { log(`[RULE]   skip: zero bounds`); continue; }
@@ -2406,18 +3365,20 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
           } else {
             const expectedLeft = Math.round(bounds.left + dx);
             const expectedTop = Math.round(bounds.top + dy);
-            log(`[POS-DEBUG] "${layer.name}" BEFORE move: left=${Math.round(bounds.left)} top=${Math.round(bounds.top)} → expected: left=${expectedLeft} top=${expectedTop}`);
+            if (DEBUG_RULES) {
+              log(`[POS-DEBUG] "${layer.name}" BEFORE move: left=${Math.round(bounds.left)} top=${Math.round(bounds.top)} → expected: left=${expectedLeft} top=${expectedTop}`);
 
-            // DIAG: snapshot parent + sibling layers state BEFORE move so we
-            // can correlate any structural drift (PS auto-evicts layers when
-            // their bounds fall outside the artboard rect, and side-effects
-            // can ripple through the layer panel — we want to see this).
-            try {
-              const parentName = layer.parent === layer.parent?.parent ? "<root>" : (layer.parent?.name || "<unknown>");
-              const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
-              const rootCount = docHandle ? docHandle.layers.length : -1;
-              log(`[MOVE-DIAG] "${layer.name}" id=${layer.id} parent="${parentName}" rootCount=${rootCount} BEFORE move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
-            } catch (e) { /* skip */ }
+              // DIAG: snapshot parent + sibling layers state BEFORE move so we
+              // can correlate any structural drift (PS auto-evicts layers when
+              // their bounds fall outside the artboard rect, and side-effects
+              // can ripple through the layer panel — we want to see this).
+              try {
+                const parentName = layer.parent === layer.parent?.parent ? "<root>" : (layer.parent?.name || "<unknown>");
+                const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+                const rootCount = docHandle ? docHandle.layers.length : -1;
+                log(`[MOVE-DIAG] "${layer.name}" id=${layer.id} parent="${parentName}" rootCount=${rootCount} BEFORE move dx=${Math.round(dx)} dy=${Math.round(dy)}`);
+              } catch (e) { /* skip */ }
+            }
 
             await selectLayerById(layer.id);
             await bpSafe([{
@@ -2430,67 +3391,73 @@ async function applyLayerRules(docOrArtboard, targetSizeKey, canvasW, canvasH, o
               },
               _options: { dialogOptions: "dontDisplay" }
             }]);
-            const afterMove = await getLayerBoundsNoEffects(layer.id);
-            const deltaL = Math.round(afterMove.left) - expectedLeft;
-            const deltaT = Math.round(afterMove.top) - expectedTop;
-            const ok = Math.abs(deltaL) <= 1 && Math.abs(deltaT) <= 1 ? "OK" : "DRIFT";
-            log(`[POS-DEBUG] "${layer.name}" AFTER move:  left=${Math.round(afterMove.left)} top=${Math.round(afterMove.top)} | drift: dL=${deltaL} dT=${deltaT} ${ok}`);
 
-            // DIAG: snapshot AFTER move — did parent change? did root layer
-            // count change (= someone got evicted to root)? Also dump current
-            // bounds/parent of every artboard in the doc to spot artboard
-            // drift caused by a layer move.
-            try {
-              const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
-              if (docHandle) {
-                const rootCountAfter = docHandle.layers.length;
-                // Re-read parent (UXP layer.parent may not auto-update; refetch by id)
-                let parentNameAfter = "<unknown>";
-                try {
-                  for (const r of docHandle.layers) {
-                    if (r.id === layer.id) { parentNameAfter = "<root>"; break; }
-                    function walk(p) {
-                      for (const c of p.layers || []) {
-                        if (c.id === layer.id) { parentNameAfter = p.name || "<root>"; return true; }
-                        if (c.layers && c.layers.length && walk(c)) return true;
-                      }
-                      return false;
-                    }
-                    if (walk(r)) break;
-                  }
-                } catch (e) { /* skip */ }
-                log(`[MOVE-DIAG] "${layer.name}" AFTER move: parent="${parentNameAfter}" rootCount=${rootCountAfter}`);
-                // List every artboard at root + its rect — confirms whether
-                // an unrelated artboard (e.g. the source) got pushed around.
-                for (const r of docHandle.layers) {
+            // Post-move verify + full doc tree dump — only when debugging.
+            // Each iteration costs 1 bounds read + N artboard descriptor reads +
+            // O(layers) tree walk. Skipping in normal runs saves seconds per clone.
+            if (DEBUG_RULES) {
+              const afterMove = await getLayerBoundsNoEffects(layer.id);
+              const deltaL = Math.round(afterMove.left) - expectedLeft;
+              const deltaT = Math.round(afterMove.top) - expectedTop;
+              const ok = Math.abs(deltaL) <= 1 && Math.abs(deltaT) <= 1 ? "OK" : "DRIFT";
+              log(`[POS-DEBUG] "${layer.name}" AFTER move:  left=${Math.round(afterMove.left)} top=${Math.round(afterMove.top)} | drift: dL=${deltaL} dT=${deltaT} ${ok}`);
+
+              // DIAG: snapshot AFTER move — did parent change? did root layer
+              // count change (= someone got evicted to root)? Also dump current
+              // bounds/parent of every artboard in the doc to spot artboard
+              // drift caused by a layer move.
+              try {
+                const docHandle = (typeof app !== "undefined" && app.activeDocument) ? app.activeDocument : null;
+                if (docHandle) {
+                  const rootCountAfter = docHandle.layers.length;
+                  // Re-read parent (UXP layer.parent may not auto-update; refetch by id)
+                  let parentNameAfter = "<unknown>";
                   try {
-                    const rd = await getLayerDescriptor(r.id);
-                    const isAb = !!(rd.artboardEnabled || rd.artboard);
-                    if (isAb) {
-                      const ar = rectSize(rd.artboard?.artboardRect || rd.bounds);
-                      log(`[MOVE-DIAG]   artboard "${r.name}" id=${r.id} rect=(L${ar.left},T${ar.top},R${ar.right},B${ar.bottom}) ${ar.width}x${ar.height}`);
+                    for (const r of docHandle.layers) {
+                      if (r.id === layer.id) { parentNameAfter = "<root>"; break; }
+                      function walk(p) {
+                        for (const c of p.layers || []) {
+                          if (c.id === layer.id) { parentNameAfter = p.name || "<root>"; return true; }
+                          if (c.layers && c.layers.length && walk(c)) return true;
+                        }
+                        return false;
+                      }
+                      if (walk(r)) break;
                     }
                   } catch (e) { /* skip */ }
-                }
-                // Dump every root layer (and its first-level children) so we
-                // can see when a non-artboard layer ends up at the root level
-                // (PS evicting children when their bounds fall outside parent).
-                log(`[MOVE-DIAG]   doc root layers (full):`);
-                for (const r of docHandle.layers) {
-                  log(`[MOVE-DIAG]     [root] "${r.name}" id=${r.id} kind=${r.kind} children=${r.layers?.length || 0}`);
-                  if (r.layers && r.layers.length) {
-                    for (const c of r.layers) {
-                      log(`[MOVE-DIAG]       [child] "${c.name}" id=${c.id} kind=${c.kind} children=${c.layers?.length || 0}`);
-                      if (c.layers && c.layers.length) {
-                        for (const gc of c.layers) {
-                          log(`[MOVE-DIAG]         [grandchild] "${gc.name}" id=${gc.id} kind=${gc.kind}`);
+                  log(`[MOVE-DIAG] "${layer.name}" AFTER move: parent="${parentNameAfter}" rootCount=${rootCountAfter}`);
+                  // List every artboard at root + its rect — confirms whether
+                  // an unrelated artboard (e.g. the source) got pushed around.
+                  for (const r of docHandle.layers) {
+                    try {
+                      const rd = await getLayerDescriptor(r.id);
+                      const isAb = !!(rd.artboardEnabled || rd.artboard);
+                      if (isAb) {
+                        const ar = rectSize(rd.artboard?.artboardRect || rd.bounds);
+                        log(`[MOVE-DIAG]   artboard "${r.name}" id=${r.id} rect=(L${ar.left},T${ar.top},R${ar.right},B${ar.bottom}) ${ar.width}x${ar.height}`);
+                      }
+                    } catch (e) { /* skip */ }
+                  }
+                  // Dump every root layer (and its first-level children) so we
+                  // can see when a non-artboard layer ends up at the root level
+                  // (PS evicting children when their bounds fall outside parent).
+                  log(`[MOVE-DIAG]   doc root layers (full):`);
+                  for (const r of docHandle.layers) {
+                    log(`[MOVE-DIAG]     [root] "${r.name}" id=${r.id} kind=${r.kind} children=${r.layers?.length || 0}`);
+                    if (r.layers && r.layers.length) {
+                      for (const c of r.layers) {
+                        log(`[MOVE-DIAG]       [child] "${c.name}" id=${c.id} kind=${c.kind} children=${c.layers?.length || 0}`);
+                        if (c.layers && c.layers.length) {
+                          for (const gc of c.layers) {
+                            log(`[MOVE-DIAG]         [grandchild] "${gc.name}" id=${gc.id} kind=${gc.kind}`);
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
-            } catch (e) { /* skip */ }
+              } catch (e) { /* skip */ }
+            }
 
             log(`[RULE]   moved dx=${Math.round(dx)} dy=${Math.round(dy)}`);
           }
@@ -2705,20 +3672,47 @@ async function cloneAsArtboards() {
           log(`  Skip: no matching targets for this source`);
           continue;
         }
-        // Use temp-doc pipeline (isolates canvas-grow side effects, handles
-        // sentinel bounds, no eviction at resize). srcTargets uses {raw, width,
-        // height, variant} from parseSizes; remap to {raw, w, h} for the helper.
-        const tdSizes = srcTargets.map(t => ({ raw: t.raw, w: t.width, h: t.height }));
-        await cloneOneSourceTempDoc({
-          source,
-          sizes: tdSizes,
-          sourceDoc,
-          rowStartX,
-          rowY,
-          createdTargets,
-          progressBase: totalProgressDone,
-          progressMax: totalProgressMax,
-        });
+        // Route: if ANY target for this source has JSON layer rules, use the
+        // legacy per-target pipeline (cloneOneSourceAsArtboards) — it runs
+        // applyLayerRules so per-element top/left/width/height/scale from
+        // imported JSON actually get applied. The TD-TEST temp-doc pipeline
+        // only does a uniform group-scale and ignores layerRules entirely.
+        const hasAnyRules = srcTargets.some(t => layerRules[t.raw] && layerRules[t.raw].length > 0);
+        // Diagnostic: dump rule keys vs target keys so size-mismatch is obvious in log
+        log(`[ROUTE-DIAG] layerRules keys: [${Object.keys(layerRules).join(", ") || "(empty)"}]`);
+        log(`[ROUTE-DIAG] target keys: [${srcTargets.map(t => t.raw).join(", ")}]`);
+        for (const t of srcTargets) {
+          const r = layerRules[t.raw];
+          log(`[ROUTE-DIAG]   "${t.raw}" → ${r ? `${r.length} rule(s)` : "NO MATCH"}`);
+        }
+        if (hasAnyRules) {
+          log(`[ROUTE] JSON rules detected → legacy pipeline for "${source.name}"`);
+          await cloneOneSourceAsArtboards({
+            source,
+            originalRect: originalRects[si],
+            targets: srcTargets,
+            sourceDoc,
+            rowStartX,
+            rowY,
+            progressBase: totalProgressDone,
+            progressMax: totalProgressMax,
+          });
+        } else {
+          // Use temp-doc pipeline (isolates canvas-grow side effects, handles
+          // sentinel bounds, no eviction at resize). srcTargets uses {raw, width,
+          // height, variant} from parseSizes; remap to {raw, w, h} for the helper.
+          const tdSizes = srcTargets.map(t => ({ raw: t.raw, w: t.width, h: t.height }));
+          await cloneOneSourceTempDoc({
+            source,
+            sizes: tdSizes,
+            sourceDoc,
+            rowStartX,
+            rowY,
+            createdTargets,
+            progressBase: totalProgressDone,
+            progressMax: totalProgressMax,
+          });
+        }
         totalProgressDone += srcTargets.length;
       }
 
@@ -4624,7 +5618,7 @@ async function cloneOneSourceAsArtboardsV2({ source, targets, sourceDoc, rowStar
           if (bgGroup) {
             try {
               log(`[V2] Smart override: BG "${bgGroup.name}" → cover full canvas`);
-              await scaleBgCover(bgGroup, target.width, target.height, savedGridLeft, savedGridTop);
+              await scaleBgCover(bgGroup, target.width, target.height, savedGridLeft, savedGridTop, srcRect);
               await runReparent("POST-SMART-BG");
             } catch (e) { log(`[V2] BG cover override skipped: ${e.message}`); }
           }
@@ -5310,7 +6304,7 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
           if (bgGroup) {
             try {
               log(`BG: "${bgGroup.name}" → cover (smart match)`);
-              await scaleBgCover(bgGroup, target.width, target.height);
+              await scaleBgCover(bgGroup, target.width, target.height, 0, 0, srcRect);
             } catch (e) { log(`BG scale skipped: ${e.message}`); }
           }
         }
@@ -5320,6 +6314,17 @@ async function cloneOneSourceAsArtboards({ source, originalRect, targets, source
 
         // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
         if (smartEnabled) {
+          // Pre-scale text fonts + image leaves uniformly (Option A: contain). Skip bg group.
+          const fontScale = Math.min(target.width / srcRect.width, target.height / srcRect.height);
+          if (Math.abs(fontScale - 1) > 0.01) {
+            for (const child of (tempDoc.layers || [])) {
+              if (isBgGroup(child)) continue;
+              try { await scaleGroupTextFonts(child, fontScale); }
+              catch (e) { log(`font scale "${child.name}" ERROR: ${e.message}`); }
+              try { await scaleGroupImageLeaves(child, fontScale); }
+              catch (e) { log(`img scale "${child.name}" ERROR: ${e.message}`); }
+            }
+          }
           const tSmart = perfNow();
           try {
             await smartLayoutContent(tempDoc, srcRect.width, srcRect.height, target.width, target.height, 0, 0, sourceLayout, target.raw);
@@ -6042,6 +7047,17 @@ async function cloneOneSourceAsDocs({ selectedAb, targets, sourceDoc, progressBa
 
         // 6. Smart layout content (only when Smart match is enabled; skips layers that have JSON rules)
         if (smartEnabled) {
+          // Pre-scale text fonts + image leaves uniformly (Option A: contain). Skip bg group.
+          const fontScale = Math.min(target.width / srcW, target.height / srcH);
+          if (Math.abs(fontScale - 1) > 0.01) {
+            for (const child of (newDoc.layers || [])) {
+              if (isBgGroup(child)) continue;
+              try { await scaleGroupTextFonts(child, fontScale); }
+              catch (e) { log(`font scale "${child.name}" ERROR: ${e.message}`); }
+              try { await scaleGroupImageLeaves(child, fontScale); }
+              catch (e) { log(`img scale "${child.name}" ERROR: ${e.message}`); }
+            }
+          }
           const tSmart = perfNow();
           try {
             await smartLayoutContent(newDoc, srcW, srcH, target.width, target.height, 0, 0, sourceLayout, target.raw);
@@ -6947,56 +7963,58 @@ async function importJson() {
   try {
     const file = await fs.getFileForOpening({ types: ["json"] });
     if (!file) { log("Import cancelled."); return; }
-
     const contents = await file.read();
-    let json = JSON.parse(contents);
-
-    // Auto-detect layer-full.json (PSD-tree) format and convert to rules format.
-    // Lets users import output from the `clone-banner-sizes` skill directly.
-    if (isLayerFullFormat(json)) {
-      const artboardCount = json.length;
-      json = convertLayerFullToRules(json);
-      log(`[IMPORT] Detected layer-full format → converted ${artboardCount} artboard(s) to rules`);
-    }
-
-    // Parse and populate layerRules
-    layerRules = parseJsonToRules(json);
-
-    // If a dim has only one variant in the import (e.g. only v1-970x250),
-    // collapse it to plain `970x250` so cloned artboards drop the version
-    // suffix. Multi-variant dims keep their prefixes.
-    const renamed = dedupSingleVariants(layerRules, json);
-    if (renamed.length) {
-      log(`[IMPORT] Single-variant dims collapsed: ${renamed.map(r => `${r.from}→${r.to}`).join(", ")}`);
-    }
-    saveLayerRules();
-
-    // Auto-fill Target Sizes in Documents tab
-    if (json.sizes && json.sizes.length > 0) {
-      const sizeStrings = json.sizes.map(s => s.name || `${s.width}x${s.height}`);
-      sizesInput.value = sizeStrings.join(" ");
-      renderPresets();
-    }
-
-    // Show import info
-    importInfoCard.style.display = "block";
-    importModuleName.textContent = json.moduleName || "Unknown";
-    importSizeCount.textContent = `${json.sizes ? json.sizes.length : 0} sizes`;
-
-    // Re-render settings
-    renderSizeGroups();
-
-    log(`[IMPORT] Loaded "${json.moduleName || "unknown"}" — ${Object.keys(layerRules).length} sizes`);
-    for (const [sizeKey, rules] of Object.entries(layerRules)) {
-      log(`[IMPORT]   ${sizeKey}: ${rules.length} elements (${rules.map(r => r.name).join(", ")})`);
-    }
-    updateJsonStatus();
-    jsonImportedThisSession = true;
-    applyJsonImportedUI(file?.name || "imported.json");
-    updateActionButtonsVisibility().catch(() => {});
+    const json = JSON.parse(contents);
+    await importJsonFromObject(json, file?.name || "imported.json");
   } catch (e) {
     log(`[IMPORT] Error: ${e.message}`);
   }
+}
+
+// Shared core — accepts a parsed JSON object directly so callers like the
+// chat "cloneBanner" action can reuse the same import pipeline without
+// touching disk. Mirrors the disk-import flow exactly.
+async function importJsonFromObject(rawJson, label) {
+  let json = rawJson;
+
+  if (json && !Array.isArray(json) && Array.isArray(json.artboards)) {
+    json = json.artboards;
+  }
+
+  if (isLayerFullFormat(json)) {
+    const artboardCount = json.length;
+    json = convertLayerFullToRules(json);
+    log(`[IMPORT] Detected layer-full format → converted ${artboardCount} artboard(s) to rules`);
+  }
+
+  layerRules = parseJsonToRules(json);
+
+  const renamed = dedupSingleVariants(layerRules, json);
+  if (renamed.length) {
+    log(`[IMPORT] Single-variant dims collapsed: ${renamed.map(r => `${r.from}→${r.to}`).join(", ")}`);
+  }
+  saveLayerRules();
+
+  if (json.sizes && json.sizes.length > 0) {
+    const sizeStrings = json.sizes.map(s => s.name || `${s.width}x${s.height}`);
+    sizesInput.value = sizeStrings.join(" ");
+    renderPresets();
+  }
+
+  importInfoCard.style.display = "block";
+  importModuleName.textContent = json.moduleName || "Unknown";
+  importSizeCount.textContent = `${json.sizes ? json.sizes.length : 0} sizes`;
+
+  renderSizeGroups();
+
+  log(`[IMPORT] Loaded "${json.moduleName || label || "unknown"}" — ${Object.keys(layerRules).length} sizes`);
+  for (const [sizeKey, rules] of Object.entries(layerRules)) {
+    log(`[IMPORT]   ${sizeKey}: ${rules.length} elements (${rules.map(r => r.name).join(", ")})`);
+  }
+  updateJsonStatus();
+  jsonImportedThisSession = true;
+  applyJsonImportedUI(label || "imported.json");
+  updateActionButtonsVisibility().catch(() => {});
 }
 
 importJsonBtn.addEventListener("click", () => {
@@ -7489,7 +8507,7 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
   }
 
   if (!imaging) {
-    log(`[MASK] "${layerName}" — imaging API unavailable, cannot analyze gradient`);
+    if (DEBUG_MASK) log(`[MASK] "${layerName}" — imaging API unavailable, cannot analyze gradient`);
     return null;
   }
 
@@ -7508,7 +8526,7 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
     }, { commandName: "Read Layer Mask Pixels" });
 
     if (!pixelData) {
-      log(`[MASK] "${layerName}" — getLayerMask returned null, skip`);
+      if (DEBUG_MASK) log(`[MASK] "${layerName}" — getLayerMask returned null, skip`);
       return null;
     }
 
@@ -7520,12 +8538,12 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
     if (pixelData.imageData?.getData) buf = await pixelData.imageData.getData();
     else if (pixelData.getData) buf = await pixelData.getData();
   } catch (e) {
-    log(`[MASK] "${layerName}" — analyze error: ${e.message}`);
+    if (DEBUG_MASK) log(`[MASK] "${layerName}" — analyze error: ${e.message}`);
     return null;
   }
 
   if (!buf || !buf.length || !dims.width || !dims.height) {
-    log(`[MASK] "${layerName}" — no pixel buffer, skip`);
+    if (DEBUG_MASK) log(`[MASK] "${layerName}" — no pixel buffer, skip`);
     return null;
   }
 
@@ -7688,7 +8706,7 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
   vlog(`[MASK ANALYZE] sampled stops: ${JSON.stringify(stops)}`);
 
   if (direction === "uniform / no gradient detected" || stops.length === 0) {
-    log(`[MASK] "${layerName}" — uniform mask, no gradient`);
+    if (DEBUG_MASK) log(`[MASK] "${layerName}" — uniform mask, no gradient`);
     return { detected: false };
   }
 
@@ -7699,7 +8717,7 @@ async function analyzeMaskGradient(layerId, layerName, desc) {
   };
   // Compact summary for production logs
   const stopsCompact = stops.map(s => `${s.position}:${s.opacity}%`).join(", ");
-  log(`[MASK] "${layerName}" — gradient detected: ${direction}, angle=${angle}°, stops=[${stopsCompact}]`);
+  if (DEBUG_MASK) log(`[MASK] "${layerName}" — gradient detected: ${direction}, angle=${angle}°, stops=[${stopsCompact}]`);
   return result;
 }
 
@@ -7789,7 +8807,7 @@ async function collectChildrenInfo(layers, artLeft, artTop) {
 }
 
 async function collectLayerInfo(layer, artLeft, artTop, preDesc = null, clipBase = null, isClipBase = false) {
-  const info = { name: layer.name, kind: layer.kind || "unknown" };
+  const info = { id: layer.id, name: layer.name, kind: layer.kind || "unknown" };
 
   // Visible
   info.visible = layer.visible !== false;
@@ -8116,6 +9134,9 @@ async function moveLayerTo(layer, x, y) {
   const dx = x - b.left;
   const dy = y - b.top;
   if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+  // PS rejects `move` ("The command Move is not currently available") when
+  // no layer is the active target. Select first.
+  await selectLayerById(layer.id);
   await bp([{
     _obj: "move",
     _target: [{ _ref: "layer", _id: layer.id }],
@@ -9132,7 +10153,14 @@ async function cloneOneSourceTempDoc({ source, sizes, sourceDoc, rowStartX, rowY
           try { setProgress(progressBase + i + 1, progressMax, `${source.name} → ${targetRaw}`); } catch (e) {}
         }
 
-        const scale = Math.min(targetW / srcW, targetH / srcH);
+        // Smart match mode: bypass uniform contain scale — layers keep source
+        // size; smart match pass (after artboard duplicate-back) will run
+        // bg cover + content layout + auto-fit suffix rules instead.
+        const smartEnabledTD = !jsonImportedThisSession && smartMatchEl?.checked;
+        const scale = smartEnabledTD ? 1 : Math.min(targetW / srcW, targetH / srcH);
+        if (smartEnabledTD) {
+          log(`[TD-TEST] smart match enabled — bypassing uniform scale (scale=1)`);
+        }
 
         // SNAPSHOT source artboard:
         //   - sourceDirectOrder: names of DIRECT children, top→bottom order.
@@ -9965,6 +10993,144 @@ async function cloneOneSourceTempDoc({ source, sizes, sourceDoc, rowStartX, rowY
             }
           } catch (e) {}
 
+          // Smart match pass: runs ONLY when smart match checkbox is on AND
+          // no JSON imported. Uniform scale was bypassed above (scale=1), so
+          // layers still have source-size dimensions; smart rules now scale
+          // bg cover + reposition content by % + auto-fit suffix overrides.
+          if (smartEnabledTD) {
+            try {
+              log(`[TD-TEST] smart match pass: bg cover + content layout`);
+              const tSmartStart = perfNow();
+              // Re-resolve pastedAb (may be stale after rename).
+              let pastedAbFresh = null;
+              for (const rl of sourceDoc.layers) {
+                if (rl.id === pastedAb.id) { pastedAbFresh = rl; break; }
+              }
+              const targetAb = pastedAbFresh || pastedAb;
+              const pDesc = await getLayerDescriptor(targetAb.id);
+              const pRect = rectSize(pDesc.artboard?.artboardRect || pDesc.bounds);
+
+              // Capture source layout (relative positions) from SOURCE artboard.
+              const sourceLayoutTD = await captureContentLayout(source.layer, srcW, srcH);
+
+              // CAPTURE PRE-SCALE BOUNDS FIRST — must happen BEFORE bg cover
+              // and font/img scale. Bg cover can trigger PS canvas auto-grow
+              // when layers move past canvas extent, which shifts ALL layers
+              // (including content) by the grow delta. Capturing later would
+              // record shifted bounds → anchor math sends content layers to
+              // wrong target position.
+              const preBoundsByName = new Map();
+              async function snapshotLeaves(p) {
+                for (const l of (p.layers || [])) {
+                  if (isBgGroup(l)) continue;
+                  if (l.layers && l.layers.length) {
+                    await snapshotLeaves(l);
+                  } else {
+                    try {
+                      const lb = await getLayerBounds(l.id);
+                      if (lb && lb.width > 0 && lb.height > 0) {
+                        preBoundsByName.set(l.name, { left: lb.left, top: lb.top, width: lb.width, height: lb.height });
+                      }
+                    } catch (e) {}
+                  }
+                }
+              }
+              await snapshotLeaves(targetAb);
+
+              // Phase 1: bg cover. TD-TEST bypassed uniform scale, so bg
+              // children still have SOURCE-size bounds. Children were
+              // duplicated cross-doc with the artboard, so they now sit at
+              // (pRect.left, pRect.top) — top-left of the target artboard —
+              // with their original srcW×srcH dimensions. Coverage check
+              // compares against that source-sized region, not the full
+              // target artboard.
+              const srcRectTD = {
+                left: pRect.left, top: pRect.top,
+                width: srcW, height: srcH,
+                right: pRect.left + srcW, bottom: pRect.top + srcH
+              };
+              const bgGroup = findBgGroup(targetAb);
+              if (bgGroup) {
+                try {
+                  log(`[TD-TEST] [BG] "${bgGroup.name}" → cover`);
+                  await scaleBgCover(bgGroup, pRect.width, pRect.height, pRect.left, pRect.top, srcRectTD);
+                } catch (e) { log(`[TD-TEST] bg cover ERROR: ${e.message}`); }
+              } else {
+                log(`[TD-TEST] no bg group found (configured "${getBgLayerName()}")`);
+              }
+
+              // Re-read pRect AFTER bg cover. Bg scale may have triggered PS
+              // auto-canvas-grow which shifts artboard rect; using stale pRect
+              // makes downstream anchor positioning sit at wrong doc coords.
+              try {
+                const pDesc2 = await getLayerDescriptor(targetAb.id);
+                const pRect2 = rectSize(pDesc2.artboard?.artboardRect || pDesc2.bounds);
+                if (pRect2 && pRect2.width > 0 && pRect2.height > 0) {
+                  if (pRect2.left !== pRect.left || pRect2.top !== pRect.top) {
+                    log(`[TD-TEST] pRect drifted after bg cover: (${pRect.left},${pRect.top}) → (${pRect2.left},${pRect2.top}) — using new`);
+                  }
+                  pRect.left = pRect2.left; pRect.top = pRect2.top;
+                  pRect.width = pRect2.width; pRect.height = pRect2.height;
+                  pRect.right = pRect2.right; pRect.bottom = pRect2.bottom;
+                  // Refresh srcRectTD too (anchored to fresh pRect top-left).
+                  srcRectTD.left = pRect.left; srcRectTD.top = pRect.top;
+                  srcRectTD.right = pRect.left + srcW; srcRectTD.bottom = pRect.top + srcH;
+                }
+              } catch (e) {}
+
+              // (preBoundsByName already captured BEFORE bg cover above.)
+
+              // Phase 1b: scale text fonts + image leaves uniformly with
+              // canvas (Option A: contain scale = min). Done BEFORE content
+              // layout so the new bounds are used when anchor positioning
+              // computes target. Bg group skipped — bg children scale via
+              // scaleBgCover, not this pass.
+              const fontScale = Math.min(pRect.width / srcW, pRect.height / srcH);
+              if (Math.abs(fontScale - 1) > 0.01) {
+                for (const child of (targetAb.layers || [])) {
+                  if (isBgGroup(child)) continue;
+                  try { await scaleGroupTextFonts(child, fontScale); }
+                  catch (e) { log(`[TD-TEST] font scale "${child.name}" ERROR: ${e.message}`); }
+                  try { await scaleGroupImageLeaves(child, fontScale); }
+                  catch (e) { log(`[TD-TEST] img scale "${child.name}" ERROR: ${e.message}`); }
+                }
+              }
+
+              // Phase 2 + 3: content layout (or fallback fitContentLayers).
+              if (sourceLayoutTD) {
+                try {
+                  await smartLayoutContent(targetAb, srcW, srcH, pRect.width, pRect.height,
+                                            pRect.left, pRect.top, sourceLayoutTD, targetRaw, preBoundsByName);
+                } catch (e) { log(`[TD-TEST] smartLayoutContent ERROR: ${e.message}`); }
+              } else {
+                try {
+                  await fitContentLayers(targetAb, pRect.width, pRect.height, pRect.left, pRect.top, false, new Set(), srcW, srcH, srcRectTD, preBoundsByName);
+                } catch (e) { log(`[TD-TEST] fitContentLayers ERROR: ${e.message}`); }
+              }
+
+              // Phase 4: auto-fit suffix override (opt-in by layer name suffix).
+              const suffix = (autoFitSuffixEl?.value || "").trim();
+              if (suffix) {
+                try {
+                  const candidates = await collectAutoFitCandidatesFromSource(source.layer, suffix);
+                  if (candidates.length) {
+                    const srcDescAF = await getLayerDescriptor(source.id);
+                    const srcArtRect = rectSize(srcDescAF.artboard?.artboardRect || srcDescAF.bounds);
+                    log(`[TD-TEST] [AUTO-FIT] ${candidates.length} candidate(s)`);
+                    for (const c of candidates) {
+                      try {
+                        await applyAutoFitCandidate(targetAb, c, srcArtRect, pRect.left, pRect.top, pRect.width, pRect.height);
+                      } catch (e) { log(`[TD-TEST] auto-fit "${c.name}" ERROR: ${e.message}`); }
+                    }
+                  }
+                } catch (e) { log(`[TD-TEST] auto-fit pass ERROR: ${e.message}`); }
+              }
+
+              log(`[TD-TEST] smart match pass done in ${Math.round(perfNow() - tSmartStart)}ms`);
+              tStep("smart match pass");
+            } catch (e) { log(`[TD-TEST] smart match pass FATAL: ${e.message}`); }
+          }
+
           // REORDER direct children of pasted artboard to match source.
           // Cross-doc duplicate may flip stacking; we restore by walking
           // sourceDirectOrder reverse and moving each layer to front.
@@ -10130,13 +11296,17 @@ function validateAdvancedInputs() {
   const errors = [];
   const fieldErrors = {};
 
-  const path = (pathEl?.value || "").trim();
-  if (!path) {
-    fieldErrors.customExportPath = "Custom output path is required";
-    pathEl?.classList.add("input-error");
-  } else if (!isAbsolutePath(path)) {
-    fieldErrors.customExportPath = "Path must be absolute (mac: /Users/... | win: C:\\Users\\...)";
-    pathEl?.classList.add("input-error");
+  // Single-path mode: global path required. Per-artboard mode: paths validated
+  // per-artboard inside exportAssets (pre-flight check there).
+  if (exportPathMode === "single") {
+    const path = (pathEl?.value || "").trim();
+    if (!path) {
+      fieldErrors.customExportPath = "Custom output path is required";
+      pathEl?.classList.add("input-error");
+    } else if (!isAbsolutePath(path)) {
+      fieldErrors.customExportPath = "Path must be absolute (mac: /Users/... | win: C:\\Users\\...)";
+      pathEl?.classList.add("input-error");
+    }
   }
 
   const qRaw = (qualityEl?.value || "").trim();
@@ -10477,6 +11647,44 @@ function renderAssetList() {
   exportAssetsAction.style.display = "";
   assetSearchRow.style.display = "";
 
+  // Resolve current artboard filter (if any) and validate it still exists.
+  let filterArtboardName = null;
+  if (assetArtboardFilter) {
+    const ab = scannedArtboards.find(x => x.id === assetArtboardFilter)
+      || artboardPickerItems.find(x => x.id === assetArtboardFilter);
+    if (ab) filterArtboardName = ab.name;
+    else assetArtboardFilter = null;
+  }
+
+  const collisions = computeAssetCollisions();
+  const q = assetSearchQ.trim().toLowerCase();
+  let base = scannedAssets;
+  if (assetArtboardFilter) base = base.filter(a => a.artboardId === assetArtboardFilter);
+  const filtered = q
+    ? base.filter(a => (a.exportName || "").toLowerCase().includes(q) || (a.layerName || "").toLowerCase().includes(q))
+    : base;
+
+  // Summary row: always show "{filtered}/{total}" + active filter chip if any.
+  const summary = document.createElement("div");
+  summary.className = "asset-filter-summary";
+  const countSpan = document.createElement("span");
+  countSpan.className = "asset-filter-summary-count";
+  countSpan.textContent = `${filtered.length}/${scannedAssets.length} asset${scannedAssets.length === 1 ? "" : "s"}`;
+  summary.appendChild(countSpan);
+  if (filterArtboardName) {
+    const chip = document.createElement("span");
+    chip.className = "asset-filter-summary-chip";
+    chip.textContent = `Artboard: ${filterArtboardName}`;
+    summary.appendChild(chip);
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "asset-filter-summary-clear";
+    clearBtn.textContent = "× Clear filter";
+    clearBtn.addEventListener("click", clearAssetArtboardFilter);
+    summary.appendChild(clearBtn);
+  }
+  imageListContainer.appendChild(summary);
+
   if (isAdvancedEnabled()) {
     const bulkRow = document.createElement("div");
     bulkRow.className = "asset-bulk-apply-row";
@@ -10500,161 +11708,245 @@ function renderAssetList() {
     imageListContainer.appendChild(bulkRow);
   }
 
-  const collisions = computeAssetCollisions();
-  const q = assetSearchQ.trim().toLowerCase();
-  const filtered = q
-    ? scannedAssets.filter(a => (a.exportName || "").toLowerCase().includes(q) || (a.layerName || "").toLowerCase().includes(q))
-    : scannedAssets;
-
-  if (q && !filtered.length) {
+  if (!filtered.length) {
     const hint = document.createElement("div");
     hint.className = "hint";
-    hint.textContent = `No assets match "${q}". (Export vẫn áp dụng cho toàn bộ ${scannedAssets.length} asset.)`;
+    if (q && assetArtboardFilter) {
+      hint.textContent = `No assets match "${q}" in artboard "${filterArtboardName}". (Export still applies to all ${scannedAssets.length} asset(s).)`;
+    } else if (q) {
+      hint.textContent = `No assets match "${q}". (Export still applies to all ${scannedAssets.length} asset(s).)`;
+    } else if (assetArtboardFilter) {
+      hint.textContent = `No assets from artboard "${filterArtboardName}". Click "× Clear filter" above to see all.`;
+    } else {
+      hint.textContent = "No assets to show.";
+    }
     imageListContainer.appendChild(hint);
     return;
   }
 
-  filtered.forEach((asset) => {
-    const card = document.createElement("div");
-    card.className = "asset-row";
-    if (asset.collapsed) card.classList.add("asset-row-collapsed");
-    const isDupe = collisions.has(getAssetCollisionKey(asset));
-    if (isDupe) card.classList.add("asset-row-duplicate");
+  // Group filtered assets by artboardId, preserving the order they appear in
+  // scannedArtboards.
+  const groupsMap = new Map();
+  for (const a of filtered) {
+    if (!groupsMap.has(a.artboardId)) groupsMap.set(a.artboardId, []);
+    groupsMap.get(a.artboardId).push(a);
+  }
+  const orderedAbIds = [];
+  for (const ab of scannedArtboards) {
+    if (groupsMap.has(ab.id)) orderedAbIds.push(ab.id);
+  }
+  for (const id of groupsMap.keys()) {
+    if (!orderedAbIds.includes(id)) orderedAbIds.push(id);
+  }
 
-    // Name input + kind badge + remove button
-    const nameRow = document.createElement("div");
-    nameRow.className = "asset-row-header";
+  for (const abId of orderedAbIds) {
+    const groupAssets = groupsMap.get(abId);
+    const ab = scannedArtboards.find(x => x.id === abId);
+    const abName = ab?.name
+      || groupAssets[0]?.artboardName
+      || (abId == null ? "Manual additions" : `Artboard ${abId}`);
+    const sizeLabel = ab
+      ? getArtboardSizeKey(ab).sizeKey
+      : `${Math.round(groupAssets[0]?.artboardRect?.width || 0)}x${Math.round(groupAssets[0]?.artboardRect?.height || 0)}`;
+    const isGroupCollapsed = collapsedAssetGroups.has(abId);
 
-    // Collapse toggle (chevron)
-    const collapseBtn = document.createElement("button");
-    collapseBtn.className = "asset-collapse-btn";
-    collapseBtn.textContent = asset.collapsed ? "▸" : "▾";
-    collapseBtn.title = asset.collapsed ? "Expand" : "Collapse";
-    collapseBtn.addEventListener("click", () => {
-      asset.collapsed = !asset.collapsed;
+    const groupEl = document.createElement("div");
+    groupEl.className = "asset-group";
+    if (isGroupCollapsed) groupEl.classList.add("asset-group-collapsed");
+
+    const groupHeader = document.createElement("div");
+    groupHeader.className = "asset-group-header";
+
+    const groupChevron = document.createElement("button");
+    groupChevron.className = "asset-group-chevron";
+    groupChevron.textContent = isGroupCollapsed ? "▸" : "▾";
+    groupChevron.title = isGroupCollapsed ? "Expand group" : "Collapse group";
+    groupChevron.addEventListener("click", () => {
+      if (isGroupCollapsed) collapsedAssetGroups.delete(abId);
+      else collapsedAssetGroups.add(abId);
       renderAssetList();
     });
-    nameRow.appendChild(collapseBtn);
 
-    const nameInput = document.createElement("sp-textfield");
-    nameInput.value = asset.exportName;
-    nameInput.addEventListener("change", () => {
-      asset.exportName = String(nameInput.value || "").trim() || asset.layerName;
-      renderAssetList();
-    });
-    const kindBadge = document.createElement("span");
-    kindBadge.className = "asset-kind-badge";
-    kindBadge.textContent = (() => {
-      switch (asset.kind) {
-        case "smartObject": return "Smart";
-        case "group": return "Group";
-        case "pixel": return "Pixel";
-        case "text":
-        case "textLayer": return "Text";
-        case "solidColor":
-        case "gradient":
-        case "pattern": return "Fill";
-        case "vectorSheet": return "Shape";
-        default: return asset.kind || "Layer";
-      }
-    })();
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "asset-group-title";
+    const gName = document.createElement("span");
+    gName.className = "asset-group-name";
+    gName.textContent = abName;
+    const metaWrap = document.createElement("div");
+    metaWrap.className = "asset-group-meta";
+    const gSize = document.createElement("span");
+    gSize.className = "asset-group-size";
+    gSize.textContent = sizeLabel;
+    const gCount = document.createElement("span");
+    gCount.className = "asset-group-count";
+    gCount.textContent = `${groupAssets.length} asset${groupAssets.length === 1 ? "" : "s"}`;
+    metaWrap.appendChild(gSize);
+    metaWrap.appendChild(gCount);
+    titleWrap.appendChild(gName);
+    titleWrap.appendChild(metaWrap);
+    titleWrap.addEventListener("click", () => groupChevron.click());
 
-    // Size/artboard source badge
-    const ab = scannedArtboards.find(x => x.id === asset.artboardId);
-    const sizeBadge = document.createElement("span");
-    sizeBadge.className = "asset-size-badge";
-    sizeBadge.textContent = ab ? getArtboardSizeKey(ab).sizeKey : `${Math.round(asset.artboardRect?.width || 0)}x${Math.round(asset.artboardRect?.height || 0)}`;
-    sizeBadge.title = ab ? `From artboard: ${ab.name}` : `From artboard: ${asset.artboardName || "unknown"}`;
-
-    // Show button — select layer in PS Layers panel để user biết đang nói layer nào
-    const showBtn = document.createElement("button");
-    showBtn.className = "asset-show-btn";
-    showBtn.textContent = "Show";
-    showBtn.title = `Select "${asset.layerName}" in Photoshop Layers panel`;
-    showBtn.addEventListener("click", async () => {
-      try {
-        await core.executeAsModal(async () => {
-          await selectLayerById(asset.layerId);
-        }, { commandName: "Show layer" });
-      } catch (e) {
-        log(`[ASSETS] Show failed: ${e.message}`);
-      }
+    const exportGroupBtn = document.createElement("button");
+    exportGroupBtn.className = "primary export-all-btn asset-group-export-btn";
+    exportGroupBtn.textContent = "Export size";
+    exportGroupBtn.title = `Export all ${groupAssets.length} asset(s) from "${abName}"`;
+    exportGroupBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportAssetGroup(abId);
     });
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "remove-rule-btn";
-    removeBtn.textContent = "✕";
-    removeBtn.addEventListener("click", () => {
-      scannedAssets.splice(scannedAssets.indexOf(asset), 1);
-      renderAssetList();
-    });
-    nameRow.appendChild(nameInput);
-    if (!isAdvancedEnabled()) nameRow.appendChild(kindBadge);
-    nameRow.appendChild(sizeBadge);
-    nameRow.appendChild(showBtn);
-    if (isDupe) {
-      const dupBadge = document.createElement("span");
-      dupBadge.className = "asset-dupe-badge";
-      dupBadge.textContent = "DUPLICATE";
-      dupBadge.title = `File name "${getAssetFilenameKey(asset)}" trùng với asset khác — sẽ ghi đè khi export`;
-      nameRow.appendChild(dupBadge);
-    }
-    nameRow.appendChild(removeBtn);
-    card.appendChild(nameRow);
+    groupHeader.appendChild(groupChevron);
+    groupHeader.appendChild(titleWrap);
+    groupHeader.appendChild(exportGroupBtn);
+    groupEl.appendChild(groupHeader);
 
-    // Dropdowns row
-    const fieldsRow = document.createElement("div");
-    fieldsRow.className = "asset-row-fields";
-
-    const advancedOn = isAdvancedEnabled();
-    if (!advancedOn) {
-      const sizeOptions = [
-        { value: "A", label: "A - Original", tooltip: "Full layer bounds (including parts outside artboard)" },
-        { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
-        { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
-      ];
-      if (asset.kind === "smartObject" && !asset.isVector) {
-        sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
+    if (!isGroupCollapsed) {
+      const groupBody = document.createElement("div");
+      groupBody.className = "asset-group-body";
+      for (const asset of groupAssets) {
+        groupBody.appendChild(buildAssetCard(asset, collisions));
       }
-      if (asset.sizeMode === "D" && !sizeOptions.some(o => o.value === "D")) {
-        asset.sizeMode = "A";
-      }
-      fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
-    } else {
-      if (asset.cutMode !== "full" && asset.cutMode !== "tight") asset.cutMode = "full";
-      fieldsRow.appendChild(createAssetCycleBtn("Crop", [
-        { value: "full", label: "Full canvas" },
-        { value: "tight", label: "Tight crop" }
-      ], asset.cutMode, (v) => { asset.cutMode = v; }));
+      groupEl.appendChild(groupBody);
     }
 
-    fieldsRow.appendChild(createAssetCycleBtn("Scale", [
-      { value: "1", label: "1x" },
-      { value: "2", label: "2x" },
-      { value: "3", label: "3x" }
-    ], String(asset.scale), (v) => { asset.scale = parseInt(v); }));
+    imageListContainer.appendChild(groupEl);
+  }
+}
 
-    fieldsRow.appendChild(createAssetCycleBtn("Type", [
-      { value: "PNG", label: "PNG" },
-      { value: "JPG", label: "JPG" }
-    ], asset.type, (v) => { asset.type = v; renderAssetList(); }));
+function buildAssetCard(asset, collisions) {
+  const card = document.createElement("div");
+  card.className = "asset-row";
+  if (asset.collapsed) card.classList.add("asset-row-collapsed");
+  const isDupe = collisions.has(getAssetCollisionKey(asset));
+  if (isDupe) card.classList.add("asset-row-duplicate");
 
-    // Per-asset export button (same row, last position)
-    const exportWrap = document.createElement("div");
-    exportWrap.className = "asset-field-item asset-export-item";
-    const exportLbl = document.createElement("label");
-    exportLbl.textContent = "\u00A0";
-    exportWrap.appendChild(exportLbl);
-    const exportOneBtn = document.createElement("button");
-    exportOneBtn.className = "primary export-all-btn asset-export-one-btn";
-    exportOneBtn.textContent = "Export";
-    exportOneBtn.addEventListener("click", () => exportSingleAsset(asset));
-    exportWrap.appendChild(exportOneBtn);
-    fieldsRow.appendChild(exportWrap);
+  const nameRow = document.createElement("div");
+  nameRow.className = "asset-row-header";
 
-    if (!asset.collapsed) card.appendChild(fieldsRow);
-    imageListContainer.appendChild(card);
+  const collapseBtn = document.createElement("button");
+  collapseBtn.className = "asset-collapse-btn";
+  collapseBtn.textContent = asset.collapsed ? "▸" : "▾";
+  collapseBtn.title = asset.collapsed ? "Expand" : "Collapse";
+  collapseBtn.addEventListener("click", () => {
+    asset.collapsed = !asset.collapsed;
+    renderAssetList();
   });
+  nameRow.appendChild(collapseBtn);
+
+  const nameInput = document.createElement("sp-textfield");
+  nameInput.value = asset.exportName;
+  nameInput.addEventListener("change", () => {
+    asset.exportName = String(nameInput.value || "").trim() || asset.layerName;
+    renderAssetList();
+  });
+  const kindBadge = document.createElement("span");
+  kindBadge.className = "asset-kind-badge";
+  kindBadge.textContent = (() => {
+    switch (asset.kind) {
+      case "smartObject": return "Smart";
+      case "group": return "Group";
+      case "pixel": return "Pixel";
+      case "text":
+      case "textLayer": return "Text";
+      case "solidColor":
+      case "gradient":
+      case "pattern": return "Fill";
+      case "vectorSheet": return "Shape";
+      default: return asset.kind || "Layer";
+    }
+  })();
+
+  const ab = scannedArtboards.find(x => x.id === asset.artboardId);
+  const sizeBadge = document.createElement("span");
+  sizeBadge.className = "asset-size-badge";
+  sizeBadge.textContent = ab ? getArtboardSizeKey(ab).sizeKey : `${Math.round(asset.artboardRect?.width || 0)}x${Math.round(asset.artboardRect?.height || 0)}`;
+  sizeBadge.title = ab ? `From artboard: ${ab.name}` : `From artboard: ${asset.artboardName || "unknown"}`;
+
+  const showBtn = document.createElement("button");
+  showBtn.className = "asset-show-btn";
+  showBtn.textContent = "Show";
+  showBtn.title = `Select "${asset.layerName}" in Photoshop Layers panel`;
+  showBtn.addEventListener("click", async () => {
+    try {
+      await core.executeAsModal(async () => {
+        await selectLayerById(asset.layerId);
+      }, { commandName: "Show layer" });
+    } catch (e) {
+      log(`[ASSETS] Show failed: ${e.message}`);
+    }
+  });
+
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "remove-rule-btn";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", () => {
+    scannedAssets.splice(scannedAssets.indexOf(asset), 1);
+    renderAssetList();
+  });
+  nameRow.appendChild(nameInput);
+  if (!isAdvancedEnabled()) nameRow.appendChild(kindBadge);
+  nameRow.appendChild(sizeBadge);
+  nameRow.appendChild(showBtn);
+  if (isDupe) {
+    const dupBadge = document.createElement("span");
+    dupBadge.className = "asset-dupe-badge";
+    dupBadge.textContent = "DUPLICATE";
+    dupBadge.title = `File name "${getAssetFilenameKey(asset)}" duplicate — will be overwritten on export`;
+    nameRow.appendChild(dupBadge);
+  }
+  nameRow.appendChild(removeBtn);
+  card.appendChild(nameRow);
+
+  const fieldsRow = document.createElement("div");
+  fieldsRow.className = "asset-row-fields";
+
+  const advancedOn = isAdvancedEnabled();
+  if (!advancedOn) {
+    const sizeOptions = [
+      { value: "A", label: "A - Original", tooltip: "Full layer bounds (including parts outside artboard)" },
+      { value: "B", label: "B - Clipped", tooltip: "Cut to artboard (only the visible portion inside the artboard)" },
+      { value: "C", label: "C - Bounds", tooltip: "Layer bounds + auto-trim transparent edges (tightest fit)" }
+    ];
+    if (asset.kind === "smartObject" && !asset.isVector) {
+      sizeOptions.push({ value: "D", label: "D - Embedded", tooltip: "Original embedded image inside the Smart Object (highest resolution)" });
+    }
+    if (asset.sizeMode === "D" && !sizeOptions.some(o => o.value === "D")) {
+      asset.sizeMode = "A";
+    }
+    fieldsRow.appendChild(createAssetCycleBtn("Size", sizeOptions, asset.sizeMode, (v) => { asset.sizeMode = v; }));
+  } else {
+    if (asset.cutMode !== "full" && asset.cutMode !== "tight") asset.cutMode = "full";
+    fieldsRow.appendChild(createAssetCycleBtn("Crop", [
+      { value: "full", label: "Full canvas" },
+      { value: "tight", label: "Tight crop" }
+    ], asset.cutMode, (v) => { asset.cutMode = v; }));
+  }
+
+  fieldsRow.appendChild(createAssetCycleBtn("Scale", [
+    { value: "1", label: "1x" },
+    { value: "2", label: "2x" },
+    { value: "3", label: "3x" }
+  ], String(asset.scale), (v) => { asset.scale = parseInt(v); }));
+
+  fieldsRow.appendChild(createAssetCycleBtn("Type", [
+    { value: "PNG", label: "PNG" },
+    { value: "JPG", label: "JPG" }
+  ], asset.type, (v) => { asset.type = v; renderAssetList(); }));
+
+  const exportWrap = document.createElement("div");
+  exportWrap.className = "asset-field-item asset-export-item";
+  const exportLbl = document.createElement("label");
+  exportLbl.textContent = "\u00A0";
+  exportWrap.appendChild(exportLbl);
+  const exportOneBtn = document.createElement("button");
+  exportOneBtn.className = "primary export-all-btn asset-export-one-btn";
+  exportOneBtn.textContent = "Export";
+  exportOneBtn.addEventListener("click", () => exportSingleAsset(asset));
+  exportWrap.appendChild(exportOneBtn);
+  fieldsRow.appendChild(exportWrap);
+
+  if (!asset.collapsed) card.appendChild(fieldsRow);
+  return card;
 }
 
 function toggleAllAssetsCollapsed(collapsed) {
@@ -10761,6 +12053,48 @@ async function createTimestampedSubfolder(parentFolder, label) {
   const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
   const name = `${label}-${ts}`;
   return await parentFolder.createFolder(name);
+}
+
+// Export only the assets from a single artboard (group). Triggered by the
+// "Export size" button on each group header.
+async function exportAssetGroup(artboardId) {
+  const groupAssets = scannedAssets.filter(a => a.artboardId === artboardId);
+  if (!groupAssets.length) { log("[ASSETS] No assets in this group."); return; }
+
+  const ab = scannedArtboards.find(x => x.id === artboardId);
+  const abName = ab?.name || groupAssets[0]?.artboardName || `(id ${artboardId})`;
+
+  // Advanced mode: respect per-artboard / single path settings.
+  if (isAdvancedEnabled()) {
+    let folder;
+    if (exportPathMode === "perArtboard") {
+      const p = (artboardPathOverrides.get(String(artboardId)) || "").trim();
+      if (!p) { log(`[ASSETS] No path set for "${abName}" — set one in the artboard picker.`); return; }
+      try { folder = await resolveExistingFolderPath(p); }
+      catch (e) { log(`[ASSETS] "${abName}" path invalid: ${e.message}`); return; }
+    } else {
+      const customPathRaw = (document.getElementById("customExportPath")?.value || "").trim();
+      if (!customPathRaw) { log("[ASSETS] Custom output path is required."); return; }
+      try { folder = await resolveExistingFolderPath(customPathRaw); }
+      catch (e) { log(`[ASSETS] ${e.message}`); return; }
+    }
+    for (const a of groupAssets) a.sizeMode = "B";
+    log(`[ASSETS] → ${folder.nativePath || "(folder)"} (${groupAssets.length} asset(s) from "${abName}")`);
+    try {
+      await runExportAssetsFlow(folder, { writeLayersJson: false, scopedAssets: groupAssets, jpgQuality: getJpgQuality() });
+    } catch (e) {
+      log(`[ASSETS] Failed "${abName}": ${e.message}`);
+    }
+    return;
+  }
+
+  // Non-advanced: ask user to pick a folder, write to a timestamped subfolder.
+  const parent = await fs.getFolder();
+  if (!parent) { log("[ASSETS] Export cancelled."); return; }
+  const safeName = abName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, "-");
+  const subfolder = await createTimestampedSubfolder(parent, `assets-${safeName}`);
+  log(`[ASSETS] Output: ${subfolder.name}/ (${groupAssets.length} asset(s))`);
+  await runExportAssetsFlow(subfolder, { writeLayersJson: false, scopedAssets: groupAssets, jpgQuality: getJpgQuality() });
 }
 
 async function exportSingleAsset(asset) {
@@ -10958,19 +12292,8 @@ async function exportAssets() {
   // doc-scoped and can collide across documents.
   assetExportMap.clear();
 
-  if (customPathRaw) {
-    // Per-artboard mode — verify root exists first, no timestamp, assets only.
-    let rootFolder;
-    try {
-      rootFolder = await resolveExistingFolderPath(customPathRaw);
-    } catch (e) {
-      log(`[ASSETS] ${e.message}. Parent folder phải tồn tại — aborted.`);
-      return;
-    }
-    log(`[ASSETS] Custom output root: ${customPathRaw}`);
-
-    // Advanced mode forces Mode B (clip to artboard visible area) for every asset,
-    // even if they were scanned before Advanced was toggled on.
+  if (advanced) {
+    // Advanced mode forces Mode B (clip to artboard visible area) for every asset.
     for (const a of scannedAssets) a.sizeMode = "B";
 
     // Group assets by artboardId preserving original order.
@@ -10980,26 +12303,150 @@ async function exportAssets() {
       groups.get(a.artboardId).push(a);
     }
 
+    // ─── Per-artboard mode: each artboard has its own folder, validate ALL first ───
+    if (exportPathMode === "perArtboard") {
+      const missing = [];
+      const resolved = new Map(); // abId → folder
+      const pickedIds = artboardPickerSelected;
+
+      // Pre-flight: validate path ONLY for ticked artboards that actually have
+      // assets to export. Artboards with no scanned assets (empty group) don't
+      // need a path — they're skipped silently. Clear stale .input-error first.
+      document.querySelectorAll(".artboard-picker-path-input.input-error")
+        .forEach(el => el.classList.remove("input-error"));
+
+      // Log info about ticked-but-empty artboards (helpful so user knows why
+      // a picked artboard didn't export).
+      if (pickedIds.size) {
+        const emptyTicked = [];
+        for (const id of pickedIds) {
+          const grp = groups.get(id);
+          if (!grp || !grp.length) {
+            const ab = scannedArtboards.find(x => x.id === id) || artboardPickerItems.find(x => x.id === id);
+            emptyTicked.push(ab?.name || `(id ${id})`);
+          }
+        }
+        if (emptyTicked.length) {
+          log(`[ASSETS] ${emptyTicked.length} ticked artboard(s) have no assets — skipped (no path needed): ${emptyTicked.join(", ")}`);
+        }
+      }
+
+      for (const [abId, assets] of groups) {
+        if (pickedIds.size && !pickedIds.has(abId)) continue;
+        if (!assets.length) continue; // skip empty groups — no path needed
+        const ab = scannedArtboards.find(x => x.id === abId);
+        const abName = ab?.name || `(id ${abId})`;
+        const p = (artboardPathOverrides.get(String(abId)) || "").trim();
+        if (!p) { missing.push({ abId, abName, reason: "no path set" }); continue; }
+        try {
+          const folder = await resolveExistingFolderPath(p);
+          resolved.set(abId, folder);
+        } catch (e) {
+          missing.push({ abId, abName, reason: e.message });
+        }
+      }
+
+      if (missing.length) {
+        log(`[ASSETS] Per-artboard export aborted — ${missing.length} artboard(s) with assets are missing/invalid path:`);
+        for (const m of missing) log(`[ASSETS]   • "${m.abName}" — ${m.reason}`);
+        log("[ASSETS] Fix paths in the artboard picker above and try again.");
+
+        // If the picker is collapsed, expand it so the flagged inputs are visible.
+        if (artboardPickerCollapsed) {
+          artboardPickerCollapsed = false;
+          try { localStorage.setItem(ARTBOARD_PICK_COLLAPSED_KEY, "0"); } catch (e) {}
+          renderArtboardPicker();
+        }
+
+        const missingIds = new Set(missing.map(m => String(m.abId)));
+        let firstFlagged = null;
+        document.querySelectorAll(".artboard-picker-path-input").forEach((el) => {
+          const id = el.getAttribute("data-artboard-id");
+          if (id && missingIds.has(id)) {
+            el.classList.add("input-error");
+            if (!firstFlagged) firstFlagged = el;
+          }
+        });
+
+        // Scroll the first missing input into view within the panel.
+        // Defer to next tick so any DOM changes (e.g. expanding picker) settle.
+        if (firstFlagged) {
+          setTimeout(() => {
+            try {
+              firstFlagged.scrollIntoView({ block: "center", behavior: "smooth" });
+            } catch (e) {
+              // Fallback: manually compute offset against .app-scroll.
+              const scroller = document.querySelector(".app-scroll");
+              if (scroller) {
+                const rect = firstFlagged.getBoundingClientRect();
+                const scRect = scroller.getBoundingClientRect();
+                scroller.scrollTop += rect.top - scRect.top - 40;
+              }
+            }
+          }, 50);
+        }
+        return;
+      }
+
+      const aggregatedForHtml = [];
+      for (const [abId, assets] of groups) {
+        if (pickedIds.size && !pickedIds.has(abId)) continue;
+        const ab = scannedArtboards.find(x => x.id === abId);
+        const folder = resolved.get(abId);
+        if (!folder) continue;
+        log(`[ASSETS] → ${folder.nativePath || "(folder)"} (${assets.length} asset(s) from "${ab?.name || abId}")`);
+        try {
+          const exported = await runExportAssetsFlow(folder, { writeLayersJson: false, scopedAssets: assets, jpgQuality });
+          if (generateInfoHtmlInput?.checked && Array.isArray(exported)) {
+            for (const it of exported) aggregatedForHtml.push({ ...it, pathPrefix: folder.nativePath || "" });
+          }
+        } catch (e) {
+          log(`[ASSETS] Failed "${ab?.name || abId}": ${e.message}`);
+        }
+      }
+
+      // Per-artboard mode: each artboard writes to a different folder, so there
+      // is no single root for info-image.html. Skip aggregation file.
+      if (generateInfoHtmlInput?.checked && aggregatedForHtml.length) {
+        log(`[ASSETS] info-image.html skipped — per-artboard mode writes to multiple folders.`);
+      }
+
+      log(`[ASSETS] Synced ${assetExportMap.size} layer→filename mapping(s).`);
+      return;
+    }
+
+    // ─── Single path mode: one folder for everything, flat (no sizeKey/assets/ nesting) ───
+    if (!customPathRaw) {
+      log("[ASSETS] Custom output path is required.");
+      return;
+    }
+    let rootFolder;
+    try {
+      rootFolder = await resolveExistingFolderPath(customPathRaw);
+    } catch (e) {
+      log(`[ASSETS] ${e.message}. Parent folder phải tồn tại — aborted.`);
+      return;
+    }
+    log(`[ASSETS] Output root: ${customPathRaw}`);
+
     const useNoSizeDetected = !!document.getElementById("useNoSizeDetected")?.checked;
     const aggregatedForHtml = [];
     for (const [abId, assets] of groups) {
       const ab = scannedArtboards.find(x => x.id === abId);
       if (!ab) { log(`[ASSETS] Artboard ${abId} not found — skipped`); continue; }
-      const { sizeKey, hasSize } = getArtboardSizeKey(ab);
+      const { hasSize } = getArtboardSizeKey(ab);
       if (!hasSize && !useNoSizeDetected) {
-        log(`[ASSETS] WARNING: artboard "${ab.name}" has no size in name (e.g. 300x600) — skipped. Enable "Use no size detected" to export it under its full name.`);
+        log(`[ASSETS] WARNING: artboard "${ab.name}" has no size token (e.g. 300x600) — skipped. Enable "Use no size detected" to include it.`);
         continue;
       }
       try {
-        const sizeFolder = await getOrCreateChildFolder(rootFolder, sizeKey);
-        const assetsFolder = await getOrCreateChildFolder(sizeFolder, "assets");
-        log(`[ASSETS] → ${sizeKey}/assets/ (${assets.length} asset(s) from "${ab.name}")`);
-        const exported = await runExportAssetsFlow(assetsFolder, { writeLayersJson: false, scopedAssets: assets, jpgQuality });
+        log(`[ASSETS] → ${customPathRaw} (${assets.length} asset(s) from "${ab.name}")`);
+        const exported = await runExportAssetsFlow(rootFolder, { writeLayersJson: false, scopedAssets: assets, jpgQuality });
         if (generateInfoHtmlInput?.checked && Array.isArray(exported)) {
-          for (const it of exported) aggregatedForHtml.push({ ...it, pathPrefix: `${sizeKey}/assets` });
+          for (const it of exported) aggregatedForHtml.push({ ...it, pathPrefix: "" });
         }
       } catch (e) {
-        log(`[ASSETS] Failed "${ab.name}" → ${sizeKey}/: ${e.message}`);
+        log(`[ASSETS] Failed "${ab.name}": ${e.message}`);
       }
     }
 
@@ -11575,6 +13022,16 @@ async function addGroupToAssets() {
 
     const advancedOn = isAdvancedEnabled();
     const exportName = advancedOn ? sel.name.replace(/^gg-/i, "") : sel.name;
+    const parentArtboardId = artboard?.id ?? null;
+    const parentArtboardName = artboard?.name || "Manual additions";
+    // Track the artboard in scannedArtboards so group header can resolve name/size.
+    if (parentArtboardId != null && !scannedArtboards.some(x => x.id === parentArtboardId)) {
+      scannedArtboards.push({
+        id: parentArtboardId,
+        name: parentArtboardName,
+        rect: artboardRect
+      });
+    }
     scannedAssets.push({
       layerId: sel.id,
       layerName: sel.name,
@@ -11586,7 +13043,9 @@ async function addGroupToAssets() {
       type: "PNG",
       cutMode: "full",
       bounds: bounds,
-      artboardRect: artboardRect
+      artboardRect: artboardRect,
+      artboardId: parentArtboardId,
+      artboardName: parentArtboardName
     });
 
     log(`[ASSETS] Added group: ${sel.name} (${bounds.width}x${bounds.height})`);
@@ -11613,8 +13072,25 @@ const jpgQualityInput = document.getElementById("jpgQuality");
 const filterGgPrefixInput = document.getElementById("filterGgPrefix");
 const generateInfoHtmlInput = document.getElementById("generateInfoHtml");
 
+// Per-artboard output paths: artboardId → absolute folder path. Only used when
+// exportPathMode === "perArtboard". Persisted in ADV_KEY.
+let exportPathMode = "single"; // "single" | "perArtboard"
+const artboardPathOverrides = new Map();
+
 function updateAdvancedPanelVisibility() {
   if (advancedOptionsPanel) advancedOptionsPanel.style.display = advancedOptionsEnabled?.checked ? "" : "none";
+}
+
+function updateExportPathModeUI() {
+  const singlePanel = document.getElementById("singlePathPanel");
+  const perHint = document.getElementById("perArtboardPathHint");
+  const useNoSizeRow = document.getElementById("useNoSizeDetected")?.closest(".checkbox-row");
+  const isPer = exportPathMode === "perArtboard";
+  if (singlePanel) singlePanel.style.display = isPer ? "none" : "";
+  if (perHint) perHint.style.display = isPer ? "" : "none";
+  // "Use no size detected" only meaningful for single mode (sizeKey-based folders
+  // are gone, but flag is still kept for single-mode warnings). Hide for per-artboard.
+  if (useNoSizeRow) useNoSizeRow.style.display = isPer ? "none" : "";
 }
 
 try {
@@ -11627,8 +13103,15 @@ try {
   if (typeof saved.infoHtml === "boolean" && generateInfoHtmlInput) generateInfoHtmlInput.checked = saved.infoHtml;
   const useNoSizeEl = document.getElementById("useNoSizeDetected");
   if (typeof saved.useNoSizeDetected === "boolean" && useNoSizeEl) useNoSizeEl.checked = saved.useNoSizeDetected;
+  if (saved.mode === "perArtboard" || saved.mode === "single") exportPathMode = saved.mode;
+  // Per-artboard path overrides are session-only (not persisted across reload).
+  // Sync radio UI to restored mode.
+  document.querySelectorAll('input[name="exportPathMode"]').forEach(r => {
+    r.checked = r.value === exportPathMode;
+  });
 } catch (e) {}
 updateAdvancedPanelVisibility();
+updateExportPathModeUI();
 
 function saveAdvancedOptions() {
   try {
@@ -11638,14 +13121,28 @@ function saveAdvancedOptions() {
       quality: parseInt(jpgQualityInput?.value, 10),
       ggFilter: !!filterGgPrefixInput?.checked,
       infoHtml: !!generateInfoHtmlInput?.checked,
-      useNoSizeDetected: !!document.getElementById("useNoSizeDetected")?.checked
+      useNoSizeDetected: !!document.getElementById("useNoSizeDetected")?.checked,
+      mode: exportPathMode
     }));
   } catch (e) {}
 }
 
+// Mode radio change → flip panels + re-render picker (so per-artboard path inputs appear/disappear).
+document.querySelectorAll('input[name="exportPathMode"]').forEach(radio => {
+  radio.addEventListener("change", () => {
+    if (!radio.checked) return;
+    exportPathMode = radio.value;
+    updateExportPathModeUI();
+    saveAdvancedOptions();
+    if (typeof renderArtboardPicker === "function") renderArtboardPicker();
+  });
+});
+
 advancedOptionsEnabled?.addEventListener("change", () => {
   updateAdvancedPanelVisibility();
   saveAdvancedOptions();
+  // Per-artboard path inputs only show when Advanced is on AND mode is perArtboard.
+  if (typeof renderArtboardPicker === "function") renderArtboardPicker();
   // Advanced toggle changes dedupe scope + export naming + size-mode defaults,
   // so existing scan results become stale. Clear them to force a fresh scan.
   if (scannedAssets.length) {
@@ -11732,6 +13229,7 @@ async function loadArtboardPicker() {
     artboardPickerItems = [];
     artboardPickerSelected = new Set();
     artboardPickerLoadedFor = null;
+    assetArtboardFilter = null;
     renderArtboardPicker();
     return;
   }
@@ -11750,6 +13248,14 @@ async function loadArtboardPicker() {
   artboardPickerItems = items;
   artboardPickerSelected = loadArtboardPickSelection(items.map(i => i.id));
   artboardPickerLoadedFor = doc.id;
+  if (assetArtboardFilter && !items.some(it => it.id === assetArtboardFilter)) {
+    assetArtboardFilter = null;
+  }
+  // Prune per-artboard path overrides for artboards no longer in the doc.
+  const liveIds = new Set(items.map(it => String(it.id)));
+  for (const id of [...artboardPathOverrides.keys()]) {
+    if (!liveIds.has(String(id))) artboardPathOverrides.delete(id);
+  }
   renderArtboardPicker();
 }
 
@@ -11789,9 +13295,16 @@ function renderArtboardPicker() {
     return;
   }
 
+  const isPerArtboard = exportPathMode === "perArtboard"
+    && !!document.getElementById("advancedOptionsEnabled")?.checked;
+
   for (const item of visible) {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "artboard-picker-row";
+    if (assetArtboardFilter === item.id) row.classList.add("artboard-picker-row-active");
+
+    const topRow = document.createElement("div");
+    topRow.className = "artboard-picker-row-top";
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
@@ -11804,7 +13317,10 @@ function renderArtboardPicker() {
       // Recompute the export-mode hint so the user sees what mode the JSON
       // export will use BEFORE clicking Export Layer JSON.
       refreshExportModeUI().catch(() => {});
+      // Per-artboard path row appears/disappears with tick state.
+      if (isPerArtboard) renderArtboardPicker();
     });
+    cb.addEventListener("click", (e) => e.stopPropagation());
 
     const info = document.createElement("div");
     info.className = "artboard-picker-row-info";
@@ -11816,9 +13332,69 @@ function renderArtboardPicker() {
     sizeEl.textContent = `${item.width}×${item.height}`;
     info.appendChild(nameEl);
     info.appendChild(sizeEl);
+    info.addEventListener("click", () => setAssetArtboardFilter(item.id));
 
-    row.appendChild(cb);
-    row.appendChild(info);
+    const focusBtn = document.createElement("button");
+    focusBtn.type = "button";
+    focusBtn.className = "artboard-picker-focus-btn";
+    const isActive = assetArtboardFilter === item.id;
+    focusBtn.textContent = isActive ? "Focused" : "Focus";
+    focusBtn.title = isActive
+      ? "Click to clear asset filter"
+      : "Show only assets from this artboard in the list below";
+    focusBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setAssetArtboardFilter(item.id);
+    });
+
+    topRow.appendChild(cb);
+    topRow.appendChild(info);
+    topRow.appendChild(focusBtn);
+    row.appendChild(topRow);
+
+    if (isPerArtboard && cb.checked) {
+      const pathRow = document.createElement("div");
+      pathRow.className = "artboard-picker-row-path";
+
+      const pathInput = document.createElement("sp-textfield");
+      pathInput.className = "artboard-picker-path-input";
+      pathInput.setAttribute("data-artboard-id", String(item.id));
+      pathInput.placeholder = "";
+      pathInput.value = artboardPathOverrides.get(String(item.id)) || "";
+      pathInput.addEventListener("input", () => {
+        const v = String(pathInput.value || "").trim();
+        if (v) artboardPathOverrides.set(String(item.id), v);
+        else artboardPathOverrides.delete(String(item.id));
+        pathInput.classList.remove("input-error");
+      });
+      pathInput.addEventListener("click", (e) => e.stopPropagation());
+
+      const browseBtn = document.createElement("button");
+      browseBtn.type = "button";
+      browseBtn.className = "artboard-picker-path-browse";
+      browseBtn.textContent = "Browse…";
+      browseBtn.title = "Pick output folder for this artboard";
+      browseBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          const folder = await fs.getFolder();
+          if (!folder) return;
+          const native = folder.nativePath || "";
+          if (!native) { log("[ASSETS] Browse: couldn't read native path."); return; }
+          artboardPathOverrides.set(String(item.id), native);
+          pathInput.value = native;
+          pathInput.classList.remove("input-error");
+          log(`[ASSETS] Path for "${item.name}": ${native}`);
+        } catch (err) {
+          log(`[ASSETS] Browse failed: ${err?.message || err}`);
+        }
+      });
+
+      pathRow.appendChild(pathInput);
+      pathRow.appendChild(browseBtn);
+      row.appendChild(pathRow);
+    }
+
     artboardPickerList.appendChild(row);
   }
 }
@@ -11857,10 +13433,29 @@ try {
 // ─── Asset search (filter scanned asset list) ───
 
 let assetSearchQ = "";
+// View-only filter: when set to an artboard id, asset list shows only assets
+// from that artboard. Does NOT affect export scope (checkbox selection still
+// controls what gets exported).
+let assetArtboardFilter = null;
+// Session-only collapse state for asset group headers (per artboardId).
+const collapsedAssetGroups = new Set();
 assetSearchInput.addEventListener("input", () => {
   assetSearchQ = String(assetSearchInput.value || "");
   renderAssetList();
 });
+
+function setAssetArtboardFilter(id) {
+  assetArtboardFilter = (assetArtboardFilter === id) ? null : id;
+  renderArtboardPicker();
+  renderAssetList();
+}
+
+function clearAssetArtboardFilter() {
+  if (assetArtboardFilter === null) return;
+  assetArtboardFilter = null;
+  renderArtboardPicker();
+  renderAssetList();
+}
 
 const assetToggleAllBtn = document.getElementById("assetToggleAllBtn");
 if (assetToggleAllBtn) {
@@ -11883,17 +13478,35 @@ function switchMode(mode) {
 
   const targetSizesSection = document.getElementById("targetSizesSection");
 
+  const chatPanel = document.getElementById("chatPanel");
+
   if (mode === "exportAssets") {
     mainContent.forEach(el => el.style.display = "none");
     settingsPanel.style.display = "none";
     exportAssetsPanel.style.display = "block";
+    if (chatPanel) chatPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "none";
     ensureArtboardPickerLoaded().catch(e => log(`[PICKER] ${e.message}`));
+  } else if (mode === "chat") {
+    mainContent.forEach(el => el.style.display = "none");
+    settingsPanel.style.display = "none";
+    exportAssetsPanel.style.display = "none";
+    if (chatPanel) chatPanel.style.display = "block";
+    if (targetSizesSection) targetSizesSection.style.display = "none";
+    // Auto-attach JSON from current PS doc if nothing attached yet.
+    // Silent failure — user can still attach manually if no doc is open.
+    // Also refresh the chat artboard picker — doc may have changed.
+    refreshChatArtboardPicker()
+      .then(() => {
+        if (!chatAttachedJson) return attachJsonFromDoc({ silent: true });
+      })
+      .catch(() => {});
   } else {
     // Default tab — Settings (also handles legacy "documents"/"artboards" calls)
     mainContent.forEach(el => el.style.display = "none");
     settingsPanel.style.display = "block";
     exportAssetsPanel.style.display = "none";
+    if (chatPanel) chatPanel.style.display = "none";
     if (targetSizesSection) targetSizesSection.style.display = "";
     renderSizeGroups();
     ensureArtboardPickerLoaded().then(() => refreshExportModeUI()).catch(e => log(`[PICKER] ${e.message}`));
@@ -11959,14 +13572,2224 @@ exportBtn.addEventListener("click", exportAll);
 tabBtns.forEach(btn => btn.addEventListener("click", () => switchMode(btn.dataset.mode)));
 splitBtn.addEventListener("click", splitToDocuments);
 skipLayerInput.addEventListener("input", saveBgLayerName);
+contentGroupInput?.addEventListener("input", saveContentGroupPattern);
+guidelineGroupInput?.addEventListener("input", saveGuidelineGroupPattern);
 
 document.addEventListener("DOMContentLoaded", () => {
   loadLayerRules();
   loadBgLayerName();
+  loadContentGroupPattern();
+  loadGuidelineGroupPattern();
   loadTargetSizes();
   renderPresets();
   updateSizesCount();
   updateJsonStatus();
+  initChat();
   switchMode("settings");
   setTimeout(refreshSource, 150);
 });
+
+// ─── Chat (OpenAI) ───
+
+const CHAT_KEY_STORAGE = "bannerCloner.openaiKey";
+const CHAT_MODEL_STORAGE = "bannerCloner.chatModel";
+const CHAT_SESSIONS_STORAGE = "bannerCloner.chatSessions";
+const CHAT_CURRENT_STORAGE = "bannerCloner.chatCurrentSession";
+const CHAT_MAX_SESSIONS = 20;  // cap to avoid localStorage bloat
+const CHAT_SYSTEM_BASE = "You are a senior design QA assistant for a Photoshop banner production workflow. You analyze layer JSON exported from Photoshop and give concise, actionable feedback. Prefer bullet lists and short reasoning.";
+
+// All sessions live in memory; localStorage is just the persistence layer.
+// Each session: { id, title, createdAt, messages: [...] }.
+// messages = array of { role, content, error?, system? } for re-rendering.
+let chatSessions = [];
+let chatCurrentSessionId = null;
+
+const chatHistory = [
+  { role: "system", content: CHAT_SYSTEM_BASE },
+];
+
+function makeNewSession() {
+  const id = `s${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+  return { id, title: "New chat", createdAt: Date.now(), messages: [] };
+}
+
+function loadSessionsFromStorage() {
+  try {
+    const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE);
+    chatSessions = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(chatSessions)) chatSessions = [];
+    chatCurrentSessionId = localStorage.getItem(CHAT_CURRENT_STORAGE) || null;
+  } catch (e) {
+    chatSessions = [];
+    chatCurrentSessionId = null;
+  }
+  // Ensure at least one session exists
+  if (!chatSessions.length) {
+    const s = makeNewSession();
+    chatSessions.push(s);
+    chatCurrentSessionId = s.id;
+  }
+  // If saved current id is stale, fall back to most recent
+  if (!chatSessions.find(s => s.id === chatCurrentSessionId)) {
+    chatCurrentSessionId = chatSessions[chatSessions.length - 1].id;
+  }
+}
+
+function saveSessionsToStorage() {
+  try {
+    // Cap to N most recent
+    while (chatSessions.length > CHAT_MAX_SESSIONS) chatSessions.shift();
+    localStorage.setItem(CHAT_SESSIONS_STORAGE, JSON.stringify(chatSessions));
+    if (chatCurrentSessionId) localStorage.setItem(CHAT_CURRENT_STORAGE, chatCurrentSessionId);
+  } catch (e) {
+    log(`[CHAT] Failed to save sessions: ${e.message}`);
+  }
+}
+
+function getCurrentSession() {
+  return chatSessions.find(s => s.id === chatCurrentSessionId);
+}
+
+function pushToCurrentSession(entry) {
+  const s = getCurrentSession();
+  if (!s) return;
+  s.messages.push(entry);
+  // Auto-title from first user message (first 40 chars)
+  if (s.title === "New chat" && entry.role === "user" && entry.content) {
+    s.title = entry.content.slice(0, 40) + (entry.content.length > 40 ? "…" : "");
+  }
+  saveSessionsToStorage();
+}
+
+function switchToSession(sessionId) {
+  if (!chatSessions.find(s => s.id === sessionId)) return;
+  chatCurrentSessionId = sessionId;
+  saveSessionsToStorage();
+  rebuildChatUIFromSession();
+}
+
+function rebuildChatUIFromSession() {
+  const box = getChatEl("chatMessages");
+  if (!box) return;
+  box.innerHTML = "";
+  const s = getCurrentSession();
+  if (!s) return;
+  // Reset chatHistory to system base + replay messages so next API call sees
+  // full context.
+  chatHistory.length = 0;
+  chatHistory.push({ role: "system", content: CHAT_SYSTEM_BASE });
+  for (const entry of s.messages) {
+    if (entry.role === "system") {
+      appendChatMsgUI("system", entry.content, { error: entry.error });
+    } else {
+      appendChatMsgUI(entry.role, entry.content, { error: entry.error });
+      // Add to chatHistory so the bot has context
+      chatHistory.push({ role: entry.role, content: entry.content });
+    }
+  }
+  renderSessionPicker();
+}
+
+// Render-only variant of appendChatMsg (used when replaying from storage —
+// doesn't push to session messages, just paints UI).
+function appendChatMsgUI(role, text, opts = {}) {
+  // Temporarily disable storage push by using a sentinel flag.
+  _suppressSessionPush = true;
+  try {
+    return appendChatMsg(role, text, opts);
+  } finally {
+    _suppressSessionPush = false;
+  }
+}
+
+let _suppressSessionPush = false;
+
+function renderSessionPicker() {
+  const picker = document.getElementById("chatSessionPicker");
+  if (!picker) return;
+  picker.innerHTML = "";
+  // Most recent first
+  const sorted = [...chatSessions].sort((a, b) => b.createdAt - a.createdAt);
+  for (const s of sorted) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.title || "Untitled";
+    if (s.id === chatCurrentSessionId) opt.selected = true;
+    picker.appendChild(opt);
+  }
+}
+
+// Attached JSON context (in-memory; not persisted across reloads).
+let chatAttachedJson = null;       // parsed object
+let chatAttachedLabel = null;      // display label e.g. "current PS doc · 24 layers"
+
+// Chat-specific artboard picker. Independent of the Assets tab picker
+// (artboardPickerSelected). Persists per-document via localStorage.
+let chatArtboardPickerItems = [];      // [{ id, name, width, height }]
+let chatArtboardPickerSelected = new Set();  // layer ids
+let chatArtboardPickerCollapsed = true;
+const CHAT_ARTBOARDS_STORAGE_PREFIX = "bannerCloner.chatArtboards.";
+
+function chatArtboardsStorageKey() {
+  const doc = app.activeDocument;
+  if (!doc) return null;
+  return CHAT_ARTBOARDS_STORAGE_PREFIX + (doc.path || doc.name || "untitled");
+}
+
+function loadChatArtboardSelection(availableIds) {
+  const key = chatArtboardsStorageKey();
+  if (!key) return new Set(availableIds);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set(availableIds);
+    const saved = JSON.parse(raw);
+    if (!Array.isArray(saved)) return new Set(availableIds);
+    const avail = new Set(availableIds);
+    const picked = new Set();
+    for (const id of saved) if (avail.has(id)) picked.add(id);
+    if (!picked.size) return new Set(availableIds);
+    return picked;
+  } catch (e) {
+    return new Set(availableIds);
+  }
+}
+
+function saveChatArtboardSelection() {
+  const key = chatArtboardsStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...chatArtboardPickerSelected]));
+  } catch (e) {}
+}
+
+// Scan all artboards in current doc + restore saved selection. Call before
+// rendering the chat picker UI.
+async function refreshChatArtboardPicker() {
+  const list = await listAllArtboardsInDoc();
+  chatArtboardPickerItems = list.map(a => ({
+    id: a.id, name: a.name, width: a.size.width, height: a.size.height,
+  }));
+  const ids = chatArtboardPickerItems.map(i => i.id);
+  chatArtboardPickerSelected = loadChatArtboardSelection(ids);
+  renderChatArtboardPicker();
+}
+
+function renderChatArtboardPicker() {
+  const body = document.getElementById("chatArtboardPickerBody");
+  const countEl = document.getElementById("chatArtboardPickerCount");
+  const arrow = document.getElementById("chatArtboardPickerArrow");
+  if (!body || !countEl) return;
+
+  countEl.textContent = `${chatArtboardPickerSelected.size}/${chatArtboardPickerItems.length}`;
+  if (arrow) arrow.textContent = chatArtboardPickerCollapsed ? "▶" : "▼";
+  body.style.display = chatArtboardPickerCollapsed ? "none" : "block";
+
+  const listEl = document.getElementById("chatArtboardPickerList");
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  for (const item of chatArtboardPickerItems) {
+    // Using <div> instead of <label> because UXP renders <label> with
+    // inconsistent height + collapses children, making rows overlap.
+    const row = document.createElement("div");
+    row.className = "chat-artboard-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = chatArtboardPickerSelected.has(item.id);
+    const onToggle = () => {
+      if (cb.checked) chatArtboardPickerSelected.add(item.id);
+      else chatArtboardPickerSelected.delete(item.id);
+      saveChatArtboardSelection();
+      attachJsonFromDoc({ silent: true }).catch(() => {});
+      renderChatArtboardPicker();
+    };
+    cb.addEventListener("change", onToggle);
+    const info = document.createElement("span");
+    info.className = "chat-artboard-row-info";
+    info.textContent = `${item.name} — ${item.width}×${item.height}`;
+    // Clicking the info text also toggles the checkbox (replaces <label> behavior).
+    info.addEventListener("click", () => {
+      cb.checked = !cb.checked;
+      onToggle();
+    });
+    row.appendChild(cb);
+    row.appendChild(info);
+    listEl.appendChild(row);
+  }
+}
+
+// Active rename suggestion set (rendered as cards). Tracks the live list so
+// chat refine ("remove GG- prefix") and bulk-transform buttons can mutate it
+// without re-querying the bot.
+let activeRenameSuggestions = null;
+let activeRenameContainer = null;  // chat-msg body element holding the cards
+
+function countLayersInJson(json) {
+  let n = 0;
+  function walk(arr) {
+    if (!Array.isArray(arr)) return;
+    for (const l of arr) {
+      n++;
+      if (l && Array.isArray(l.children)) walk(l.children);
+    }
+  }
+  if (json?.artboards) for (const ab of json.artboards) walk(ab.layers);
+  else if (json?.layers) walk(json.layers);
+  return n;
+}
+
+function updateAttachStatus() {
+  const el = document.getElementById("chatAttachStatus");
+  if (!el) return;
+  const inputEl = document.getElementById("chatInput");
+  const sendBtn = document.getElementById("chatSendBtn");
+  const presetBtns = document.querySelectorAll(".chat-preset-btn");
+
+  if (chatAttachedJson) {
+    el.classList.add("is-attached");
+    el.classList.remove("is-warning");
+    el.textContent = `Attached: ${chatAttachedLabel}`;
+    // Enable input + send + presets
+    if (inputEl) {
+      inputEl.removeAttribute("disabled");
+      inputEl.placeholder = "Ask anything...";
+    }
+    if (sendBtn) sendBtn.removeAttribute("disabled");
+    presetBtns.forEach(b => b.removeAttribute("disabled"));
+  } else {
+    el.classList.remove("is-attached");
+    el.classList.add("is-warning");
+    el.textContent = "⚠ Attach JSON first — click 'From PS Doc' above. Chat is disabled until then.";
+    // Disable input + send + presets to prevent confusing chat-mode replies.
+    if (inputEl) {
+      inputEl.setAttribute("disabled", "");
+      inputEl.placeholder = "Attach JSON above to enable chat...";
+    }
+    if (sendBtn) sendBtn.setAttribute("disabled", "");
+    presetBtns.forEach(b => b.setAttribute("disabled", ""));
+  }
+}
+
+// Build JSON in-memory from current doc (mirrors exportLayerJson without
+// saving to disk). Reuses the same artboard resolution + collection pipeline.
+// Enumerate ALL artboards in the current document, regardless of picker state.
+// Mirrors the shape returned by resolveSelectedArtboards so callers can use
+// the same downstream logic.
+async function listAllArtboardsInDoc() {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No document open.");
+  const artboards = [];
+  for (const layer of doc.layers) {
+    try {
+      const desc = await getLayerDescriptor(layer.id);
+      if (!desc.artboardEnabled && !desc.artboard) continue;
+      const rect = desc.artboard?.artboardRect || desc.bounds;
+      if (!rect) continue;
+      artboards.push({ id: layer.id, name: layer.name, layer, rect, size: rectSize(rect) });
+    } catch (e) { /* skip unreadable */ }
+  }
+  return artboards;
+}
+
+async function buildLayerJsonFromDoc(opts = {}) {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No document open.");
+
+  // By default, respect the Artboards picker selection (so Export Assets etc.
+  // behave consistently). For chat operations though, the user typically
+  // expects "all layers in the document" — so callers can pass
+  // { allArtboards: true } to scan every artboard regardless of picker state.
+  // Pass `filterIds` (Set of artboard ids) to restrict scope further.
+  let artboards;
+  if (opts.allArtboards) {
+    artboards = await listAllArtboardsInDoc();
+  } else {
+    artboards = await resolveSelectedArtboards();
+  }
+  if (opts.filterIds && opts.filterIds.size) {
+    artboards = artboards.filter(ab => opts.filterIds.has(ab.id));
+  }
+  if (!artboards.length) throw new Error("No artboards detected.");
+
+  const detected = detectExportMode(artboards);
+  const mode = exportModeOverrideEnabled?.checked
+    ? exportModeOverrideSelect.value
+    : detected.mode;
+
+  const allArtboards = [];
+  for (let i = 0; i < artboards.length; i++) {
+    const ab = artboards[i];
+    const layers = await collectChildrenInfo(ab.layer.layers, ab.size.left, ab.size.top);
+    const frameInfo = parseFrameToken(ab.name);
+    allArtboards.push({
+      artboard: ab.name,
+      frame: frameInfo.token || `frame-${i}`,
+      width: ab.size.width,
+      height: ab.size.height,
+      layers,
+    });
+  }
+
+  if (mode === "single" || allArtboards.length === 1) {
+    const { frame, ...rest } = allArtboards[0];
+    return rest;
+  }
+  return {
+    schema: "banner-cloner-v1",
+    mode,
+    artboards: allArtboards,
+  };
+}
+
+// Strip noisy fields when JSON is large, to keep token cost reasonable.
+// Drops layerEffects/transform/mask details; keeps name/kind/bounds/text.
+function compactLayerJson(obj) {
+  function compactLayer(l) {
+    const out = { id: l.id, name: l.name, kind: l.kind };
+    if (l.bounds) out.bounds = l.bounds;
+    if (l.visible === false) out.visible = false;
+    if (l.text) {
+      out.isText = true;
+      out.text = {
+        contents: l.text.contents,
+        fontSize: l.text.fontSize,
+        fontFamily: l.text.fontFamily,
+        color: l.text.color,
+      };
+    }
+    if (l.fillColor) out.fillColor = l.fillColor;
+    if (l.children) {
+      out.isGroup = true;
+      out.childCount = l.children.length;
+      out.children = l.children.map(compactLayer);
+    }
+    return out;
+  }
+  if (obj.artboards) {
+    return {
+      ...obj,
+      artboards: obj.artboards.map(ab => ({ ...ab, layers: ab.layers.map(compactLayer) })),
+    };
+  }
+  return { ...obj, layers: (obj.layers || []).map(compactLayer) };
+}
+
+function serializeAttachedJson() {
+  if (!chatAttachedJson) return null;
+  let s = JSON.stringify(chatAttachedJson);
+  if (s.length > 8000) {
+    s = JSON.stringify(compactLayerJson(chatAttachedJson));
+  }
+  return s;
+}
+
+const CHAT_PRESETS = {
+  names: `Audit ALL layers in the attached JSON — including text layers, groups, shapes, smart objects, and adjustment layers. Recurse into every "children" array. For each layer, decide if its current name follows the project naming convention.
+
+Naming convention:
+- Use kebab-case
+- Prefix with \`GG-\` for content-bearing layers (text, images, buttons)
+- Name describes ROLE/PURPOSE, not visual shape (e.g. \`GG-headline-main\` not \`big-text\`)
+- Groups: name by their content role (\`GG-cta-group\`, \`GG-content\`, \`GG-bg-layers\`)
+- Text layers: name by role even if current name = the text content (e.g. text content "Buy Now" → name should be \`GG-cta-text\`, NOT "Buy Now")
+- Background/decoration: prefix \`GG-bg-\` (e.g. \`GG-bg-overlay\`, \`GG-bg-pattern\`)
+
+Flag for rename if ANY of these apply:
+- Generic name: "Layer N", "Rectangle N", "Ellipse N", "Group N", "<Group>", "Copy of...", "Shape N"
+- Text layer where name is the literal text content (e.g. name = "Buy Now Today!")
+- Group with vague name ("Group", "content", "main") that doesn't describe role
+- Missing \`GG-\` prefix on a content-bearing layer
+- Inconsistent casing (CamelCase, snake_case mixed with kebab)
+- Trailing numbers from PS auto-dup ("headline 2", "headline copy")
+
+Skip (do NOT include) only layers that already follow the convention perfectly (e.g. \`GG-headline-main\`, \`GG-cta-button\`).
+
+Respond with ONLY a JSON object in this exact shape, no markdown, no commentary:
+{
+  "suggestions": [
+    { "id": <layer id from JSON>, "from": "<current name>", "to": "<new name>", "reason": "<short reason>" }
+  ]
+}
+
+Use the layer "id" field from the attached JSON exactly. Include groups and text layers — they have ids too. If nothing needs renaming, return { "suggestions": [] }.`,
+  fonts: "Check font sizes across all text layers. Flag any of these issues:\n- Font size too small for the artboard (< 12px on standard ad banners)\n- Font size disproportionate to layer size (e.g. tiny text in huge bounds)\n- Inconsistent sizes between layers that look like the same role (multiple headlines at different sizes)\nGroup findings by issue type. For each issue, give the layer name, current size, suggested size, and why.",
+  dupes: "Find duplicate or near-duplicate layer names (e.g. 'headline', 'headline copy', 'headline 2'; or multiple 'Rectangle' layers). For each cluster, list the layers and suggest unique, descriptive names that distinguish them by role or position.",
+  general: "Do a full design QA audit of this layer structure. Cover:\n1. Layer naming (generic names, missing GG- prefix, duplicates)\n2. Font sizes (too small, too large, inconsistent)\n3. Layer organization (deep nesting, ungrouped related layers, empty groups)\n4. Visibility issues (hidden layers that look intentional)\nReport findings as a prioritized list (High / Medium / Low). Keep each finding to 1-2 lines.",
+};
+
+function getChatEl(id) { return document.getElementById(id); }
+
+function appendChatMsg(role, text, opts = {}) {
+  const box = getChatEl("chatMessages");
+  if (!box) return null;
+
+  // Persist into current session (replay-from-storage suppresses this so we
+  // don't double-record).
+  if (!_suppressSessionPush && !opts.loading) {
+    pushToCurrentSession({ role, content: String(text), error: !!opts.error });
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = `chat-msg chat-msg-${role}${opts.error ? " chat-msg-error" : ""}`;
+  if (role !== "system") {
+    const label = document.createElement("div");
+    label.className = "chat-msg-role";
+    label.textContent = role === "user" ? "You" : "Assistant";
+    wrap.appendChild(label);
+
+    // Add a copy button so the user can grab the text (UXP webview blocks
+    // some text selection ops; explicit button is more reliable).
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "chat-msg-copy-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.title = "Copy this message";
+    copyBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      // Read live body.textContent (in case message was updated, e.g. loading → reply).
+      const content = body.textContent || "";
+      try {
+        await navigator.clipboard.writeText(content);
+        copyBtn.textContent = "Copied!";
+        copyBtn.classList.add("is-copied");
+        setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("is-copied"); }, 1200);
+      } catch (e) {
+        copyBtn.textContent = "Failed";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1200);
+      }
+    });
+    wrap.appendChild(copyBtn);
+  }
+  const body = document.createElement("div");
+  body.textContent = text;
+  if (opts.loading) body.classList.add("chat-loading");
+  wrap.appendChild(body);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+  return body;
+}
+
+async function callOpenAI(apiKey, model, messages, opts = {}) {
+  const body = { model, messages };
+  if (opts.jsonMode) body.response_format = { type: "json_object" };
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let errText = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j?.error?.message) errText = j.error.message;
+    } catch (e) {}
+    throw new Error(errText);
+  }
+  const json = await res.json();
+  return json?.choices?.[0]?.message?.content || "";
+}
+
+async function sendChat(overridePrompt = null, opts = {}) {
+  const inputEl = getChatEl("chatInput");
+  const keyEl = getChatEl("chatApiKey");
+  const modelEl = getChatEl("chatModel");
+  const sendBtn = getChatEl("chatSendBtn");
+  if (!keyEl || !modelEl) return;
+
+  const prompt = overridePrompt != null
+    ? String(overridePrompt).trim()
+    : String(inputEl?.value || "").trim();
+  if (!prompt) return;
+  const apiKey = String(keyEl.value || "").trim();
+  if (!apiKey) {
+    appendChatMsg("assistant", "Missing API key. Paste your OpenAI key above and click Save.", { error: true });
+    return;
+  }
+  // Hard guard: refuse to chat without an attached JSON. UI disables input
+  // when no JSON is attached, but this protects against attempt to call
+  // chat in any code path (preset buttons, internal calls).
+  if (!chatAttachedJson) {
+    appendChatMsg("assistant", "⚠️ Attach a JSON layer file first (click 'From PS Doc' above). Chat is disabled until then to prevent confusing chat-mode replies.", { error: true });
+    return;
+  }
+  const model = modelEl.value || "gpt-4o-mini";
+
+  appendChatMsg("user", prompt);
+  chatHistory.push({ role: "user", content: prompt });
+  if (overridePrompt == null && inputEl) inputEl.value = "";
+
+  // Build messages with current JSON context as a fresh system message.
+  // Re-injected each send so swapping attachments takes effect immediately
+  // without reseting chat history.
+  const messages = [...chatHistory];
+  const jsonStr = serializeAttachedJson();
+  if (jsonStr) {
+    messages.splice(1, 0, {
+      role: "system",
+      content: `Attached layer JSON (${chatAttachedLabel}):\n<json>\n${jsonStr}\n</json>`,
+    });
+  }
+
+  // Free-text + attached JSON → intent dispatcher.
+  // Two sub-cases:
+  //  (a) Active rename cards on screen → "refine" mode (preserve old behavior)
+  //  (b) No active cards but JSON attached → "action" mode (execute PS actions)
+  //
+  // Guard: if the message looks like an action command (contains WxH sizes,
+  // "clone", "color", "scale", etc.), skip refine mode even when rename cards
+  // are live — the user has clearly moved on from refining names.
+  const looksLikeAction = /\d+\s*[x×]\s*\d+|clone|scale|resize|move|center|align|opacity|color|font|hide|show|visible|#[0-9a-f]{3,6}\b/i.test(prompt);
+  if (overridePrompt == null && !opts.jsonMode && chatAttachedJson) {
+    if (activeRenameSuggestions?.length && !looksLikeAction) {
+      // Refine the rename list
+      const currentList = activeRenameSuggestions
+        .filter(s => s.status !== "applied")
+        .map(s => ({ id: s.id, from: s.from, to: s.to }));
+      // Insert dispatcher RIGHT BEFORE the user message (last item in history)
+      // so the instruction isn't diluted by intervening history.
+      const lastUserIdx = messages.length - 1;
+      messages.splice(lastUserIdx, 0, {
+        role: "system",
+        content: `The user is refining the current rename suggestion list. Apply their instruction to this list and return ONLY a JSON object: { "suggestions": [ { "id": ..., "from": "...", "to": "...", "reason": "..." } ] }. Keep the same set of layers (same ids); only modify "to" values. No markdown, no commentary.\n\nCurrent list:\n${JSON.stringify(currentList)}`,
+      });
+      opts = { ...opts, jsonMode: true, renderAs: "renameSuggestions" };
+    } else {
+      // Action mode — detect intent and return executable actions.
+      // Clear active rename cards so a new action response doesn't visually
+      // mix with stale rename suggestions from a prior audit.
+      if (activeRenameSuggestions?.length) {
+        activeRenameSuggestions = null;
+        activeRenameContainer = null;
+      }
+      // Place dispatcher right before user msg + wrap user msg with explicit
+      // instruction reminder, so model in JSON mode doesn't drift into prose.
+      const lastUserIdx = messages.length - 1;
+      messages.splice(lastUserIdx, 0, {
+        role: "system",
+        content: ACTION_DISPATCHER_PROMPT,
+      });
+      // Replace the user message with a wrapped version that re-states the
+      // contract — small models (gpt-4o-mini) need the instruction adjacent.
+      messages[messages.length - 1] = {
+        role: "user",
+        content: `${prompt}\n\n(Reminder: respond with ONLY a JSON object matching one of the three modes — "execute", "clarify", or "chat". No markdown.)`,
+      };
+      log(`[CHAT] Action dispatcher mode — prompt: "${prompt.slice(0, 60)}${prompt.length > 60 ? "…" : ""}"`);
+      opts = { ...opts, jsonMode: true, renderAs: "actions" };
+    }
+  }
+
+  const loadingBody = appendChatMsg("assistant", "Thinking...", { loading: true });
+  sendBtn.disabled = true;
+  try {
+    const reply = await callOpenAI(apiKey, model, messages, { jsonMode: opts.jsonMode });
+    if (loadingBody) {
+      if (opts.jsonMode && opts.renderAs === "renameSuggestions") {
+        renderRenameSuggestions(reply, loadingBody);
+      } else if (opts.jsonMode && opts.renderAs === "actions") {
+        await renderAndExecuteActions(reply, loadingBody);
+      } else {
+        loadingBody.textContent = reply;
+      }
+      loadingBody.classList.remove("chat-loading");
+    }
+    chatHistory.push({ role: "assistant", content: reply });
+    // Persist final reply into session (loading placeholder was opts.loading
+    // so it didn't push; this is the real content).
+    pushToCurrentSession({ role: "assistant", content: reply });
+  } catch (e) {
+    if (loadingBody) {
+      loadingBody.textContent = `Error: ${e.message || e}`;
+      loadingBody.classList.remove("chat-loading");
+      loadingBody.parentElement?.classList.add("chat-msg-error");
+    }
+    chatHistory.pop();
+    pushToCurrentSession({ role: "assistant", content: `Error: ${e.message || e}`, error: true });
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+async function attachJsonFromDoc(opts = {}) {
+  const silent = !!opts.silent;
+  if (!silent) appendChatMsg("system", "Reading current PS document...");
+  try {
+    // Make sure chat picker is populated (first-time auto-tick all).
+    if (!chatArtboardPickerItems.length) {
+      await refreshChatArtboardPicker();
+    }
+
+    // Use chat picker selection to scope what the bot sees. If picker is empty
+    // for some reason, fall back to all artboards.
+    const json = await buildLayerJsonFromDoc({
+      allArtboards: true,
+      filterIds: chatArtboardPickerSelected.size ? chatArtboardPickerSelected : null,
+    });
+    chatAttachedJson = json;
+    const count = countLayersInJson(json);
+    const abCount = json.artboards?.length || 1;
+    const name = abCount > 1
+      ? `${abCount} artboards`
+      : (json.artboard || json.artboards?.[0]?.artboard || "doc");
+    chatAttachedLabel = `${name} · ${count} layers`;
+    updateAttachStatus();
+    if (!silent) {
+      appendChatMsg("system", `Attached JSON — ${abCount} artboard(s), ${count} layer(s).`);
+    }
+  } catch (e) {
+    if (!silent) {
+      appendChatMsg("assistant", `Could not read PS doc: ${e.message}`, { error: true });
+    }
+  }
+}
+
+async function attachJsonFromFile() {
+  try {
+    const file = await fs.getFileForOpening({ types: ["json"] });
+    if (!file) return;
+    const text = await file.read();
+    const json = JSON.parse(text);
+    chatAttachedJson = json;
+    const count = countLayersInJson(json);
+    chatAttachedLabel = `${file.name} · ${count} layers`;
+    updateAttachStatus();
+    appendChatMsg("system", `Attached JSON from file: ${file.name} (${count} layers).`);
+  } catch (e) {
+    appendChatMsg("assistant", `Could not load JSON: ${e.message}`, { error: true });
+  }
+}
+
+function runPreset(key) {
+  if (!chatAttachedJson) {
+    appendChatMsg("assistant", "Attach a layer JSON first (use 'From PS Doc' or 'From File').", { error: true });
+    return;
+  }
+  const prompt = CHAT_PRESETS[key];
+  if (!prompt) return;
+  const opts = key === "names"
+    ? { jsonMode: true, renderAs: "renameSuggestions" }
+    : {};
+  sendChat(prompt, opts);
+}
+
+function clearChat() {
+  const box = getChatEl("chatMessages");
+  if (box) box.innerHTML = "";
+
+  // "New Chat" = create a fresh session. Old session stays in localStorage
+  // and is accessible via the picker dropdown.
+  const newSession = makeNewSession();
+  chatSessions.push(newSession);
+  chatCurrentSessionId = newSession.id;
+  saveSessionsToStorage();
+  renderSessionPicker();
+
+  chatHistory.length = 1;
+  activeRenameSuggestions = null;
+  activeRenameContainer = null;
+  chatAttachedJson = null;
+  chatAttachedLabel = null;
+  updateAttachStatus();
+  appendChatMsg("system", "New chat started.");
+  // Auto-attach fresh JSON from current PS doc.
+  attachJsonFromDoc({ silent: true }).catch(() => {});
+}
+
+function initChat() {
+  const keyEl = getChatEl("chatApiKey");
+  const saveBtn = getChatEl("chatSaveKeyBtn");
+  const modelEl = getChatEl("chatModel");
+  const sendBtn = getChatEl("chatSendBtn");
+  const clearBtn = getChatEl("chatClearBtn");
+  const inputEl = getChatEl("chatInput");
+  if (!keyEl || !sendBtn) return;
+
+  try {
+    const savedKey = localStorage.getItem(CHAT_KEY_STORAGE);
+    if (savedKey) keyEl.value = savedKey;
+    const savedModel = localStorage.getItem(CHAT_MODEL_STORAGE);
+    if (savedModel && modelEl) modelEl.value = savedModel;
+  } catch (e) {}
+
+  saveBtn?.addEventListener("click", () => {
+    try {
+      localStorage.setItem(CHAT_KEY_STORAGE, String(keyEl.value || "").trim());
+      const orig = saveBtn.textContent;
+      saveBtn.textContent = "Saved";
+      setTimeout(() => { saveBtn.textContent = orig; }, 1200);
+    } catch (e) {
+      appendChatMsg("assistant", `Could not save key: ${e.message}`, { error: true });
+    }
+  });
+
+  modelEl?.addEventListener("change", () => {
+    try { localStorage.setItem(CHAT_MODEL_STORAGE, modelEl.value); } catch (e) {}
+  });
+
+  sendBtn.addEventListener("click", () => sendChat());
+  clearBtn?.addEventListener("click", clearChat);
+  inputEl?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      ev.preventDefault();
+      sendChat();
+    }
+  });
+
+  getChatEl("chatAttachDocBtn")?.addEventListener("click", attachJsonFromDoc);
+  getChatEl("chatAttachFileBtn")?.addEventListener("click", attachJsonFromFile);
+  document.querySelectorAll(".chat-preset-btn").forEach(btn => {
+    btn.addEventListener("click", () => runPreset(btn.dataset.preset));
+  });
+
+  // Load persisted sessions + wire picker
+  loadSessionsFromStorage();
+  const picker = document.getElementById("chatSessionPicker");
+  if (picker) {
+    picker.addEventListener("change", () => switchToSession(picker.value));
+  }
+  rebuildChatUIFromSession();
+
+  // Wire chat artboard picker controls.
+  const toggle = document.getElementById("chatArtboardPickerToggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      chatArtboardPickerCollapsed = !chatArtboardPickerCollapsed;
+      renderChatArtboardPicker();
+    });
+  }
+  const allBtn = document.getElementById("chatArtboardPickerAll");
+  if (allBtn) {
+    allBtn.addEventListener("click", () => {
+      for (const it of chatArtboardPickerItems) chatArtboardPickerSelected.add(it.id);
+      saveChatArtboardSelection();
+      attachJsonFromDoc({ silent: true }).catch(() => {});
+      renderChatArtboardPicker();
+    });
+  }
+  const noneBtn = document.getElementById("chatArtboardPickerNone");
+  if (noneBtn) {
+    noneBtn.addEventListener("click", () => {
+      chatArtboardPickerSelected.clear();
+      saveChatArtboardSelection();
+      attachJsonFromDoc({ silent: true }).catch(() => {});
+      renderChatArtboardPicker();
+    });
+  }
+  const refreshBtn2 = document.getElementById("chatArtboardPickerRefresh");
+  if (refreshBtn2) {
+    refreshBtn2.addEventListener("click", () => {
+      refreshChatArtboardPicker().then(() => attachJsonFromDoc({ silent: true })).catch(() => {});
+    });
+  }
+
+  updateAttachStatus();
+}
+
+// ─── Rename suggestion cards (M3) ───
+
+function findLayerById(layers, id) {
+  if (!layers) return null;
+  for (const l of layers) {
+    if (l.id === id) return l;
+    if (l.layers && l.layers.length) {
+      const hit = findLayerById(l.layers, id);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+async function applyRenameSuggestion(suggestion, cardEl) {
+  const doc = app.activeDocument;
+  if (!doc) {
+    setSuggestionStatus(cardEl, "error", "No document open");
+    return;
+  }
+  const target = findLayerById(doc.layers, suggestion.id);
+  if (!target) {
+    setSuggestionStatus(cardEl, "error", `Layer id ${suggestion.id} not found in current doc`);
+    return;
+  }
+  // Warn (but proceed) if current name no longer matches what the bot saw —
+  // means user renamed manually in between. Apply still works since we match
+  // by id, but flag it so the user knows.
+  if (target.name !== suggestion.from) {
+    log(`[CHAT APPLY] Note: layer id ${suggestion.id} is now "${target.name}" (was "${suggestion.from}" when audited).`);
+  }
+  try {
+    await core.executeAsModal(async () => {
+      target.name = suggestion.to;
+    }, { commandName: `Rename to "${suggestion.to}"` });
+    setSuggestionStatus(cardEl, "applied", `→ ${suggestion.to}`);
+  } catch (e) {
+    setSuggestionStatus(cardEl, "error", e.message);
+  }
+}
+
+async function applyAllRenameSuggestions(suggestions, containerEl) {
+  const doc = app.activeDocument;
+  if (!doc) {
+    appendChatMsg("assistant", "No document open.", { error: true });
+    return;
+  }
+  const cards = containerEl.querySelectorAll(".chat-suggest-card");
+  let applied = 0, failed = 0, skipped = 0;
+  try {
+    await core.executeAsModal(async () => {
+      for (let i = 0; i < suggestions.length; i++) {
+        const s = suggestions[i];
+        const card = cards[i];
+        if (card?.dataset.status === "applied" || card?.dataset.status === "skipped") {
+          continue;
+        }
+        const target = findLayerById(doc.layers, s.id);
+        if (!target) {
+          setSuggestionStatus(card, "error", `id ${s.id} not found`);
+          failed++;
+          continue;
+        }
+        try {
+          target.name = s.to;
+          setSuggestionStatus(card, "applied", `→ ${s.to}`);
+          applied++;
+        } catch (e) {
+          setSuggestionStatus(card, "error", e.message);
+          failed++;
+        }
+      }
+    }, { commandName: "Banner Cloner — Apply all rename suggestions" });
+  } catch (e) {
+    appendChatMsg("assistant", `Apply All failed: ${e.message}`, { error: true });
+    return;
+  }
+  appendChatMsg("system", `Apply All: ${applied} applied, ${failed} failed, ${skipped} skipped. Single Undo step.`);
+}
+
+function setSuggestionStatus(cardEl, status, msg) {
+  if (!cardEl) return;
+  cardEl.dataset.status = status;
+  cardEl.classList.remove("is-applied", "is-skipped", "is-error");
+  if (status === "applied") cardEl.classList.add("is-applied");
+  else if (status === "skipped") cardEl.classList.add("is-skipped");
+  else if (status === "error") cardEl.classList.add("is-error");
+  const statusEl = cardEl.querySelector(".chat-suggest-status");
+  if (statusEl) statusEl.textContent = msg || "";
+  // Disable buttons after a terminal state
+  if (status === "applied" || status === "skipped") {
+    cardEl.querySelectorAll("button").forEach(b => b.disabled = true);
+  }
+}
+
+function renderRenameSuggestions(rawReply, bodyEl) {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawReply);
+  } catch (e) {
+    bodyEl.textContent = `Could not parse bot response as JSON.\n\n${rawReply}`;
+    return;
+  }
+  const suggestions = Array.isArray(parsed?.suggestions) ? parsed.suggestions : [];
+  if (!suggestions.length) {
+    bodyEl.textContent = "No rename suggestions — all layer names look good.";
+    activeRenameSuggestions = null;
+    activeRenameContainer = null;
+    return;
+  }
+  // On refine: bot returns updated `to` values for same ids. Preserve any
+  // already-applied items from the prior list (we asked the bot to skip them,
+  // but defensive merge in case it returns them anyway).
+  const priorById = new Map();
+  if (activeRenameSuggestions) {
+    for (const s of activeRenameSuggestions) priorById.set(s.id, s);
+  }
+  const merged = suggestions.map(s => {
+    const prior = priorById.get(s.id);
+    if (prior && prior.status === "applied") return prior;  // keep applied
+    return {
+      id: s.id,
+      from: s.from || prior?.from || "?",
+      to: s.to || "?",
+      reason: s.reason || prior?.reason || "",
+      status: prior?.status === "skipped" ? "skipped" : "pending",
+      statusMsg: prior?.status === "skipped" ? "skipped" : "",
+    };
+  });
+  // Re-attach any prior applied items the bot dropped (so user sees full picture).
+  if (activeRenameSuggestions) {
+    const incomingIds = new Set(merged.map(s => s.id));
+    for (const prior of activeRenameSuggestions) {
+      if (prior.status === "applied" && !incomingIds.has(prior.id)) {
+        merged.unshift(prior);
+      }
+    }
+  }
+  activeRenameSuggestions = merged;
+  activeRenameContainer = bodyEl;
+  rebuildSuggestionCards();
+}
+
+function rebuildSuggestionCards() {
+  const bodyEl = activeRenameContainer;
+  if (!bodyEl || !activeRenameSuggestions) return;
+  bodyEl.innerHTML = "";
+
+  const header = document.createElement("div");
+  header.className = "chat-suggest-header";
+  header.textContent = `${activeRenameSuggestions.length} rename suggestion(s):`;
+  bodyEl.appendChild(header);
+
+  // Bulk transform toolbar — operates on `to` field of every non-terminal card.
+  const toolbar = document.createElement("div");
+  toolbar.className = "chat-suggest-toolbar";
+  const transforms = [
+    { label: "Strip GG-", fn: s => s.replace(/^GG-/i, "") },
+    { label: "Add GG-", fn: s => /^GG-/i.test(s) ? s : `GG-${s}` },
+    { label: "lowercase", fn: s => s.toLowerCase() },
+    { label: "kebab-case", fn: s => s.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-_]/g, "") },
+  ];
+  for (const t of transforms) {
+    const b = document.createElement("button");
+    b.className = "chat-suggest-bulk";
+    b.textContent = t.label;
+    b.addEventListener("click", () => applyBulkTransform(t.fn));
+    toolbar.appendChild(b);
+  }
+  bodyEl.appendChild(toolbar);
+
+  const list = document.createElement("div");
+  list.className = "chat-suggest-list";
+  bodyEl.appendChild(list);
+
+  activeRenameSuggestions.forEach((s, i) => {
+    const card = document.createElement("div");
+    card.className = "chat-suggest-card";
+    if (s.status === "applied") card.classList.add("is-applied");
+    else if (s.status === "skipped") card.classList.add("is-skipped");
+    else if (s.status === "error") card.classList.add("is-error");
+    card.dataset.index = String(i);
+    card.dataset.status = s.status;
+
+    const row1 = document.createElement("div");
+    row1.className = "chat-suggest-names";
+    const fromEl = document.createElement("span");
+    fromEl.className = "chat-suggest-from";
+    fromEl.textContent = s.from;
+    const arrowEl = document.createElement("span");
+    arrowEl.className = "chat-suggest-arrow";
+    arrowEl.textContent = "→";
+    const toEl = document.createElement(s.editing ? "input" : "span");
+    toEl.className = "chat-suggest-to";
+    if (s.editing) {
+      toEl.type = "text";
+      toEl.value = s.to;
+      toEl.className = "chat-suggest-to-input";
+      // Focus/select after DOM insert
+      setTimeout(() => { toEl.focus(); toEl.select?.(); }, 0);
+      const commit = () => {
+        const v = String(toEl.value || "").trim();
+        if (v) s.to = v;
+        s.editing = false;
+        rebuildSuggestionCards();
+      };
+      const cancel = () => { s.editing = false; rebuildSuggestionCards(); };
+      toEl.addEventListener("blur", commit);
+      toEl.addEventListener("keydown", ev => {
+        if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+        else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
+      });
+    } else {
+      toEl.textContent = s.to;
+    }
+    row1.appendChild(fromEl);
+    row1.appendChild(arrowEl);
+    row1.appendChild(toEl);
+    card.appendChild(row1);
+
+    if (s.reason) {
+      const reason = document.createElement("div");
+      reason.className = "chat-suggest-reason";
+      reason.textContent = s.reason;
+      card.appendChild(reason);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "chat-suggest-actions";
+    const terminal = s.status === "applied" || s.status === "skipped";
+    const editBtn = document.createElement("button");
+    editBtn.className = "chat-suggest-edit";
+    editBtn.textContent = "Edit";
+    editBtn.disabled = terminal;
+    editBtn.addEventListener("click", () => {
+      if (terminal) return;
+      s.editing = true;
+      rebuildSuggestionCards();
+    });
+    const applyBtn = document.createElement("button");
+    applyBtn.className = "chat-suggest-apply";
+    applyBtn.textContent = "Apply";
+    applyBtn.disabled = terminal;
+    applyBtn.addEventListener("click", () => applyRenameSuggestionByIndex(i));
+    const skipBtn = document.createElement("button");
+    skipBtn.className = "chat-suggest-skip";
+    skipBtn.textContent = "Skip";
+    skipBtn.disabled = terminal;
+    skipBtn.addEventListener("click", () => {
+      s.status = "skipped";
+      s.statusMsg = "skipped";
+      rebuildSuggestionCards();
+    });
+    const statusEl = document.createElement("span");
+    statusEl.className = "chat-suggest-status";
+    statusEl.textContent = s.statusMsg || "";
+    actions.appendChild(editBtn);
+    actions.appendChild(applyBtn);
+    actions.appendChild(skipBtn);
+    actions.appendChild(statusEl);
+    card.appendChild(actions);
+
+    list.appendChild(card);
+  });
+
+  // Apply All — 2-click confirm.
+  const pending = activeRenameSuggestions.filter(s => s.status === "pending").length;
+  const allRow = document.createElement("div");
+  allRow.className = "chat-suggest-all-row";
+  const applyAllBtn = document.createElement("button");
+  applyAllBtn.className = "chat-suggest-apply-all primary";
+  applyAllBtn.textContent = `Apply All (${pending})`;
+  applyAllBtn.disabled = pending === 0;
+  let armed = false;
+  let armTimer = null;
+  applyAllBtn.addEventListener("click", () => {
+    if (!armed) {
+      armed = true;
+      applyAllBtn.textContent = `Click again to confirm (${pending} renames)`;
+      applyAllBtn.classList.add("is-armed");
+      armTimer = setTimeout(() => {
+        armed = false;
+        applyAllBtn.textContent = `Apply All (${pending})`;
+        applyAllBtn.classList.remove("is-armed");
+      }, 3000);
+      return;
+    }
+    clearTimeout(armTimer);
+    applyAllRenameSuggestionsFromState();
+  });
+  allRow.appendChild(applyAllBtn);
+  bodyEl.appendChild(allRow);
+}
+
+function applyBulkTransform(fn) {
+  if (!activeRenameSuggestions) return;
+  for (const s of activeRenameSuggestions) {
+    if (s.status === "applied" || s.status === "skipped") continue;
+    try {
+      const next = fn(s.to);
+      if (typeof next === "string" && next) s.to = next;
+    } catch (e) {}
+  }
+  rebuildSuggestionCards();
+}
+
+async function applyRenameSuggestionByIndex(i) {
+  const s = activeRenameSuggestions?.[i];
+  if (!s) return;
+  const doc = app.activeDocument;
+  if (!doc) {
+    s.status = "error";
+    s.statusMsg = "No document open";
+    rebuildSuggestionCards();
+    return;
+  }
+  const target = findLayerById(doc.layers, s.id);
+  if (!target) {
+    s.status = "error";
+    s.statusMsg = `id ${s.id} not found`;
+    rebuildSuggestionCards();
+    return;
+  }
+  if (target.name !== s.from) {
+    log(`[CHAT APPLY] Note: layer id ${s.id} is now "${target.name}" (was "${s.from}" when audited).`);
+  }
+  try {
+    await core.executeAsModal(async () => {
+      target.name = s.to;
+    }, { commandName: `Rename to "${s.to}"` });
+    s.status = "applied";
+    s.statusMsg = `→ ${s.to}`;
+    attachJsonFromDoc({ silent: true }).catch(() => {});
+  } catch (e) {
+    s.status = "error";
+    s.statusMsg = e.message;
+  }
+  rebuildSuggestionCards();
+}
+
+async function applyAllRenameSuggestionsFromState() {
+  if (!activeRenameSuggestions) return;
+  const doc = app.activeDocument;
+  if (!doc) {
+    appendChatMsg("assistant", "No document open.", { error: true });
+    return;
+  }
+  let applied = 0, failed = 0;
+  try {
+    await core.executeAsModal(async () => {
+      for (const s of activeRenameSuggestions) {
+        if (s.status !== "pending") continue;
+        const target = findLayerById(doc.layers, s.id);
+        if (!target) {
+          s.status = "error";
+          s.statusMsg = `id ${s.id} not found`;
+          failed++;
+          continue;
+        }
+        try {
+          target.name = s.to;
+          s.status = "applied";
+          s.statusMsg = `→ ${s.to}`;
+          applied++;
+        } catch (e) {
+          s.status = "error";
+          s.statusMsg = e.message;
+          failed++;
+        }
+      }
+    }, { commandName: "Banner Cloner — Apply all rename suggestions" });
+  } catch (e) {
+    appendChatMsg("assistant", `Apply All failed: ${e.message}`, { error: true });
+    return;
+  }
+  rebuildSuggestionCards();
+  appendChatMsg("system", `Apply All: ${applied} applied, ${failed} failed. Single Undo step.`);
+  if (applied > 0) attachJsonFromDoc({ silent: true }).catch(() => {});
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  })[ch]);
+}
+
+// ─── Chat action dispatcher (free-form commands → executable PS actions) ───
+
+const ACTION_DISPATCHER_PROMPT = `The user is giving you a free-form instruction about the attached layer JSON. Decide if it's an actionable command on layers, then return ONLY a JSON object — no markdown, no commentary.
+
+Supported actions (use these exact "type" values):
+
+CLONE BANNER (special — generates new artboards in PS)
+- "cloneBanner"   → { "type": "cloneBanner", "sizes": [ { "w": 300, "h": 250 }, ... ] }
+  Triggers when user asks to clone/duplicate/generate banner into new sizes.
+  Examples: "clone banner ra 300x250, 728x90" / "create 300x600 version" /
+            "generate banner for 970x250 and 160x600" / "ra thêm size 320x50"
+  Parse all WxH tokens from the message. Return ONE cloneBanner action with all sizes.
+  Do NOT return any other action when this is the intent.
+
+NAMING & VISIBILITY
+- "rename"        → { "type": "rename", "id": <id>, "to": "<new name>" }
+- "setVisible"    → { "type": "setVisible", "id": <id>, "visible": true|false }
+
+COLOR & TEXT
+- "setColor"      → { "type": "setColor", "id": <id>, "color": "#rrggbb" }            // text, shape, color-fill
+- "setFontSize"   → { "type": "setFontSize", "id": <id>, "to": <px number>, "anchor"?: "left"|"center"|"right" }  // text layers; anchor defaults to "left" so the text stays at its original left edge after resizing. Use "center" if user wants PS default (scale from center). Use "right" to keep right edge fixed.
+- "setFontFamily" → { "type": "setFontFamily", "id": <id>, "font": "<name>" }         // text layers
+- "setTextContent"→ { "type": "setTextContent", "id": <id>, "content": "<text>" }     // text layers
+- "setAlignment"  → { "type": "setAlignment", "id": <id>, "alignment": "left"|"center"|"right"|"justify" }
+
+TRANSFORM
+- "scaleLayer"    → { "type": "scaleLayer", "id": <id>, "percent": <number> }         // e.g. 80 = 80% of current
+- "resizeLayer"   → { "type": "resizeLayer", "id": <id>, "width"?: <px>, "height"?: <px> }   // either or both; preserves aspect
+- "setPosition"   → { "type": "setPosition", "id": <id>, "x": <px>, "y": <px> }       // ABSOLUTE top-left in canvas px. ONLY use when user gives absolute coordinates like "move to (100, 50)" / "set position 100,50" / "place at x=100 y=50". DO NOT use for relative moves like "move up 20px" — that's nudgeLayer. DO NOT invent coordinates when user gives only direction + amount.
+- "movePosition"  → { "type": "movePosition", "id": <id>, "direction": "up"|"down"|"left"|"right", "percent": <number> }
+  Relative move by a percentage of the layer's CURRENT coordinate WITHIN ITS ARTBOARD. The plugin auto-detects which artboard the layer belongs to and computes the relative top/left inside that artboard, then applies the percentage. E.g. layer at top=50px inside an artboard, direction="up", percent=10 → new top=45px inside that artboard. Triggers: "move headline up 10%", "đẩy logo xuống 5%", "headline lên 10% so với hiện tại". This is artboard-aware so it works consistently across multi-artboard documents.
+- "nudgeLayer"    → { "type": "nudgeLayer", "id": <id>, "direction": "up"|"down"|"left"|"right", "px": <number> }
+  Relative move by an absolute number of pixels (NOT percent). E.g. layer at top=50, direction="up", px=20 → new top=30. Use whenever the user specifies a PIXEL amount with words like "20px", "5 pixels", or just a number followed by "px". Triggers: "move headline up 20px", "đẩy CTA xuống 10px", "headline move top 20px so với vị trí hiện tại", "shift logo left 5px". CRITICAL: if the user says "px" / "pixels" / "pixel" / a bare number with px context — use nudgeLayer, NOT setPosition. setPosition is ONLY for absolute coordinates like "move to (100, 50)".
+- "alignToCanvas" → { "type": "alignToCanvas", "id": <id>, "anchor": "<anchor>" }     // anchors below
+- "setOpacity"    → { "type": "setOpacity", "id": <id>, "opacity": <0-100> }
+- "rotateLayer"   → { "type": "rotateLayer", "id": <id>, "degrees": <number> }
+  Rotate layer N degrees around its center. Positive = clockwise, negative = counter-clockwise. Triggers: "rotate Logo 15deg", "xoay Headline 90 độ".
+- "setLocked"     → { "type": "setLocked", "id": <id>, "locked": true|false }
+  Lock or unlock a layer (prevents accidental edits). Triggers: "lock Headline", "khóa background", "unlock all".
+- "setBlendMode"  → { "type": "setBlendMode", "id": <id>, "mode": "normal"|"multiply"|"screen"|"overlay"|"soft-light"|"hard-light"|"color-dodge"|"color-burn"|"darken"|"lighten"|"difference"|"hue"|"saturation"|"color"|"luminosity"|... }
+  Set Photoshop blend mode. Triggers: "Headline blend multiply", "set bg-image to screen mode".
+- "addStroke"     → { "type": "addStroke", "id": <id>, "width": <px>, "color": "#rrggbb", "position"?: "outside"|"center"|"inside" }
+  Add stroke layer effect (text/shape outline). Position defaults to "outside". Triggers: "add 2px white stroke to Headline", "viền đỏ 3px cho CTA".
+
+## TWO SEPARATE CASES — DON'T CONFUSE THEM
+
+### Case A: ACTION matches but TARGET LAYER is ambiguous
+User asks for a supported action (opacity, color, font, etc.) but the layer reference matches multiple layers OR no layer.
+
+- **Multiple layers match the same name** (e.g. "set Honda opacity 50%" when there are 7 layers named "Honda"): DEFAULT BEHAVIOR is to fire the action on ALL of them. Return mode="execute" with one action per matching layer. This is the EXPECTED workflow for batch operations across artboards. Do NOT clarify in this case — just execute the batch.
+- **No layer matches** the reference at all: return mode="chat" telling the user no layer with that name exists.
+- **Truly ambiguous reference** like "the red one" when there are two red layers: THEN use mode="clarify" with candidates list.
+
+### Case B: The ACTION itself isn't supported
+User asks for something not in the supported actions list (e.g. "add shadow", "duplicate layer", "merge layers", "convert to outlines", "apply filter", "rasterize"): return mode="clarify" with a message clearly stating the ACTION is not supported.
+
+{
+  "mode": "clarify",
+  "question": "The action '<verb the user requested>' isn't supported yet. Available actions: rename, color, font size, opacity, rotate, lock, blend mode, stroke, scale, resize, position, nudge, align to canvas, clone banner. Try rephrasing or ask for one of these."
+}
+
+### Examples
+
+- "set Honda opacity 50%" → Honda is a layer/group name, opacity is supported → FIRE setOpacity on every matching layer (mode="execute"). DO NOT clarify just because there are multiple matches.
+- "duplicate Honda" → action "duplicate" is NOT supported → mode="clarify" with action-not-supported message.
+- "tất cả Headline lên top 10%" → multiple Headline layers in multiple artboards, nudge IS supported → FIRE 13 actions (mode="execute"). DO NOT clarify.
+- "make Honda red" → multiple Honda, setColor supported → FIRE setColor on every Honda (mode="execute").
+- "add drop shadow to Headline" → action "drop shadow" not supported → mode="clarify".
+
+NEVER use mode="clarify" just because a layer name matches multiple layers. Multi-match is the NORMAL case for banner workflow.
+
+Anchor values for alignToCanvas (use these exact strings):
+"center", "left", "right", "top", "bottom",
+"top-left", "top-right", "bottom-left", "bottom-right",
+"center-horizontal" (= x-center, keep y), "center-vertical" (= y-center, keep x)
+
+Resolve layer references by walking the attached JSON. User may refer to a layer by:
+- exact name (case-insensitive)
+- partial match ("the logo" → layer with "logo" in name)
+- role description ("the red button" → match by visual hint + color in JSON)
+
+Response shapes:
+
+CASE A — clear, executable command (one or more actions):
+{ "mode": "execute", "actions": [ <action>, ... ], "summary": "<one-line description>" }
+
+CASE B — ambiguous (multiple layers match, or unclear value):
+{ "mode": "clarify", "question": "<short clarifying question>", "candidates": [{"id":..., "name":"..."}, ...] }
+
+CASE C — not an action / general question:
+{ "mode": "chat", "reply": "<your text answer>" }
+
+Rules:
+- "logo to 50px" without dimension → assume width 50, return { "type": "resizeLayer", "id": ..., "width": 50 }.
+- "scale logo up 10%" / "increase logo 10%" → percent = 110. "decrease 10%" → percent = 90.
+- "make logo half size" → percent = 50.
+- "center the logo" → alignToCanvas with anchor "center".
+- "center horizontally" / "center vs canvas horizontal" → anchor "center-horizontal".
+- "move logo to top-right corner" → alignToCanvas with anchor "top-right".
+- "all text layers" / "every button" → return multiple actions in one array.
+- Colors normalize to "#rrggbb" lowercase.
+- Font sizes: parse "14px", "14", "size 14" → 14.
+- Opacity: parse "50%", "0.5", "half opacity" → 50.
+- If no layer matches user's reference → mode "chat", tell them no match.
+- Never invent ids. Use ids exactly as they appear in the JSON.`;
+
+// ─── Clone Banner via AI reflow ───
+
+// Skill content cached after first load (cleared on plugin reload).
+// File lives at <pluginFolder>/skills/clone-banner.md and ships with the plugin.
+// Editing the .md file → reload plugin to pick up changes.
+let cachedReflowSkill = null;
+
+async function loadReflowSkill() {
+  if (cachedReflowSkill) return cachedReflowSkill;
+  try {
+    const pluginFolder = await fs.getPluginFolder();
+    const skillsFolder = await pluginFolder.getEntry("skills");
+    const skillFile = await skillsFolder.getEntry("clone-banner.md");
+    const content = await skillFile.read();
+    cachedReflowSkill = content;
+    log(`[CLONE-AI] Loaded skill from skills/clone-banner.md (${content.length} chars)`);
+    return content;
+  } catch (e) {
+    log(`[CLONE-AI] Could not load skill file: ${e.message}. Falling back to inline prompt.`);
+    return REFLOW_FALLBACK_PROMPT;
+  }
+}
+
+// Fallback used only if skills/clone-banner.md is missing or unreadable.
+// Kept minimal — the real rules live in the skill file.
+const REFLOW_FALLBACK_PROMPT = `You are a banner ads layout engineer. Reflow the base layer JSON into each target size. Output ONLY a JSON object: { "schema": "banner-cloner-v1", "mode": "layer-full", "artboards": [...] }. Base first, then each target. Preserve layer tree exactly (same names, kinds, nesting). Only change bounds and text fontSize/lineHeight. Scale uniformly by min(targetW/baseW, targetH/baseH). Backgrounds full-bleed. Round bounds to integers.`;
+
+function parseSizesFromText(text) {
+  const sizes = [];
+  const re = /(\d{2,5})\s*[x×*]\s*(\d{2,5})/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const w = parseInt(m[1], 10), h = parseInt(m[2], 10);
+    if (w > 0 && h > 0) sizes.push({ w, h });
+  }
+  return sizes;
+}
+
+// Validate reflowed JSON against base before applying. Throws on hard errors;
+// returns array of soft warnings for issues that are OK to apply with notice.
+function validateReflowedJson(reflowed, base, requestedSizes) {
+  const warnings = [];
+  if (!reflowed || !Array.isArray(reflowed.artboards) || !reflowed.artboards.length) {
+    throw new Error("Reflowed JSON missing artboards array.");
+  }
+  const baseLayerCount = countLayersInTree(base.layers);
+  const baseLayerNames = collectLayerNames(base.layers);
+  const baseLayerBoundsByName = collectLayerBoundsByName(base.layers);
+  const baseW = base.width, baseH = base.height;
+
+  const expected = 1 + requestedSizes.length;
+  if (reflowed.artboards.length !== expected) {
+    throw new Error(`Expected ${expected} artboards (base + ${requestedSizes.length}), got ${reflowed.artboards.length}.`);
+  }
+
+  for (let i = 0; i < reflowed.artboards.length; i++) {
+    const ab = reflowed.artboards[i];
+    const count = countLayersInTree(ab.layers || []);
+    if (count !== baseLayerCount) {
+      throw new Error(`Artboard ${ab.artboard || `#${i}`} has ${count} layers, expected ${baseLayerCount}.`);
+    }
+    const names = collectLayerNames(ab.layers || []);
+    const missing = baseLayerNames.filter(n => !names.includes(n));
+    const extra = names.filter(n => !baseLayerNames.includes(n));
+    if (missing.length) {
+      // Bot likely renamed layers. Show diff so user can see what changed.
+      const diffPairs = [];
+      const maxShow = Math.min(missing.length, extra.length, 5);
+      for (let k = 0; k < maxShow; k++) diffPairs.push(`"${missing[k]}" → "${extra[k]}"`);
+      const diffStr = diffPairs.length
+        ? `\nLikely renames (bot violated "never rename" rule):\n  ${diffPairs.join("\n  ")}`
+        : `\nMissing: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""}`;
+      throw new Error(`Artboard ${ab.artboard || `#${i}`} layer names don't match base.${diffStr}`);
+    }
+
+    // Skip per-layer scale checks for the base entry itself (i === 0).
+    if (i === 0) continue;
+
+    const W = ab.width, H = ab.height;
+    if (!W || !H) continue;
+
+    // Expected uniform scale for this size.
+    const s = Math.min(W / baseW, H / baseH);
+    // Allow ±50% deviation from uniform — anything bigger is almost certainly
+    // a bot error (matches the rule we put in the skill prompt).
+    const minScale = s * 0.5, maxScale = s * 1.5;
+
+    const leaves = flattenLeaves(ab.layers || []);
+    for (const l of leaves) {
+      const b = l.bounds;
+      if (!b) continue;
+      // Off-canvas warn (soft — informational only).
+      if (b.left + b.width <= 0 || b.top + b.height <= 0 || b.left >= W || b.top >= H) {
+        warnings.push(`${ab.artboard}: "${l.name}" is outside canvas (${b.left},${b.top} ${b.width}×${b.height})`);
+      }
+      // Scale sanity check — compare to base layer of same name.
+      const baseB = baseLayerBoundsByName.get(l.name);
+      if (baseB && baseB.width > 4 && baseB.height > 4) {
+        const layerScaleW = b.width / baseB.width;
+        const layerScaleH = b.height / baseB.height;
+        const layerScale = Math.max(layerScaleW, layerScaleH);
+        if (layerScale > maxScale * 1.5 || (layerScale > 0 && layerScale < minScale * 0.5)) {
+          warnings.push(`${ab.artboard}: "${l.name}" scaled ${layerScale.toFixed(2)}× (expected ~${s.toFixed(2)}×). Likely AI error — review in PS.`);
+        }
+      }
+    }
+  }
+  return warnings;
+}
+
+// Recursively filter out layers with visible=false. Groups whose all children
+// are hidden also get dropped. Returns a NEW tree — does not mutate input.
+function stripInvisibleLayers(layers) {
+  const out = [];
+  for (const l of layers || []) {
+    if (l.visible === false) continue;
+    if (l.children) {
+      const kept = stripInvisibleLayers(l.children);
+      if (kept.length === 0) continue;  // drop group that has no visible children
+      out.push({ ...l, children: kept });
+    } else {
+      out.push(l);
+    }
+  }
+  return out;
+}
+
+// Bot only sees + reflows visible layers. After reflow, merge hidden layers
+// from the base back into each target artboard (preserve tree shape). Hidden
+// layers keep their original bounds — they're not visible so accuracy
+// doesn't matter; what matters is the tree round-trips for the import step.
+function mergeHiddenLayersBack(reflowedArtboards, baseLayers) {
+  for (const ab of reflowedArtboards) {
+    ab.layers = mergeHiddenIntoLayers(ab.layers || [], baseLayers);
+  }
+}
+function mergeHiddenIntoLayers(reflowedTree, baseTree) {
+  const reflowedByName = new Map();
+  for (const r of reflowedTree) reflowedByName.set(r.name, r);
+  const out = [];
+  for (const base of baseTree) {
+    if (base.visible === false) {
+      // Re-insert hidden layer unchanged from base.
+      out.push(base);
+      continue;
+    }
+    const reflowed = reflowedByName.get(base.name);
+    if (!reflowed) {
+      // Bot dropped a visible layer — fall back to base copy so import doesn't fail.
+      out.push(base);
+      continue;
+    }
+    if (base.children && reflowed.children) {
+      reflowed.children = mergeHiddenIntoLayers(reflowed.children, base.children);
+    }
+    out.push(reflowed);
+  }
+  return out;
+}
+
+function collectLayerBoundsByName(layers, map = new Map()) {
+  for (const l of layers || []) {
+    if (l.bounds) map.set(l.name, l.bounds);
+    if (l.children) collectLayerBoundsByName(l.children, map);
+  }
+  return map;
+}
+
+function countLayersInTree(layers) {
+  let n = 0;
+  for (const l of layers || []) {
+    n++;
+    if (l.children) n += countLayersInTree(l.children);
+  }
+  return n;
+}
+
+function collectLayerNames(layers) {
+  const names = [];
+  for (const l of layers || []) {
+    names.push(l.name);
+    if (l.children) names.push(...collectLayerNames(l.children));
+  }
+  return names;
+}
+
+function flattenLeaves(layers) {
+  const out = [];
+  for (const l of layers || []) {
+    if (l.children) out.push(...flattenLeaves(l.children));
+    else out.push(l);
+  }
+  return out;
+}
+
+// Capture a downscaled JPG of the current artboard, return as base64 data URL.
+// Steps: duplicate doc to a temp doc cropped to artboard → flatten + resize →
+// export as JPG to plugin data folder → read bytes → base64. Cleanup temp doc.
+//
+// 1568px is the sweet spot OpenAI recommends for "high detail" mode — the
+// model rescales internally to fit a 768×2048 grid and reads details (small
+// text, layer separation). detail=high costs ~765 tokens vs ~85 for low,
+// but for layout analysis it's worth it.
+const MAX_THUMB_EDGE = 1568;
+
+async function captureArtboardThumbnail(artboardLayer, artboardBounds) {
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No active document");
+
+  let tempDoc = null;
+  let createdFile = null;
+  try {
+    // Duplicate active doc → temp doc we can mutate without touching the source.
+    tempDoc = await doc.duplicate();
+
+    // Crop temp doc to artboard rect (artboardBounds is canvas-relative px).
+    const { left, top, width, height } = artboardBounds;
+    await bp([{
+      _obj: "crop",
+      _target: [{ _ref: "document", _enum: "ordinal", _value: "targetEnum" }],
+      to: {
+        _obj: "rectangle",
+        top:    { _unit: "pixelsUnit", _value: top },
+        left:   { _unit: "pixelsUnit", _value: left },
+        bottom: { _unit: "pixelsUnit", _value: top + height },
+        right:  { _unit: "pixelsUnit", _value: left + width },
+      },
+      delete: true,
+      _options: { dialogOptions: "dontDisplay" },
+    }]);
+
+    // Flatten so smart objects / effects render to pixels.
+    await bp([{
+      _obj: "flattenImage",
+      _options: { dialogOptions: "dontDisplay" },
+    }]);
+
+    // Downscale long edge ≤ MAX_THUMB_EDGE.
+    const longEdge = Math.max(width, height);
+    if (longEdge > MAX_THUMB_EDGE) {
+      const scale = MAX_THUMB_EDGE / longEdge;
+      await bp([{
+        _obj: "imageSize",
+        width:  { _unit: "pixelsUnit", _value: Math.round(width  * scale) },
+        height: { _unit: "pixelsUnit", _value: Math.round(height * scale) },
+        scaleStyles: true,
+        constrainProportions: true,
+        interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubicAutomatic" },
+        _options: { dialogOptions: "dontDisplay" },
+      }]);
+    }
+
+    // Save JPG to plugin data folder.
+    const dataFolder = await fs.getDataFolder();
+    createdFile = await dataFolder.createFile("chat-thumb.jpg", { overwrite: true });
+    // Quality 10 (PS scale 0-12) ≈ web JPG 88 — sharper than the default 8,
+    // because high-detail vision benefits from less compression noise.
+    await app.activeDocument.saveAs.jpg(createdFile, { quality: 10 }, true);
+
+    // Read bytes → base64. uxp.storage.formats.binary returns an ArrayBuffer.
+    const bytes = await createdFile.read({ format: uxp.storage.formats.binary });
+    const b64 = arrayBufferToBase64(bytes);
+    const dataUrl = `data:image/jpeg;base64,${b64}`;
+    // Also return the file native path so callers that need to load via
+    // <img>/HTML canvas can use file://… (UXP doesn't support data URLs as
+    // img.src — file:// works).
+    return { dataUrl, nativePath: createdFile.nativePath };
+  } finally {
+    // Close temp doc without saving — original doc stays untouched.
+    try { if (tempDoc) await tempDoc.closeWithoutSaving(); } catch (e) {}
+  }
+}
+
+// UXP doesn't expose btoa for ArrayBuffer directly; manual base64 encode.
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+// Show a list of artboards in chat so the user picks which one to use as the
+// reflow base. Resolves to the picked artboard id, or null if cancelled.
+// Reuses artboardPickerItems (already scanned by the Settings tab).
+async function pickBaseArtboard() {
+  await ensureArtboardPickerLoaded();
+  const items = artboardPickerItems || [];
+  if (!items.length) throw new Error("No artboards found in document.");
+
+  // Auto-pick if only one artboard exists — no need to ask.
+  if (items.length === 1) {
+    log(`[CLONE-AI] Only one artboard in doc — auto-pick "${items[0].name}".`);
+    return items[0].id;
+  }
+
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "chat-artboard-picker";
+
+    const header = document.createElement("div");
+    header.className = "chat-artboard-picker-header";
+    header.textContent = `Pick the BASE artboard to reflow from (${items.length} found):`;
+    wrap.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "chat-artboard-picker-list";
+    wrap.appendChild(list);
+
+    // Sort by area ascending — smallest first (typical "base" workflow).
+    const sorted = [...items].sort((a, b) => (a.width * a.height) - (b.width * b.height));
+
+    let pickedId = null;
+    for (const item of sorted) {
+      const btn = document.createElement("button");
+      btn.className = "chat-artboard-pick-btn";
+      btn.textContent = `${item.name} — ${item.width}×${item.height}`;
+      btn.addEventListener("click", () => {
+        pickedId = item.id;
+        // Visually mark selected, disable all
+        list.querySelectorAll("button").forEach(b => {
+          b.disabled = true;
+          b.classList.remove("is-selected");
+        });
+        btn.classList.add("is-selected");
+        resolve(pickedId);
+      });
+      list.appendChild(btn);
+    }
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "chat-artboard-pick-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => {
+      list.querySelectorAll("button").forEach(b => b.disabled = true);
+      cancelBtn.disabled = true;
+      resolve(null);
+    });
+    wrap.appendChild(cancelBtn);
+
+    // Render as a chat message
+    const box = document.getElementById("chatMessages");
+    const msg = document.createElement("div");
+    msg.className = "chat-msg chat-msg-system";
+    msg.appendChild(wrap);
+    box.appendChild(msg);
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+async function runCloneBannerAction(sizes) {
+  const apiKey = String(document.getElementById("chatApiKey")?.value || "").trim();
+  if (!apiKey) throw new Error("Missing OpenAI API key.");
+  if (!sizes?.length) throw new Error("No target sizes provided.");
+
+  const doc = app.activeDocument;
+  if (!doc) throw new Error("No PS document open.");
+
+  // Step 1 — pick the base artboard. Required when the doc has multiple
+  // artboards (e.g. after a prior clone), since plugin can't guess which is
+  // "base". Picker selects ONE artboard and overrides artboardPickerSelected
+  // for the duration of this clone.
+  log(`[CLONE-AI] Asking user to pick base artboard...`);
+  const pickedArtboardId = await pickBaseArtboard();
+  if (!pickedArtboardId) {
+    appendChatMsg("system", `Clone cancelled — no base artboard selected.`);
+    return "Cancelled by user (no base picked).";
+  }
+
+  // Override picker selection to just the chosen artboard.
+  const originalSelection = new Set(artboardPickerSelected);
+  artboardPickerSelected.clear();
+  artboardPickerSelected.add(pickedArtboardId);
+
+  try {
+    log(`[CLONE-AI] Reading base artboard from current doc...`);
+    const base = await buildLayerJsonFromDoc();
+    const baseUnit = base.artboards ? base.artboards[0] : base;
+    if (!baseUnit?.layers) throw new Error("Could not read base artboard layers.");
+    return await runCloneBannerWithBase(sizes, base, baseUnit, apiKey);
+  } finally {
+    // Restore picker selection so other plugin flows aren't affected.
+    artboardPickerSelected.clear();
+    for (const id of originalSelection) artboardPickerSelected.add(id);
+  }
+}
+
+async function runCloneBannerWithBase(sizes, base, baseUnit, apiKey) {
+
+  // Normalize to a single-artboard payload for the reflow prompt.
+  const basePayload = {
+    artboard: baseUnit.artboard || base.artboard || "base",
+    width: baseUnit.width || base.width,
+    height: baseUnit.height || base.height,
+    layers: baseUnit.layers,
+  };
+
+  // Strip invisible layers from the payload sent to the bot (less noise, less
+  // tokens). But keep them in `basePayload.layers` for validation — they still
+  // exist in the doc and must round-trip through clone untouched.
+  const visiblePayload = {
+    ...basePayload,
+    layers: stripInvisibleLayers(basePayload.layers),
+  };
+  const totalLayers = countLayersInTree(basePayload.layers);
+  const visibleLayers = countLayersInTree(visiblePayload.layers);
+  const hiddenCount = totalLayers - visibleLayers;
+
+  log(`[CLONE-AI] Base: ${basePayload.artboard} ${basePayload.width}×${basePayload.height}, ${totalLayers} layers${hiddenCount ? ` (${hiddenCount} hidden → skipped from bot)` : ""}`);
+  log(`[CLONE-AI] Targets: ${sizes.map(s => `${s.w}x${s.h}`).join(", ")}`);
+
+  // Show base artboard in chat so the user can confirm we're reading the
+  // right source (this is non-obvious when the doc has multiple artboards).
+  appendChatMsg("system", `📐 Base artboard: ${basePayload.artboard} (${basePayload.width}×${basePayload.height}) → ${totalLayers} layers${hiddenCount ? ` · ${hiddenCount} hidden skipped` : ""}`);
+
+  const skillPrompt = await loadReflowSkill();
+
+  // Capture base artboard as JPG thumbnail so the model can see the actual
+  // design (not just JSON math). Wrapped in modal — saveAs requires it.
+  // Failure here is non-fatal: fall back to JSON-only reflow.
+  let thumbDataUrl = null;
+  try {
+    const artboards = await resolveSelectedArtboards();
+    const baseAB = artboards[0];
+    if (baseAB) {
+      log(`[CLONE-AI] Capturing artboard thumbnail (JPG, max ${MAX_THUMB_EDGE}px, high detail)...`);
+      let thumb;
+      await core.executeAsModal(async () => {
+        thumb = await captureArtboardThumbnail(baseAB.layer, baseAB.size);
+      }, { commandName: "Banner Cloner — Capture chat thumbnail" });
+
+      thumbDataUrl = thumb.dataUrl;
+      const kb = Math.round(thumbDataUrl.length / 1024);
+      log(`[CLONE-AI] Thumbnail ready: ${kb}KB`);
+      appendChatMsg("system", `📷 Screenshot attached (${kb}KB @ ${MAX_THUMB_EDGE}px, high detail)`);
+    }
+  } catch (e) {
+    log(`[CLONE-AI] Thumbnail capture failed (${e.message}) — proceeding without visual.`);
+    appendChatMsg("system", `⚠️ Screenshot capture failed — using JSON only.`);
+  }
+
+  log(`[CLONE-AI] Calling gpt-4o to reflow... (may take 10-30s)`);
+
+  const userText = thumbDataUrl
+    ? `BASE ARTBOARD JSON (visible layers only — hidden layers omitted):
+${JSON.stringify(visiblePayload)}
+
+TARGET SIZES (in order):
+${sizes.map(s => `${s.w}x${s.h}`).join(", ")}
+
+The image below is the rendered screenshot of the base artboard.
+
+You MUST follow this two-step process internally before returning the JSON output:
+
+STEP 1 — VISUAL ANALYSIS (do this mentally, do not include in output):
+- Look at the screenshot carefully. Identify every visible visual element (background image, headline text, sub-text, CTA button, logo, decorative shapes, gradients, etc.).
+- For EACH layer in the JSON \`layers\` tree, mentally answer:
+  • Where is this layer located in the screenshot? (top/middle/bottom × left/center/right, or "off-stage / not visible")
+  • What does it look like visually? (background photo of person + car / white headline text / Honda logo / gradient overlay / off-canvas decoration / etc.)
+  • What is its design role? (focal point / supporting / decoration / background / off-stage helper)
+- Match layers using:
+  • \`text.content\` → find that exact phrase in the screenshot
+  • \`kind\` (smartObject/pixel covering ≥60% canvas = the visible background image)
+  • Descriptive names (\`logo\`, \`cta\`, \`headline\`)
+  • Off-canvas bounds + invisible in screenshot → off-stage helper, keep off-stage
+
+STEP 2 — REFLOW (this is the JSON you return):
+- Use your visual analysis to make smart layout decisions for each target size.
+- A layer that's the visible background image in the screenshot should also fill the canvas (cover) in the target.
+- A layer that's clearly off-stage in the screenshot (bounds far outside canvas, invisible) should STAY off-stage proportionally — NEVER magnified into the visible area.
+- Critical content (text matched to "U.S. MILITARY...", CTA, logo) must stay inside the target canvas.
+- Follow all reflow rules from the system prompt (uniform scale, font clamp by role, etc.).
+
+STEP 3 — OVERLAP CHECK (mandatory, do this before returning):
+- For each target, list the content layers (headline, sub-text, CTA, logo, car-name, disclaimer — anything readable). For multi-line text, compute true rendered height = fontSize × line-count × 1.15.
+- Verify no two content-layer bounding boxes intersect.
+- If any pair overlaps, adjust font-size DOWN or REPOSITION until the layout is clean. This is non-negotiable — a banner where text overlaps text is unshippable.
+
+Return ONLY the JSON object — no commentary, no markdown, no analysis text.`
+    : `BASE ARTBOARD JSON (visible layers only — hidden layers omitted):
+${JSON.stringify(visiblePayload)}
+
+TARGET SIZES (in order):
+${sizes.map(s => `${s.w}x${s.h}`).join(", ")}
+
+(No screenshot available — reflow from JSON only, following the rules above.)
+
+Return ONLY the JSON object — no commentary, no markdown.`;
+
+  const userContent = thumbDataUrl
+    ? [
+        { type: "text", text: userText },
+        { type: "image_url", image_url: { url: thumbDataUrl, detail: "high" } },
+      ]
+    : userText;
+
+  const messages = [
+    { role: "system", content: skillPrompt },
+    { role: "user", content: userContent },
+  ];
+  const reply = await callOpenAI(apiKey, "gpt-4o", messages, { jsonMode: true });
+
+  let reflowed;
+  try {
+    reflowed = JSON.parse(reply);
+  } catch (e) {
+    log(`[CLONE-AI] Parse error. Reply head: ${reply.slice(0, 400)}`);
+    throw new Error(`Bot returned invalid JSON: ${e.message}`);
+  }
+
+  // Bot only saw visible layers. Splice hidden ones back into each artboard's
+  // tree so import sees the same shape as the full base.
+  if (hiddenCount > 0 && Array.isArray(reflowed.artboards)) {
+    log(`[CLONE-AI] Merging ${hiddenCount} hidden layer(s) back into reflowed tree...`);
+    mergeHiddenLayersBack(reflowed.artboards, basePayload.layers);
+  }
+
+  log(`[CLONE-AI] Validating ${reflowed.artboards?.length || 0} artboards...`);
+  const warnings = validateReflowedJson(reflowed, basePayload, sizes);
+  for (const w of warnings) log(`[CLONE-AI] WARN: ${w}`);
+
+  log(`[CLONE-AI] Importing reflowed JSON into plugin state...`);
+  await importJsonFromObject(reflowed, `chat-clone-${Date.now()}.json`);
+
+  // Set sizes input to ONLY the new sizes (skip the base — it stays in doc).
+  const sizeStrings = sizes.map(s => `${s.w}x${s.h}`);
+  sizesInput.value = sizeStrings.join(" ");
+  renderPresets();
+
+  // Use the same entry point as the "Clone Artboards" button: respect the
+  // current cloneMode (default "artboards" — all sizes in one document,
+  // side-by-side). cloneAll() would create one document per size, which
+  // doesn't match the typical workflow.
+  log(`[CLONE-AI] Running Clone Artboards (mode=${cloneMode})...`);
+  if (cloneMode === "artboards") {
+    await cloneAsArtboards();
+  } else {
+    await cloneAll();
+  }
+
+  return `Cloned ${sizes.length} size(s): ${sizeStrings.join(", ")}${warnings.length ? ` (${warnings.length} warning(s) — see Logs)` : ""}`;
+}
+
+
+async function executeAction(action) {
+  if (!action || typeof action !== "object") throw new Error("Invalid action");
+  switch (action.type) {
+    case "cloneBanner": {
+      // No executeAsModal wrapper here — runCloneBannerAction calls importJson
+      // and cloneAll, which internally manage their own modal scopes.
+      const msg = await runCloneBannerAction(action.sizes);
+      return msg;
+    }
+    case "rename": {
+      const layer = await getLayerForOp(action.id);
+      await core.executeAsModal(async () => {
+        layer.name = action.to;
+      }, { commandName: `Chat: rename → ${action.to}` });
+      return `Renamed to "${action.to}"`;
+    }
+    case "setColor": {
+      await core.executeAsModal(async () => {
+        await setLayerColor(action.id, action.color);
+      }, { commandName: `Chat: set color → ${action.color}` });
+      return `Color set to ${action.color}`;
+    }
+    case "setFontSize": {
+      // PS transform-based font resize scales text from its center, so the
+      // bounds.left shifts inward when font shrinks. For banner workflow we
+      // typically want text anchored to its current left edge. Default behavior:
+      // capture left BEFORE the resize, then re-anchor by moving the layer
+      // horizontally to restore the original left.
+      //
+      // Override: action.anchor can be "left" (default), "center", or "right".
+      const anchor = String(action.anchor || "left").toLowerCase();
+      const layer = await getLayerForOp(action.id);
+      const beforeL = layer.bounds.left;
+      const beforeR = layer.bounds.left + layer.bounds.width;
+      const beforeCx = (beforeL + beforeR) / 2;
+
+      await core.executeAsModal(async () => {
+        await setTextFontSize(action.id, Number(action.to));
+      }, { commandName: `Chat: font size → ${action.to}px` });
+
+      // Re-fetch bounds and re-anchor.
+      if (anchor !== "center") {
+        const fresh = await getLayerForOp(action.id);
+        const afterL = fresh.bounds.left;
+        const afterR = fresh.bounds.left + fresh.bounds.width;
+        const afterCx = (afterL + afterR) / 2;
+        let dx = 0;
+        if (anchor === "left") dx = beforeL - afterL;
+        else if (anchor === "right") dx = beforeR - afterR;
+        if (Math.abs(dx) > 0.5) {
+          await core.executeAsModal(async () => {
+            await bp([{
+              _obj: "move",
+              _target: [{ _ref: "layer", _id: action.id }],
+              to: { _obj: "offset",
+                horizontal: { _unit: "pixelsUnit", _value: dx },
+                vertical:   { _unit: "pixelsUnit", _value: 0 } },
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          }, { commandName: `Chat: re-anchor ${anchor}` });
+          log(`[FONT-ANCHOR] re-anchored ${anchor}: dx=${dx.toFixed(1)}`);
+        }
+      }
+      return `Font size set to ${action.to}px (anchor: ${anchor})`;
+    }
+    case "setVisible": {
+      const layer = await getLayerForOp(action.id);
+      await core.executeAsModal(async () => {
+        layer.visible = !!action.visible;
+      }, { commandName: `Chat: ${action.visible ? "show" : "hide"} layer` });
+      return action.visible ? "Layer shown" : "Layer hidden";
+    }
+    case "scaleLayer": {
+      const pct = Number(action.percent);
+      await core.executeAsModal(async () => {
+        await scaleLayerByPercent(action.id, pct);
+      }, { commandName: `Chat: scale → ${pct}%` });
+      return `Scaled to ${pct}%`;
+    }
+    case "resizeLayer": {
+      const w = action.width != null ? Number(action.width) : null;
+      const h = action.height != null ? Number(action.height) : null;
+      await core.executeAsModal(async () => {
+        await resizeLayerTo(action.id, w, h);
+      }, { commandName: `Chat: resize → ${w || "?"}×${h || "?"}` });
+      return `Resized to ${w || "auto"}×${h || "auto"}px`;
+    }
+    case "setPosition": {
+      const x = Number(action.x), y = Number(action.y);
+      await core.executeAsModal(async () => {
+        await moveLayerToPosition(action.id, x, y);
+      }, { commandName: `Chat: position → (${x}, ${y})` });
+      return `Moved to (${x}, ${y})`;
+    }
+    case "movePosition": {
+      // Relative move by % of current coordinate (not canvas, not layer size).
+      // E.g. current top=50, dir=up, percent=10 → new top = 45 (moved up 5px).
+      const dir = String(action.direction || "").toLowerCase();
+      const pct = Number(action.percent);
+      await core.executeAsModal(async () => {
+        await moveLayerByPercent(action.id, dir, pct);
+      }, { commandName: `Chat: move ${dir} ${pct}%` });
+      return `Moved ${dir} by ${pct}% of current position`;
+    }
+    case "nudgeLayer": {
+      // Relative move by N pixels (not percent, not absolute).
+      const dir = String(action.direction || "").toLowerCase();
+      const px = Number(action.px);
+      await core.executeAsModal(async () => {
+        await nudgeLayerByPixels(action.id, dir, px);
+      }, { commandName: `Chat: nudge ${dir} ${px}px` });
+      return `Nudged ${dir} by ${px}px`;
+    }
+    case "alignToCanvas": {
+      await core.executeAsModal(async () => {
+        await alignLayerToCanvas(action.id, action.anchor);
+      }, { commandName: `Chat: align → ${action.anchor}` });
+      return `Aligned ${action.anchor}`;
+    }
+    case "setOpacity": {
+      const op = Number(action.opacity);
+      await core.executeAsModal(async () => {
+        await setLayerOpacity(action.id, op);
+      }, { commandName: `Chat: opacity → ${op}%` });
+      return `Opacity set to ${op}%`;
+    }
+    case "rotateLayer": {
+      const deg = Number(action.degrees);
+      await core.executeAsModal(async () => {
+        await rotateLayer(action.id, deg);
+      }, { commandName: `Chat: rotate → ${deg}°` });
+      return `Rotated ${deg}°`;
+    }
+    case "setLocked": {
+      const lock = !!action.locked;
+      await core.executeAsModal(async () => {
+        await setLayerLocked(action.id, lock);
+      }, { commandName: `Chat: ${lock ? "lock" : "unlock"} layer` });
+      return lock ? "Layer locked" : "Layer unlocked";
+    }
+    case "setBlendMode": {
+      await core.executeAsModal(async () => {
+        await setLayerBlendMode(action.id, action.mode);
+      }, { commandName: `Chat: blend mode → ${action.mode}` });
+      return `Blend mode set to ${action.mode}`;
+    }
+    case "addStroke": {
+      const width = Number(action.width);
+      await core.executeAsModal(async () => {
+        await addLayerStroke(action.id, width, action.color, action.position);
+      }, { commandName: `Chat: stroke ${width}px ${action.color}` });
+      return `Stroke ${width}px ${action.color} added (${action.position || "outside"})`;
+    }
+    case "setTextContent": {
+      await core.executeAsModal(async () => {
+        await setTextContent(action.id, action.content);
+      }, { commandName: `Chat: set text content` });
+      return `Text updated`;
+    }
+    case "setFontFamily": {
+      await core.executeAsModal(async () => {
+        await setTextFontFamily(action.id, action.font);
+      }, { commandName: `Chat: font → ${action.font}` });
+      return `Font set to ${action.font}`;
+    }
+    case "setAlignment": {
+      await core.executeAsModal(async () => {
+        await setTextAlignment(action.id, action.alignment);
+      }, { commandName: `Chat: align text → ${action.alignment}` });
+      return `Text aligned ${action.alignment}`;
+    }
+    default:
+      throw new Error(`Action "${action.type}" not implemented in this plugin. Bot should return mode="clarify" instead of inventing actions. Supported: cloneBanner, rename, setVisible, setColor, setFontSize, setFontFamily, setTextContent, setAlignment, scaleLayer, resizeLayer, setPosition, nudgeLayer, movePosition, alignToCanvas, setOpacity, rotateLayer, setLocked, setBlendMode, addStroke.`);
+  }
+}
+
+async function renderAndExecuteActions(rawReply, bodyEl) {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawReply);
+  } catch (e) {
+    log(`[CHAT ACTION] JSON parse failed: ${e.message}. Raw reply head: ${rawReply.slice(0, 200)}`);
+    bodyEl.textContent = `Could not parse bot response.\n\n${rawReply}`;
+    return;
+  }
+  log(`[CHAT ACTION] Parsed mode=${parsed.mode}, actions=${parsed.actions?.length ?? 0}`);
+  // Dump action types + targets so we can see what the bot is actually
+  // returning vs what the user asked for. Helps diagnose intent drift
+  // (e.g. user said "move up 10%" but bot returned setPosition / scaleLayer).
+  if (Array.isArray(parsed.actions)) {
+    for (let i = 0; i < parsed.actions.length; i++) {
+      const a = parsed.actions[i];
+      const params = Object.keys(a || {}).filter(k => k !== "type" && k !== "id").map(k => `${k}=${JSON.stringify(a[k])}`).join(" ");
+      log(`[CHAT ACTION]   #${i + 1}: ${a?.type || "<no-type>"} id=${a?.id} ${params}`);
+    }
+  }
+
+  // Auto-wrap: bot sometimes returns a bare action object (e.g. { type: "cloneBanner", sizes: [...] })
+  // instead of the { mode: "execute", actions: [...] } envelope. Normalize it.
+  if (!parsed.mode && parsed.type) {
+    log(`[CHAT ACTION] Auto-wrapping bare action of type "${parsed.type}"`);
+    parsed = { mode: "execute", actions: [parsed], summary: describeAction(parsed) };
+  }
+  // Also handle { actions: [...] } without mode field.
+  if (!parsed.mode && Array.isArray(parsed.actions) && parsed.actions.length) {
+    log(`[CHAT ACTION] Auto-adding mode="execute" to bare actions array`);
+    parsed.mode = "execute";
+  }
+  // Or { action: {...} } singular.
+  if (!parsed.mode && parsed.action?.type) {
+    log(`[CHAT ACTION] Auto-wrapping singular "action" field`);
+    parsed = { mode: "execute", actions: [parsed.action], summary: describeAction(parsed.action) };
+  }
+
+  // mode: chat → just show reply text
+  if (parsed.mode === "chat" || (!parsed.mode && parsed.reply)) {
+    bodyEl.textContent = parsed.reply || rawReply;
+    return;
+  }
+
+  // No recognized shape — dump raw for debugging.
+  if (!parsed.mode) {
+    log(`[CHAT ACTION] Unknown response shape. Keys: ${Object.keys(parsed).join(", ")}. Raw head: ${rawReply.slice(0, 300)}`);
+    bodyEl.textContent = `Bot returned unrecognized format:\n\n${rawReply}`;
+    return;
+  }
+
+  // mode: clarify → show question + candidates list (no action yet)
+  if (parsed.mode === "clarify") {
+    bodyEl.innerHTML = "";
+    const q = document.createElement("div");
+    q.className = "chat-action-clarify";
+    q.textContent = parsed.question || "Which layer did you mean?";
+    bodyEl.appendChild(q);
+    if (Array.isArray(parsed.candidates) && parsed.candidates.length) {
+      const list = document.createElement("ul");
+      list.className = "chat-action-candidates";
+      for (const c of parsed.candidates) {
+        const li = document.createElement("li");
+        li.textContent = `[${c.id}] ${c.name}`;
+        list.appendChild(li);
+      }
+      bodyEl.appendChild(list);
+    }
+    return;
+  }
+
+  // mode: execute → run actions one by one, log each result
+  if (parsed.mode === "execute" && Array.isArray(parsed.actions)) {
+    bodyEl.innerHTML = "";
+    const summary = document.createElement("div");
+    summary.className = "chat-action-summary";
+    summary.textContent = parsed.summary || `Running ${parsed.actions.length} action(s)...`;
+    bodyEl.appendChild(summary);
+
+    const list = document.createElement("div");
+    list.className = "chat-action-list";
+    bodyEl.appendChild(list);
+
+    let okCount = 0, failCount = 0;
+    for (const action of parsed.actions) {
+      const row = document.createElement("div");
+      row.className = "chat-action-row";
+      const label = describeAction(action);
+      const labelEl = document.createElement("span");
+      labelEl.className = "chat-action-label";
+      labelEl.textContent = label;
+      const statusEl = document.createElement("span");
+      statusEl.className = "chat-action-status chat-action-running";
+      statusEl.textContent = "…";
+      row.appendChild(labelEl);
+      row.appendChild(statusEl);
+      list.appendChild(row);
+
+      try {
+        const msg = await executeAction(action);
+        statusEl.textContent = "✓";
+        statusEl.classList.remove("chat-action-running");
+        statusEl.classList.add("chat-action-ok");
+        statusEl.title = msg;
+        okCount++;
+      } catch (e) {
+        statusEl.textContent = "✗";
+        statusEl.classList.remove("chat-action-running");
+        statusEl.classList.add("chat-action-fail");
+        statusEl.title = e.message;
+        labelEl.title = e.message;
+        log(`[CHAT ACTION] ${label} failed: ${e.message}`);
+        failCount++;
+      }
+    }
+    const footer = document.createElement("div");
+    footer.className = "chat-action-footer";
+    footer.textContent = `Done: ${okCount} ok, ${failCount} failed.`;
+    bodyEl.appendChild(footer);
+
+    // Surface completion clearly so the user knows the batch finished.
+    // Three places:
+    //   1) Logs panel (single line, machine-parseable)
+    //   2) Chat system message (big visible badge in conversation)
+    log(`[CHAT ACTION] === Apply done — ${okCount} ok, ${failCount} failed, ${parsed.actions.length} total ===`);
+    if (failCount === 0) {
+      appendChatMsg("system", `✅ Apply done — ${okCount} action(s) applied successfully.`);
+    } else if (okCount === 0) {
+      appendChatMsg("system", `❌ Apply failed — all ${failCount} action(s) errored (see Logs).`);
+    } else {
+      appendChatMsg("system", `⚠️ Apply done — ${okCount} ok, ${failCount} failed (see Logs for details).`);
+    }
+
+    // Auto-refresh JSON so next command sees post-action state (renamed
+    // layers, new colors, etc.). Silent: don't spam chat with system msg.
+    if (okCount > 0) {
+      attachJsonFromDoc({ silent: true }).catch(() => {});
+    }
+    return;
+  }
+
+  bodyEl.textContent = rawReply;
+}
+
+function describeAction(a) {
+  if (!a) return "(empty action)";
+  if (a.type === "cloneBanner") {
+    const sizes = (a.sizes || []).map(s => `${s.w}x${s.h}`).join(", ");
+    return `Clone banner → ${sizes || "(no sizes)"}`;
+  }
+  const label = layerLabelForId(a.id);
+  switch (a.type) {
+    case "rename":         return `Rename ${label} → "${a.to}"`;
+    case "setVisible":     return `${a.visible ? "Show" : "Hide"} ${label}`;
+    case "setColor":       return `Color ${label} → ${a.color}`;
+    case "setFontSize":    return `Font size ${label} → ${a.to}px`;
+    case "setFontFamily":  return `Font family ${label} → ${a.font}`;
+    case "setTextContent": return `Text content ${label} → "${String(a.content).slice(0, 30)}${a.content?.length > 30 ? "…" : ""}"`;
+    case "setAlignment":   return `Align text ${label} → ${a.alignment}`;
+    case "scaleLayer":     return `Scale ${label} → ${a.percent}%`;
+    case "resizeLayer":    return `Resize ${label} → ${a.width || "auto"}×${a.height || "auto"}px`;
+    case "setPosition":    return `Move ${label} → (${a.x}, ${a.y})`;
+    case "movePosition":   return `Move ${label} ${a.direction} ${a.percent}%`;
+    case "nudgeLayer":     return `Nudge ${label} ${a.direction} ${a.px}px`;
+    case "alignToCanvas":  return `Align ${label} to canvas → ${a.anchor}`;
+    case "setOpacity":     return `Opacity ${label} → ${a.opacity}%`;
+    case "rotateLayer":    return `Rotate ${label} → ${a.degrees}°`;
+    case "setLocked":      return `${a.locked ? "Lock" : "Unlock"} ${label}`;
+    case "setBlendMode":   return `Blend mode ${label} → ${a.mode}`;
+    case "addStroke":      return `Stroke ${label} → ${a.width}px ${a.color} (${a.position || "outside"})`;
+    default:               return `${a.type} ${label}`;
+  }
+}
+
+// Look up the layer name for an id from the attached JSON (best-effort label).
+// Falls back to "#id" if not found (e.g. JSON was refreshed since send).
+function layerLabelForId(id) {
+  if (!chatAttachedJson) return `#${id}`;
+  function walk(arr) {
+    for (const l of arr || []) {
+      if (l.id === id) return l.name;
+      if (l.children) {
+        const hit = walk(l.children);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+  const name = chatAttachedJson.artboards
+    ? chatAttachedJson.artboards.map(ab => walk(ab.layers)).find(Boolean)
+    : walk(chatAttachedJson.layers);
+  return name ? `"${name}"` : `#${id}`;
+}
