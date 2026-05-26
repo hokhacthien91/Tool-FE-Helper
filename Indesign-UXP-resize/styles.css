@@ -453,13 +453,26 @@ textarea {
 .comp-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 6px 0;
+  gap: 6px;
+  padding: 12px 0;
   border-bottom: 1px solid #2a2a2a;
+}
+
+.comp-group:first-child {
+  padding-top: 6px;
 }
 
 .comp-group:last-child {
   border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.anchor-row {
+  padding: 2px 0;
+}
+
+.sub-row {
+  padding: 2px 0;
 }
 
 .chk-bold {
@@ -490,4 +503,54 @@ textarea {
   padding: 5px 7px;
   font-size: 12px;
   font-family: inherit;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-header:hover {
+  background: #333;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.section-caret {
+  font-size: 10px;
+  color: #b0b0b0;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+  transition: transform 0.15s;
+}
+
+.section.collapsed .section-caret {
+  transform: rotate(-90deg);
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section.collapsed .section-body {
+  display: none;
 }

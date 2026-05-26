@@ -3,7 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ─── State ─────────────────────────────────────────────────────────────────
   let currentDoc      = null;
   let currentPage     = null;
-  let displayUnitName = "pt";
+  let displayUnitName = "in";
   let scopeMode       = "active"; // "active" | "all"
   let snapshot        = null;     // for revert
 
@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const $ = (id) => document.getElementById(id);
 
   const elDocName   = $("docName");
-  const elDocUnit   = $("docUnit");
+  const selUnit     = $("selUnit");
   const elStatus    = $("statusBar");
 
   const tabActive   = $("tabActive");
@@ -135,7 +135,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // loadFitTarget() will call refreshAllRefSelects() after state is initialized.
 
   const btnApplyLayout  = $("btnApplyLayout");
-  const btnUndoLayout   = $("btnUndoLayout");
 
   const btnRefresh  = $("btnRefresh");
   const btnApply    = $("btnApply");
@@ -151,30 +150,11 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const mod = require("indesign");
       if (!mod) return null;
-      // Probe mod.app without throwing — UXP may lazy-init
-      try { if (mod.app) return mod; } catch (_) {}
-      return mod; // return module anyway; refresh() will guard further
+      return mod;
     } catch (e) {
-      console.warn("require('indesign') failed:", e && e.message);
+      console.warn("[getIndesign] require failed:", e && e.message);
       return null;
     }
-  }
-
-  // ID enum -> short label
-  function unitLabel(unitEnum) {
-    const id = getIndesign();
-    const M = id.MeasurementUnits;
-    if (!M) return "pt";
-    if (unitEnum === M.MILLIMETERS)        return "mm";
-    if (unitEnum === M.CENTIMETERS)        return "cm";
-    if (unitEnum === M.INCHES)             return "in";
-    if (unitEnum === M.INCHES_DECIMAL)     return "in";
-    if (unitEnum === M.POINTS)             return "pt";
-    if (unitEnum === M.PICAS)              return "pc";
-    if (unitEnum === M.PIXELS)             return "px";
-    if (unitEnum === M.CICEROS)            return "ci";
-    if (unitEnum === M.AGATES)             return "ag";
-    return "pt";
   }
 
   // 1 pt = ? in display unit
@@ -225,15 +205,13 @@ document.addEventListener("DOMContentLoaded", () => {
       let app;
       try { app = id.app; } catch (_) { app = null; }
       if (!app) {
-        setStatus("InDesign not ready yet. Click ↻ when ready.", "warn");
+        setStatus("InDesign not ready. Try UDT → Watch mode, or package & install plugin.", "warn");
         return;
       }
-
       if (!app.documents || app.documents.length === 0) {
         currentDoc = null;
         currentPage = null;
         elDocName.textContent = "(no document)";
-        elDocUnit.textContent = "—";
         clearInputs();
         setStatus("Open an InDesign document first.", "warn");
         return;
@@ -241,10 +219,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       currentDoc = app.activeDocument;
 
-      // Resolve display unit from ruler
-      const vp = currentDoc.viewPreferences;
-      displayUnitName = unitLabel(vp.horizontalMeasurementUnits);
-      elDocUnit.textContent = displayUnitName;
+      // Display unit driven by selUnit selector, independent of doc ruler
+      displayUnitName = selUnit.value || "in";
       elDocName.textContent = currentDoc.name || "(untitled)";
 
       // Active page = first page of active spread (fallback to pages[0])
@@ -263,7 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       setStatus("Loaded.", "ok");
     } catch (e) {
-      console.error(e);
+      console.error("[refresh] threw", e);
       setStatus("Refresh failed: " + (e.message || e), "err");
     }
   }
@@ -555,7 +531,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let mainName       = "Main-headline";
   let campName       = "campaign-line";
   let subName        = "Sub-headline";
-  let layoutSnapshot = null; // { logo: [bounds], url: [bounds]|null, qr: [bounds]|null, items: {logoRef, urlRef, qrRef} }
 
   function loadFitTarget() {
     if (!currentDoc) {
@@ -624,6 +599,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (parsed.campRefV) selCampRefV.value = parsed.campRefV;
         if (parsed.subRefH)  selSubRefH.value  = parsed.subRefH;
         if (parsed.subRefV)  selSubRefV.value  = parsed.subRefV;
+        if (parsed.unit && ["in","mm","cm","pt"].indexOf(parsed.unit) >= 0) {
+          selUnit.value = parsed.unit;
+          displayUnitName = parsed.unit;
+        }
+        const secPS = document.getElementById("sectionPageSetup");
+        const secSP = document.getElementById("sectionSpacing");
+        if (secPS) secPS.classList.toggle("collapsed", !!parsed.sectionPageSetupCollapsed);
+        if (secSP) secSP.classList.toggle("collapsed", !!parsed.sectionSpacingCollapsed);
       }
     } catch (_) {}
     inpFitName.value = fitTargetName;
@@ -636,6 +619,8 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshAllRefSelects();
     refreshAllAvailability();
     updateFitTargetBadge();
+    // Re-format numeric inputs in the restored unit (refresh() ran before with default unit)
+    if (currentDoc && typeof readIntoInputs === "function") readIntoInputs();
   }
 
   function persistFitTarget() {
@@ -673,7 +658,10 @@ document.addEventListener("DOMContentLoaded", () => {
         qrRefH:   selQrRefH.value,   qrRefV:   selQrRefV.value,
         mainRefH: selMainRefH.value, mainRefV: selMainRefV.value,
         campRefH: selCampRefH.value, campRefV: selCampRefV.value,
-        subRefH:  selSubRefH.value,  subRefV:  selSubRefV.value
+        subRefH:  selSubRefH.value,  subRefV:  selSubRefV.value,
+        unit: displayUnitName,
+        sectionPageSetupCollapsed: document.getElementById("sectionPageSetup").classList.contains("collapsed"),
+        sectionSpacingCollapsed:   document.getElementById("sectionSpacing").classList.contains("collapsed")
       }));
     } catch (e) { console.warn("persist fit target failed", e); }
   }
@@ -1321,37 +1309,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Identify previous-apply clones (skip these when listing existing A's)
-    const prevClonedIds = (layoutSnapshot && layoutSnapshot.clonedIds) || [];
-    const prevClonedSet = {};
-    for (let i = 0; i < prevClonedIds.length; i++) prevClonedSet[prevClonedIds[i]] = true;
-
-    const allInGuide = guideContainer ? getContainerChildren(guideContainer) : [];
-    const existingA = allInGuide.filter(it => !prevClonedSet[it.id]);
-
-    // 9. Snapshot BEFORE applying (for undo)
-    layoutSnapshot = {
-      logoRef: logo,
-      logoBounds: [ly1, lx1, ly2, lx2],
-      urlRef: urlItem,
-      urlBounds: urlItem ? urlItem.geometricBounds.slice() : null,
-      qrRef: qrItem,
-      qrBounds: qrItem ? qrItem.geometricBounds.slice() : null,
-      mainRef: mainItem,
-      mainBounds: mainItem ? mainItem.geometricBounds.slice() : null,
-      campRef: campItem,
-      campBounds: campItem ? campItem.geometricBounds.slice() : null,
-      subRef: subItem,
-      subBounds: subItem ? subItem.geometricBounds.slice() : null,
-      hiddenExistingA: existingA,
-      clonedIds: []
-    };
+    // Snapshot all items in Guide layer (for the wipe)
+    const existingInGuide = guideContainer ? getContainerChildren(guideContainer) : [];
 
     // 10. Apply
     try {
       const id = getIndesign();
       const LocationOpts = id.LocationOptions;
-      const clonedIds = [];
+      let clonedCount = 0;
       id.app.doScript(function () {
         // 10a. Resize/move components
         if (chkPlaceLogo.checked) {
@@ -1363,7 +1328,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (urlNewBounds)  urlItem.geometricBounds  = urlNewBounds;
         if (qrNewBounds) {
           qrItem.geometricBounds = qrNewBounds;
-          // Fit QR content (image) to the new frame size, keeping aspect proportionally
           try {
             const FitOpts = id.FitOptions;
             qrItem.fit(FitOpts.FILL_PROPORTIONALLY);
@@ -1374,32 +1338,22 @@ document.addEventListener("DOMContentLoaded", () => {
         if (campNewBounds) campItem.geometricBounds = campNewBounds;
         if (subNewBounds)  subItem.geometricBounds  = subNewBounds;
 
-        // 10b. Delete previous-apply clones (so re-Apply doesn't bloat the Guide layer)
-        for (let i = 0; i < prevClonedIds.length; i++) {
-          const prev = findPageItemById(currentDoc, prevClonedIds[i]);
-          if (prev && prev.isValid) {
-            try { prev.remove(); }
-            catch (e) { console.warn("remove prev clone[" + i + "] failed:", e.message || e); }
-          }
+        // 10b. Wipe Guide layer — remove ALL items (designer relies on Cmd+Z to restore)
+        for (let i = 0; i < existingInGuide.length; i++) {
+          const item = existingInGuide[i];
+          try {
+            if (item && item.isValid) item.remove();
+          } catch (e) { console.warn("wipe Guide item[" + i + "] failed:", e.message || e); }
         }
 
-        // 10c. Hide all existing (non-clone) A's in Guide layer
-        for (let i = 0; i < existingA.length; i++) {
-          try { existingA[i].visible = false; }
-          catch (e) { console.warn("hide existing A[" + i + "] failed:", e.message || e); }
-        }
-
-        // 10d. Clone letterRef for ALL zones (fresh A's with correct aspect from logo)
+        // 10c. Clone letterRef for each zone
         for (let i = 0; i < guideZones.length; i++) {
           try {
             const clone = letterRef.duplicate();
-            // Rename clone so future findItemByName("letter-A") doesn't return it
             try { clone.name = "A-guide-clone"; } catch (_) {}
             clone.geometricBounds = guideZones[i].bounds;
-            // 50% opacity to distinguish clones from real letter-A
             try { clone.transparencySettings.blendingSettings.opacity = 50; }
             catch (e) { console.warn("set opacity failed:", e.message || e); }
-            // Move clone into Guide container
             if (guideContainer) {
               if (guideContainer.kind === "layer") {
                 try { clone.itemLayer = guideContainer.node; } catch (_) {}
@@ -1407,23 +1361,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 try { clone.move(LocationOpts.AT_END, guideContainer.node); } catch (_) {}
               }
             }
-            clonedIds.push(clone.id);
+            clonedCount++;
           } catch (e) { console.warn("clone A[" + i + "] failed:", e.message || e); }
         }
       }, id.ScriptLanguage.JAVASCRIPT, [], id.UndoModes.ENTIRE_SCRIPT, "Apply Airbus layout");
 
-      layoutSnapshot.clonedIds = clonedIds;
       refreshAllAvailability();
 
-      btnUndoLayout.disabled = false;
       const parts = ["logo " + selLogoV.value + selLogoH.value];
       if (urlNewBounds)  parts.push("URL " + selUrlV.value + selUrlH.value);
       if (qrNewBounds)   parts.push("QR " + selQrV.value + selQrH.value);
       if (mainNewBounds) parts.push("Main " + selMainV.value + selMainH.value);
       if (campNewBounds) parts.push("Camp " + selCampV.value + selCampH.value);
       if (subNewBounds)  parts.push("Sub " + selSubV.value + selSubH.value);
-      parts.push(clonedIds.length + " A clones" +
-                 (existingA.length ? " (" + existingA.length + " hidden)" : ""));
+      parts.push(clonedCount + " A clones" +
+                 (existingInGuide.length ? " (Guide wiped: " + existingInGuide.length + " items)" : ""));
       const skipMsg = skipped.length ? " — skipped: " + skipped.join(", ") : "";
       setStatus("Spacing applied: " + parts.join(", ") +
                 " (A: " + ptToDisplay(aW) + "×" + ptToDisplay(aH) + " " + displayUnitName + ")" + skipMsg + ".",
@@ -1431,55 +1383,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       console.error(e);
       setStatus("Apply spacing failed: " + (e.message || e), "err");
-    }
-  }
-
-  function undoAirbusLayout() {
-    if (!layoutSnapshot) { setStatus("Nothing to undo.", "warn"); return; }
-    const snap = layoutSnapshot;
-    function safeValid(ref) {
-      try { return ref && ref.isValid; } catch (_) { return false; }
-    }
-    function safeRestore(ref, bounds) {
-      if (!safeValid(ref) || !bounds) return;
-      try { ref.geometricBounds = bounds; }
-      catch (e) { console.warn("restore failed:", e.message || e); }
-    }
-    try {
-      const id = getIndesign();
-      id.app.doScript(function () {
-        safeRestore(snap.logoRef, snap.logoBounds);
-        safeRestore(snap.urlRef,  snap.urlBounds);
-        safeRestore(snap.qrRef,   snap.qrBounds);
-        safeRestore(snap.mainRef, snap.mainBounds);
-        safeRestore(snap.campRef, snap.campBounds);
-        safeRestore(snap.subRef,  snap.subBounds);
-        // Unhide existing A's
-        const existing = snap.hiddenExistingA || [];
-        for (let i = 0; i < existing.length; i++) {
-          if (safeValid(existing[i])) {
-            try { existing[i].visible = true; }
-            catch (e) { console.warn("unhide existing A[" + i + "] failed:", e.message || e); }
-          }
-        }
-        // Delete cloned A's (resolve by id captured during apply)
-        const ids = snap.clonedIds || [];
-        for (let i = 0; i < ids.length; i++) {
-          const it = findPageItemById(currentDoc, ids[i]);
-          if (it && it.isValid) {
-            try { it.remove(); }
-            catch (e) { console.warn("delete clone[" + i + "] failed:", e.message || e); }
-          }
-        }
-      }, id.ScriptLanguage.JAVASCRIPT, [], id.UndoModes.ENTIRE_SCRIPT, "Undo Airbus layout");
-
-      layoutSnapshot = null;
-      btnUndoLayout.disabled = true;
-      refreshAllAvailability();
-      setStatus("Spacing reverted.", "ok");
-    } catch (e) {
-      console.error(e);
-      setStatus("Undo spacing failed: " + (e.message || e), "err");
     }
   }
 
@@ -1597,7 +1500,6 @@ document.addEventListener("DOMContentLoaded", () => {
   ].forEach(s => s.addEventListener("change", persistFitTarget));
 
   btnApplyLayout.addEventListener("click", applyAirbusLayout);
-  btnUndoLayout .addEventListener("click", undoAirbusLayout);
 
   const btnResetOptions = $("btnResetOptions");
   if (btnResetOptions) {
@@ -1622,6 +1524,41 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Reset options to defaults.", "ok");
     });
   }
+
+  // Collapsible sections — toggle on header click
+  document.querySelectorAll(".section-header").forEach(header => {
+    header.addEventListener("click", () => {
+      const section = header.parentElement;
+      if (section) section.classList.toggle("collapsed");
+      persistFitTarget();
+    });
+  });
+
+  selUnit.addEventListener("change", () => {
+    // Convert all input values from old unit to new unit (via pt round-trip)
+    const oldUnit = displayUnitName;
+    const newUnit = selUnit.value || "in";
+    const numInputs = [
+      inpPageW, inpPageH,
+      inpBleedT, inpBleedB, inpBleedI, inpBleedO,
+      inpMarginT, inpMarginB, inpMarginL, inpMarginR,
+      inpColGutter
+    ];
+    const oldFactor = ptPerUnit(oldUnit);
+    const newFactor = ptPerUnit(newUnit);
+    let hadValue = false;
+    numInputs.forEach(inp => {
+      const v = parseFloat(String(inp.value || "").replace(",", "."));
+      if (isNaN(v)) return;
+      hadValue = true;
+      const pt = v / oldFactor;
+      inp.value = formatNumber(pt * newFactor);
+    });
+    displayUnitName = newUnit;
+    if (typeof updateColumnWidthHint === "function") updateColumnWidthHint();
+    if (hadValue) setStatus("Unit: " + newUnit, "ok");
+    persistFitTarget();
+  });
 
   tabActive.addEventListener("click", () => {
     scopeMode = "active";

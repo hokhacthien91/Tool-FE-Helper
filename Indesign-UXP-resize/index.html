@@ -21,7 +21,12 @@
       </div>
       <div class="row">
         <span class="muted">Unit</span>
-        <span id="docUnit" class="value-strong">—</span>
+        <select id="selUnit" class="anchor-sel">
+          <option value="in" selected>in</option>
+          <option value="mm">mm</option>
+          <option value="cm">cm</option>
+          <option value="pt">pt</option>
+        </select>
       </div>
     </div>
 
@@ -34,6 +39,14 @@
       <span class="muted">Page</span>
       <select id="selPage"></select>
     </div>
+
+    <!-- PAGE SETUP SECTION (collapsible) -->
+    <div class="section" id="sectionPageSetup">
+      <div class="section-header" data-section="pageSetup">
+        <span class="section-caret">▾</span>
+        <span class="section-title">Page setup</span>
+      </div>
+      <div class="section-body">
 
     <!-- TRIM / PAGE SIZE -->
     <div class="card">
@@ -96,6 +109,17 @@
       <button id="btnApply" class="btn btn-primary">Apply page setup</button>
       <button id="btnRevert" class="btn btn-ghost">Revert page setup</button>
     </div>
+
+      </div><!-- /section-body pageSetup -->
+    </div><!-- /sectionPageSetup -->
+
+    <!-- AIRBUS SPACING SECTION (collapsible) -->
+    <div class="section" id="sectionSpacing">
+      <div class="section-header" data-section="spacing">
+        <span class="section-caret">▾</span>
+        <span class="section-title">Airbus spacing</span>
+      </div>
+      <div class="section-body">
 
     <!-- AIRBUS SPACING / COMPONENTS -->
     <div class="card">
@@ -297,12 +321,14 @@
 
       <div class="sync-actions">
         <button id="btnApplyLayout" class="btn btn-primary btn-sm">Apply spacing</button>
-        <button id="btnUndoLayout" class="btn btn-ghost btn-sm" disabled>Undo spacing</button>
         <button id="btnResetOptions" class="btn btn-ghost btn-sm">Reset options</button>
       </div>
 
       <div class="hint">Scale + position các thành phần (Logo/URL/QR/Main/Camp/Sub) theo Airbus brand spacing. Anchor + padding configurable per component.</div>
     </div>
+
+      </div><!-- /section-body spacing -->
+    </div><!-- /sectionSpacing -->
 
     <!-- ALL PAGES TABLE -->
     <div id="allPagesView" class="hidden">

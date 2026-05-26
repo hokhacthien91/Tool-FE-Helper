@@ -1,754 +1,590 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Replace Tool — README</title>
-<style>
-  :root {
-    --gg-green: #b7e39b;
-    --gg-green-dark: #59a139;
-    --gg-accent: #a32600;
-    --gg-cyan: #2bc9de;
-    --bg-page: #121212;
-    --bg-card: #1c1c1c;
-    --bg-input: #0a0a0a;
-    --border: #2a2a2a;
-    --text-primary: #f2f2f2;
-    --text-secondary: #b0b0b0;
-    --text-muted: #707070;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: var(--bg-page);
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    line-height: 1.65;
-    font-size: 14px;
-  }
-  .wrap {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 32px 24px 80px;
-  }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page Guides Inspector — Readme</title>
+  <style>
+    :root {
+      --gg-green: #b7e39b;
+      --gg-green-dark: #59a139;
+      --gg-accent: #a32600;
+      --gg-cyan: #2bc9de;
+      --bg-page: #121212;
+      --bg-card: #1c1c1c;
+      --bg-input: #0a0a0a;
+      --border: #2a2a2a;
+      --text-primary: #f2f2f2;
+      --text-secondary: #b0b0b0;
+      --text-muted: #707070;
+    }
 
-  header.top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 20px;
-    flex-wrap: wrap;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 22px;
-    margin-bottom: 28px;
-  }
-  .title { display: flex; flex-direction: column; gap: 8px; }
-  .title h1 {
-    margin: 0;
-    font-size: 26px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--text-primary);
-  }
-  .title h1::before {
-    content: '';
-    width: 6px;
-    height: 26px;
-    background: var(--gg-green);
-    border-radius: 1px;
-    display: inline-block;
-  }
-  .title .sub {
-    color: var(--text-secondary);
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-  }
+    * { box-sizing: border-box; }
 
-  .pill {
-    display: inline-block;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 3px 10px;
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-right: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-  }
-  .pill.brand {
-    color: var(--gg-green);
-    border-color: var(--gg-green-dark);
-  }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
 
-  .lang-switch {
-    display: inline-flex;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 3px;
-  }
-  .lang-switch button {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 0;
-    padding: 8px 16px;
-    font-size: 11px;
-    font-weight: 700;
-    border-radius: 3px;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    transition: background 0.15s, color 0.15s;
-  }
-  .lang-switch button.active {
-    background: var(--gg-green);
-    color: #121212;
-  }
-  .lang-switch button:not(.active):hover { color: var(--text-primary); }
-  .lang-switch button:focus { outline: none; box-shadow: 0 0 0 3px rgba(183, 227, 155, 0.15); }
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
 
-  h2 {
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--gg-green);
-    margin: 36px 0 14px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  h2::before {
-    content: '';
-    width: 4px;
-    height: 14px;
-    background: var(--gg-green);
-    border-radius: 1px;
-  }
-  h3 {
-    font-size: 13px;
-    margin: 18px 0 8px;
-    color: var(--gg-green);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    font-weight: 700;
-  }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
 
-  p { margin: 8px 0; color: var(--text-primary); }
-  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
-  li { margin: 5px 0; }
+    header .accent-bar {
+      width: 6px;
+      height: 36px;
+      background: var(--gg-green);
+      border-radius: 1px;
+    }
 
-  a { color: var(--gg-green); text-decoration: underline; font-weight: 600; }
-  a:hover { color: #fff; }
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
 
-  code {
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    padding: 2px 7px;
-    border-radius: 3px;
-    font-family: "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px;
-    color: var(--gg-green);
-  }
-  kbd {
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 3px;
-    padding: 1px 7px;
-    font-family: "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px;
-    color: var(--text-primary);
-  }
-  strong { color: var(--text-primary); font-weight: 700; }
-  em { color: var(--text-secondary); font-style: normal; }
+    header .tag {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border: 1px solid var(--gg-green-dark);
+      border-radius: 4px;
+    }
 
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 16px 18px;
-    margin: 10px 0;
-    transition: border-color 0.15s;
-  }
-  .card:hover { border-color: var(--gg-green-dark); }
-  .card .card-title {
-    font-size: 11px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    color: var(--gg-green);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  .card.tip { border-left: 3px solid var(--gg-green); }
-  .card.warn {
-    border-left: 3px solid var(--gg-accent);
-    background: rgba(163, 38, 0, 0.08);
-  }
-  .card.warn .card-title { color: #ffb8a0; }
-  .card.ok {
-    border-left: 3px solid var(--gg-green-dark);
-    background: rgba(89, 161, 57, 0.08);
-  }
+    h2 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 36px 0 12px;
+      font-size: 13px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+    }
 
-  .feature-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
-    margin: 14px 0;
-  }
-  .feature-grid .card { margin: 0; }
+    h2::before {
+      content: "";
+      width: 4px;
+      height: 16px;
+      background: var(--gg-green);
+      border-radius: 1px;
+    }
 
-  .step {
-    counter-increment: step;
-    display: flex;
-    gap: 14px;
-    margin: 10px 0;
-    padding: 14px 16px;
-    background: var(--bg-card);
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    transition: border-color 0.15s;
-  }
-  .step:hover { border-color: var(--gg-green-dark); }
-  .step::before {
-    content: counter(step);
-    flex: 0 0 28px;
-    height: 28px;
-    border-radius: 4px;
-    background: var(--gg-green);
-    color: #121212;
-    text-align: center;
-    line-height: 28px;
-    font-weight: 700;
-    font-size: 13px;
-  }
-  .step-body strong { color: var(--gg-green); font-weight: 700; }
-  ol.steps {
-    counter-reset: step;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
+    h3 {
+      margin: 20px 0 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
 
-  .lang-section { display: none; }
-  .lang-section.active { display: block; }
+    p, ul, ol {
+      color: var(--text-secondary);
+      margin: 8px 0 14px;
+    }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 13px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  th, td {
-    text-align: left;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-  }
-  th {
-    color: var(--gg-green);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    font-size: 11px;
-    background: var(--bg-input);
-  }
-  tr:last-child td { border-bottom: 0; }
-  tr:hover td { background: rgba(183, 227, 155, 0.04); }
+    ul, ol { padding-left: 22px; }
+    li { margin: 4px 0; }
 
-  footer {
-    margin-top: 50px;
-    padding-top: 18px;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 11px;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
+    strong { color: var(--text-primary); }
 
-  details {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 12px 16px;
-    margin: 8px 0;
-    transition: border-color 0.15s;
-  }
-  details:hover { border-color: var(--gg-green-dark); }
-  details summary {
-    cursor: pointer;
-    font-weight: 600;
-    color: var(--gg-green);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 12px;
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  details summary::before {
-    content: '+';
-    color: var(--gg-green);
-    font-weight: 700;
-    transition: transform 0.15s;
-    display: inline-block;
-    width: 14px;
-  }
-  details[open] summary::before { content: '−'; }
-  details[open] summary { margin-bottom: 10px; }
-  details summary::-webkit-details-marker { display: none; }
-</style>
+    code {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: var(--bg-input);
+      color: var(--gg-green);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+
+    pre {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: var(--text-primary);
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 22px;
+      margin: 16px 0;
+    }
+
+    .card-title {
+      font-size: 11px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin: 0 0 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .feature {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+
+    .feature h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .feature p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--gg-green);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 11px;
+    }
+
+    td { color: var(--text-secondary); }
+    td:first-child { color: var(--text-primary); font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .badge-success {
+      background: rgba(89, 161, 57, 0.15);
+      border: 1px solid var(--gg-green-dark);
+      color: var(--gg-green);
+    }
+
+    .badge-info {
+      background: rgba(43, 201, 222, 0.12);
+      border: 1px solid var(--gg-cyan);
+      color: var(--gg-cyan);
+    }
+
+    .badge-warn {
+      background: rgba(163, 38, 0, 0.15);
+      border: 1px solid var(--gg-accent);
+      color: #ffb8a0;
+    }
+
+    .callout {
+      background: rgba(89, 161, 57, 0.08);
+      border-left: 3px solid var(--gg-green);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 14px 0;
+      color: var(--text-secondary);
+    }
+
+    .callout-warn {
+      background: rgba(163, 38, 0, 0.08);
+      border-left-color: var(--gg-accent);
+    }
+
+    .step {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step:last-child { border-bottom: none; }
+
+    .step-num {
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--gg-green);
+      color: #121212;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-body { flex: 1; }
+    .step-body h4 { margin: 2px 0 4px; font-size: 13px; color: var(--text-primary); }
+    .step-body p { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+    .anchor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .anchor-card {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .anchor-card .name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gg-green);
+      margin-bottom: 4px;
+    }
+
+    .anchor-card .specs {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: ui-monospace, Menlo, monospace;
+    }
+
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--gg-green);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    footer a:hover { color: #fff; }
+  </style>
 </head>
 <body>
-<div class="wrap">
+  <div class="container">
 
-  <header class="top">
-    <div class="title">
-      <h1>Replace Tool</h1>
-      <div class="sub">
-        <span class="pill brand">InDesign UXP Plugin</span>
-        <span class="pill">v1.0.0</span>
-        <span class="pill">by Thien Ho · Technical Solution</span>
+    <header>
+      <span class="accent-bar"></span>
+      <h1>Page Guides Inspector</h1>
+      <span class="tag">UXP Plugin · v1.0.0</span>
+    </header>
+
+    <p>InDesign UXP panel cho phép kiểm tra &amp; áp dụng <strong>Page setup</strong> (Trim / Bleed / Margin / Columns) và tự động bố trí 6 brand component theo <strong>Airbus spacing</strong> dùng letter-A làm đơn vị đo.</p>
+
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="feature">
+        <h4>Page setup</h4>
+        <p>Đọc / chỉnh Trim, Bleed, Margin, Columns cho document hoặc active page. Hỗ trợ unit selector riêng (in / mm / cm / pt).</p>
+      </div>
+      <div class="feature">
+        <h4>Airbus spacing</h4>
+        <p>Tự động resize &amp; position 6 component: Logo, URL block, QR, Main-headline, Campaign-line, Sub-headline.</p>
+      </div>
+      <div class="feature">
+        <h4>A-guide cloning</h4>
+        <p>Sinh A guide clones 50% opacity quanh mỗi component, đưa vào layer "Guide" để designer reference khi finalize.</p>
+      </div>
+      <div class="feature">
+        <h4>Reference-based positioning</h4>
+        <p>Component có thể anchor theo Trim / Margin / hoặc component khác (Logo, URL, QR…). Hệ 2-pass tự resolve dependency.</p>
+      </div>
+      <div class="feature">
+        <h4>Per-document persistence</h4>
+        <p>Mọi setting (names, anchors, A counts, refs, unit, collapse state) lưu vào document label — giữ giữa các session.</p>
+      </div>
+      <div class="feature">
+        <h4>Undo as single step</h4>
+        <p>Apply layout wrap trong <code>UndoModes.ENTIRE_SCRIPT</code> — Cmd+Z hoàn tác cả lượt apply trong 1 step.</p>
       </div>
     </div>
-    <div class="lang-switch" role="tablist">
-      <button id="btn-vi" class="active" onclick="setLang('vi')">Tiếng Việt</button>
-      <button id="btn-en" onclick="setLang('en')">English</button>
-    </div>
-  </header>
 
-  <!-- ───────────────────────── VIETNAMESE ───────────────────────── -->
-  <section id="lang-vi" class="lang-section active">
-
-    <h2>Tổng quan</h2>
-    <p>
-      <strong>Replace Tool</strong> là plugin Adobe InDesign (UXP) giúp Designer / Studio
-      <strong>thay nội dung text và hình ảnh hàng loạt</strong> trực tiếp trong tài liệu InDesign,
-      không cần mở từng frame một. Plugin quét toàn bộ document, liệt kê tất cả text frame
-      và image frame, cho phép khai báo nội dung mới rồi apply một lần cho tất cả.
-    </p>
-
-    <div class="card tip">
-      <div class="card-title">Phù hợp với ai?</div>
-      Workflow editorial / packaging / banner InDesign nhiều trang — ví dụ 1 file INDD có 50 trang,
-      mỗi trang có các khung text / hình cần cập nhật nội dung khách hàng mới. Thay vì click từng frame,
-      plugin liệt kê tất cả và cho phép điền nội dung trong một panel duy nhất.
-    </div>
-
-    <h2>Cài đặt</h2>
-    <ol class="steps">
-      <li class="step"><div class="step-body"><strong>Mở Adobe UXP Developer Tool</strong> (nếu chưa có, tải tại Creative Cloud Desktop).</div></li>
-      <li class="step"><div class="step-body"><strong>Add Plugin → Add Existing Plugin</strong>, chọn file <code>manifest.json</code> trong thư mục plugin này.</div></li>
-      <li class="step"><div class="step-body"><strong>Load</strong> plugin. Trong InDesign: <em>Plugins → Replace Tool</em> để mở panel.</div></li>
-      <li class="step"><div class="step-body">Yêu cầu: InDesign <strong>19.0</strong> trở lên (InDesign 2024+). Sau khi chỉnh sửa file plugin, nhấn <strong>Reload</strong> trong UXP Developer Tool — không cần build.</div></li>
-    </ol>
-
-    <h2>Quy trình sử dụng cơ bản</h2>
-    <ol class="steps">
-      <li class="step">
+    <h2>Install &amp; Run</h2>
+    <div class="card">
+      <p class="card-title">Setup steps</p>
+      <div class="step">
+        <div class="step-num">1</div>
         <div class="step-body">
-          <strong>Mở file InDesign (.indd)</strong>. Nếu cần xử lý nhiều file cùng lúc, mở tất cả trong InDesign.
+          <h4>Mở UXP Developer Tools</h4>
+          <p>Trong Adobe Creative Cloud → Apps → "UXP Developer Tool" (cài nếu chưa có).</p>
         </div>
-      </li>
-      <li class="step">
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
         <div class="step-body">
-          <strong>Chọn Scan Scope</strong>:
-          <ul>
-            <li><em>Current document</em> — chỉ quét file đang active.</li>
-            <li><em>All open documents</em> — quét tất cả file đang mở.</li>
-          </ul>
-          Tùy chọn <em>Include master pages</em>: quét thêm các frame nằm trên master page (labeled <em>Master: [tên]</em>).
+          <h4>Add plugin</h4>
+          <p>UDT → <strong>Add Plugin</strong> → chọn <code>manifest.json</code> ở thư mục này.</p>
         </div>
-      </li>
-      <li class="step">
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
         <div class="step-body">
-          Nhấn <strong>⊕ Scan Frames</strong>. Plugin liệt kê toàn bộ text frame và image frame trên mọi trang,
-          kể cả frame nằm trong group lồng nhau.
+          <h4>Load &amp; Debug</h4>
+          <p>Mở InDesign (>= 19.0). Trong UDT row của plugin → bấm <strong>Load</strong> → panel "Page Guides" xuất hiện trong Window menu.</p>
         </div>
-      </li>
-      <li class="step">
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
         <div class="step-body">
-          Trong mục <strong>Pages</strong>, bỏ tick những trang không muốn xử lý.
-          Dùng nút <strong>All</strong> / <strong>None</strong> để chọn hoặc bỏ chọn tất cả.
-          Danh sách frame sẽ tự lọc theo trang đang được chọn.
+          <h4>Reload sau khi sửa code</h4>
+          <p>Sửa <code>index.html</code> / <code>index.js</code> / <code>styles.css</code> → UDT → <strong>Reload</strong>. Không cần build.</p>
         </div>
-      </li>
-      <li class="step">
-        <div class="step-body">
-          Điền nội dung mới cho từng frame cần thay đổi,
-          rồi nhấn <strong>✓ Apply N Changes</strong> ở cuối panel.
-          InDesign tự track undo — có thể hoàn tác bằng <kbd>Ctrl+Z</kbd> bình thường.
-        </div>
-      </li>
-    </ol>
-
-    <h2>Các chức năng chính</h2>
-
-    <div class="feature-grid">
-      <div class="card">
-        <div class="card-title">1. Thay nội dung text frame</div>
-        Nhập text mới vào textarea của từng frame. Plugin giữ lại toàn bộ định dạng (font, size,
-        màu, căn lề ngang + dọc, inset spacing) bằng cách replace text trong paragraph hiện có —
-        không tạo paragraph mới. Nhấn <kbd>Ctrl+Enter</kbd> để apply ngay frame đó mà không cần
-        nhấn nút Apply All.
-      </div>
-      <div class="card">
-        <div class="card-title">2. Thay hình ảnh (image frame)</div>
-        Với frame hình ảnh (Rectangle / Oval / Polygon có chứa ảnh), nhấn <strong>📂 Choose Image…</strong>
-        để chọn file mới (JPG, PNG, PSD, AI, PDF, TIFF). Plugin tự tính scale để giữ đúng chiều rộng
-        frame gốc sau khi đặt ảnh mới vào.
-      </div>
-      <div class="card">
-        <div class="card-title">3. Frame có inline icon / AI anchor</div>
-        Text frame có chứa icon hoặc file AI nhúng inline (anchored objects) sẽ hiển thị placeholder
-        <code>{{IMG_1}}</code>, <code>{{IMG_2}}</code>… Giữ nguyên các placeholder này khi nhập text mới —
-        plugin sẽ thay text xung quanh mà không đụng vào anchored objects.
-      </div>
-      <div class="card">
-        <div class="card-title">4. Đổi tên frame</div>
-        Mỗi frame card có ô <em>Rename frame…</em>. Click vào tên frame ở tiêu đề để tự động điền tên hiện tại vào ô.
-        Nhấn <kbd>Enter</kbd> hoặc nút <strong>Rename</strong> để đổi tên ngay — có undo trong InDesign.
-      </div>
-      <div class="card">
-        <div class="card-title">5. Locate frame</div>
-        Nút <strong>Locate</strong> ở mỗi dòng nhảy thẳng đến frame trong InDesign (tự switch document nếu cần)
-        và select frame đó — tiện để kiểm tra trước khi sửa.
-      </div>
-      <div class="card">
-        <div class="card-title">6. Lọc theo trang (Pages)</div>
-        Sau khi scan, mục <strong>Pages</strong> liệt kê tất cả trang có frame, kèm số text / image frame trên từng trang.
-        Bỏ tick trang nào để ẩn frame của trang đó khỏi danh sách và loại khỏi Apply All.
-      </div>
-      <div class="card">
-        <div class="card-title">7. Tìm kiếm & lọc loại frame</div>
-        Ô tìm kiếm lọc theo tên frame, tên trang, tên document, hoặc nội dung text.
-        Phím tắt <kbd>Ctrl+F</kbd> / <kbd>Cmd+F</kbd> focus thẳng vào ô tìm kiếm;
-        <kbd>Escape</kbd> để xóa và đóng. Tab lọc: <em>All / Text / Image</em>.
-      </div>
-      <div class="card">
-        <div class="card-title">8. Apply All + Progress</div>
-        Nút <strong>✓ Apply N Changes</strong> ở cuối panel hiển thị đúng số frame đang có nội dung mới chờ apply.
-        Trong khi apply, progress bar hiện trạng thái từng frame. Toàn bộ thao tác được wrap trong
-        một Undo step duy nhất trong InDesign.
       </div>
     </div>
 
-    <h2>Mẹo thực chiến</h2>
-
-    <div class="card tip">
-      <div class="card-title">Anchor placeholder — không xóa {{IMG_n}}</div>
-      Nếu frame text có icon hoặc ảnh inline, plugin sẽ block replace nếu bạn xóa mất placeholder.
-      Chỉ cần edit phần chữ xung quanh placeholder — ví dụ:
-      <br/><br/>
-      Gốc: <code>Gọi ngay {{IMG_1}} 1800 1234</code><br/>
-      Mới: <code>Liên hệ {{IMG_1}} 0909 888 777</code> ✓<br/>
-      Sai: <code>Liên hệ 0909 888 777</code> ✗ (mất placeholder)
+    <div class="callout">
+      <strong>Cache issue?</strong> Nếu lỗi lạ sau reload, chạy: <code>rm -rf ~/Library/Caches/Adobe/UXP/</code> rồi reload lại.
     </div>
 
-    <div class="card warn">
-      <div class="card-title">Không cần Save riêng</div>
-      Khác với Photoshop, InDesign không cần explicit save sau apply. Mọi thay đổi đã được ghi vào
-      undo history — lưu file bình thường bằng <kbd>Ctrl+S</kbd> hoặc <em>File → Save</em> khi hoàn tất.
+    <h2>UI Overview</h2>
+
+    <h3>Document Info</h3>
+    <p>Hiển thị tên document và unit selector. Đổi unit → tất cả input numeric tự convert (in / mm / cm / pt). InDesign ruler không bị động đến.</p>
+
+    <h3>Scope Toggle</h3>
+    <ul>
+      <li><strong>Active page</strong> — Margin / Columns đọc-ghi theo trang đang chọn.</li>
+      <li><strong>All pages</strong> — chế độ xem read-only, list page size + margin của tất cả pages.</li>
+    </ul>
+
+    <h3>Page Setup (collapsible)</h3>
+    <p>4 card: <strong>Trim</strong>, <strong>Bleed</strong>, <strong>Margin</strong>, <strong>Columns</strong>. Trim &amp; Bleed áp dụng cho cả document. Margin &amp; Columns áp dụng cho active page.</p>
+    <p>Nút <strong>Apply page setup</strong> ghi tất cả values vào doc. <strong>Revert</strong> khôi phục snapshot trước khi sửa.</p>
+
+    <h3>Airbus Spacing (collapsible)</h3>
+    <p>7 input name + nút <strong>Set</strong>: gán tên cho object đang select trong InDesign. Tên không tồn tại → input vàng + component group disabled, badge "name not found".</p>
+    <p>6 component groups: Logo / URL / QR / Main-headline / Campaign-line / Sub-headline. Mỗi group:</p>
+    <ul>
+      <li><strong>Checkbox</strong> — bật / tắt cho component đó.</li>
+      <li><strong>Anchor H / V</strong> — Left / Right, Top / Bottom.</li>
+      <li><strong>A count H / V</strong> — số letter-A (1–5).</li>
+      <li><strong>Ref H / V</strong> — anchor theo Trim, Margin, hoặc component khác.</li>
+    </ul>
+
+    <h2>Component Defaults</h2>
+    <div class="anchor-grid">
+      <div class="anchor-card">
+        <div class="name">Logo</div>
+        <div class="specs">Anchor: R / B<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">URL (½ logo W)</div>
+        <div class="specs">Anchor: R / T<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">QR (H = 2A)</div>
+        <div class="specs">Anchor: L / B<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Main-headline</div>
+        <div class="specs">Anchor: L / T<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Campaign-line</div>
+        <div class="specs">Anchor: L / T<br/>A count: 2 / 2<br/>Ref: Trim / Main</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Sub-headline</div>
+        <div class="specs">Anchor: L / B<br/>A count: 1 / 2<br/>Ref: QR / Trim</div>
+      </div>
     </div>
 
-    <div class="card ok">
-      <div class="card-title">Scan nhanh — filter chậm</div>
-      Scan trong InDesign rất nhanh (dưới 1 giây với 200 trang). Không cần lo ngại scan toàn bộ document
-      rồi dùng Pages filter để ẩn những trang không cần — nhanh hơn là scan có chọn lọc.
+    <h2>Workflow</h2>
+
+    <div class="card">
+      <p class="card-title">Typical apply session</p>
+      <ol>
+        <li>Mở InDesign document có chứa các object cần layout.</li>
+        <li>Select 1 object → nhập tên trong field tương ứng → bấm <strong>Set</strong>. Lặp lại cho từng component.</li>
+        <li>(Optional) chỉnh page setup → <strong>Apply page setup</strong>.</li>
+        <li>Tinh chỉnh anchor / A count / ref cho từng component nếu cần.</li>
+        <li>Bấm <strong>Apply spacing</strong>. Plugin resize + position + tạo A clones trong layer "Guide" (auto-create nếu chưa có).</li>
+        <li>Cmd+Z hoặc <strong>Undo spacing</strong> để hoàn tác.</li>
+      </ol>
     </div>
 
-    <div class="card ok">
-      <div class="card-title">Frame nằm trong group</div>
-      Plugin dùng <code>allPageItems</code> để quét đệ quy toàn bộ group lồng nhau ở mọi độ sâu.
-      Không cần ungroup trước khi scan.
-    </div>
+    <h2>Key Concepts</h2>
 
-    <h2>Phím tắt</h2>
+    <h3>Letter-A là đơn vị đo</h3>
+    <p>Plugin tìm object tên <code>letter-A</code> bên trong group Logo. Chiều rộng &amp; cao của A trở thành unit để:</p>
+    <ul>
+      <li>Tính padding của component so với reference (mỗi count = 1 A).</li>
+      <li>Clone A guide xung quanh component.</li>
+    </ul>
+
+    <h3>2-pass apply</h3>
+    <p>Component reference Trim / Margin được resolve trước (pass 1). Component reference component khác (vd Camp ref Main, Sub ref QR) resolve sau khi component target đã đặt vị trí xong (pass 2).</p>
+
+    <h3>A guide zones</h3>
+    <ul>
+      <li><strong>Logo / URL / Main</strong> dùng zone builder thường — A xếp theo grid H × V.</li>
+      <li><strong>QR / Camp / Sub</strong> dùng "Fixed 2A column": H side = cntH cột, mỗi cột = 2 A xếp dọc. V side = cntV A xếp dọc.</li>
+      <li>Camp &amp; Sub luôn xếp H column từ mép dưới layer lên (force-bottom).</li>
+    </ul>
+
+    <h2>UXP Constraints</h2>
+    <div class="callout callout-warn">
+      <strong>Đọc trước khi sửa code!</strong> UXP runtime có những khác biệt quan trọng so với browser thông thường.
+    </div>
     <table>
-      <tr><th>Hành động</th><th>Phím tắt / Cách thực hiện</th></tr>
-      <tr><td>Scan toàn bộ document</td><td>Nút <strong>⊕ Scan Frames</strong></td></tr>
-      <tr><td>Focus ô tìm kiếm</td><td><kbd>Ctrl+F</kbd> / <kbd>Cmd+F</kbd></td></tr>
-      <tr><td>Xóa tìm kiếm</td><td><kbd>Escape</kbd> khi đang trong ô tìm kiếm</td></tr>
-      <tr><td>Apply ngay 1 text frame</td><td><kbd>Ctrl+Enter</kbd> / <kbd>Cmd+Enter</kbd> trong textarea</td></tr>
-      <tr><td>Rename frame</td><td><kbd>Enter</kbd> trong ô Rename frame</td></tr>
-      <tr><td>Pre-fill tên hiện tại vào ô rename</td><td>Click vào tên frame ở tiêu đề card</td></tr>
-      <tr><td>Chọn / bỏ chọn tất cả trang</td><td>Nút <strong>All</strong> / <strong>None</strong> trong mục Pages</td></tr>
-      <tr><td>Copy log</td><td>Nút <strong>Copy</strong> trong mục Logs</td></tr>
-      <tr><td>Nhảy đến frame trong InDesign</td><td>Nút <strong>Locate</strong> trên từng card</td></tr>
+      <thead>
+        <tr><th>Constraint</th><th>Workaround</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>require()</code> top-level fail</td><td>Gọi <code>require("indesign")</code> trong function body.</td></tr>
+        <tr><td><code>window.confirm</code> / <code>alert</code> không hoạt động</td><td>Build inline UI bằng DOM.</td></tr>
+        <tr><td><code>inset: 0</code> không hoạt động</td><td>Viết đầy đủ <code>top/left/right/bottom</code> + <code>width/height</code>.</td></tr>
+        <tr><td>Spectrum CSS vars không hoạt động</td><td>Dùng hard-coded hex.</td></tr>
+        <tr><td><code>innerHTML</code> trên button phá hit-testing</td><td>Dùng <code>createElement</code> + <code>addEventListener</code>.</td></tr>
+      </tbody>
     </table>
 
-    <h2>Khắc phục sự cố</h2>
-    <details>
-      <summary>Plugin không hiện trong InDesign</summary>
-      Kiểm tra UXP Developer Tool đã <em>Load</em> plugin chưa. Nếu vừa reload, đôi khi cần đóng và mở lại panel trong InDesign.
-      Clear cache nếu lỗi lạ: <code>rm -rf ~/Library/Caches/Adobe/UXP/</code>.
-    </details>
-    <details>
-      <summary>Scan báo "No document is open"</summary>
-      Mở file InDesign trước, đảm bảo file đang active trong InDesign rồi mới nhấn Scan.
-    </details>
-    <details>
-      <summary>Text replace xong bị overflow (tràn frame)</summary>
-      Đây là giới hạn của kích thước frame — nội dung mới dài hơn nội dung cũ. Plugin sẽ ghi log cảnh báo
-      <em>"⚠ Text overflows frame"</em>. Cần điều chỉnh font size hoặc chiều cao frame thủ công sau apply.
-    </details>
-    <details>
-      <summary>Replace text bị mất định dạng vertical alignment</summary>
-      Plugin đã lưu và restore <code>verticalJustification</code> sau mỗi replace. Nếu vẫn bị lệch,
-      thử nhấn <kbd>Ctrl+Z</kbd> để undo rồi scan lại — có thể frame reference bị stale sau khi tài liệu thay đổi cấu trúc.
-    </details>
-    <details>
-      <summary>Nút Locate báo "Frame no longer exists"</summary>
-      Frame đã bị xóa hoặc document đã đóng sau khi scan. Nhấn <strong>⊕ Scan Frames</strong> lại để refresh danh sách.
-    </details>
-    <details>
-      <summary>Replace ảnh báo "place() returned empty"</summary>
-      InDesign không thể đặt file ảnh đó — có thể file bị hỏng, định dạng không hỗ trợ, hoặc đường dẫn chứa ký tự đặc biệt.
-      Thử dùng file khác hoặc đổi tên file bỏ ký tự đặc biệt.
-    </details>
-    <details>
-      <summary>Plugin báo lỗi khi scan All open documents</summary>
-      Một trong các document đang mở có thể đang trong trạng thái bị lock hoặc chưa save. Đảm bảo tất cả document
-      đều đã save ít nhất một lần trước khi scan mode All.
-    </details>
+    <h3>InDesign API gotchas</h3>
+    <ul>
+      <li><code>geometricBounds</code> = <code>[y1, x1, y2, x2]</code> — không phải <code>[x1, y1, x2, y2]</code>.</li>
+      <li>Image frame type là <code>"Rectangle"</code> — không phải <code>"Image"</code>.</li>
+      <li><code>recompose()</code> phải chạy <strong>trước</strong> khi restore <code>textFramePreferences</code>.</li>
+      <li>Luôn check <code>isValid</code> trong try/catch — frame reference có thể bị stale.</li>
+      <li>Không dùng <code>FRAME_TO_CONTENT</code> để auto-fit text — sẽ thay đổi geometry &amp; phá layout.</li>
+    </ul>
 
-  </section>
-
-  <!-- ───────────────────────── ENGLISH ───────────────────────── -->
-  <section id="lang-en" class="lang-section">
-
-    <h2>Overview</h2>
-    <p>
-      <strong>Replace Tool</strong> is an Adobe InDesign UXP plugin that lets designers and studio teams
-      <strong>batch-replace text and image content</strong> across InDesign documents without opening each
-      frame individually. Scan the document once, fill in new content for any frame, and apply everything
-      in one click.
-    </p>
-
-    <div class="card tip">
-      <div class="card-title">Who is it for?</div>
-      Editorial, packaging, and banner workflows in InDesign with many pages — for example, a 50-page INDD
-      where every page has text and image frames that need fresh client content. Instead of clicking through
-      each frame, the plugin lists everything in a single panel.
-    </div>
-
-    <h2>Installation</h2>
-    <ol class="steps">
-      <li class="step"><div class="step-body"><strong>Open Adobe UXP Developer Tool</strong> (install via Creative Cloud Desktop if missing).</div></li>
-      <li class="step"><div class="step-body"><strong>Add Plugin → Add Existing Plugin</strong> and pick the <code>manifest.json</code> in this plugin folder.</div></li>
-      <li class="step"><div class="step-body"><strong>Load</strong> the plugin. In InDesign, open <em>Plugins → Replace Tool</em>.</div></li>
-      <li class="step"><div class="step-body">Requires InDesign <strong>19.0</strong> or newer (InDesign 2024+). After editing plugin files, click <strong>Reload</strong> in UXP Developer Tool — no build step needed.</div></li>
-    </ol>
-
-    <h2>Basic workflow</h2>
-    <ol class="steps">
-      <li class="step">
-        <div class="step-body">
-          <strong>Open your InDesign file(s).</strong> If processing multiple documents at once, open them all in InDesign.
-        </div>
-      </li>
-      <li class="step">
-        <div class="step-body">
-          <strong>Choose a Scan Scope</strong>:
-          <ul>
-            <li><em>Current document</em> — the active document only.</li>
-            <li><em>All open documents</em> — every document currently open in InDesign.</li>
-          </ul>
-          Optional <em>Include master pages</em>: also scans frames on master pages (labeled <em>Master: [name]</em>).
-        </div>
-      </li>
-      <li class="step">
-        <div class="step-body">
-          Click <strong>⊕ Scan Frames</strong>. The plugin lists every text frame and image frame on all pages,
-          including frames nested inside groups at any depth.
-        </div>
-      </li>
-      <li class="step">
-        <div class="step-body">
-          In the <strong>Pages</strong> section, uncheck any pages you want to skip.
-          Use <strong>All</strong> / <strong>None</strong> to toggle all at once.
-          The frame list filters automatically to show only enabled pages.
-        </div>
-      </li>
-      <li class="step">
-        <div class="step-body">
-          Fill in new content for each frame you want to change,
-          then click <strong>✓ Apply N Changes</strong> in the sticky footer.
-          InDesign tracks the full operation as a single undo step — press <kbd>Ctrl+Z</kbd> to revert.
-        </div>
-      </li>
-    </ol>
-
-    <h2>Core features</h2>
-
-    <div class="feature-grid">
-      <div class="card">
-        <div class="card-title">1. Text frame replacement</div>
-        Type new text in a frame's textarea. The plugin preserves all formatting (font, size, color,
-        horizontal and vertical alignment, inset spacing) by replacing text within the existing paragraph
-        rather than creating a new one. Press <kbd>Ctrl+Enter</kbd> to apply just that frame instantly.
-      </div>
-      <div class="card">
-        <div class="card-title">2. Image frame replacement</div>
-        For image frames (Rectangle / Oval / Polygon with a placed graphic), click <strong>📂 Choose Image…</strong>
-        to pick a new file (JPG, PNG, PSD, AI, PDF, TIFF). The plugin scales the new image to preserve
-        the original frame's width.
-      </div>
-      <div class="card">
-        <div class="card-title">3. Inline icon / AI anchor support</div>
-        Text frames containing inline anchored objects (icons, AI files) show
-        <code>{{IMG_1}}</code>, <code>{{IMG_2}}</code>… placeholders. Keep these in your new text —
-        the plugin replaces only the text segments between anchors without touching the anchored objects.
-      </div>
-      <div class="card">
-        <div class="card-title">4. Rename frame</div>
-        Each frame card has a <em>Rename frame…</em> input. Click the frame name in the card header to
-        pre-fill the current name. Press <kbd>Enter</kbd> or the <strong>Rename</strong> button to apply —
-        fully undoable in InDesign.
-      </div>
-      <div class="card">
-        <div class="card-title">5. Locate frame</div>
-        The <strong>Locate</strong> button in each row jumps directly to the frame in InDesign
-        (auto-switches the active document if needed) and selects it — useful for a visual check before editing.
-      </div>
-      <div class="card">
-        <div class="card-title">6. Per-page filter (Pages)</div>
-        After scanning, the <strong>Pages</strong> section lists every page that has frames, with a text/image
-        count per page. Uncheck any page to hide its frames from the list and exclude them from Apply All.
-      </div>
-      <div class="card">
-        <div class="card-title">7. Search &amp; filter</div>
-        The search box filters by frame name, page name, document name, or text content.
-        <kbd>Ctrl+F</kbd> / <kbd>Cmd+F</kbd> focuses the search bar; <kbd>Escape</kbd> clears it.
-        Filter tabs: <em>All / Text / Image</em>.
-      </div>
-      <div class="card">
-        <div class="card-title">8. Apply All + Progress</div>
-        The <strong>✓ Apply N Changes</strong> button shows the exact count of frames with pending content.
-        During apply, a progress bar tracks each frame. All changes are wrapped in a single InDesign undo step.
-      </div>
-    </div>
-
-    <h2>Power-user tips</h2>
-
-    <div class="card tip">
-      <div class="card-title">Anchor placeholders — don't delete {{IMG_n}}</div>
-      If a text frame has inline icons or images, the plugin blocks replacement if you remove a placeholder.
-      Only edit the text around the placeholder — for example:
-      <br/><br/>
-      Original: <code>Call now {{IMG_1}} 1800 1234</code><br/>
-      New: <code>Contact {{IMG_1}} 0909 888 777</code> ✓<br/>
-      Wrong: <code>Contact 0909 888 777</code> ✗ (placeholder deleted)
-    </div>
-
-    <div class="card warn">
-      <div class="card-title">No separate Save step needed</div>
-      Unlike Photoshop, InDesign does not require an explicit save after apply. All changes live in the
-      undo history. Save the file normally with <kbd>Ctrl+S</kbd> or <em>File → Save</em> when done.
-    </div>
-
-    <div class="card ok">
-      <div class="card-title">Scan fast, filter per page</div>
-      Scanning InDesign is very fast (under 1 second for 200 pages). There is no penalty to scanning
-      the full document — use the Pages filter to show only the pages you care about instead of
-      running a selective scan.
-    </div>
-
-    <div class="card ok">
-      <div class="card-title">Frames inside groups</div>
-      The plugin uses InDesign's <code>allPageItems</code> to recursively collect frames from groups at
-      any nesting depth. No need to ungroup before scanning.
-    </div>
-
-    <h2>Keyboard shortcuts</h2>
+    <h2>Architecture</h2>
     <table>
-      <tr><th>Action</th><th>Shortcut / How</th></tr>
-      <tr><td>Scan the document</td><td><strong>⊕ Scan Frames</strong> button</td></tr>
-      <tr><td>Focus search bar</td><td><kbd>Ctrl+F</kbd> / <kbd>Cmd+F</kbd></td></tr>
-      <tr><td>Clear search</td><td><kbd>Escape</kbd> while in the search input</td></tr>
-      <tr><td>Apply a single text frame</td><td><kbd>Ctrl+Enter</kbd> / <kbd>Cmd+Enter</kbd> inside a textarea</td></tr>
-      <tr><td>Rename a frame</td><td><kbd>Enter</kbd> inside the Rename input</td></tr>
-      <tr><td>Pre-fill current frame name</td><td>Click the frame name in the card header</td></tr>
-      <tr><td>Select / deselect all pages</td><td><strong>All</strong> / <strong>None</strong> in Pages section</td></tr>
-      <tr><td>Copy logs</td><td><strong>Copy</strong> button in the Logs section</td></tr>
-      <tr><td>Jump to frame in InDesign</td><td><strong>Locate</strong> button on each card</td></tr>
+      <thead>
+        <tr><th>File</th><th>Vai trò</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>manifest.json</code></td><td>UXP manifest v5 — panel entrypoint, host = ID >= 19.0.</td></tr>
+        <tr><td><code>index.html</code></td><td>UI structure: page setup card, airbus spacing card, all-pages view.</td></tr>
+        <tr><td><code>index.js</code></td><td>Toàn bộ business logic, wrap trong 1 <code>DOMContentLoaded</code> listener.</td></tr>
+        <tr><td><code>styles.css</code></td><td>Dark theme, hard-coded hex (Spectrum vars không hoạt động).</td></tr>
+      </tbody>
     </table>
+
+    <h3>State (in <code>index.js</code>)</h3>
+<pre><code>let currentDoc, currentPage;
+let displayUnitName = "in";
+let scopeMode = "active";
+let snapshot          = null;   // for page setup revert
+let layoutSnapshot    = null;   // for spacing undo
+let placedBounds      = {};     // per-component resolved bounds
+let fitTargetId, fitTargetName, letterRefName, …  // 7 names + ids</code></pre>
+
+    <h3>Persistence</h3>
+    <p>Mọi setting đi vào doc label key <code>pageGuides.fitTarget.v1</code> (JSON string). Load khi mở doc, save khi user thay đổi bất kỳ input.</p>
+
+    <h2>Reset &amp; Undo</h2>
+    <div class="card">
+      <p class="card-title">Buttons</p>
+      <ul>
+        <li><strong>Apply spacing</strong> <span class="badge badge-success">primary</span> — resize + position 6 component, clone A guides.</li>
+        <li><strong>Undo spacing</strong> — restore bounds từ snapshot, xóa A clones đã tạo, unhide A's gốc.</li>
+        <li><strong>Reset options</strong> — reset 6 component groups (anchor / A count / ref) về default. Không động đến name inputs, page setup, hay checkboxes.</li>
+        <li><strong>Apply page setup</strong> <span class="badge badge-success">primary</span> — ghi Trim / Bleed / Margin / Columns vào doc.</li>
+        <li><strong>Revert page setup</strong> — restore snapshot lúc plugin vừa load.</li>
+      </ul>
+    </div>
 
     <h2>Troubleshooting</h2>
-    <details>
-      <summary>The plugin doesn't show up in InDesign</summary>
-      Make sure UXP Developer Tool has <em>Loaded</em> the plugin. After a reload, sometimes closing and
-      reopening the panel in InDesign is needed. To clear stale cache: <code>rm -rf ~/Library/Caches/Adobe/UXP/</code>.
-    </details>
-    <details>
-      <summary>Scan says "No document is open"</summary>
-      Open an InDesign file first and make sure it is the active document, then click Scan.
-    </details>
-    <details>
-      <summary>Text replacement causes overflow</summary>
-      The new text is longer than the frame can hold. The plugin logs a warning: <em>"⚠ Text overflows frame"</em>.
-      Adjust the font size or frame height manually after apply.
-    </details>
-    <details>
-      <summary>Vertical alignment is lost after text replace</summary>
-      The plugin saves and restores <code>verticalJustification</code> automatically. If it still shifts,
-      undo with <kbd>Ctrl+Z</kbd> and re-scan — the frame reference may have gone stale if the document
-      structure changed since the last scan.
-    </details>
-    <details>
-      <summary>Locate button says "Frame no longer exists"</summary>
-      The frame was deleted or its document was closed after scanning. Click <strong>⊕ Scan Frames</strong>
-      to refresh the list.
-    </details>
-    <details>
-      <summary>Image replace says "place() returned empty"</summary>
-      InDesign could not place the file — it may be corrupted, an unsupported format, or have special
-      characters in the path. Try a different file or rename it to remove special characters.
-    </details>
-    <details>
-      <summary>Error when scanning All open documents</summary>
-      One of the open documents may be locked or unsaved. Make sure every open document has been saved
-      at least once before scanning in All mode.
-    </details>
+    <table>
+      <thead>
+        <tr><th>Triệu chứng</th><th>Nguyên nhân &amp; Fix</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>"Object is locked" khi Apply spacing</td>
+          <td>Layer "Guide" đang lock. Mở Layers panel → unlock layer Guide.</td>
+        </tr>
+        <tr>
+          <td>Component group hiện "name not found"</td>
+          <td>Tên input không match layer/object trong doc. Đổi tên hoặc bấm <strong>Set</strong> sau khi select object.</td>
+        </tr>
+        <tr>
+          <td>A clones bị lệch khỏi component</td>
+          <td>Letter-A reference không đúng tỷ lệ. Check object <code>letter-A</code> bên trong Logo group — đảm bảo đó là chữ A đúng kích thước.</td>
+        </tr>
+        <tr>
+          <td>Plugin lag treo sau khi bấm Apply</td>
+          <td>Có thể do <code>item.fit()</code> chạy trên text frame. Save doc, đóng InDesign, mở lại.</td>
+        </tr>
+        <tr>
+          <td>Sửa code không có hiệu lực</td>
+          <td>Quên reload trong UDT. Hoặc cache stale — clear cache <code>~/Library/Caches/Adobe/UXP/</code>.</td>
+        </tr>
+      </tbody>
+    </table>
 
-  </section>
+    <h2>Roadmap</h2>
+    <ul>
+      <li>Batch apply layout cho nhiều page cùng lúc.</li>
+      <li>CSV import cho name + anchor config.</li>
+      <li>Snapshot history (multi-step undo trong plugin).</li>
+    </ul>
 
-  <footer>
-    Replace Tool · v1.0.0 · © 2026 · by Thien Ho — Technical Solution, Gravity Global
-  </footer>
-</div>
+    <footer>
+      Built by Gravity Global Studio Team · UXP Plugin for Adobe InDesign · <a href="https://www.gravityglobal.com/">gravityglobal.com</a>
+    </footer>
 
-<script>
-  function setLang(lang) {
-    document.getElementById('lang-vi').classList.toggle('active', lang === 'vi');
-    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
-    document.getElementById('btn-vi').classList.toggle('active', lang === 'vi');
-    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
-    document.documentElement.lang = lang;
-    try { localStorage.setItem('replaceTool.readmeLang', lang); } catch (e) {}
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-  try {
-    const saved = localStorage.getItem('replaceTool.readmeLang');
-    if (saved === 'en' || saved === 'vi') setLang(saved);
-  } catch (e) {}
-</script>
+  </div>
 </body>
 </html>
