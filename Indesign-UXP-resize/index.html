@@ -11,7 +11,7 @@
 
     <div class="header">
       <div class="title">Page Guides Inspector</div>
-      <button id="btnRefresh" class="btn btn-ghost" title="Refresh">↻</button>
+      <div id="btnRefresh" class="btn btn-ghost" role="button" tabindex="0" title="Refresh">↻</div>
     </div>
 
     <div class="doc-info">
@@ -30,12 +30,7 @@
       </div>
     </div>
 
-    <div class="scope-toggle">
-      <button id="tabActive" class="tab-btn active">Active page</button>
-      <button id="tabAll" class="tab-btn">All pages</button>
-    </div>
-
-    <div id="pagePicker" class="page-picker hidden">
+    <div id="pagePicker" class="page-picker">
       <span class="muted">Page</span>
       <select id="selPage"></select>
     </div>
@@ -58,7 +53,7 @@
         <label>Width<input type="text" inputmode="decimal" id="inpPageW" /></label>
         <label>Height<input type="text" inputmode="decimal" id="inpPageH" /></label>
       </div>
-      <div class="hint">Áp dụng cho toàn document.</div>
+      <div class="hint">Applies to the whole document.</div>
     </div>
 
     <!-- BLEED -->
@@ -66,6 +61,7 @@
       <div class="card-title">
         <span class="dot dot-bleed"></span>
         Bleed
+        <div id="lnkBleed" class="link-toggle" role="button" tabindex="0" data-link-group="bleed" title="Link all 4 sides">🔗</div>
       </div>
       <div class="grid-2">
         <label>Top<input type="text" inputmode="decimal" id="inpBleedT" /></label>
@@ -73,7 +69,7 @@
         <label>Inside / Left<input type="text" inputmode="decimal" id="inpBleedI" /></label>
         <label>Outside / Right<input type="text" inputmode="decimal" id="inpBleedO" /></label>
       </div>
-      <div class="hint">Áp dụng cho toàn document.</div>
+      <div class="hint">Applies to the whole document.</div>
     </div>
 
     <!-- MARGIN -->
@@ -81,7 +77,7 @@
       <div class="card-title">
         <span class="dot dot-margin"></span>
         Margin
-        <span id="marginScope" class="badge">active page</span>
+        <div id="lnkMargin" class="link-toggle" role="button" tabindex="0" data-link-group="margin" title="Link all 4 sides">🔗</div>
       </div>
       <div class="grid-2">
         <label>Top<input type="text" inputmode="decimal" id="inpMarginT" /></label>
@@ -96,7 +92,6 @@
       <div class="card-title">
         <span class="dot dot-column"></span>
         Columns
-        <span id="columnScope" class="badge">active page</span>
       </div>
       <div class="grid-2">
         <label>Count<input type="text" inputmode="numeric" id="inpColCount" /></label>
@@ -106,8 +101,8 @@
     </div>
 
     <div class="actions">
-      <button id="btnApply" class="btn btn-primary">Apply page setup</button>
-      <button id="btnRevert" class="btn btn-ghost">Revert page setup</button>
+      <div id="btnApply" class="btn btn-primary" role="button" tabindex="0">Apply page setup</div>
+      <div id="btnRevert" class="btn btn-ghost" role="button" tabindex="0">Revert page setup</div>
     </div>
 
       </div><!-- /section-body pageSetup -->
@@ -138,43 +133,43 @@
         <label class="name-field">Logo name
           <div class="name-row">
             <input type="text" id="inpFitName" placeholder="Logo-airbus" />
-            <button class="btn-set" data-set-for="logo" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="logo" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">Letter ref name
           <div class="name-row">
             <input type="text" id="inpLetterRefName" placeholder="letter-A" />
-            <button class="btn-set" data-set-for="letter" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="letter" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">URL block name
           <div class="name-row">
             <input type="text" id="inpUrlBlockName" placeholder="URL-block" />
-            <button class="btn-set" data-set-for="url" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="url" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">QR block name
           <div class="name-row">
             <input type="text" id="inpQrBlockName" placeholder="QR-code" />
-            <button class="btn-set" data-set-for="qr" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="qr" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">Main-headline name
           <div class="name-row">
             <input type="text" id="inpMainName" placeholder="Main-headline" />
-            <button class="btn-set" data-set-for="main" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="main" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">Campaign-line name
           <div class="name-row">
             <input type="text" id="inpCampName" placeholder="campaign-line" />
-            <button class="btn-set" data-set-for="camp" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="camp" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
         <label class="name-field">Sub-headline name
           <div class="name-row">
             <input type="text" id="inpSubName" placeholder="Sub-headline" />
-            <button class="btn-set" data-set-for="sub" title="Apply this name to the selected object">Set</button>
+            <div class="btn-set" role="button" tabindex="0" data-set-for="sub" title="Apply this name to the selected object">Set</div>
           </div>
         </label>
       </div>
@@ -320,25 +315,28 @@
       </div>
 
       <div class="sync-actions">
-        <button id="btnApplyLayout" class="btn btn-primary btn-sm">Apply spacing</button>
-        <button id="btnResetOptions" class="btn btn-ghost btn-sm">Reset options</button>
+        <div id="btnApplyLayout" class="btn btn-primary btn-sm" role="button" tabindex="0">Apply spacing</div>
+        <div id="btnResetOptions" class="btn btn-ghost btn-sm" role="button" tabindex="0">Reset options</div>
       </div>
 
-      <div class="hint">Scale + position các thành phần (Logo/URL/QR/Main/Camp/Sub) theo Airbus brand spacing. Anchor + padding configurable per component.</div>
+      <div class="hint">Scale + position the components (Logo/URL/QR/Main/Camp/Sub) per Airbus brand spacing. Anchor + padding configurable per component.</div>
     </div>
 
       </div><!-- /section-body spacing -->
     </div><!-- /sectionSpacing -->
 
-    <!-- ALL PAGES TABLE -->
-    <div id="allPagesView" class="hidden">
-      <div class="card">
-        <div class="card-title">All pages</div>
-        <div id="allPagesList" class="all-pages-list"></div>
-      </div>
-    </div>
-
     <div id="statusBar" class="status-bar"></div>
+
+    <footer class="app-footer">
+      <div class="footer-title">
+        Page Guides <span class="footer-version">v1.0.0</span>
+        <span class="footer-sep">-</span>
+        <span class="footer-copyright">© 2026</span>
+      </div>
+      <div class="footer-credit">
+        by <span class="footer-author">Thien Ho</span> · Technical Solution
+      </div>
+    </footer>
 
   </div>
 

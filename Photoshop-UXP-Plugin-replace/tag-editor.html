@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Tag Editor — Replace Content</title>
+<style>
+  :root {
+    --bg: #1e1e1e;
+    --bg-panel: #252525;
+    --bg-input: #2a2a2a;
+    --border: #3a3a3a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --gg-green: #b7e39b;
+    --gg-green-dark: #8fc270;
+    --err: #e05a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    height: 100%;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 14px;
+    min-height: 0;
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .pane {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .pane-title {
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ── Toolbar ─────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(183, 227, 155, 0.05);
+    border-bottom: 1px solid var(--border);
+  }
+  .tb-btn {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+    min-height: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .tb-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--gg-green-dark); }
+  .tb-btn:active { background: rgba(183, 227, 155, 0.15); }
+  .tb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .tb-btn:disabled:hover { background: var(--bg-input); border-color: var(--border); }
+  .tb-btn.danger:hover { border-color: var(--err); color: #ffb8a0; }
+  .tb-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .tb-color-swatch {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.25);
+    display: inline-block;
+  }
+  .tb-caret { font-size: 9px; opacity: 0.7; }
+
+  .tb-dropdown { position: relative; }
+  .tb-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 100;
+    background: #2a2a2a;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+    padding: 10px;
+    min-width: 220px;
+    display: none;
+  }
+  .tb-popover.open { display: block; }
+  .tb-swatches {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .tb-swatch {
+    width: 22px; height: 22px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .tb-swatch:hover { outline: 2px solid var(--gg-green); outline-offset: 1px; }
+  .tb-input-row { display: flex; gap: 4px; }
+  .tb-input-row input {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .tb-input-row input.err { border-color: var(--err); }
+  .tb-input-row button {
+    background: var(--gg-green);
+    color: #000;
+    border: none;
+    border-radius: 3px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tb-input-row button:hover { background: var(--gg-green-dark); }
+  .tb-font-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+  }
+  .tb-font-opt {
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text);
+    padding: 5px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .tb-font-opt:hover { background: rgba(255,255,255,0.06); border-color: var(--border); }
+  .tb-font-opt[data-font="Light"]      { font-weight: 300; }
+  .tb-font-opt[data-font="Regular"]    { font-weight: 400; }
+  .tb-font-opt[data-font="Medium"]     { font-weight: 500; }
+  .tb-font-opt[data-font="Bold"]       { font-weight: 700; }
+  .tb-font-opt[data-font="Black"]      { font-weight: 900; }
+  .tb-font-opt[data-font="Italic"]     { font-style: italic; }
+  .tb-font-opt[data-font="Bold Italic"]{ font-weight: 700; font-style: italic; }
+
+  /* ── Mode switch ─────────────────────────────────────── */
+  .tb-spacer { flex: 1; }
+  .mode-switch {
+    display: inline-flex;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .mode-btn {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 26px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .mode-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .mode-btn.is-active {
+    background: var(--gg-green);
+    color: #000;
+  }
+
+  /* ── Editor ──────────────────────────────────────────── */
+  .editor {
+    flex: 1;
+    min-height: 240px;
+    padding: 14px;
+    overflow-y: auto;
+    outline: none;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  /* Raw editor wraps a transparent textarea over a syntax-highlighted
+     <pre>. Both share identical font metrics + padding so glyphs sit on
+     top of each other pixel-perfect. */
+  .raw-wrap {
+    flex: 1;
+    position: relative;
+    min-height: 240px;
+    background: #1a1a1a;
+    overflow: hidden;
+  }
+  .raw-highlight,
+  .editor-raw {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow: auto;
+    box-sizing: border-box;
+  }
+  .raw-highlight {
+    pointer-events: none;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    /* Match textarea's caret-line behavior so wrapping aligns exactly. */
+    overflow-wrap: break-word;
+  }
+  .editor-raw {
+    color: transparent;          /* glyph rendering handled by .raw-highlight */
+    caret-color: var(--text);    /* keep caret visible */
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+  }
+  .editor-raw::placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+  /* Syntax-highlight tokens. Style-code editor palette:
+     brackets/name = blue, attr value = orange. */
+  .raw-highlight .tk-bracket { color: #569cd6; }  /* < > / = */
+  .raw-highlight .tk-name    { color: #4ec9b0; }  /* b, i, sup, sub, color, font */
+  .raw-highlight .tk-value   { color: #ce9178; }  /* attr value (#ff0000, Bold) */
+  .raw-highlight .tk-quote   { color: #d7ba7d; }  /* attr quote chars */
+  .raw-highlight .tk-escape  { color: #c586c0; }  /* literal \n / \r → soft return */
+  .raw-highlight .tk-err     {
+    text-decoration: underline wavy #e05a5a;
+    text-decoration-skip-ink: none;
+  }
+
+  /* ── Error panel ─────────────────────────────────────── */
+  .error-panel {
+    border-top: 1px solid var(--err);
+    background: rgba(224, 90, 90, 0.08);
+    padding: 8px 14px;
+    font-size: 12px;
+    color: #ffb8a0;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .error-panel .err-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 2px 0;
+  }
+  .error-panel .err-row::before {
+    content: "⚠";
+    color: var(--err);
+    flex-shrink: 0;
+  }
+  /* When errors are present, paint a red border around the editor pane. */
+  .pane.has-errors {
+    border-color: var(--err);
+  }
+  .editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted);
+    font-style: italic;
+    pointer-events: none;
+  }
+  .editor span[data-tag],
+  .editor span[data-color],
+  .editor span[data-font] {
+    /* visual hint that this is a styled run */
+  }
+
+  /* ── Preview ─────────────────────────────────────────── */
+  .preview {
+    flex: 1;
+    min-height: 180px;
+    padding: 14px;
+    overflow-y: auto;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background: #1a1a1a;
+  }
+  .preview:empty::before {
+    content: "(empty)";
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── Output ──────────────────────────────────────────── */
+  .output-wrap {
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .output {
+    padding: 12px 14px;
+    background: #161616;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #d8d8d8;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 180px;
+    overflow-y: auto;
+    user-select: text;
+  }
+  .output:empty::before {
+    content: "(empty)";
+    color: var(--muted);
+    font-style: italic;
+  }
+  .output-bar {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .copy-btn {
+    background: var(--gg-green);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .copy-btn:hover { background: var(--gg-green-dark); }
+  .copy-btn.secondary {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .copy-btn.secondary:hover { border-color: var(--gg-green); }
+  .copy-status {
+    font-size: 12px;
+    color: var(--gg-green);
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .copy-status.show { opacity: 1; }
+
+  footer {
+    padding: 8px 18px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+  kbd {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Tag Editor</h1>
+      <div class="sub">Soạn text với formatting, copy tag string vào plugin Replace Content</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ── LEFT: editor ─────────────────────────────── -->
+    <section class="pane">
+      <div class="pane-title">
+        <span>Editor</span>
+        <span style="text-transform:none;font-weight:400;font-size:11px;">
+          Select text → click button to wrap
+        </span>
+      </div>
+
+      <div class="toolbar" id="toolbar">
+        <button class="tb-btn" data-action="b"   title="Bold (Ctrl/Cmd+B)"><b>B</b></button>
+        <button class="tb-btn" data-action="i"   title="Italic (Ctrl/Cmd+I)"><i>I</i></button>
+        <button class="tb-btn" data-action="sup" title="Superscript">X²</button>
+        <button class="tb-btn" data-action="sub" title="Subscript">X₂</button>
+
+        <span class="tb-sep"></span>
+
+        <div class="tb-dropdown">
+          <button class="tb-btn" id="colorTrigger" title="Color">
+            <span class="tb-color-swatch" id="colorSwatch" style="background:#ff0000"></span>
+            Color <span class="tb-caret">▾</span>
+          </button>
+          <div class="tb-popover" id="colorPopover">
+            <div class="tb-swatches" id="colorSwatches">
+              <button class="tb-swatch" data-color="#000000" style="background:#000000"></button>
+              <button class="tb-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+              <button class="tb-swatch" data-color="#ff0000" style="background:#ff0000"></button>
+              <button class="tb-swatch" data-color="#00aa00" style="background:#00aa00"></button>
+              <button class="tb-swatch" data-color="#0066ff" style="background:#0066ff"></button>
+              <button class="tb-swatch" data-color="#ffaa00" style="background:#ffaa00"></button>
+              <button class="tb-swatch" data-color="#aa00aa" style="background:#aa00aa"></button>
+              <button class="tb-swatch" data-color="#666666" style="background:#666666"></button>
+            </div>
+            <div class="tb-input-row">
+              <input type="text" id="hexInput" placeholder="#hex" maxlength="7" />
+              <button id="hexApply">Insert</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tb-dropdown">
+          <button class="tb-btn" id="fontTrigger" title="Font style">
+            Font <span class="tb-caret">▾</span>
+          </button>
+          <div class="tb-popover" id="fontPopover">
+            <div class="tb-font-list" id="fontList">
+              <button class="tb-font-opt" data-font="Light">Light</button>
+              <button class="tb-font-opt" data-font="Regular">Regular</button>
+              <button class="tb-font-opt" data-font="Medium">Medium</button>
+              <button class="tb-font-opt" data-font="Bold">Bold</button>
+              <button class="tb-font-opt" data-font="Black">Black</button>
+              <button class="tb-font-opt" data-font="Italic">Italic</button>
+              <button class="tb-font-opt" data-font="Bold Italic">Bold Italic</button>
+            </div>
+            <div class="tb-input-row">
+              <input type="text" id="fontInput" placeholder="Style or PS name" />
+              <button id="fontApply">Insert</button>
+            </div>
+          </div>
+        </div>
+
+        <span class="tb-sep"></span>
+
+        <button class="tb-btn" id="undoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶</button>
+        <button class="tb-btn" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷</button>
+
+        <span class="tb-sep"></span>
+
+        <button class="tb-btn" id="stripBtn" title="Remove formatting from selection">Strip</button>
+        <button class="tb-btn danger" id="clearBtn" title="Clear editor">Clear</button>
+
+        <span class="tb-spacer"></span>
+
+        <div class="mode-switch" role="tablist" aria-label="Editor mode">
+          <button class="mode-btn" data-mode="wysiwyg" title="Visual editor with formatting">WYSIWYG</button>
+          <button class="mode-btn is-active" data-mode="raw" title="Edit raw tag string directly">Raw</button>
+        </div>
+      </div>
+
+      <div
+        id="editor"
+        class="editor"
+        contenteditable="true"
+        spellcheck="false"
+        data-placeholder="Type or paste text here…"
+        style="display:none;"
+      ></div>
+
+      <div class="raw-wrap">
+        <pre id="rawHighlight" class="raw-highlight" aria-hidden="true"></pre>
+        <textarea
+          id="editorRaw"
+          class="editor-raw"
+          spellcheck="false"
+          placeholder="Type tag string here, e.g.  Save up to <b>50%</b> <color=#ff0000>off</color>"
+        ></textarea>
+      </div>
+
+      <div id="errorPanel" class="error-panel" style="display:none;"></div>
+    </section>
+
+    <!-- ── RIGHT: preview + output ─────────────────── -->
+    <section class="pane">
+      <div class="pane-title">Preview</div>
+      <div id="preview" class="preview"></div>
+
+      <div class="output-wrap">
+        <div class="pane-title" style="border-top:1px solid var(--border);">Output (tag string)</div>
+        <div id="output" class="output"></div>
+        <div class="output-bar">
+          <button class="copy-btn" id="copyTagsBtn">📋 Copy with tags</button>
+          <button class="copy-btn secondary" id="copyPlainBtn">Copy plain text</button>
+          <span class="copy-status" id="copyStatus">Copied!</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Plugin: Replace Content · Tag syntax: <kbd>&lt;b&gt;</kbd> <kbd>&lt;i&gt;</kbd> <kbd>&lt;sup&gt;</kbd> <kbd>&lt;sub&gt;</kbd> <kbd>&lt;color=#hex&gt;</kbd> <kbd>&lt;font=Style&gt;</kbd></span>
+    <span>Shortcuts: <kbd>Ctrl/Cmd+B</kbd> <kbd>Ctrl/Cmd+I</kbd> <kbd>Ctrl/Cmd+Z</kbd> <kbd>Ctrl/Cmd+Shift+Z</kbd> · <kbd>Enter</kbd> → newline · <kbd>Shift+Enter</kbd> → <code>\n</code> (soft)</span>
+  </footer>
+
+<script>
+(() => {
+  "use strict";
+
+  // ─── Element refs ───────────────────────────────────────
+  const editor       = document.getElementById("editor");
+  const editorRaw    = document.getElementById("editorRaw");
+  const preview      = document.getElementById("preview");
+  const output       = document.getElementById("output");
+  const toolbar      = document.getElementById("toolbar");
+  const modeBtns     = document.querySelectorAll(".mode-btn");
+
+  // Mode: "raw" (default) or "wysiwyg". Source-of-truth differs:
+  //   raw     → #editorRaw textarea is canonical, parser produces preview
+  //   wysiwyg → #editor DOM is canonical, serializer produces tag string
+  let mode = "raw";
+  const colorTrigger = document.getElementById("colorTrigger");
+  const colorPopover = document.getElementById("colorPopover");
+  const colorSwatch  = document.getElementById("colorSwatch");
+  const hexInput     = document.getElementById("hexInput");
+  const hexApply     = document.getElementById("hexApply");
+  const fontTrigger  = document.getElementById("fontTrigger");
+  const fontPopover  = document.getElementById("fontPopover");
+  const fontInput    = document.getElementById("fontInput");
+  const fontApply    = document.getElementById("fontApply");
+  const stripBtn     = document.getElementById("stripBtn");
+  const clearBtn     = document.getElementById("clearBtn");
+  const undoBtn      = document.getElementById("undoBtn");
+  const redoBtn      = document.getElementById("redoBtn");
+  const copyTagsBtn  = document.getElementById("copyTagsBtn");
+  const copyPlainBtn = document.getElementById("copyPlainBtn");
+  const copyStatus   = document.getElementById("copyStatus");
+
+  // ─── Font style table ───────────────────────────────────
+  // Map preset name → CSS so preview renders close to PS appearance.
+  const FONT_PRESETS = {
+    "Light":       { weight: 300, style: "normal" },
+    "Regular":     { weight: 400, style: "normal" },
+    "Medium":      { weight: 500, style: "normal" },
+    "Bold":        { weight: 700, style: "normal" },
+    "Black":       { weight: 900, style: "normal" },
+    "Italic":      { weight: 400, style: "italic" },
+    "Bold Italic": { weight: 700, style: "italic" },
+  };
+
+  function fontCss(name) {
+    const p = FONT_PRESETS[name];
+    if (p) return `font-weight:${p.weight};font-style:${p.style};`;
+    // Custom font name → no CSS mapping, just mark with attribute.
+    return "";
+  }
+
+  // ─── Selection helpers ──────────────────────────────────
+  function getEditorSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    return { sel, range };
+  }
+
+  // Wrap current selection with a <span> carrying the given attrs+style.
+  // If selection is collapsed, insert an empty span with a zero-width
+  // space inside so the caret lands within it and the user types into it.
+  function wrapSelection(attrs, styleCss) {
+    editor.focus();
+    let s = getEditorSelection();
+    if (!s) {
+      // Place caret at end of editor as fallback.
+      const r = document.createRange();
+      r.selectNodeContents(editor);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      s = getEditorSelection();
+      if (!s) return;
+    }
+    const { sel, range } = s;
+    const span = document.createElement("span");
+    for (const [k, v] of Object.entries(attrs)) span.setAttribute(k, v);
+    if (styleCss) span.setAttribute("style", styleCss);
+
+    if (range.collapsed) {
+      // No selection — insert empty span, drop caret inside.
+      span.appendChild(document.createTextNode("​")); // ZWSP placeholder
+      range.insertNode(span);
+      const newRange = document.createRange();
+      newRange.setStart(span.firstChild, 1);
+      newRange.setEnd(span.firstChild, 1);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    } else {
+      const contents = range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+      // Select the wrapped content so further toggles stack.
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+    refreshAll();
+    pushHistory();
+  }
+
+  // ─── Toolbar tag actions ────────────────────────────────
+  const TAG_STYLE = {
+    b:   "font-weight:700;",
+    i:   "font-style:italic;",
+    sup: "vertical-align:super;font-size:0.75em;",
+    sub: "vertical-align:sub;font-size:0.75em;",
+  };
+
+  // Raw mode: wrap textarea selection (or insert at caret if collapsed)
+  // with the given open/close tag strings. Uses setRangeText so undo
+  // history stays intact in normal browsers.
+  function wrapTextareaSelection(openTag, closeTag) {
+    editorRaw.focus();
+    const start = editorRaw.selectionStart;
+    const end   = editorRaw.selectionEnd;
+    const value = editorRaw.value;
+    const selected = value.slice(start, end);
+    const inserted = openTag + selected + closeTag;
+    editorRaw.setRangeText(inserted, start, end, "preserve");
+    // Place caret: if there was a selection, select the wrapped content
+    // so further toggles stack; otherwise drop caret between the tags.
+    if (selected) {
+      const newStart = start + openTag.length;
+      const newEnd   = newStart + selected.length;
+      editorRaw.setSelectionRange(newStart, newEnd);
+    } else {
+      const caret = start + openTag.length;
+      editorRaw.setSelectionRange(caret, caret);
+    }
+    refreshAll();
+    pushHistory();
+  }
+
+  function applyTag(tag) {
+    if (mode === "raw") {
+      wrapTextareaSelection(`<${tag}>`, `</${tag}>`);
+    } else {
+      wrapSelection({ "data-tag": tag }, TAG_STYLE[tag] || "");
+    }
+  }
+
+  function applyColor(hex) {
+    if (mode === "raw") {
+      wrapTextareaSelection(`<color=${hex}>`, `</color>`);
+    } else {
+      wrapSelection({ "data-color": hex }, `color:${hex};`);
+    }
+  }
+
+  function applyFont(name) {
+    if (mode === "raw") {
+      const needsQuote = /\s|"/.test(name);
+      const safe = name.replace(/"/g, "");
+      const openTag = needsQuote ? `<font="${safe}">` : `<font=${name}>`;
+      wrapTextareaSelection(openTag, `</font>`);
+    } else {
+      wrapSelection({ "data-font": name }, fontCss(name));
+    }
+  }
+
+  // ─── Strip / Clear ──────────────────────────────────────
+  // Strip formatting from current selection: unwrap any data-tag/color/font
+  // spans that intersect the selection.
+  function stripSelectionFormatting() {
+    if (mode === "raw") {
+      // Strip plugin tags from textarea selection (or entire value if
+      // nothing selected). Keep text content.
+      const start = editorRaw.selectionStart;
+      const end   = editorRaw.selectionEnd;
+      const hasSelection = start !== end;
+      const target = hasSelection ? editorRaw.value.slice(start, end) : editorRaw.value;
+      const TAG_RE = /<\/?(?:b|i|sup|sub|color(?:=("[^"]*"|[^>]*))?|font(?:=("[^"]*"|[^>]*))?)>/gi;
+      const cleaned = target.replace(TAG_RE, "");
+      if (hasSelection) {
+        editorRaw.setRangeText(cleaned, start, end, "select");
+      } else {
+        editorRaw.value = cleaned;
+      }
+      refreshAll();
+      pushHistory();
+      return;
+    }
+    editor.focus();
+    const s = getEditorSelection();
+    if (!s) return;
+    const { range } = s;
+    if (range.collapsed) return;
+
+    // Collect spans intersecting the range.
+    const spans = Array.from(editor.querySelectorAll("span[data-tag], span[data-color], span[data-font]"));
+    const intersecting = spans.filter(sp => range.intersectsNode(sp));
+    intersecting.forEach(sp => {
+      const parent = sp.parentNode;
+      while (sp.firstChild) parent.insertBefore(sp.firstChild, sp);
+      parent.removeChild(sp);
+    });
+    editor.normalize();
+    refreshAll();
+    pushHistory();
+  }
+
+  // ─── Popover toggles ────────────────────────────────────
+  function closeAllPopovers(except) {
+    [colorPopover, fontPopover].forEach(p => {
+      if (p !== except) p.classList.remove("open");
+    });
+  }
+  function togglePopover(pop) {
+    const opening = !pop.classList.contains("open");
+    closeAllPopovers(opening ? pop : null);
+    pop.classList.toggle("open", opening);
+  }
+
+  // ─── Parse plugin tag string → DOM ──────────────────────
+  // Convert text containing plugin tags (<b>, <i>, <sup>, <sub>,
+  // <color=#hex>, <font=Style> or <font="Style With Spaces">) into a
+  // DocumentFragment of <span> elements so the editor can render the text
+  // as formatted content. Newlines become <br>.
+  function parseTagsToDom(raw) {
+    const frag = document.createDocumentFragment();
+    if (!raw) return frag;
+
+    // Token stream: text or tag. We use a single regex pass.
+    const TAG_RE = /<\/?(?:b|i|sup|sub|color|font)(?:=("[^"]*"|[^>]*))?>/gi;
+    const tokens = [];
+    let lastIdx = 0;
+    let m;
+    while ((m = TAG_RE.exec(raw)) !== null) {
+      if (m.index > lastIdx) {
+        tokens.push({ kind: "text", value: raw.slice(lastIdx, m.index) });
+      }
+      tokens.push({ kind: "tag", value: m[0] });
+      lastIdx = m.index + m[0].length;
+    }
+    if (lastIdx < raw.length) tokens.push({ kind: "text", value: raw.slice(lastIdx) });
+
+    // Recursive descent: maintain a stack of open spans.
+    const stack = [frag];
+    const top = () => stack[stack.length - 1];
+
+    function appendText(t) {
+      if (!t) return;
+      // Walk char by char so we can mark each line break as hard/soft.
+      let buf = "";
+      const flushBuf = () => {
+        if (buf) { top().appendChild(document.createTextNode(buf)); buf = ""; }
+      };
+      const pushHard = () => {
+        flushBuf();
+        top().appendChild(document.createElement("br"));
+      };
+      const pushSoft = () => {
+        flushBuf();
+        const br = document.createElement("br");
+        br.setAttribute("data-soft", "1");
+        top().appendChild(br);
+      };
+      // Match plugin convention (main.js:3440-3446):
+      //   actual "\n" / "\r"   → hard return (Enter, becomes \r in PS)
+      //   literal "\n" (2 chars) → soft return (Shift+Enter, becomes ETX in PS)
+      //   ETX char ()         → soft return (already converted upstream)
+      for (let i = 0; i < t.length; i++) {
+        const ch = t[i];
+        if (ch === "\n" || ch === "\r") { pushHard(); continue; }
+        if (ch.charCodeAt(0) === 3) { pushSoft(); continue; }
+        if (ch === "\\" && i + 1 < t.length) {
+          const nx = t[i + 1];
+          if (nx === "n" || nx === "r") { pushSoft(); i++; continue; }
+          if (nx === "t") { buf += "\t"; i++; continue; }
+        }
+        buf += ch;
+      }
+      flushBuf();
+    }
+
+    function openSpan(attrs, style) {
+      const span = document.createElement("span");
+      for (const [k, v] of Object.entries(attrs)) span.setAttribute(k, v);
+      if (style) span.setAttribute("style", style);
+      top().appendChild(span);
+      stack.push(span);
+    }
+
+    function closeMatching(predicate) {
+      // Pop until we find a matching span (or hit the fragment).
+      for (let i = stack.length - 1; i >= 1; i--) {
+        if (predicate(stack[i])) {
+          // Pop everything down to and including i.
+          stack.length = i;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    for (const tok of tokens) {
+      if (tok.kind === "text") { appendText(tok.value); continue; }
+      const t = tok.value;
+      const lower = t.toLowerCase();
+
+      // ─── close tags ──────────────────────────────────
+      if (lower.startsWith("</")) {
+        if (lower === "</b>")    closeMatching(el => el.getAttribute("data-tag") === "b");
+        else if (lower === "</i>")   closeMatching(el => el.getAttribute("data-tag") === "i");
+        else if (lower === "</sup>") closeMatching(el => el.getAttribute("data-tag") === "sup");
+        else if (lower === "</sub>") closeMatching(el => el.getAttribute("data-tag") === "sub");
+        else if (lower === "</color>") closeMatching(el => el.hasAttribute("data-color"));
+        else if (lower === "</font>")  closeMatching(el => el.hasAttribute("data-font"));
+        continue;
+      }
+
+      // ─── open tags ───────────────────────────────────
+      if (lower === "<b>")   { openSpan({ "data-tag": "b" },   TAG_STYLE.b);   continue; }
+      if (lower === "<i>")   { openSpan({ "data-tag": "i" },   TAG_STYLE.i);   continue; }
+      if (lower === "<sup>") { openSpan({ "data-tag": "sup" }, TAG_STYLE.sup); continue; }
+      if (lower === "<sub>") { openSpan({ "data-tag": "sub" }, TAG_STYLE.sub); continue; }
+
+      // <color=#hex>
+      const colorM = t.match(/^<color=("?)(#[0-9a-fA-F]{3,8})\1\s*>$/i);
+      if (colorM) {
+        const hex = colorM[2];
+        openSpan({ "data-color": hex }, `color:${hex};`);
+        continue;
+      }
+      // <font=Name> or <font="Name With Spaces">
+      const fontM = t.match(/^<font=(?:"([^"]*)"|([^>]*))>$/i);
+      if (fontM) {
+        const name = (fontM[1] || fontM[2] || "").trim();
+        openSpan({ "data-font": name }, fontCss(name));
+        continue;
+      }
+      // Unknown tag — render as literal text.
+      appendText(t);
+    }
+
+    return frag;
+  }
+
+  // ─── Serialize editor DOM → tag string ──────────────────
+  // Walk editor children, emit plugin tag syntax.
+  function serializeToTags(root) {
+    let out = "";
+    function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        // Strip ZWSP placeholders.
+        out += node.nodeValue.replace(/​/g, "");
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+      const el = node;
+      if (el.tagName === "BR") {
+        // Match plugin convention (main.js:3440-3446):
+        //   actual newline char in copied text → paragraph break (Enter)
+        //   literal "\n" (2 chars backslash+n) → soft return (becomes ETX in PS)
+        out += el.getAttribute("data-soft") === "1" ? "\\n" : "\n";
+        return;
+      }
+
+      // Div/p → treat as line break boundary (paste from browsers may
+      // produce these). Each block boundary emits a hard return.
+      const isBlock = el.tagName === "DIV" || el.tagName === "P";
+      if (isBlock && out && !out.endsWith("\n")) {
+        out += "\n";
+      }
+
+      // Determine which tag(s) this span emits. A span may carry one
+      // of data-tag, data-color, data-font. We don't combine — each
+      // span is wrapped with its own tag.
+      let open = "", close = "";
+      if (el.tagName === "SPAN") {
+        if (el.hasAttribute("data-tag")) {
+          const t = el.getAttribute("data-tag");
+          if (t === "b" || t === "i" || t === "sup" || t === "sub") {
+            open = `<${t}>`; close = `</${t}>`;
+          }
+        } else if (el.hasAttribute("data-color")) {
+          const hex = el.getAttribute("data-color");
+          open = `<color=${hex}>`; close = `</color>`;
+        } else if (el.hasAttribute("data-font")) {
+          const name = el.getAttribute("data-font");
+          const needsQuote = /\s|"/.test(name);
+          const safe = name.replace(/"/g, "");
+          open = needsQuote ? `<font="${safe}">` : `<font=${name}>`;
+          close = `</font>`;
+        }
+      }
+
+      out += open;
+      for (const child of el.childNodes) walk(child);
+      out += close;
+    }
+    for (const child of root.childNodes) walk(child);
+    return out;
+  }
+
+  // ─── Undo / Redo stack ──────────────────────────────────
+  // Custom history because contenteditable operations (insertNode,
+  // extractContents) bypass the browser's native undo stack, and switching
+  // mode would orphan it anyway. Snapshot { mode, html, raw } at each
+  // committed action so we can restore both surfaces and the active mode.
+  const HISTORY_LIMIT = 100;
+  const undoStack = [];
+  const redoStack = [];
+  let suppressHistory = false; // set true while applying a snapshot
+
+  function takeSnapshot() {
+    return { mode, html: editor.innerHTML, raw: editorRaw.value };
+  }
+  function snapshotsEqual(a, b) {
+    return a && b && a.mode === b.mode && a.html === b.html && a.raw === b.raw;
+  }
+  function pushHistory() {
+    if (suppressHistory) return;
+    const snap = takeSnapshot();
+    const top = undoStack[undoStack.length - 1];
+    if (snapshotsEqual(top, snap)) return;
+    undoStack.push(snap);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0; // new action invalidates redo
+    refreshHistoryButtons();
+  }
+  function applySnapshot(snap) {
+    suppressHistory = true;
+    editor.innerHTML = snap.html;
+    editorRaw.value = snap.raw;
+    if (snap.mode !== mode) {
+      mode = snap.mode;
+      editor.style.display = mode === "wysiwyg" ? "block" : "none";
+      editorRaw.parentElement.style.display = mode === "raw" ? "block" : "none";
+      modeBtns.forEach(b => b.classList.toggle("is-active", b.dataset.mode === mode));
+    }
+    refreshAll();
+    suppressHistory = false;
+  }
+  function undo() {
+    if (undoStack.length < 2) return; // need current + previous
+    const current = undoStack.pop();
+    redoStack.push(current);
+    const prev = undoStack[undoStack.length - 1];
+    applySnapshot(prev);
+    refreshHistoryButtons();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    const snap = redoStack.pop();
+    undoStack.push(snap);
+    applySnapshot(snap);
+    refreshHistoryButtons();
+  }
+  function refreshHistoryButtons() {
+    undoBtn.disabled = undoStack.length < 2;
+    redoBtn.disabled = redoStack.length === 0;
+  }
+
+  // Debounced commit for typing: don't push every keystroke, only after
+  // the user pauses for ~400ms. Manual actions (button clicks) commit
+  // immediately via pushHistory() directly.
+  let typingTimer = null;
+  function commitOnIdle() {
+    if (suppressHistory) return;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { typingTimer = null; pushHistory(); }, 400);
+  }
+
+  undoBtn.addEventListener("mousedown", e => e.preventDefault());
+  redoBtn.addEventListener("mousedown", e => e.preventDefault());
+  undoBtn.addEventListener("click", undo);
+  redoBtn.addEventListener("click", redo);
+
+  // Global Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y) override the
+  // browser's native undo so we can apply our snapshots instead.
+  document.addEventListener("keydown", e => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === "z") {
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    } else if (k === "y" && !e.shiftKey) {
+      e.preventDefault();
+      redo();
+    }
+  });
+
+  // ─── Validate + highlight ───────────────────────────────
+  // Element refs added late so they're available below.
+  const rawHighlight = document.getElementById("rawHighlight");
+  const errorPanel   = document.getElementById("errorPanel");
+  const editorPane   = editor.closest(".pane");
+
+  const KNOWN_TAGS = new Set(["b", "i", "sup", "sub", "color", "font"]);
+  const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+  // Tokenize a tag string into an array of tokens. Each token is one of:
+  //   { kind: "text",    value }
+  //   { kind: "tag",     value, name, isClose, attr, attrRaw, attrQuote, error }
+  //   { kind: "escape",  value }   (literal "\n" / "\r" / "\t")
+  // Tokens carry the original text indices via .start/.end so error
+  // reports can quote positions.
+  function tokenize(src) {
+    const tokens = [];
+    if (!src) return tokens;
+    const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:=("([^"]*)"|'([^']*)'|([^>]*)))?>/g;
+    let last = 0, m;
+    function pushText(from, to) {
+      if (from >= to) return;
+      const segment = src.slice(from, to);
+      // Split out escape sequences "\n", "\r", "\t" so we can highlight
+      // them as soft-return markers.
+      let buf = "", bufStart = from;
+      for (let i = 0; i < segment.length; i++) {
+        const ch = segment[i];
+        if (ch === "\\" && i + 1 < segment.length) {
+          const nx = segment[i + 1];
+          if (nx === "n" || nx === "r" || nx === "t") {
+            if (buf) {
+              tokens.push({ kind: "text", value: buf, start: bufStart, end: bufStart + buf.length });
+              buf = "";
+            }
+            const startIdx = from + i;
+            tokens.push({ kind: "escape", value: ch + nx, start: startIdx, end: startIdx + 2 });
+            bufStart = from + i + 2;
+            i++;
+            continue;
+          }
+        }
+        buf += ch;
+      }
+      if (buf) tokens.push({ kind: "text", value: buf, start: bufStart, end: bufStart + buf.length });
+    }
+    while ((m = TAG_RE.exec(src)) !== null) {
+      pushText(last, m.index);
+      const isClose = m[1] === "/";
+      const name = m[2];
+      // Attr can come from group 4 (double-quote), 5 (single-quote), or 6 (bare).
+      let attr = null, attrQuote = null;
+      if (m[4] !== undefined) { attr = m[4]; attrQuote = '"'; }
+      else if (m[5] !== undefined) { attr = m[5]; attrQuote = "'"; }
+      else if (m[6] !== undefined) { attr = m[6]; }
+      tokens.push({
+        kind: "tag",
+        value: m[0],
+        name,
+        nameLower: name.toLowerCase(),
+        isClose,
+        attr,
+        attrQuote,
+        start: m.index,
+        end: TAG_RE.lastIndex,
+      });
+      last = TAG_RE.lastIndex;
+    }
+    pushText(last, src.length);
+    return tokens;
+  }
+
+  // Walk tokens to find validation errors. Returns array of { msg, start, end }.
+  // Mutates each tag token's .error flag for highlighting.
+  function validateTokens(tokens) {
+    const errors = [];
+    const stack = []; // tags currently open: { name, start }
+    for (const tok of tokens) {
+      if (tok.kind !== "tag") continue;
+      const name = tok.nameLower;
+
+      if (!KNOWN_TAGS.has(name)) {
+        tok.error = true;
+        errors.push({ msg: `Unknown tag <${tok.isClose ? "/" : ""}${tok.name}>`, start: tok.start, end: tok.end });
+        continue;
+      }
+
+      // Attr rules: color/font require attr on OPEN tag; b/i/sup/sub
+      // don't accept attr.
+      if (!tok.isClose) {
+        if ((name === "color" || name === "font") && (tok.attr === null || tok.attr === "")) {
+          tok.error = true;
+          errors.push({ msg: `<${name}> needs a value, e.g. <${name}=${name === "color" ? "#ff0000" : "Bold"}>`, start: tok.start, end: tok.end });
+        } else if ((name === "b" || name === "i" || name === "sup" || name === "sub") && tok.attr !== null) {
+          tok.error = true;
+          errors.push({ msg: `<${name}> takes no attribute`, start: tok.start, end: tok.end });
+        } else if (name === "color" && tok.attr && !HEX_RE.test(tok.attr)) {
+          tok.error = true;
+          errors.push({ msg: `Bad color "${tok.attr}" — use 6-digit hex like #ff0000`, start: tok.start, end: tok.end });
+        }
+      }
+
+      // Stack matching.
+      if (tok.isClose) {
+        const top = stack[stack.length - 1];
+        if (!top) {
+          tok.error = true;
+          errors.push({ msg: `Stray closing </${tok.name}> with no matching open`, start: tok.start, end: tok.end });
+        } else if (top.name !== name) {
+          tok.error = true;
+          errors.push({ msg: `Mismatched tag: expected </${top.name}> but got </${tok.name}>`, start: tok.start, end: tok.end });
+          // Pop anyway to recover.
+          stack.pop();
+        } else {
+          stack.pop();
+        }
+      } else {
+        stack.push({ name, start: tok.start, tagToken: tok });
+      }
+    }
+    // Any leftover open tags are unclosed.
+    for (const open of stack) {
+      open.tagToken.error = true;
+      errors.push({ msg: `Unclosed <${open.name}> — add </${open.name}>`, start: open.start, end: open.start + open.name.length + 2 });
+    }
+    return errors;
+  }
+
+  // HTML-escape a string for safe injection into innerHTML.
+  function esc(s) {
+    return s.replace(/[&<>]/g, c => c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;");
+  }
+
+  // Render tokens to highlighted HTML for the raw editor overlay.
+  function renderHighlight(tokens) {
+    let out = "";
+    for (const tok of tokens) {
+      if (tok.kind === "text") {
+        out += esc(tok.value);
+        continue;
+      }
+      if (tok.kind === "escape") {
+        out += `<span class="tk-escape">${esc(tok.value)}</span>`;
+        continue;
+      }
+      // tag
+      const cls = tok.error ? " tk-err" : "";
+      const slash = tok.isClose ? "/" : "";
+      let inner = `<span class="tk-bracket${cls}">&lt;${slash}</span>` +
+                  `<span class="tk-name${cls}">${esc(tok.name)}</span>`;
+      if (!tok.isClose && tok.attr !== null) {
+        inner += `<span class="tk-bracket${cls}">=</span>`;
+        if (tok.attrQuote) {
+          inner += `<span class="tk-quote${cls}">${tok.attrQuote}</span>` +
+                   `<span class="tk-value${cls}">${esc(tok.attr)}</span>` +
+                   `<span class="tk-quote${cls}">${tok.attrQuote}</span>`;
+        } else {
+          inner += `<span class="tk-value${cls}">${esc(tok.attr)}</span>`;
+        }
+      }
+      inner += `<span class="tk-bracket${cls}">&gt;</span>`;
+      out += inner;
+    }
+    // Trailing newline so the last line's wrap height matches textarea.
+    return out + "\n";
+  }
+
+  // Update error panel + pane border. Errors come from validating the
+  // current source (raw textarea string or serialized DOM).
+  function updateErrors(errors) {
+    if (!errors.length) {
+      errorPanel.style.display = "none";
+      errorPanel.innerHTML = "";
+      editorPane.classList.remove("has-errors");
+      return;
+    }
+    errorPanel.style.display = "block";
+    errorPanel.innerHTML = errors
+      .map(e => `<div class="err-row"><span>${esc(e.msg)} <small style="opacity:0.6;">(pos ${e.start})</small></span></div>`)
+      .join("");
+    editorPane.classList.add("has-errors");
+  }
+
+  // Sync the highlight overlay's scroll position with the textarea.
+  editorRaw.addEventListener("scroll", () => {
+    rawHighlight.scrollTop = editorRaw.scrollTop;
+    rawHighlight.scrollLeft = editorRaw.scrollLeft;
+  });
+
+  // ─── Refresh preview + output ───────────────────────────
+  function refreshAll() {
+    let source;
+    if (mode === "wysiwyg") {
+      // WYSIWYG canonical: serialize editor DOM → tag string for output,
+      // mirror DOM into preview directly.
+      preview.innerHTML = editor.innerHTML;
+      source = serializeToTags(editor);
+      output.textContent = source;
+    } else {
+      // Raw canonical: parse textarea string → render into preview.
+      source = editorRaw.value;
+      preview.innerHTML = "";
+      preview.appendChild(parseTagsToDom(source));
+      output.textContent = source;
+    }
+    // Tokenize once, then use the tokens for both validation and (in raw
+    // mode) the syntax-highlight overlay.
+    const tokens = tokenize(source);
+    const errors = validateTokens(tokens);
+    updateErrors(errors);
+    if (mode === "raw") {
+      rawHighlight.innerHTML = renderHighlight(tokens);
+      // Keep overlay scrolled with textarea (in case content grew).
+      rawHighlight.scrollTop = editorRaw.scrollTop;
+      rawHighlight.scrollLeft = editorRaw.scrollLeft;
+    }
+  }
+
+  // ─── Mode switching ─────────────────────────────────────
+  // Sync content from the "from" surface into the "to" surface so user
+  // sees the same text in either mode.
+  function switchMode(next) {
+    if (next === mode) return;
+    if (next === "raw") {
+      // WYSIWYG → Raw: serialize current DOM into the textarea.
+      editorRaw.value = serializeToTags(editor);
+      editor.style.display = "none";
+      editorRaw.parentElement.style.display = "block";
+    } else {
+      // Raw → WYSIWYG: parse textarea into DOM.
+      editor.innerHTML = "";
+      editor.appendChild(parseTagsToDom(editorRaw.value));
+      editorRaw.parentElement.style.display = "none";
+      editor.style.display = "block";
+    }
+    mode = next;
+    modeBtns.forEach(b => b.classList.toggle("is-active", b.dataset.mode === next));
+    refreshAll();
+    pushHistory();
+    // Focus the now-visible surface so user can keep typing.
+    (mode === "raw" ? editorRaw : editor).focus();
+  }
+  modeBtns.forEach(b => {
+    b.addEventListener("mousedown", e => e.preventDefault());
+    b.addEventListener("click", () => switchMode(b.dataset.mode));
+  });
+
+  // ─── Editor events ──────────────────────────────────────
+  editor.addEventListener("input", () => { refreshAll(); commitOnIdle(); });
+  // Raw textarea: typing updates output + preview live.
+  editorRaw.addEventListener("input", () => { refreshAll(); commitOnIdle(); });
+  // Ctrl/Cmd+B/I shortcuts in raw mode → insert tag at caret.
+  editorRaw.addEventListener("keydown", e => {
+    // Shift+Enter → insert literal "\n" (2 chars) so the plugin treats it
+    // as a soft return (ETX) — matches WYSIWYG mode behavior.
+    // Plain Enter falls through to the textarea default (real newline =
+    // hard return / paragraph break in the plugin).
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      editorRaw.setRangeText("\\n", editorRaw.selectionStart, editorRaw.selectionEnd, "end");
+      refreshAll();
+      commitOnIdle();
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === "b") { e.preventDefault(); applyTag("b"); }
+    else if (k === "i") { e.preventDefault(); applyTag("i"); }
+  });
+
+  // Paste handler — convert plugin tag syntax to formatted spans.
+  editor.addEventListener("paste", e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text");
+    if (!text) return;
+    const frag = parseTagsToDom(text);
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      editor.appendChild(frag);
+    } else {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const last = frag.lastChild;
+      range.insertNode(frag);
+      if (last) {
+        const r = document.createRange();
+        r.setStartAfter(last);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+    }
+    refreshAll();
+    pushHistory();
+  });
+
+  // Insert a <br> at caret marked as hard (Enter) or soft (Shift+Enter).
+  // Both render the same line break visually; the data attribute lets the
+  // serializer emit `\n` vs ETX () so the plugin can distinguish
+  // paragraph breaks from soft returns (matches Photoshop textKey behavior).
+  function insertLineBreak(soft) {
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+    range.deleteContents();
+
+    const br = document.createElement("br");
+    if (soft) br.setAttribute("data-soft", "1");
+    range.insertNode(br);
+
+    // After inserting a <br>, browsers need a follow-up node to place the
+    // caret on the next line. If <br> is the last child of its parent,
+    // append a zero-width space node so caret lands visibly on next line.
+    const parent = br.parentNode;
+    if (br === parent.lastChild) {
+      const filler = document.createTextNode("​");
+      parent.appendChild(filler);
+      const r = document.createRange();
+      r.setStart(filler, 1);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } else {
+      // Move caret immediately after the <br>.
+      const r = document.createRange();
+      r.setStartAfter(br);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    refreshAll();
+    commitOnIdle();
+  }
+
+  // Keyboard shortcuts: Ctrl/Cmd+B, +I, Enter, Shift+Enter
+  editor.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      // Override default Enter (which inserts <div>/<p>) so we control
+      // exactly what gets emitted. Shift+Enter → soft return (ETX).
+      e.preventDefault();
+      insertLineBreak(e.shiftKey);
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === "b") { e.preventDefault(); applyTag("b"); }
+    else if (k === "i") { e.preventDefault(); applyTag("i"); }
+  });
+
+  // ─── Toolbar wiring ─────────────────────────────────────
+  // Use mousedown.preventDefault on every button so editor doesn't lose
+  // selection before the click handler reads it.
+  toolbar.querySelectorAll("button").forEach(b => {
+    b.addEventListener("mousedown", e => e.preventDefault());
+  });
+  // Plus all buttons in popovers.
+  document.querySelectorAll(".tb-popover button").forEach(b => {
+    b.addEventListener("mousedown", e => e.preventDefault());
+  });
+
+  toolbar.querySelectorAll("[data-action]").forEach(btn => {
+    btn.addEventListener("click", () => applyTag(btn.dataset.action));
+  });
+
+  // Color
+  colorTrigger.addEventListener("click", e => {
+    e.stopPropagation();
+    togglePopover(colorPopover);
+  });
+  document.querySelectorAll(".tb-swatch").forEach(sw => {
+    sw.addEventListener("click", () => {
+      const hex = sw.getAttribute("data-color");
+      colorSwatch.style.background = hex;
+      applyColor(hex);
+      closeAllPopovers();
+    });
+  });
+  function applyHexInput() {
+    let v = (hexInput.value || "").trim();
+    if (!v) return;
+    if (!v.startsWith("#")) v = "#" + v;
+    if (!/^#[0-9a-fA-F]{6}$/.test(v)) { hexInput.classList.add("err"); return; }
+    hexInput.classList.remove("err");
+    colorSwatch.style.background = v;
+    applyColor(v);
+    hexInput.value = "";
+    closeAllPopovers();
+  }
+  hexApply.addEventListener("click", applyHexInput);
+  hexInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); applyHexInput(); }
+    else hexInput.classList.remove("err");
+  });
+
+  // Font
+  fontTrigger.addEventListener("click", e => {
+    e.stopPropagation();
+    togglePopover(fontPopover);
+  });
+  document.querySelectorAll(".tb-font-opt").forEach(opt => {
+    opt.addEventListener("click", () => {
+      applyFont(opt.getAttribute("data-font"));
+      closeAllPopovers();
+    });
+  });
+  function applyFontInput() {
+    const v = (fontInput.value || "").trim();
+    if (!v) return;
+    applyFont(v);
+    fontInput.value = "";
+    closeAllPopovers();
+  }
+  fontApply.addEventListener("click", applyFontInput);
+  fontInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); applyFontInput(); }
+  });
+
+  // Strip / Clear
+  stripBtn.addEventListener("click", stripSelectionFormatting);
+  clearBtn.addEventListener("click", () => {
+    const hasContent = mode === "raw" ? editorRaw.value : editor.textContent;
+    if (hasContent && !confirm("Clear editor?")) return;
+    editor.innerHTML = "";
+    editorRaw.value = "";
+    refreshAll();
+    pushHistory();
+  });
+
+  // ─── Click-outside closes popovers ──────────────────────
+  document.addEventListener("click", e => {
+    if (e.target.closest(".tb-popover")) return;
+    if (e.target.closest("#colorTrigger") || e.target.closest("#fontTrigger")) return;
+    closeAllPopovers();
+  });
+
+  // ─── Copy buttons ───────────────────────────────────────
+  function flashStatus(msg) {
+    copyStatus.textContent = msg;
+    copyStatus.classList.add("show");
+    setTimeout(() => copyStatus.classList.remove("show"), 1400);
+  }
+  async function copyText(t, label) {
+    try {
+      await navigator.clipboard.writeText(t);
+      flashStatus(label);
+    } catch (err) {
+      // Fallback for older browsers — use a hidden textarea.
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed"; ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); flashStatus(label); }
+      catch (_) { alert("Copy failed — select the output and copy manually."); }
+      document.body.removeChild(ta);
+    }
+  }
+  copyTagsBtn.addEventListener("click", () => {
+    const s = mode === "raw" ? editorRaw.value : serializeToTags(editor);
+    if (!s) { flashStatus("Editor is empty"); return; }
+    copyText(s, "Copied with tags!");
+  });
+  copyPlainBtn.addEventListener("click", () => {
+    let s;
+    if (mode === "raw") {
+      // Strip all plugin tags from raw value to get plain text.
+      s = editorRaw.value.replace(/<\/?(?:b|i|sup|sub|color(?:=[^>]*)?|font(?:=[^>]*)?)>/gi, "");
+    } else {
+      s = editor.textContent.replace(/​/g, "");
+    }
+    if (!s) { flashStatus("Editor is empty"); return; }
+    copyText(s, "Copied plain text!");
+  });
+
+  // ─── Initial state ──────────────────────────────────────
+  refreshAll();
+  pushHistory(); // seed undo stack with empty initial snapshot
+})();
+</script>
+</body>
+</html>

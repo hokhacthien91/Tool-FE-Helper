@@ -4,7 +4,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentDoc      = null;
   let currentPage     = null;
   let displayUnitName = "in";
-  let scopeMode       = "active"; // "active" | "all"
   let snapshot        = null;     // for revert
 
   // ─── DOM refs ──────────────────────────────────────────────────────────────
@@ -14,12 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const selUnit     = $("selUnit");
   const elStatus    = $("statusBar");
 
-  const tabActive   = $("tabActive");
-  const tabAll      = $("tabAll");
-  const pagePicker  = $("pagePicker");
   const selPage     = $("selPage");
-  const allPagesView= $("allPagesView");
-  const allPagesList= $("allPagesList");
 
   const inpPageW    = $("inpPageW");
   const inpPageH    = $("inpPageH");
@@ -33,6 +27,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const inpMarginB  = $("inpMarginB");
   const inpMarginL  = $("inpMarginL");
   const inpMarginR  = $("inpMarginR");
+
+  const lnkBleed    = $("lnkBleed");
+  const lnkMargin   = $("lnkMargin");
 
   const inpColCount = $("inpColCount");
   const inpColGutter= $("inpColGutter");
@@ -157,6 +154,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // documentPreferences/marginPreferences/geometricBounds return numbers in the
+  // document's CURRENT ruler unit, NOT always points. Force the ruler to POINTS
+  // for the duration of fn so every value read/written is unambiguously in pt,
+  // then restore the user's original units. Pass a doc; fn runs synchronously.
+  function withPointsUnit(doc, fn) {
+    const id = getIndesign();
+    const vp = doc.viewPreferences;
+    const PT = id.MeasurementUnits.POINTS;
+    const prevH = vp.horizontalMeasurementUnits;
+    const prevV = vp.verticalMeasurementUnits;
+    try {
+      vp.horizontalMeasurementUnits = PT;
+      vp.verticalMeasurementUnits = PT;
+      return fn();
+    } finally {
+      try {
+        vp.horizontalMeasurementUnits = prevH;
+        vp.verticalMeasurementUnits = prevV;
+      } catch (_) {}
+    }
+  }
+
   // 1 pt = ? in display unit
   function ptPerUnit(unitName) {
     switch (unitName) {
@@ -180,18 +199,90 @@ document.addEventListener("DOMContentLoaded", () => {
     return formatNumber(v);
   }
 
+  // Safely evaluate a simple arithmetic expression (+ - * / and parentheses).
+  // NO eval() — tokenize, shunting-yard to RPN, then compute. Returns NaN on any
+  // invalid input. Accepts a plain number too. Comma is treated as decimal point.
+  function evalExpr(str) {
+    if (str == null) return NaN;
+    const s = String(str).trim().replace(/,/g, ".");
+    if (s === "") return NaN;
+    // Reject anything outside the allowed character set.
+    if (!/^[0-9.+\-*/()\s]+$/.test(s)) return NaN;
+
+    const tokens = s.match(/\d*\.?\d+|[+\-*/()]/g);
+    if (!tokens) return NaN;
+
+    // "u" is unary negation (right-assoc, highest precedence).
+    const prec = { "+": 1, "-": 1, "*": 2, "/": 2, "u": 3 };
+    const out = [];      // RPN output
+    const ops = [];      // operator stack
+    let prev = null;     // previous token, to detect unary minus
+
+    for (const tk of tokens) {
+      if (/^\d|\./.test(tk)) {
+        out.push(parseFloat(tk));
+      } else if (tk === "(") {
+        ops.push(tk);
+      } else if (tk === ")") {
+        while (ops.length && ops[ops.length - 1] !== "(") out.push(ops.pop());
+        if (!ops.length) return NaN; // mismatched paren
+        ops.pop();
+      } else { // operator
+        // Unary minus: at start, or after another operator / "("
+        let op = tk;
+        if (tk === "-" && (prev === null || prev === "(" || prec[prev] != null)) {
+          op = "u";
+        }
+        while (ops.length && ops[ops.length - 1] !== "(" &&
+               // right-assoc unary only pops higher (not equal) precedence
+               (op === "u" ? prec[ops[ops.length - 1]] > prec[op]
+                           : prec[ops[ops.length - 1]] >= prec[op])) {
+          out.push(ops.pop());
+        }
+        ops.push(op);
+      }
+      prev = tk;
+    }
+    while (ops.length) {
+      const op = ops.pop();
+      if (op === "(") return NaN; // mismatched paren
+      out.push(op);
+    }
+
+    // Evaluate RPN
+    const st = [];
+    for (const t of out) {
+      if (typeof t === "number") { st.push(t); continue; }
+      if (t === "u") { // unary negation
+        const a = st.pop();
+        if (a === undefined) return NaN;
+        st.push(-a);
+        continue;
+      }
+      const b = st.pop(), a = st.pop();
+      if (a === undefined || b === undefined) return NaN;
+      let r;
+      if (t === "+") r = a + b;
+      else if (t === "-") r = a - b;
+      else if (t === "*") r = a * b;
+      else if (t === "/") r = b === 0 ? NaN : a / b;
+      st.push(r);
+    }
+    if (st.length !== 1 || isNaN(st[0])) return NaN;
+    return st[0];
+  }
+
   // Convert display-unit string back to pt for writing.
   function displayToPt(str) {
     if (str == null) return NaN;
-    const cleaned = String(str).trim().replace(",", ".");
-    const v = parseFloat(cleaned);
+    const v = evalExpr(str);
     if (isNaN(v)) return NaN;
     return v / ptPerUnit(displayUnitName);
   }
 
   function formatNumber(v) {
-    // Trim trailing zeros, keep up to 4 decimals.
-    return parseFloat(v.toFixed(4)).toString();
+    // Trim trailing zeros, keep up to 2 decimals.
+    return parseFloat(v.toFixed(2)).toString();
   }
 
   // ─── Document refresh ──────────────────────────────────────────────────────
@@ -228,10 +319,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       populatePagePicker();
       readIntoInputs();
-
-      if (scopeMode === "all") {
-        renderAllPages();
-      }
 
       snapshot = captureSnapshot();
       // refresh availability if helper exists (may not be defined on early init)
@@ -278,24 +365,26 @@ document.addEventListener("DOMContentLoaded", () => {
       clearInputs();
       return;
     }
-    const dp = currentDoc.documentPreferences;
-    const mp = currentPage.marginPreferences;
+    withPointsUnit(currentDoc, () => {
+      const dp = currentDoc.documentPreferences;
+      const mp = currentPage.marginPreferences;
 
-    inpPageW.value = ptToDisplay(dp.pageWidth);
-    inpPageH.value = ptToDisplay(dp.pageHeight);
+      inpPageW.value = ptToDisplay(dp.pageWidth);
+      inpPageH.value = ptToDisplay(dp.pageHeight);
 
-    inpBleedT.value = ptToDisplay(dp.documentBleedTopOffset);
-    inpBleedB.value = ptToDisplay(dp.documentBleedBottomOffset);
-    inpBleedI.value = ptToDisplay(dp.documentBleedInsideOrLeftOffset);
-    inpBleedO.value = ptToDisplay(dp.documentBleedOutsideOrRightOffset);
+      inpBleedT.value = ptToDisplay(dp.documentBleedTopOffset);
+      inpBleedB.value = ptToDisplay(dp.documentBleedBottomOffset);
+      inpBleedI.value = ptToDisplay(dp.documentBleedInsideOrLeftOffset);
+      inpBleedO.value = ptToDisplay(dp.documentBleedOutsideOrRightOffset);
 
-    inpMarginT.value = ptToDisplay(mp.top);
-    inpMarginB.value = ptToDisplay(mp.bottom);
-    inpMarginL.value = ptToDisplay(mp.left);
-    inpMarginR.value = ptToDisplay(mp.right);
+      inpMarginT.value = ptToDisplay(mp.top);
+      inpMarginB.value = ptToDisplay(mp.bottom);
+      inpMarginL.value = ptToDisplay(mp.left);
+      inpMarginR.value = ptToDisplay(mp.right);
 
-    inpColCount.value  = String(mp.columnCount);
-    inpColGutter.value = ptToDisplay(mp.columnGutter);
+      inpColCount.value  = String(mp.columnCount);
+      inpColGutter.value = ptToDisplay(mp.columnGutter);
+    });
 
     updateColumnWidthHint();
   }
@@ -305,7 +394,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pageW   = displayToPt(inpPageW.value);
     const marL    = displayToPt(inpMarginL.value);
     const marR    = displayToPt(inpMarginR.value);
-    const count   = parseInt(inpColCount.value, 10);
+    const count   = Math.round(evalExpr(inpColCount.value));
     const gutter  = displayToPt(inpColGutter.value);
 
     if (isNaN(pageW) || isNaN(marL) || isNaN(marR) ||
@@ -334,20 +423,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // ─── Snapshot / revert ─────────────────────────────────────────────────────
   function captureSnapshot() {
     if (!currentDoc || !currentPage) return null;
-    const dp = currentDoc.documentPreferences;
-    const mp = currentPage.marginPreferences;
-    return {
-      pageId: currentPage.id,
-      pageW: dp.pageWidth, pageH: dp.pageHeight,
-      bleedT: dp.documentBleedTopOffset,
-      bleedB: dp.documentBleedBottomOffset,
-      bleedI: dp.documentBleedInsideOrLeftOffset,
-      bleedO: dp.documentBleedOutsideOrRightOffset,
-      marginT: mp.top, marginB: mp.bottom,
-      marginL: mp.left, marginR: mp.right,
-      colCount: mp.columnCount,
-      colGutter: mp.columnGutter
-    };
+    return withPointsUnit(currentDoc, () => {
+      const dp = currentDoc.documentPreferences;
+      const mp = currentPage.marginPreferences;
+      return {
+        pageId: currentPage.id,
+        pageW: dp.pageWidth, pageH: dp.pageHeight,
+        bleedT: dp.documentBleedTopOffset,
+        bleedB: dp.documentBleedBottomOffset,
+        bleedI: dp.documentBleedInsideOrLeftOffset,
+        bleedO: dp.documentBleedOutsideOrRightOffset,
+        marginT: mp.top, marginB: mp.bottom,
+        marginL: mp.left, marginR: mp.right,
+        colCount: mp.columnCount,
+        colGutter: mp.columnGutter
+      };
+    });
   }
 
   function revertFromSnapshot() {
@@ -358,29 +449,31 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const id = getIndesign();
       id.app.doScript(function () {
-        const dp = currentDoc.documentPreferences;
-        dp.pageWidth  = snapshot.pageW;
-        dp.pageHeight = snapshot.pageH;
-        dp.documentBleedTopOffset            = snapshot.bleedT;
-        dp.documentBleedBottomOffset         = snapshot.bleedB;
-        dp.documentBleedInsideOrLeftOffset   = snapshot.bleedI;
-        dp.documentBleedOutsideOrRightOffset = snapshot.bleedO;
+        withPointsUnit(currentDoc, () => {
+          const dp = currentDoc.documentPreferences;
+          dp.pageWidth  = snapshot.pageW;
+          dp.pageHeight = snapshot.pageH;
+          dp.documentBleedTopOffset            = snapshot.bleedT;
+          dp.documentBleedBottomOffset         = snapshot.bleedB;
+          dp.documentBleedInsideOrLeftOffset   = snapshot.bleedI;
+          dp.documentBleedOutsideOrRightOffset = snapshot.bleedO;
 
-        // Find the snapshot page by id
-        const pages = currentDoc.pages;
-        let target = null;
-        for (let i = 0; i < pages.length; i++) {
-          if (pages.item(i).id === snapshot.pageId) { target = pages.item(i); break; }
-        }
-        if (target && target.isValid) {
-          const mp = target.marginPreferences;
-          mp.top = snapshot.marginT;
-          mp.bottom = snapshot.marginB;
-          mp.left = snapshot.marginL;
-          mp.right = snapshot.marginR;
-          mp.columnCount = snapshot.colCount;
-          mp.columnGutter = snapshot.colGutter;
-        }
+          // Find the snapshot page by id
+          const pages = currentDoc.pages;
+          let target = null;
+          for (let i = 0; i < pages.length; i++) {
+            if (pages.item(i).id === snapshot.pageId) { target = pages.item(i); break; }
+          }
+          if (target && target.isValid) {
+            const mp = target.marginPreferences;
+            mp.top = snapshot.marginT;
+            mp.bottom = snapshot.marginB;
+            mp.left = snapshot.marginL;
+            mp.right = snapshot.marginR;
+            mp.columnCount = snapshot.colCount;
+            mp.columnGutter = snapshot.colGutter;
+          }
+        });
       }, id.ScriptLanguage.JAVASCRIPT, [], id.UndoModes.ENTIRE_SCRIPT, "Revert guides");
       readIntoInputs();
       setStatus("Reverted.", "ok");
@@ -409,7 +502,7 @@ document.addEventListener("DOMContentLoaded", () => {
       marginB: displayToPt(inpMarginB.value),
       marginL: displayToPt(inpMarginL.value),
       marginR: displayToPt(inpMarginR.value),
-      colCount: parseInt(inpColCount.value, 10),
+      colCount: Math.round(evalExpr(inpColCount.value)),
       colGutter: displayToPt(inpColGutter.value)
     };
 
@@ -429,26 +522,27 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const id = getIndesign();
       id.app.doScript(function () {
-        const dp = currentDoc.documentPreferences;
-        dp.pageWidth  = v.pageW;
-        dp.pageHeight = v.pageH;
-        dp.documentBleedTopOffset            = v.bleedT;
-        dp.documentBleedBottomOffset         = v.bleedB;
-        dp.documentBleedInsideOrLeftOffset   = v.bleedI;
-        dp.documentBleedOutsideOrRightOffset = v.bleedO;
+        withPointsUnit(currentDoc, () => {
+          const dp = currentDoc.documentPreferences;
+          dp.pageWidth  = v.pageW;
+          dp.pageHeight = v.pageH;
+          dp.documentBleedTopOffset            = v.bleedT;
+          dp.documentBleedBottomOffset         = v.bleedB;
+          dp.documentBleedInsideOrLeftOffset   = v.bleedI;
+          dp.documentBleedOutsideOrRightOffset = v.bleedO;
 
-        const mp = currentPage.marginPreferences;
-        mp.top = v.marginT;
-        mp.bottom = v.marginB;
-        mp.left = v.marginL;
-        mp.right = v.marginR;
-        mp.columnCount = v.colCount;
-        mp.columnGutter = v.colGutter;
+          const mp = currentPage.marginPreferences;
+          mp.top = v.marginT;
+          mp.bottom = v.marginB;
+          mp.left = v.marginL;
+          mp.right = v.marginR;
+          mp.columnCount = v.colCount;
+          mp.columnGutter = v.colGutter;
+        });
       }, id.ScriptLanguage.JAVASCRIPT, [], id.UndoModes.ENTIRE_SCRIPT, "Update page guides");
 
       snapshot = captureSnapshot();
       readIntoInputs();
-      if (scopeMode === "all") renderAllPages();
       setStatus("Applied.", "ok");
     } catch (e) {
       console.error(e);
@@ -456,54 +550,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ─── All-pages view ────────────────────────────────────────────────────────
-  function renderAllPages() {
-    allPagesList.innerHTML = "";
-    if (!currentDoc) return;
-    const dp = currentDoc.documentPreferences;
-
-    const pages = currentDoc.pages;
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages.item(i);
-      const mp = p.marginPreferences;
-      const row = document.createElement("div");
-      row.className = "page-row";
-
-      const t = document.createElement("div");
-      t.className = "page-row-title";
-      const left = document.createElement("span");
-      left.textContent = "Page " + (p.name || (i + 1));
-      const right = document.createElement("span");
-      right.className = "muted";
-      right.textContent = ptToDisplay(dp.pageWidth) + " × " + ptToDisplay(dp.pageHeight) + " " + displayUnitName;
-      t.appendChild(left);
-      t.appendChild(right);
-      row.appendChild(t);
-
-      row.appendChild(kvRow("Margin (T/B/L/R)",
-        [mp.top, mp.bottom, mp.left, mp.right].map(ptToDisplay).join(" / ") + " " + displayUnitName));
-      row.appendChild(kvRow("Columns",
-        mp.columnCount + " cols, gutter " + ptToDisplay(mp.columnGutter) + " " + displayUnitName));
-
-      allPagesList.appendChild(row);
-    }
-  }
-
-  function kvRow(k, val) {
-    const r = document.createElement("div");
-    r.className = "kv";
-    const a = document.createElement("span"); a.textContent = k;
-    const b = document.createElement("span"); b.textContent = val;
-    r.appendChild(a); r.appendChild(b);
-    return r;
-  }
-
   // ─── Wire up events ────────────────────────────────────────────────────────
   btnRefresh.addEventListener("click", refresh);
   btnApply  .addEventListener("click", applyChanges);
   btnRevert .addEventListener("click", revertFromSnapshot);
 
-  // Press Enter in any size/margin/column input to Apply
+  // Math-expression inputs: "8/2" → "4", "10+5" → "15", "(10+2)/3" → "4".
+  // Resolve the expression into its result on blur and before Enter applies.
+  // Count is an integer field, so its result is rounded.
+  const exprInputs = [
+    inpPageW, inpPageH,
+    inpBleedT, inpBleedB, inpBleedI, inpBleedO,
+    inpMarginT, inpMarginB, inpMarginL, inpMarginR,
+    inpColGutter
+  ];
+  function normalizeExprInput(el, isInt) {
+    const raw = String(el.value || "").trim();
+    // Only rewrite when it actually looks like an expression (has an operator).
+    if (raw === "" || !/[+\-*/()]/.test(raw.slice(1))) return;
+    const v = evalExpr(raw);
+    if (isNaN(v)) return; // leave invalid input as-is so the user can fix it
+    el.value = isInt ? String(Math.max(0, Math.round(v))) : formatNumber(v);
+  }
+  exprInputs.forEach(el => el.addEventListener("blur", () => {
+    normalizeExprInput(el, false);
+    updateColumnWidthHint();
+  }));
+  inpColCount.addEventListener("blur", () => {
+    normalizeExprInput(inpColCount, true);
+    updateColumnWidthHint();
+  });
+
+  // Press Enter in any size/margin/column input to resolve expr + Apply
   [inpPageW, inpPageH,
    inpBleedT, inpBleedB, inpBleedI, inpBleedO,
    inpMarginT, inpMarginB, inpMarginL, inpMarginR,
@@ -511,6 +589,7 @@ document.addEventListener("DOMContentLoaded", () => {
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
+        normalizeExprInput(el, el === inpColCount);
         applyChanges();
       }
     });
@@ -520,6 +599,42 @@ document.addEventListener("DOMContentLoaded", () => {
   [inpPageW, inpMarginL, inpMarginR, inpColCount, inpColGutter].forEach(el => {
     el.addEventListener("input", updateColumnWidthHint);
   });
+
+  // ─── Link 4 sides (Bleed / Margin) ───────────────────────────────────────
+  // When linked, typing in any of the 4 inputs mirrors its value to the others.
+  // UXP input events are unreliable on delete/cut/paste, so we listen to
+  // input+keyup+change and defer the read via setTimeout(0). A `syncing` guard
+  // prevents the programmatic writes from re-triggering the listeners.
+  function setupLinkGroup(toggleBtn, inputs) {
+    if (!toggleBtn) return;
+    let linked = false;
+    let syncing = false;
+
+    function mirrorFrom(srcEl) {
+      if (!linked || syncing) return;
+      setTimeout(() => {
+        syncing = true;
+        try {
+          const v = srcEl.value;
+          inputs.forEach(el => { if (el !== srcEl) el.value = v; });
+        } finally { syncing = false; }
+        updateColumnWidthHint();
+      }, 0);
+    }
+
+    inputs.forEach(el => {
+      ["input", "keyup", "change"].forEach(evt =>
+        el.addEventListener(evt, () => mirrorFrom(el)));
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      linked = !linked;
+      toggleBtn.classList.toggle("linked", linked);
+      if (linked) mirrorFrom(inputs[0]); // sync all to first (Top) on enable
+    });
+  }
+  setupLinkGroup(lnkBleed,  [inpBleedT, inpBleedB, inpBleedI, inpBleedO]);
+  setupLinkGroup(lnkMargin, [inpMarginT, inpMarginB, inpMarginL, inpMarginR]);
 
   // ─── Fit object to column width ──────────────────────────────────────────
   const FIT_LABEL_KEY = "pageGuides.fitTarget.v1";
@@ -605,8 +720,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const secPS = document.getElementById("sectionPageSetup");
         const secSP = document.getElementById("sectionSpacing");
-        if (secPS) secPS.classList.toggle("collapsed", !!parsed.sectionPageSetupCollapsed);
-        if (secSP) secSP.classList.toggle("collapsed", !!parsed.sectionSpacingCollapsed);
+        if (secPS) { secPS.classList.toggle("collapsed", !!parsed.sectionPageSetupCollapsed); updateCaret(secPS); }
+        if (secSP) { secSP.classList.toggle("collapsed", !!parsed.sectionSpacingCollapsed); updateCaret(secSP); }
       }
     } catch (_) {}
     inpFitName.value = fitTargetName;
@@ -828,7 +943,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pageW   = displayToPt(inpPageW.value);
     const marL    = displayToPt(inpMarginL.value);
     const marR    = displayToPt(inpMarginR.value);
-    const count   = parseInt(inpColCount.value, 10);
+    const count   = Math.round(evalExpr(inpColCount.value));
     const gutter  = displayToPt(inpColGutter.value);
     if (isNaN(pageW) || isNaN(marL) || isNaN(marR) ||
         !Number.isInteger(count) || count < 1 || isNaN(gutter)) return NaN;
@@ -963,6 +1078,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // 3. Column width
     const colW = computeColumnWidthPt();
     if (isNaN(colW)) { setStatus("Column width invalid.", "err"); return; }
+
+    // From here on, all geometry reads/writes (geometricBounds, pageWidth, margins)
+    // must be in POINTS so they match colW (pt). Force ruler to pt and restore in finally.
+    const _vp = currentDoc.viewPreferences;
+    const _id0 = getIndesign();
+    const _prevH = _vp.horizontalMeasurementUnits;
+    const _prevV = _vp.verticalMeasurementUnits;
+    _vp.horizontalMeasurementUnits = _id0.MeasurementUnits.POINTS;
+    _vp.verticalMeasurementUnits   = _id0.MeasurementUnits.POINTS;
+    try {
 
     const dp = currentDoc.documentPreferences;
     const pageW = dp.pageWidth;
@@ -1225,13 +1350,13 @@ document.addEventListener("DOMContentLoaded", () => {
       for (let i = 0; i < z.length; i++) guideZones.push(z[i]);
     }
 
-    // Fixed-2A-column zones: each H column = 2 A xếp dọc (anchored to top of component).
-    // Dùng cho QR, Sub, Camp. cntH = số cột H, cntV = số hàng V.
+    // Fixed-2A-column zones: each H column = 2 A stacked vertically (anchored to top of component).
+    // Used for QR, Sub, Camp. cntH = number of H columns, cntV = number of V rows.
     function pushZonesFixed2AColumn(compBounds, anchorH, anchorV, cntH, cntV, opts) {
       const [cy1, cx1, cy2, cx2] = compBounds;
       const forceHBottom = opts && opts.forceHBottom;
       const hFromBottom = forceHBottom ? true : (anchorV === "B");
-      // H side: cntH columns, mỗi column = 2 A xếp dọc
+      // H side: cntH columns, each column = 2 A stacked vertically
       for (let col = 0; col < cntH; col++) {
         const offCol = col * aW;
         let ax1, ax2;
@@ -1384,6 +1509,14 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error(e);
       setStatus("Apply spacing failed: " + (e.message || e), "err");
     }
+
+    } finally {
+      // Restore the user's ruler units regardless of how the apply block exited.
+      try {
+        _vp.horizontalMeasurementUnits = _prevH;
+        _vp.verticalMeasurementUnits   = _prevV;
+      } catch (_) {}
+    }
   }
 
   inpFitName.addEventListener("input", () => {
@@ -1525,14 +1658,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Collapsible sections — toggle on header click
+  // Collapsible sections — toggle on header click.
+  // UXP doesn't apply CSS `transform: rotate`, so swap the caret glyph directly.
+  function updateCaret(section) {
+    if (!section) return;
+    const caret = section.querySelector(".section-caret");
+    if (caret) caret.textContent = section.classList.contains("collapsed") ? "▸" : "▾";
+  }
   document.querySelectorAll(".section-header").forEach(header => {
     header.addEventListener("click", () => {
       const section = header.parentElement;
-      if (section) section.classList.toggle("collapsed");
+      if (section) {
+        section.classList.toggle("collapsed");
+        updateCaret(section);
+      }
       persistFitTarget();
     });
   });
+  // Sync caret glyph to initial/restored collapsed state
+  document.querySelectorAll(".section").forEach(updateCaret);
 
   selUnit.addEventListener("change", () => {
     // Convert all input values from old unit to new unit (via pt round-trip)
@@ -1548,7 +1692,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const newFactor = ptPerUnit(newUnit);
     let hadValue = false;
     numInputs.forEach(inp => {
-      const v = parseFloat(String(inp.value || "").replace(",", "."));
+      const v = evalExpr(inp.value);
       if (isNaN(v)) return;
       hadValue = true;
       const pt = v / oldFactor;
@@ -1558,23 +1702,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof updateColumnWidthHint === "function") updateColumnWidthHint();
     if (hadValue) setStatus("Unit: " + newUnit, "ok");
     persistFitTarget();
-  });
-
-  tabActive.addEventListener("click", () => {
-    scopeMode = "active";
-    tabActive.classList.add("active");
-    tabAll.classList.remove("active");
-    pagePicker.classList.remove("hidden");
-    allPagesView.classList.add("hidden");
-  });
-
-  tabAll.addEventListener("click", () => {
-    scopeMode = "all";
-    tabAll.classList.add("active");
-    tabActive.classList.remove("active");
-    pagePicker.classList.remove("hidden");
-    allPagesView.classList.remove("hidden");
-    renderAllPages();
   });
 
   selPage.addEventListener("change", () => {

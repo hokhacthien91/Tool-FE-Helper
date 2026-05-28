@@ -89,8 +89,8 @@
             <div
               class="search-bar artboards-search"
               id="artboardsSearchBar"
-              style="display: none"
             >
+              <span class="search-icon" aria-hidden="true"></span>
               <input
                 id="artboardsSearchInput"
                 type="text"
@@ -105,23 +105,65 @@
               </button>
             </div>
             <div class="artboard-rename" id="artboardRenameBox">
-              <div class="artboard-rename-label">
-                Rename — <code>{WxH}</code> = size, <code>{WxH:0.5}</code> = ÷2,
-                <code>{WxH:2}</code> = ×2
+              <div class="artboard-rename-modes" id="artboardRenameModes">
+                <button
+                  type="button"
+                  class="rename-mode-btn is-active"
+                  data-mode="template"
+                >
+                  Template
+                </button>
+                <button
+                  type="button"
+                  class="rename-mode-btn"
+                  data-mode="findReplace"
+                >
+                  Find &amp; Replace
+                </button>
               </div>
-              <input
-                id="artboardRenameCurrent"
-                type="text"
-                class="artboard-rename-input"
-                placeholder="Current name"
-                readonly
-              />
-              <input
-                id="artboardRenameNew"
-                type="text"
-                class="artboard-rename-input"
-                placeholder="e.g. test1_{WxH}_OP1 or test1_{WxH:0.5}"
-              />
+
+              <div class="artboard-rename-pane" data-pane="template">
+                <div class="artboard-rename-label">
+                  Rename — <code>{WxH}</code> = size, <code>{WxH:0.5}</code> = ÷2,
+                  <code>{WxH:2}</code> = ×2
+                </div>
+                <input
+                  id="artboardRenameCurrent"
+                  type="text"
+                  class="artboard-rename-input"
+                  placeholder="Current name"
+                  readonly
+                />
+                <input
+                  id="artboardRenameNew"
+                  type="text"
+                  class="artboard-rename-input"
+                  placeholder="e.g. test1_{WxH}_OP1 or test1_{WxH:0.5}"
+                />
+              </div>
+
+              <div
+                class="artboard-rename-pane"
+                data-pane="findReplace"
+                style="display: none"
+              >
+                <div class="artboard-rename-label">
+                  Find &amp; Replace — keeps everything else in the name as-is.
+                </div>
+                <input
+                  id="artboardRenameFind"
+                  type="text"
+                  class="artboard-rename-input"
+                  placeholder="Find (e.g. P0012150)"
+                />
+                <input
+                  id="artboardRenameReplace"
+                  type="text"
+                  class="artboard-rename-input"
+                  placeholder="Replace with (e.g. P0012585)"
+                />
+              </div>
+
               <div class="artboard-rename-actions">
                 <button id="artboardRenamePreviewBtn" class="btn btn-tertiary">
                   Preview
@@ -652,7 +694,7 @@
 
         <footer class="app-footer">
           <div class="footer-title">
-            Content Replacer <span class="footer-version">v0.2.32</span>
+            Content Replacer <span class="footer-version">v0.2.33</span>
             <span class="footer-sep">-</span>
             <span class="footer-copyright">© 2026</span>
           </div>

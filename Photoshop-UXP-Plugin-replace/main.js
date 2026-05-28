@@ -1,6 +1,13 @@
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
+const shell = require("uxp").shell;
 const { app, core, action, constants, imaging } = require("photoshop");
+
+// External hosted version of the tag editor — opens in default browser
+// so users get the full WYSIWYG / Raw editor with live preview, syntax
+// highlight and validation. Output tag string is pasted back into the
+// row's "New content" textarea by hand.
+const TAG_EDITOR_URL = "https://gg-demo-html.box.gravity.codes/tag-editor.html";
 
 uxp.entrypoints.setup({
   panels: {
@@ -1507,6 +1514,7 @@ function buildUnifiedRow(entry, idx) {
           <span>Ignore All Caps</span>
         </label>
         <span class="cur-hint">Tag inserted at end — edit text between &lt;…&gt; brackets</span>
+        <a href="${TAG_EDITOR_URL}" class="cur-open-editor" title="Open full tag editor in browser (WYSIWYG + Raw + live preview)">↗ Full editor</a>
       </div>
       <textarea class="replace-row-input" rows="4" placeholder="Leave empty to skip — use buttons above or type &lt;b&gt;, &lt;i&gt;, &lt;color=#hex&gt;, &lt;font=Bold&gt; tags."></textarea>
       <div class="replace-row-errors" style="display:none;"></div>`;
@@ -1835,6 +1843,21 @@ function buildUnifiedRow(entry, idx) {
           if (e.key === "Enter") { e.preventDefault(); fontApply.click(); }
         });
       }
+
+      // "Full editor" link → open hosted standalone editor in browser.
+      // UXP's <a href> does NOT navigate on its own — we still have to
+      // call shell.openExternal (http/https only).
+      const openEditorLink = row.querySelector(".cur-open-editor");
+      if (openEditorLink) {
+        openEditorLink.addEventListener("click", async (e) => {
+          e.preventDefault();
+          try {
+            await shell.openExternal(openEditorLink.getAttribute("href"));
+          } catch (err) {
+            log(`[FULL-EDITOR] open failed: ${err.message || err}`);
+          }
+        });
+      }
     }
   }
 
@@ -1936,8 +1959,6 @@ const artboardsSearchBar = document.getElementById("artboardsSearchBar");
 const artboardsSearchInput = document.getElementById("artboardsSearchInput");
 const artboardsSearchClear = document.getElementById("artboardsSearchClear");
 
-const ARTBOARD_SEARCH_MIN = 5; // only show search input when > this many artboards
-
 function filteredArtboards() {
   const q = state.artboardSearch.trim().toLowerCase();
   if (!q) return state.artboardList;
@@ -1949,8 +1970,26 @@ function filteredArtboards() {
 
 function updateArtboardsCountLabel() {
   const total = state.artboardList.length;
-  const enabled = state.artboardList.filter(a => state.enabledArtboards.has(a.id)).length;
-  artboardsCountEl.textContent = `(${enabled}/${total})`;
+  const q = state.artboardSearch.trim();
+  if (q) {
+    const visible = filteredArtboards();
+    const enabledInVisible = visible.filter(a => state.enabledArtboards.has(a.id)).length;
+    artboardsCountEl.textContent = `(${enabledInVisible}/${visible.length} matched · ${total} total)`;
+  } else {
+    const enabled = state.artboardList.filter(a => state.enabledArtboards.has(a.id)).length;
+    artboardsCountEl.textContent = `(${enabled}/${total})`;
+  }
+}
+
+function updateArtboardsBulkBtnsTooltip(visibleCount) {
+  const q = state.artboardSearch.trim();
+  if (q) {
+    artboardsAllBtn.title  = `Select all ${visibleCount} matching "${q}"`;
+    artboardsNoneBtn.title = `Deselect all ${visibleCount} matching "${q}"`;
+  } else {
+    artboardsAllBtn.title  = "Select all";
+    artboardsNoneBtn.title = "Deselect all";
+  }
 }
 
 function renderArtboardsList() {
@@ -1961,14 +2000,12 @@ function renderArtboardsList() {
 
   updateArtboardRenamePreview();
 
-  // Toggle search bar visibility by count
-  artboardsSearchBar.style.display = state.artboardList.length > ARTBOARD_SEARCH_MIN ? "flex" : "none";
-
   const visible = filteredArtboards();
+  updateArtboardsBulkBtnsTooltip(visible.length);
   artboardsList.innerHTML = "";
 
   if (!visible.length) {
-    artboardsList.innerHTML = `<div class="hint" style="text-align:center;">No artboard matches "${state.artboardSearch}".</div>`;
+    artboardsList.innerHTML = `<div class="hint" style="text-align:center;">No artboard matches "${escapeHtml(state.artboardSearch)}".</div>`;
     return;
   }
 
@@ -2400,9 +2437,30 @@ appendTextApplyBtn.addEventListener("click", async () => {
 // ─── Artboard rename ─────────────────────────────────
 const artboardRenameCurrent    = document.getElementById("artboardRenameCurrent");
 const artboardRenameNew        = document.getElementById("artboardRenameNew");
+const artboardRenameFind       = document.getElementById("artboardRenameFind");
+const artboardRenameReplace    = document.getElementById("artboardRenameReplace");
 const artboardRenameBtn        = document.getElementById("artboardRenameBtn");
 const artboardRenamePreviewBtn = document.getElementById("artboardRenamePreviewBtn");
 const artboardRenamePreviewEl  = document.getElementById("artboardRenamePreview");
+const artboardRenameModes      = document.getElementById("artboardRenameModes");
+const artboardRenamePanes      = document.querySelectorAll(".artboard-rename-pane");
+
+// Current rename mode: "template" | "findReplace"
+let artboardRenameMode = "template";
+
+function setArtboardRenameMode(mode) {
+  if (mode !== "template" && mode !== "findReplace") return;
+  artboardRenameMode = mode;
+  if (artboardRenameModes) {
+    artboardRenameModes.querySelectorAll(".rename-mode-btn").forEach(btn => {
+      btn.classList.toggle("is-active", btn.dataset.mode === mode);
+    });
+  }
+  artboardRenamePanes.forEach(pane => {
+    pane.style.display = pane.dataset.pane === mode ? "" : "none";
+  });
+  hideArtboardRenamePreview();
+}
 
 function updateArtboardRenamePreview() {
   const first = state.artboardList.find(a => state.enabledArtboards.has(a.id))
@@ -2445,24 +2503,72 @@ function buildNewArtboardName(userInput, width, height) {
   return { newName: str.replace(WXH_TOKEN_RE, `${sw}x${sh}`) };
 }
 
+// Returns the user-visible string describing the current rename input
+// (for empty-check + log messages). Mode-aware.
+function getArtboardRenameUserInput() {
+  if (artboardRenameMode === "findReplace") {
+    return (artboardRenameFind && artboardRenameFind.value) || "";
+  }
+  return artboardRenameNew.value || "";
+}
+
+// Validate the find/replace inputs. Returns { error } or null.
+function validateFindReplaceInputs() {
+  const findVal = (artboardRenameFind && artboardRenameFind.value) || "";
+  if (!findVal) return { error: "Enter text to find." };
+  return null;
+}
+
 function computeArtboardRenamePlan() {
-  const userInput = artboardRenameNew.value || "";
-  const targets = state.artboardList.filter(a => state.enabledArtboards.has(a.id));
+  const userInput = getArtboardRenameUserInput();
+  // Only artboards that are both ticked AND visible under current search.
+  const visibleIds = new Set(filteredArtboards().map(a => a.id));
+  const targets = state.artboardList.filter(a =>
+    state.enabledArtboards.has(a.id) && visibleIds.has(a.id)
+  );
+
   let formatError = null;
-  const raw = targets.map(ab => {
-    const res = buildNewArtboardName(userInput, ab.width, ab.height);
-    if (res.error) {
-      formatError = res.error;
-      return { ab, newName: ab.name, baseName: ab.name, suffixed: false, same: true, error: res.error };
-    }
-    return { ab, newName: res.newName, baseName: res.newName, suffixed: false, same: false };
-  });
+  let raw;
+
+  if (artboardRenameMode === "findReplace") {
+    const findVal    = (artboardRenameFind && artboardRenameFind.value) || "";
+    const replaceVal = (artboardRenameReplace && artboardRenameReplace.value) || "";
+    const validation = validateFindReplaceInputs();
+    if (validation) formatError = validation.error;
+
+    raw = targets.map(ab => {
+      if (formatError) {
+        return { ab, newName: ab.name, baseName: ab.name, suffixed: false, same: true, error: formatError };
+      }
+      const newName = ab.name.split(findVal).join(replaceVal);
+      const same = newName === ab.name;
+      return { ab, newName, baseName: newName, suffixed: false, same };
+    });
+  } else {
+    raw = targets.map(ab => {
+      const res = buildNewArtboardName(userInput, ab.width, ab.height);
+      if (res.error) {
+        formatError = res.error;
+        return { ab, newName: ab.name, baseName: ab.name, suffixed: false, same: true, error: res.error };
+      }
+      return { ab, newName: res.newName, baseName: res.newName, suffixed: false, same: false };
+    });
+  }
 
   // Dedup within same doc: first occurrence keeps name, later ones get _v2, _v3, ...
   // If _vN also collides, increment until unique.
+  // Skip rows already marked `same` (e.g. Find&Replace miss) — leave their name untouched.
   if (!formatError) {
     const usedByDoc = new Map(); // docId -> Set<name>
+    // Reserve names of unchanged rows first so suffixing won't collide with them.
     for (const item of raw) {
+      if (!item.same) continue;
+      const docId = item.ab.docId;
+      if (!usedByDoc.has(docId)) usedByDoc.set(docId, new Set());
+      usedByDoc.get(docId).add(item.newName);
+    }
+    for (const item of raw) {
+      if (item.same) continue;
       const docId = item.ab.docId;
       if (!usedByDoc.has(docId)) usedByDoc.set(docId, new Set());
       const used = usedByDoc.get(docId);
@@ -2493,11 +2599,18 @@ function renderArtboardRenamePreviewList() {
   artboardRenamePreviewEl.style.display = "block";
 
   if (!userInput.trim()) {
-    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">Enter a new name to preview.</div>`;
+    const emptyMsg = artboardRenameMode === "findReplace"
+      ? "Enter text to find."
+      : "Enter a new name to preview.";
+    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">${emptyMsg}</div>`;
     return;
   }
   if (!targets.length) {
-    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">No artboards enabled.</div>`;
+    const hasSearch = state.artboardSearch && state.artboardSearch.trim();
+    const msg = hasSearch
+      ? "No artboards enabled match the current search."
+      : "No artboards enabled.";
+    artboardRenamePreviewEl.innerHTML = `<div class="arp-summary arp-warn">${msg}</div>`;
     return;
   }
   if (formatError) {
@@ -2521,8 +2634,7 @@ function renderArtboardRenamePreviewList() {
     const newEsc = escapeHtml(p.newName);
     return `<div class="arp-row ${cls}">
       <span class="arp-old" title="${oldEsc}">${oldEsc}</span>
-      <span class="arp-arrow">→</span>
-      <span class="arp-new" title="${newEsc}">${newEsc}${dupTag}${suffixTag}</span>
+      <span class="arp-new" title="${newEsc}"><span class="arp-arrow">→</span>${newEsc}${dupTag}${suffixTag}</span>
     </div>`;
   }).join("");
 
@@ -2530,7 +2642,9 @@ function renderArtboardRenamePreviewList() {
   const sameCount     = plan.length - changeCount;
   const suffixedCount = plan.filter(p => p.suffixed).length;
   const dupGroups     = [...baseCountByDoc.values()].filter(c => c > 1).length;
+  const hasSearch = state.artboardSearch && state.artboardSearch.trim();
   const summary = `${changeCount} change${changeCount === 1 ? "" : "s"}, ${sameCount} unchanged`
+                + (hasSearch     ? ` · <span class="arp-suffix">filtered by search</span>` : "")
                 + (dupGroups     ? ` · <span class="arp-warn">${dupGroups} duplicate group(s)</span>` : "")
                 + (suffixedCount ? ` · <span class="arp-suffix">${suffixedCount} auto-suffixed</span>` : "");
 
@@ -2545,14 +2659,35 @@ function escapeHtml(s) {
 
 artboardRenamePreviewBtn.addEventListener("click", renderArtboardRenamePreviewList);
 
-// Auto-hide preview when user edits the input (avoid showing stale plan)
+// Mode switcher
+if (artboardRenameModes) {
+  artboardRenameModes.addEventListener("click", e => {
+    const btn = e.target.closest(".rename-mode-btn");
+    if (!btn) return;
+    setArtboardRenameMode(btn.dataset.mode);
+  });
+}
+
+// Auto-hide preview when user edits any rename input (avoid showing stale plan)
+const _renameInputs = [
+  artboardRenameNew,
+  artboardRenameFind,
+  artboardRenameReplace,
+].filter(Boolean);
 ["input", "keyup", "change", "paste", "cut"].forEach(ev => {
-  artboardRenameNew.addEventListener(ev, () => setTimeout(hideArtboardRenamePreview, 0));
+  _renameInputs.forEach(el =>
+    el.addEventListener(ev, () => setTimeout(hideArtboardRenamePreview, 0))
+  );
 });
 
 artboardRenameBtn.addEventListener("click", async () => {
   const { userInput, targets, plan, formatError } = computeArtboardRenamePlan();
-  if (!userInput.trim()) { log("Rename: enter a new name first"); return; }
+  if (!userInput.trim()) {
+    log(artboardRenameMode === "findReplace"
+      ? "Rename: enter text to find first"
+      : "Rename: enter a new name first");
+    return;
+  }
   if (!targets.length)   { log("Rename: no artboards enabled"); return; }
   if (formatError) {
     log(`Rename: ${formatError}`);
@@ -2631,6 +2766,7 @@ artboardsNoneBtn.addEventListener("click", e => {
 // Search input — UXP input events unreliable, listen to multiple
 function applyArtboardSearch() {
   const val = artboardsSearchInput.value || "";
+  artboardsSearchBar.classList.toggle("has-value", val.length > 0);
   if (val === state.artboardSearch) return;
   state.artboardSearch = val;
   renderArtboardsList();
@@ -3225,8 +3361,11 @@ function lcsMapOldToNew(oldText, newText) {
   return map;
 }
 
-// Clone the base style and force a super/subscript baseline + size scale.
-// Used when the PSD has no existing super/sub range to copy from.
+// Clone the base style and force a super/subscript baseline.
+// Keeps the original font size — only shifts the baseline up (sup) or
+// down (sub). Users said shrinking the glyph (the OpenType default) made
+// the sup/sub look noticeably different from designer-placed superscripts
+// in the same PSD, so we leave size alone and only override baseline.
 function synthesizeBaselineStyle(base, kind) {
   if (!base) return base;
   const cloned = { ...base };
@@ -3234,12 +3373,6 @@ function synthesizeBaselineStyle(base, kind) {
     _enum: "baselineType",
     _value: kind === "sub" ? "subScript" : "superScript",
   };
-  const sz = base?.size?._value;
-  if (typeof sz === "number") {
-    const scaled = Math.round(sz * 0.583 * 100) / 100;
-    cloned.size = { _unit: "pointsUnit", _value: scaled };
-    if ("impliedFontSize" in cloned) cloned.impliedFontSize = { _unit: "pointsUnit", _value: scaled };
-  }
   delete cloned.impliedFauxBold;
   delete cloned.impliedFauxItalic;
   return cloned;
@@ -3289,6 +3422,21 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
     if (len > baseLen) { baseLen = len; baseRange = r; }
   }
   const baseStyle = baseRange.textStyle;
+
+  // Dump oldRanges colors/fonts so we can see what was in the source layer.
+  try {
+    for (let i = 0; i < oldRanges.length; i++) {
+      const r = oldRanges[i];
+      const ts = r.textStyle || {};
+      const c = ts.color;
+      const cR = c?.red, cG = (c?.grain ?? c?.green), cB = c?.blue;
+      const colorStr = c ? `rgb(${Math.round(cR)},${Math.round(cG)},${Math.round(cB)})` : "none";
+      const sz = ts.size?._value ?? ts.size;
+      const chars = (oldText || "").slice(r.from ?? 0, r.to ?? 0).replace(/\r/g, "\\r").replace(/\x03/g, "\\n");
+      const isBase = (r === baseRange) ? " ←BASE" : "";
+      log(`  [TXT] oldRange[${i}] ${r.from}-${r.to} "${chars}" font=${ts.fontPostScriptName || ts.fontName} size=${sz} color=${colorStr}${isBase}`);
+    }
+  } catch (_) {}
   const supPick = pickMarkerStyle(oldRanges, baseRange, "sup");
   const subPick = pickMarkerStyle(oldRanges, baseRange, "sub");
   const markerStyles = { sup: supPick.style, sub: subPick.style };
@@ -3298,13 +3446,17 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
 
   const posStyle = new Array(newText.length).fill(baseStyle);
 
-  // If the user provided ANY inline style tag, treat the new text as fully
-  // user-controlled formatting: every char defaults to base, and tags below
-  // are the only overrides. Skipping LCS prevents stray styles from the old
-  // text leaking into characters the user did not tag (which would later
-  // round-trip as unexpected <font=...> wrappers on re-scan).
-  const hasUserTags = (markerSpans || []).length > 0;
-  if (!hasUserTags) {
+  // Always run LCS map: chars in newText that align to chars in oldText inherit
+  // that char's style, including color. This prevents the largest-range "base"
+  // style from leaking onto untagged chars when the source PSD has a colored
+  // chunk longer than the un-colored chunk (e.g. "Middlesex county, nj\n" in
+  // base green + "loves biopharma\rmanufacturing." in dark green — base picks
+  // the dark green range, then chars 0-21 would inherit dark green).
+  //
+  // User's inline tags (b/i/color/font, sup/sub) are applied AFTER this, on top,
+  // so they always win for the tagged span. Untagged chars keep the per-char
+  // style from oldRanges via LCS.
+  {
     const map = lcsMapOldToNew(oldText, newText);
     for (const r of oldRanges) {
       if (r === baseRange) continue;
@@ -3412,6 +3564,55 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
     .replace(/\\n/g, ETX)              // "\n" literal → soft return
     .split(PH).join("\\")        // restore literal backslash
     .replace(/\r?\n/g, "\r");       // real newline → paragraph break
+
+  // Marker spans were computed against rawClean. The \\n → ETX rewrite above
+  // collapses 2 chars into 1, so any span position that falls AFTER a "\\n"
+  // (or after a literal "\\\\") in rawClean must shift down by the count of
+  // collapses preceding it. Without this fix sup/sub baselines (and bold,
+  // italic, color, font spans too) drift to the wrong character.
+  if (markerSpans.length) {
+    // Build a sorted list of shift points: each entry is the rawClean index
+    // immediately AFTER a collapsed sequence, paired with cumulative shift.
+    const shifts = [];
+    let cum = 0;
+    let i = 0;
+    while (i < rawClean.length) {
+      if (rawClean[i] === "\\" && i + 1 < rawClean.length) {
+        const nx = rawClean[i + 1];
+        if (nx === "\\") {
+          // Literal "\\\\" → "\\": 2 chars become 1, shift +1 starting after.
+          cum += 1;
+          shifts.push({ at: i + 2, shift: cum });
+          i += 2;
+          continue;
+        }
+        if (nx === "n") {
+          // Literal "\\n" → ETX: 2 chars become 1, shift +1 starting after.
+          cum += 1;
+          shifts.push({ at: i + 2, shift: cum });
+          i += 2;
+          continue;
+        }
+      }
+      i += 1;
+    }
+    if (shifts.length) {
+      const shiftFor = (pos) => {
+        // Largest shift entry whose `at` is <= pos.
+        let lo = 0, hi = shifts.length - 1, ans = 0;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (shifts[mid].at <= pos) { ans = shifts[mid].shift; lo = mid + 1; }
+          else hi = mid - 1;
+        }
+        return ans;
+      };
+      for (const s of markerSpans) {
+        s.from -= shiftFor(s.from);
+        s.to   -= shiftFor(s.to);
+      }
+    }
+  }
   if (markerSpans.length) {
     const counts = markerSpans.reduce((a, s) => (a[s.kind] = (a[s.kind] || 0) + 1, a), {});
     log(`  [TXT] style markers stripped: ${JSON.stringify(counts)}`);
@@ -3471,7 +3672,13 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
         const bl = ts.baseline?._value ?? ts.baseline;
         const ob = ts.otbaseline?._value ?? ts.otbaseline;
         const sz = ts.size?._value ?? ts.size;
-        log(`  [TXT] range[${i}] ${r.from}-${r.to} font=${ts.fontPostScriptName || ts.fontName} size=${sz} baseline=${bl} otbaseline=${ob}`);
+        const c = ts.color;
+        const cR = c?.red, cG = (c?.grain ?? c?.green), cB = c?.blue;
+        const colorStr = c ? `rgb(${Math.round(cR)},${Math.round(cG)},${Math.round(cB)})` : "none";
+        const bpc = ts.baseParentStyle?.color;
+        const bpcStr = bpc ? `rgb(${Math.round(bpc.red)},${Math.round(bpc.grain ?? bpc.green)},${Math.round(bpc.blue)})` : "none";
+        const chars = psContent.slice(r.from, r.to).replace(/\r/g, "\\r").replace(/\x03/g, "\\n");
+        log(`  [TXT] range[${i}] ${r.from}-${r.to} "${chars}" font=${ts.fontPostScriptName || ts.fontName} size=${sz} color=${colorStr} baseParentColor=${bpcStr} hasBaseParent=${!!ts.baseParentStyle} baseline=${bl} otbaseline=${ob}`);
       }
       toObj.textStyleRange = ranges;
     }

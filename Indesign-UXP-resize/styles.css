@@ -17,7 +17,6 @@ body {
   overflow-x: hidden;
 }
 
-button,
 input,
 select,
 textarea {
@@ -32,11 +31,25 @@ textarea {
   margin: 0;
 }
 
+/* Buttons are <div role="button"> to avoid the UXP Spectrum shell drawing a
+   default border/fill on real <button> elements. Divs aren't interactive by
+   default, so give them pointer + centering here. */
+.btn,
+.btn-set,
+.link-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
+.panel > * + * { margin-top: 10px; }
 
 .header {
   display: flex;
@@ -55,11 +68,11 @@ textarea {
 .doc-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   padding: 8px 10px;
   background: #262626;
   border-radius: 4px;
 }
+.doc-info > * + * { margin-top: 4px; }
 
 .row {
   display: flex;
@@ -76,38 +89,14 @@ textarea {
   font-weight: 500;
 }
 
-.scope-toggle {
-  display: flex;
-  gap: 4px;
-  background: #262626;
-  padding: 3px;
-  border-radius: 4px;
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 12px;
-  background: transparent !important;
-  color: #b0b0b0 !important;
-  border: none !important;
-  border-radius: 3px !important;
-  cursor: pointer;
-}
-
-.tab-btn.active {
-  background: #3a3a3a !important;
-  color: #ffffff !important;
-}
-
 .page-picker {
   display: flex;
-  gap: 8px;
   align-items: center;
   padding: 6px 10px;
   background: #262626;
   border-radius: 4px;
 }
+.page-picker > * + * { margin-left: 8px; }
 
 .page-picker select {
   flex: 1;
@@ -124,22 +113,25 @@ textarea {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
+.card > * + * { margin-top: 8px; }
 
 .card-title {
   display: flex;
   align-items: center;
-  gap: 8px;
   font-weight: 600;
-  color: #ffffff;
-  font-size: 12px;
+  color: #d8d8d8;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
 }
 
 .dot {
   display: inline-block;
   width: 8px;
   height: 8px;
+  margin-right: 6px;
   border-radius: 50%;
 }
 
@@ -148,6 +140,26 @@ textarea {
 .dot-margin  { background: #b561b8; }
 .dot-column  { background: #4ec0c4; }
 .dot-sync    { background: #e8a23a; }
+
+body .link-toggle {
+  margin-left: auto;
+  width: 25px;
+  height: 25px;
+  padding: 5px !important;
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px !important;
+  color: #d0d0d0 !important;
+  cursor: pointer;
+  flex: none;
+}
+body .link-toggle.linked {
+  background: #59a139 !important;
+  color: #ffffff !important;
+}
 
 .badge {
   margin-left: auto;
@@ -193,22 +205,22 @@ textarea {
 
 .grid-2 input:focus {
   outline: none;
-  border-color: #5a8dee;
+  border-color: #b7e39b;
 }
 
 .hint {
   font-size: 10px;
-  color: #707070;
+  color: #c3c3c3;
 }
 
 .actions {
   display: flex;
-  gap: 8px;
   margin-top: 4px;
 }
+.actions > * + * { margin-left: 8px; }
 
 .btn {
-  padding: 7px 14px;
+  padding: 12px 15px;
   font-size: 12px;
   font-weight: 500;
   border: none !important;
@@ -218,8 +230,8 @@ textarea {
 
 .btn-primary {
   flex: 1;
-  background: #5a8dee !important;
-  color: #ffffff !important;
+  background: #b7e39b !important;
+  color: #121212 !important;
 }
 
 .btn-ghost {
@@ -227,8 +239,21 @@ textarea {
   color: #d0d0d0 !important;
 }
 
-.btn-primary:active { background: #4978d4 !important; }
+.btn-primary:active { background: #59a139 !important; color: #ffffff !important; }
 .btn-ghost:active   { background: #2a2a2a !important; }
+
+#btnRefresh {
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  flex: none;
+}
 
 .status-bar {
   min-height: 16px;
@@ -243,59 +268,21 @@ textarea {
 
 .hidden { display: none !important; }
 
-.all-pages-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-}
-
-.page-row {
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-size: 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.page-row .page-row-title {
-  font-weight: 600;
-  color: #ffffff;
-  font-size: 12px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.page-row .kv {
-  display: flex;
-  justify-content: space-between;
-  color: #b0b0b0;
-}
-
-.page-row .kv span:last-child {
-  color: #ffffff;
-  font-family: ui-monospace, Menlo, monospace;
-}
-
 .sync-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   padding: 4px 0;
 }
+.sync-row > * + * { margin-left: 8px; }
 
 .sync-label {
   display: flex;
   align-items: center;
-  gap: 6px;
   font-size: 11px;
   color: #b0b0b0;
 }
+.sync-label > * + * { margin-left: 6px; }
 
 .sync-badge {
   margin-left: 0;
@@ -307,30 +294,28 @@ textarea {
 }
 
 .btn-sm {
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 12px 15px;
 }
 
 .sync-actions {
   display: flex;
-  gap: 6px;
   margin-top: 4px;
 }
+.sync-actions > * + * { margin-left: 6px; }
 
 .layout-checks {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin-top: 6px;
   padding: 6px 8px;
   background: #1e1e1e;
   border-radius: 3px;
 }
+.layout-checks > * + * { margin-top: 4px; }
 
 .chk-row {
   display: flex;
   align-items: center;
-  gap: 6px;
   font-size: 11px;
   color: #b0b0b0;
   cursor: pointer;
@@ -339,7 +324,7 @@ textarea {
 .chk-row input[type="checkbox"] {
   width: 13px;
   height: 13px;
-  margin: 0;
+  margin: 0 6px 0 0;
   cursor: pointer;
 }
 
@@ -351,8 +336,8 @@ textarea {
 .anchor-row {
   display: flex;
   align-items: center;
-  gap: 6px;
 }
+.anchor-row > * + * { margin-left: 6px; }
 
 .anchor-row .chk-row {
   flex: 1;
@@ -384,9 +369,9 @@ textarea {
 
 .name-row {
   display: flex;
-  gap: 4px;
   margin-top: 3px;
 }
+.name-row > * + * { margin-left: 4px; }
 
 .name-row input {
   flex: 1;
@@ -453,10 +438,10 @@ textarea {
 .comp-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   padding: 12px 0;
   border-bottom: 1px solid #2a2a2a;
 }
+.comp-group > * + * { margin-top: 6px; }
 
 .comp-group:first-child {
   padding-top: 6px;
@@ -508,49 +493,89 @@ textarea {
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
+.section > * + * { margin-top: 8px; }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: #2a2a2a;
+  padding: 8px 4px;
+  background: #232323;
+  border-left: 3px solid #59a139;
   border-radius: 4px;
   cursor: pointer;
   user-select: none;
 }
+.section-header > * + * { margin-left: 8px; }
 
 .section-header:hover {
-  background: #333;
+  background: #2e2e2e;
 }
 
 .section-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
 
 .section-caret {
   font-size: 10px;
-  color: #b0b0b0;
+  color: #b7e39b;
   width: 12px;
   display: inline-block;
   text-align: center;
-  transition: transform 0.15s;
-}
-
-.section.collapsed .section-caret {
-  transform: rotate(-90deg);
 }
 
 .section-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
+.section-body > * + * { margin-top: 10px; }
 
 .section.collapsed .section-body {
   display: none;
+}
+
+.app-footer {
+  display: block;
+  border-top: 1px solid #2a2a2a;
+  padding: 10px 8px 6px;
+  margin-top: 14px;
+  text-align: center;
+  font-size: 10px;
+  color: #707070;
+  line-height: 1.6;
+}
+.footer-title,
+.footer-credit {
+  display: block;
+  width: 100%;
+}
+.footer-title {
+  color: #e6e6e6;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.footer-version {
+  color: #707070;
+  font-weight: 400;
+  margin-left: 4px;
+}
+.footer-sep {
+  color: #2a2a2a;
+  margin: 0 2px;
+}
+.footer-credit {
+  font-size: 10px;
+}
+.footer-author {
+  color: #b7e39b;
+  font-weight: 600;
+}
+.footer-copyright {
+  color: #707070;
+  font-weight: 400;
 }

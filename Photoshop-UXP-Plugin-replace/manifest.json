@@ -14,7 +14,11 @@
   "requiredPermissions": {
     "localFileSystem": "fullAccess",
     "allowCodeGenerationFromStrings": true,
-    "clipboard": "readAndWrite"
+    "clipboard": "readAndWrite",
+    "launchProcess": {
+      "schemes": ["https"],
+      "extensions": [""]
+    }
   },
   "entrypoints": [
     {
