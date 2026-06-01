@@ -4369,6 +4369,91 @@ figma.ui.onmessage = async msg => {
       }
       break;
     }
+    case "batch-create-text-styles": {
+      // Create multiple different text styles, each with its own name
+      // msg.items = [{ issue: { id, subIssues, nodeProps, ... }, styleName: "New/Desktop/h4" }, ...]
+      try {
+        const items = msg.items || [];
+        let created = 0;
+        let failed = 0;
+
+        for (const item of items) {
+          try {
+            if (!item.issue || !item.styleName) { failed++; continue; }
+
+            // Get a representative node (first node or first subIssue)
+            const nodeId = item.issue.id || (item.issue.subIssues && item.issue.subIssues[0] && item.issue.subIssues[0].id);
+            if (!nodeId) { failed++; continue; }
+
+            const node = figma.getNodeById(nodeId);
+            if (!node || node.type !== "TEXT") { failed++; continue; }
+
+            // Get font properties from node
+            const fontName = node.fontName;
+            const fontSize = node.fontSize;
+            const lineHeight = node.lineHeight;
+            const letterSpacing = node.letterSpacing;
+
+            if (!fontName || typeof fontName !== "object" || !fontName.family) { failed++; continue; }
+
+            // Load font with fallback
+            let loadedFontName = fontName;
+            try {
+              await figma.loadFontAsync(fontName);
+            } catch (fontError) {
+              try {
+                await figma.loadFontAsync({ family: fontName.family, style: "Regular" });
+                loadedFontName = { family: fontName.family, style: "Regular" };
+              } catch (fallbackError) {
+                failed++;
+                continue;
+              }
+            }
+
+            // Create text style
+            const textStyle = figma.createTextStyle();
+            textStyle.name = item.styleName.trim();
+            textStyle.fontName = loadedFontName;
+            textStyle.fontSize = fontSize;
+            textStyle.lineHeight = lineHeight;
+            textStyle.letterSpacing = letterSpacing;
+
+            // Apply to the main node
+            node.textStyleId = textStyle.id;
+
+            // Apply to all subIssue nodes
+            if (item.issue.subIssues && item.issue.subIssues.length > 0) {
+              for (const sub of item.issue.subIssues) {
+                try {
+                  if (!sub.id) continue;
+                  const subNode = figma.getNodeById(sub.id);
+                  if (subNode && subNode.type === "TEXT") {
+                    await figma.loadFontAsync(subNode.fontName || fontName);
+                    subNode.textStyleId = textStyle.id;
+                  }
+                } catch (subErr) {
+                  // Skip failed sub-nodes silently
+                }
+              }
+            }
+
+            created++;
+          } catch (itemErr) {
+            console.error("Error creating style for item:", itemErr);
+            failed++;
+          }
+        }
+
+        figma.ui.postMessage({ type: "batch-create-text-styles-result", created: created, failed: failed });
+        if (created > 0) {
+          figma.notify("Created " + created + " text style" + (created > 1 ? "s" : "") + (failed > 0 ? " (" + failed + " failed)" : ""));
+        }
+      } catch (error) {
+        console.error("Error in batch-create-text-styles:", error);
+        figma.ui.postMessage({ type: "batch-create-text-styles-result", created: 0, failed: (msg.items || []).length });
+      }
+      break;
+    }
     case "apply-typography-style": {
       try {
         const issue = msg.issue;
@@ -5179,14 +5264,45 @@ figma.ui.onmessage = async msg => {
           node.strokes = strokes;
         }
         
-        figma.notify(`✅ Changed color to ${color}`);
-        
+        // Also apply to all subIssue nodes (grouped issues)
+        let fixedCount = 1;
+        if (issue.subIssues && issue.subIssues.length > 0) {
+          for (const sub of issue.subIssues) {
+            try {
+              if (!sub.id || sub.id === nodeId) continue;
+              const subNode = figma.getNodeById(sub.id);
+              if (!subNode) continue;
+              if ("fills" in subNode && Array.isArray(subNode.fills) && subNode.fills.length > 0) {
+                subNode.fills = subNode.fills.map(fill => {
+                  if (fill.type === "SOLID" && fill.visible !== false) {
+                    return { type: "SOLID", color: newColor, opacity: fill.opacity !== undefined ? fill.opacity : 1, visible: fill.visible !== undefined ? fill.visible : true };
+                  }
+                  return fill;
+                });
+              }
+              if ("strokes" in subNode && Array.isArray(subNode.strokes) && subNode.strokes.length > 0) {
+                subNode.strokes = subNode.strokes.map(stroke => {
+                  if (stroke.type === "SOLID" && stroke.visible !== false) {
+                    return { type: "SOLID", color: newColor, opacity: stroke.opacity !== undefined ? stroke.opacity : 1, visible: stroke.visible !== undefined ? stroke.visible : true };
+                  }
+                  return stroke;
+                });
+              }
+              fixedCount++;
+            } catch (subErr) {
+              // Skip failed sub-nodes
+            }
+          }
+        }
+
+        figma.notify(`✅ Changed color to ${color}` + (fixedCount > 1 ? ` (${fixedCount} nodes)` : ""));
+
         // Send success message to UI
         figma.ui.postMessage({
           type: "fix-issue-result",
           issueId: issueId,
           success: true,
-          message: `✅ Changed color to ${color}`
+          message: `✅ Changed color to ${color}` + (fixedCount > 1 ? ` (${fixedCount} nodes)` : "")
         });
       } catch (error) {
         const errorMessage = error && error.message ? error.message : "Unknown error occurred";
