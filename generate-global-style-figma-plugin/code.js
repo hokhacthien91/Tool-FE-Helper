@@ -1004,7 +1004,13 @@ async function exportTokensFromFigma(tokenTypes, projectName) {
   
   // Export each token type
   if (tokenTypes.includes('color')) {
-    exported.color = exportColorTokens(colorVariables, projectName);
+    // Prefer Color Variables; fall back to Color Styles (Paint Styles)
+    // when the file has no local color variables (e.g. styles-only files).
+    if (colorVariables && colorVariables.length > 0) {
+      exported.color = exportColorTokens(colorVariables, projectName);
+    } else {
+      exported.color = exportColorTokensFromPaintStyles(paintStyles, projectName);
+    }
   }
   
   if (tokenTypes.includes('typography')) {
@@ -1084,6 +1090,67 @@ function exportColorTokens(colorVariables, projectName) {
     description: "Transparent color"
   };
   
+  return {
+    "$schema": "https://gravity-flex.dev/schemas/tokens.json",
+    "$type": "color",
+    "$project": projectName,
+    "color": colorData
+  };
+}
+
+function exportColorTokensFromPaintStyles(paintStyles, projectName) {
+  const colorData = {};
+
+  (paintStyles || []).forEach(style => {
+    const fills = style.paints || [];
+    // Only export solid color styles (skip gradients/images)
+    const solid = fills.find(p => p.type === 'SOLID');
+    if (!solid) {
+      console.log(`[EXPORT COLOR/STYLES] Skipping non-solid style: ${style.name}`);
+      return;
+    }
+
+    const name = style.name;
+    const description = style.description || '';
+
+    // Remove collection prefix if exists: "Colors - Project A/" → ""
+    let cleanName = name.replace(/^Colors\s*-\s*[^/]+\//, '');
+
+    // Parse path, keep full grouping: "Presidio/Cyan" → ["presidio", "cyan"]
+    const parts = cleanName.split('/').map(p => p.trim()).filter(p => p);
+    if (parts.length === 0) return;
+
+    // Build nested structure
+    let current = colorData;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]]) {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]];
+    }
+
+    // Convert color (respect opacity from paint)
+    const colorValue = {
+      r: solid.color.r,
+      g: solid.color.g,
+      b: solid.color.b,
+      a: solid.opacity !== undefined ? solid.opacity : 1
+    };
+    const hex = colorToHexString(colorValue);
+
+    const finalKey = parts[parts.length - 1];
+    current[finalKey] = {
+      value: hex,
+      description: description
+    };
+  });
+
+  // Always add transparent color at the end
+  colorData.transparent = {
+    value: "transparent",
+    description: "Transparent color"
+  };
+
   return {
     "$schema": "https://gravity-flex.dev/schemas/tokens.json",
     "$type": "color",
