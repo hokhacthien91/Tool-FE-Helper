@@ -326,7 +326,7 @@
     <header>
       <span class="accent-bar"></span>
       <h1>Page Guides Inspector</h1>
-      <span class="tag">UXP Plugin · v1.0.0</span>
+      <span class="tag">UXP Plugin · v1.1.0</span>
     </header>
 
     <p>InDesign UXP panel cho phép kiểm tra &amp; áp dụng <strong>Page setup</strong> (Trim / Bleed / Margin / Columns) và tự động bố trí 6 brand component theo <strong>Airbus spacing</strong> dùng letter-A làm đơn vị đo.</p>
@@ -342,8 +342,8 @@
         <p>Tự động resize &amp; position 6 component: Logo, URL block, QR, Main-headline, Campaign-line, Sub-headline.</p>
       </div>
       <div class="feature">
-        <h4>A-guide cloning</h4>
-        <p>Sinh A guide clones 50% opacity quanh mỗi component, đưa vào layer "Guide" để designer reference khi finalize.</p>
+        <h4>A-guide cloning (per-page)</h4>
+        <p>Sinh A guide clones 50% opacity quanh mỗi component, gom vào một <strong>group "Guide" riêng trên từng page</strong>. A luôn full-size (đúng tỷ lệ); số lượng = <code>ceil(count)</code>, shift vào trong để A ngoài cùng chạm đúng padding boundary.</p>
       </div>
       <div class="feature">
         <h4>Reference-based positioning</h4>
@@ -356,6 +356,18 @@
       <div class="feature">
         <h4>Undo as single step</h4>
         <p>Apply layout wrap trong <code>UndoModes.ENTIRE_SCRIPT</code> — Cmd+Z hoàn tác cả lượt apply trong 1 step.</p>
+      </div>
+      <div class="feature">
+        <h4>Decimal A count + validation</h4>
+        <p>A count nhập tự do số thập phân (vd 1.5, 2.5), range 0–5, 1 chữ số thập phân (auto làm tròn). Nhập sai → field viền đỏ + message inline.</p>
+      </div>
+      <div class="feature">
+        <h4>Required-layer guard</h4>
+        <p><code>Logo-airbus</code> + <code>letter-A</code> bắt buộc tồn tại. Thiếu → input đỏ + nút Apply bị khoá. Component có layer tồn tại → checkbox tự tick.</p>
+      </div>
+      <div class="feature">
+        <h4>Per-page targeting</h4>
+        <p>Chọn page trong dropdown + nút <strong>Go</strong> để nhảy tới page đó. Apply chỉ sắp xếp object &amp; guide của <strong>page đang chọn</strong> — mỗi page có bộ object trùng tên riêng, không kéo qua page khác.</p>
       </div>
     </div>
 
@@ -413,11 +425,12 @@
 
     <h3>Airbus Spacing (collapsible)</h3>
     <p>7 input name + nút <strong>Set</strong>: gán tên cho object đang select trong InDesign. Tên không tồn tại → input vàng + component group disabled, badge "name not found".</p>
+    <p><strong>Required layers</strong>: <code>Logo-airbus</code> và <code>letter-A</code> bắt buộc. Nếu thiếu, input của chúng viền <span class="badge badge-warn">đỏ</span> + message "not found — required", và nút <strong>Apply spacing</strong> bị khoá cho tới khi cả hai tồn tại.</p>
     <p>6 component groups: Logo / URL / QR / Main-headline / Campaign-line / Sub-headline. Mỗi group:</p>
     <ul>
-      <li><strong>Checkbox</strong> — bật / tắt cho component đó.</li>
+      <li><strong>Checkbox</strong> — bật / tắt cho component đó. Khi layer chuyển từ thiếu → có (kể cả lần đầu), checkbox <strong>tự tick</strong>; nếu user chủ động bỏ tick (layer vẫn có) thì giữ nguyên lựa chọn.</li>
       <li><strong>Anchor H / V</strong> — Left / Right, Top / Bottom.</li>
-      <li><strong>A count H / V</strong> — số letter-A (1–5).</li>
+      <li><strong>A count H / V</strong> — input số thập phân, range <strong>0–5</strong>, tối đa 1 chữ số thập phân (auto làm tròn). Nhập rỗng / sai số / ngoài range → viền đỏ + message inline; có field lỗi thì chặn Apply.</li>
       <li><strong>Ref H / V</strong> — anchor theo Trim, Margin, hoặc component khác.</li>
     </ul>
 
@@ -480,6 +493,8 @@
       <li><strong>Logo / URL / Main</strong> dùng zone builder thường — A xếp theo grid H × V.</li>
       <li><strong>QR / Camp / Sub</strong> dùng "Fixed 2A column": H side = cntH cột, mỗi cột = 2 A xếp dọc. V side = cntV A xếp dọc.</li>
       <li>Camp &amp; Sub luôn xếp H column từ mép dưới layer lên (force-bottom).</li>
+      <li><strong>Số A vẽ</strong> = <code>ceil(count)</code>, mỗi A full-size cách đều 1 bước (nối tiếp / lồng đỉnh, không méo). Count lẻ (vd 2.5) → stack shift vào trong <code>ceil(count) − count</code> đơn vị: A ngoài cùng chạm đúng padding boundary (trim), phần lẻ đè lên phía component.</li>
+      <li><strong>Vị trí component</strong> vẫn dùng giá trị count chính xác (vd 2.5A) — chỉ guide mới làm tròn số lượng A.</li>
     </ul>
 
     <h2>UXP Constraints</h2>
@@ -558,6 +573,14 @@ let fitTargetId, fitTargetName, letterRefName, …  // 7 names + ids</code></pre
         <tr>
           <td>Component group hiện "name not found"</td>
           <td>Tên input không match layer/object trong doc. Đổi tên hoặc bấm <strong>Set</strong> sau khi select object.</td>
+        </tr>
+        <tr>
+          <td>Nút <strong>Apply spacing</strong> bị mờ / không bấm được</td>
+          <td>Thiếu layer bắt buộc. Đảm bảo cả <code>Logo-airbus</code> và <code>letter-A</code> tồn tại trong doc (input của chúng không viền đỏ).</td>
+        </tr>
+        <tr>
+          <td>A count viền đỏ, không Apply được</td>
+          <td>Giá trị rỗng / không phải số / ngoài range 0–5. Sửa theo message inline dưới field.</td>
         </tr>
         <tr>
           <td>A clones bị lệch khỏi component</td>

@@ -3,8 +3,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // ─── State ─────────────────────────────────────────────────────────────────
   let currentDoc      = null;
   let currentPage     = null;
-  let displayUnitName = "in";
+  let displayUnitName = "mm";
   let snapshot        = null;     // for revert
+  // Per-component "was the layer found last refresh?" — used to auto-check a
+  // component's checkbox when its layer transitions from missing → present,
+  // while still respecting a manual uncheck on an already-present layer.
+  const prevFound     = {};
 
   // ─── DOM refs ──────────────────────────────────────────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -68,25 +72,103 @@ document.addEventListener("DOMContentLoaded", () => {
   const selCampRefH = $("selCampRefH"), selCampRefV = $("selCampRefV");
   const selSubRefH  = $("selSubRefH"),  selSubRefV  = $("selSubRefV");
 
-  // Populate A-count dropdowns (1-5, default 2)
-  function populateCountSelect(sel) {
-    for (let i = 1; i <= 5; i++) {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = String(i);
-      if (i === 2) opt.selected = true;
-      sel.appendChild(opt);
-    }
+  // A-count free numeric inputs: accept decimals (e.g. 1.5, 2.5), range 0–5,
+  // max 1 decimal place (rounded). Invalid → red border, value not committed.
+  const COUNT_MIN = 0, COUNT_MAX = 5;
+  const countInputs = [
+    selLogoCntH, selLogoCntV, selUrlCntH, selUrlCntV,
+    selQrCntH, selQrCntV,
+    selMainCntH, selMainCntV, selCampCntH, selCampCntV,
+    selSubCntH, selSubCntV
+  ];
+
+  // Parse raw string → number (handles VN locale comma). Returns NaN if not numeric.
+  function parseCount(raw) {
+    if (raw == null) return NaN;
+    const s = String(raw).trim().replace(",", ".");
+    if (s === "" || !/^[0-9]*\.?[0-9]+$/.test(s)) return NaN;
+    return parseFloat(s);
   }
-  [selLogoCntH, selLogoCntV, selUrlCntH, selUrlCntV,
-   selQrCntH, selQrCntV,
-   selMainCntH, selMainCntV, selCampCntH, selCampCntV,
-   selSubCntH, selSubCntV].forEach(populateCountSelect);
+
+  // Round to 1 decimal place.
+  function round1(n) {
+    return Math.round(n * 10) / 10;
+  }
+
+  // Each "A count" row gets one inline error span (lazily created, full-width
+  // so it wraps below the H/V inputs). Maps a count input → its row's error span.
+  function getRowErrEl(inp) {
+    const row = inp.parentElement;
+    let el = row.querySelector(".count-err");
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "count-err";
+      row.appendChild(el);
+    }
+    return el;
+  }
+
+  // Validate a count input. Returns {value, error}: error is null if valid,
+  // else a short human-readable reason. Does NOT clamp out-of-range — that's
+  // an error the user must fix.
+  function checkCount(inp) {
+    const raw = String(inp.value).trim();
+    if (raw === "") return { value: null, error: "Required" };
+    const n = parseCount(raw);
+    if (isNaN(n)) return { value: null, error: "Not a number" };
+    if (n < COUNT_MIN || n > COUNT_MAX) return { value: null, error: "Must be " + COUNT_MIN + "–" + COUNT_MAX };
+    return { value: round1(n), error: null };
+  }
+
+  // Validate + normalize a count input. Commits rounded value & clears error if
+  // valid; marks field red + shows inline message if not. Returns value or null.
+  function normalizeCountInput(inp) {
+    const { value, error } = checkCount(inp);
+    const errEl = getRowErrEl(inp);
+    if (error) {
+      inp.classList.add("invalid");
+      // H or V — derive from which input in the row failed
+      const which = inp.id.endsWith("CntV") ? "V" : "H";
+      errEl.textContent = which + ": " + error;
+      return null;
+    }
+    inp.classList.remove("invalid");
+    inp.value = String(value);
+    // Clear the row message only if the sibling input is also valid.
+    if (!inp.parentElement.querySelector(".count-input.invalid")) errEl.textContent = "";
+    return value;
+  }
+
+  // Read a count input's numeric value with a fallback default for apply-time.
+  function readCount(inp, fallback) {
+    const { value, error } = checkCount(inp);
+    return error ? fallback : value;
+  }
+
+  countInputs.forEach((inp) => {
+    // Normalize on blur and Enter (per UXP input quirks, listen to several events).
+    inp.addEventListener("blur", () => normalizeCountInput(inp));
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { normalizeCountInput(inp); inp.blur(); }
+    });
+    // Clear red state + message as soon as the user types something valid again.
+    inp.addEventListener("input", () => {
+      if (!checkCount(inp).error) {
+        inp.classList.remove("invalid");
+        if (!inp.parentElement.querySelector(".count-input.invalid")) {
+          getRowErrEl(inp).textContent = "";
+        }
+      }
+    });
+  });
 
   // Component-specific A count defaults
-  selQrCntH.value = "2";
-  selQrCntV.value = "2";
-  selSubCntH.value = "1";
+  selLogoCntH.value = "2"; selLogoCntV.value = "2";
+  selUrlCntH.value  = "2"; selUrlCntV.value  = "2";
+  selQrCntH.value   = "2"; selQrCntV.value   = "2";
+  selMainCntH.value = "2"; selMainCntV.value = "2";
+  selCampCntH.value = "2"; selCampCntV.value = "2";
+  selSubCntH.value  = "1"; selSubCntV.value  = "2";
 
   // Populate Ref dropdowns with full layer names. Self-reference excluded.
   function getRefOptions() {
@@ -174,6 +256,26 @@ document.addEventListener("DOMContentLoaded", () => {
         vp.verticalMeasurementUnits = prevV;
       } catch (_) {}
     }
+  }
+
+  // Map the doc's ruler unit (viewPreferences.horizontalMeasurementUnits)
+  // to one of our supported display codes. Returns null for unsupported units
+  // (picas, ciceros, agates...) — caller should fall back to "in".
+  function getDocRulerUnit(doc) {
+    try {
+      const h = doc.viewPreferences.horizontalMeasurementUnits;
+      // UXP exposes enum values as Enumerator objects whose toString() returns
+      // the name (e.g. "MILLIMETERS"). Reference equality (===) doesn't work,
+      // so compare by name string.
+      const name = String(h).toUpperCase();
+      if (name === "MILLIMETERS") return "mm";
+      if (name === "CENTIMETERS") return "cm";
+      if (name === "POINTS")      return "pt";
+      if (name === "INCHES" || name === "INCHES_DECIMAL") return "in";
+    } catch (e) {
+      console.warn("[getDocRulerUnit] threw", e);
+    }
+    return null;
   }
 
   // 1 pt = ? in display unit
@@ -310,8 +412,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       currentDoc = app.activeDocument;
 
-      // Display unit driven by selUnit selector, independent of doc ruler
-      displayUnitName = selUnit.value || "in";
+      // Display unit follows the document's ruler unit (so opening a mm doc
+      // shows mm, opening an inch doc shows inches). Falls back to "mm" only
+      // if the doc uses a unit we don't support (picas/ciceros/agates).
+      const docUnit = getDocRulerUnit(currentDoc) || "mm";
+      displayUnitName = docUnit;
+      selUnit.value = docUnit;
       elDocName.textContent = currentDoc.name || "(untitled)";
 
       // Active page = first page of active spread (fallback to pages[0])
@@ -672,12 +778,15 @@ document.addEventListener("DOMContentLoaded", () => {
         mainName      = parsed.mainName || "Main-headline";
         campName      = parsed.campName || "campaign-line";
         subName       = parsed.subName  || "Sub-headline";
-        if (typeof parsed.placeLogo === "boolean") chkPlaceLogo.checked = parsed.placeLogo;
-        if (typeof parsed.placeUrl  === "boolean") chkPlaceUrl.checked  = parsed.placeUrl;
-        if (typeof parsed.placeQr   === "boolean") chkPlaceQr.checked   = parsed.placeQr;
-        if (typeof parsed.placeMain === "boolean") chkPlaceMain.checked = parsed.placeMain;
-        if (typeof parsed.placeCamp === "boolean") chkPlaceCamp.checked = parsed.placeCamp;
-        if (typeof parsed.placeSub  === "boolean") chkPlaceSub.checked  = parsed.placeSub;
+        // Restore saved checkbox state. Mark prevFound so the availability
+        // refresh below treats these as already-seen and does NOT auto-re-check
+        // a component the user had deliberately unchecked.
+        if (typeof parsed.placeLogo === "boolean") { chkPlaceLogo.checked = parsed.placeLogo; prevFound.logo = true; }
+        if (typeof parsed.placeUrl  === "boolean") { chkPlaceUrl.checked  = parsed.placeUrl;  prevFound.url  = true; }
+        if (typeof parsed.placeQr   === "boolean") { chkPlaceQr.checked   = parsed.placeQr;   prevFound.qr   = true; }
+        if (typeof parsed.placeMain === "boolean") { chkPlaceMain.checked = parsed.placeMain; prevFound.main = true; }
+        if (typeof parsed.placeCamp === "boolean") { chkPlaceCamp.checked = parsed.placeCamp; prevFound.camp = true; }
+        if (typeof parsed.placeSub  === "boolean") { chkPlaceSub.checked  = parsed.placeSub;  prevFound.sub  = true; }
         if (parsed.logoH) selLogoH.value = parsed.logoH;
         if (parsed.logoV) selLogoV.value = parsed.logoV;
         if (parsed.urlH)  selUrlH.value  = parsed.urlH;
@@ -702,6 +811,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (parsed.campCntV) selCampCntV.value = parsed.campCntV;
         if (parsed.subCntH)  selSubCntH.value  = parsed.subCntH;
         if (parsed.subCntV)  selSubCntV.value  = parsed.subCntV;
+        // Re-validate loaded count values (clears/marks the red state appropriately)
+        countInputs.forEach(normalizeCountInput);
         if (parsed.logoRefH) selLogoRefH.value = parsed.logoRefH;
         if (parsed.logoRefV) selLogoRefV.value = parsed.logoRefV;
         if (parsed.urlRefH)  selUrlRefH.value  = parsed.urlRefH;
@@ -714,10 +825,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (parsed.campRefV) selCampRefV.value = parsed.campRefV;
         if (parsed.subRefH)  selSubRefH.value  = parsed.subRefH;
         if (parsed.subRefV)  selSubRefV.value  = parsed.subRefV;
-        if (parsed.unit && ["in","mm","cm","pt"].indexOf(parsed.unit) >= 0) {
-          selUnit.value = parsed.unit;
-          displayUnitName = parsed.unit;
-        }
+        // Unit is NOT restored from persist anymore — it follows the document's
+        // ruler unit on each refresh (see getDocRulerUnit + refresh()).
         const secPS = document.getElementById("sectionPageSetup");
         const secSP = document.getElementById("sectionSpacing");
         if (secPS) { secPS.classList.toggle("collapsed", !!parsed.sectionPageSetupCollapsed); updateCaret(secPS); }
@@ -774,7 +883,6 @@ document.addEventListener("DOMContentLoaded", () => {
         mainRefH: selMainRefH.value, mainRefV: selMainRefV.value,
         campRefH: selCampRefH.value, campRefV: selCampRefV.value,
         subRefH:  selSubRefH.value,  subRefV:  selSubRefV.value,
-        unit: displayUnitName,
         sectionPageSetupCollapsed: document.getElementById("sectionPageSetup").classList.contains("collapsed"),
         sectionSpacingCollapsed:   document.getElementById("sectionSpacing").classList.contains("collapsed")
       }));
@@ -798,8 +906,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Map each component key → { input, name getter, checkbox (or null), checkable }
   function getComponentMap() {
     return {
-      logo:   { input: inpFitName,        getName: () => fitTargetName, checkbox: chkPlaceLogo },
-      letter: { input: inpLetterRefName,  getName: () => letterRefName, checkbox: null },
+      logo:   { input: inpFitName,        getName: () => fitTargetName, checkbox: chkPlaceLogo, required: true, resolve: resolveFitTarget },
+      letter: { input: inpLetterRefName,  getName: () => letterRefName, checkbox: null, required: true },
       url:    { input: inpUrlBlockName,   getName: () => urlBlockName,  checkbox: chkPlaceUrl  },
       qr:     { input: inpQrBlockName,    getName: () => qrBlockName,   checkbox: chkPlaceQr   },
       main:   { input: inpMainName,       getName: () => mainName,      checkbox: chkPlaceMain },
@@ -814,8 +922,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!c) return;
     const name = c.getName();
     let found = false;
-    if (currentDoc && name) {
-      const item = findItemByName(currentDoc, name);
+    if (currentDoc) {
+      // Prefer the component's own resolver (logo resolves by cached id too);
+      // otherwise scope the lookup to the selected page.
+      const item = c.resolve ? c.resolve() : (name ? findItemInCurrentPage(name) : null);
       found = !!(item && item.isValid);
     }
     // Find the .chk-row label and .comp-group ancestor of this checkbox
@@ -826,9 +936,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (found) {
       c.input.classList.remove("has-warning");
-      if (c.checkbox) c.checkbox.disabled = false;
+      c.input.classList.remove("has-error");
+      if (c.required) setRequiredError(c.input, "");
+      if (c.checkbox) {
+        c.checkbox.disabled = false;
+        // Auto-check when the layer transitions missing → present (incl. first
+        // sighting). A manual uncheck while it stays present is left untouched.
+        if (!prevFound[key]) c.checkbox.checked = true;
+      }
       if (chkRow)    chkRow.classList.remove("disabled");
       if (compGroup) compGroup.classList.remove("disabled");
+    } else if (c.required) {
+      // Required layer missing → hard red error (Logo-airbus / letter-A).
+      c.input.classList.remove("has-warning");
+      c.input.classList.add("has-error");
+      setRequiredError(c.input, "\"" + (name || "?") + "\" not found — required.");
+      if (c.checkbox) { c.checkbox.disabled = true; c.checkbox.checked = false; }
+      if (chkRow)    chkRow.classList.add("disabled");
+      if (compGroup) compGroup.classList.add("disabled");
     } else {
       c.input.classList.add("has-warning");
       if (c.checkbox) {
@@ -838,11 +963,93 @@ document.addEventListener("DOMContentLoaded", () => {
       if (chkRow)    chkRow.classList.add("disabled");
       if (compGroup) compGroup.classList.add("disabled");
     }
+    prevFound[key] = found;
+  }
+
+  // Show/clear an inline error message under a required name input (lazy span).
+  function setRequiredError(inp, msg) {
+    const field = inp.closest(".name-field");
+    if (!field) return;
+    let el = field.querySelector(".required-err");
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "required-err";
+      field.appendChild(el);
+    }
+    el.textContent = msg || "";
+  }
+
+  // Names of required layers (Logo-airbus + letter-A) that are missing from the
+  // doc. Empty array = all present.
+  function missingRequiredLayers() {
+    const map = getComponentMap();
+    const missing = [];
+    Object.keys(map).forEach((k) => {
+      const c = map[k];
+      if (!c.required) return;
+      const nm = c.getName();
+      // Use the component's own resolver if it has one (logo can resolve by
+      // cached id even when its name doesn't match), else fall back to by-name.
+      const it = c.resolve ? (currentDoc ? c.resolve() : null)
+                           : ((currentDoc && nm) ? findItemInCurrentPage(nm) : null);
+      if (!(it && it.isValid)) missing.push(nm || "(unnamed)");
+    });
+    return missing;
+  }
+
+  function requiredLayersPresent() {
+    return missingRequiredLayers().length === 0;
+  }
+
+  // Enable/disable the Apply button based on required-layer presence, and ALWAYS
+  // surface the reason inline (the button is pointer-events:none when disabled,
+  // so a click can't report the error — show it persistently instead).
+  function refreshApplyEnabled() {
+    if (!btnApplyLayout) return;
+    const missing = missingRequiredLayers();
+    const ok = missing.length === 0;
+    btnApplyLayout.classList.toggle("is-disabled", !ok);
+    if (ok) btnApplyLayout.removeAttribute("aria-disabled");
+    else    btnApplyLayout.setAttribute("aria-disabled", "true");
+
+    const hint = document.getElementById("applyBlockedHint");
+    if (hint) {
+      // Toggle display explicitly — UXP's old WebKit doesn't reliably honor the
+      // CSS `:empty` selector, so an empty box still shows its red border.
+      if (ok) {
+        hint.textContent = "";
+        hint.style.display = "none";
+      } else {
+        hint.textContent = "⚠ Apply blocked — required layer not found: " + missing.join(", ") +
+          ". Select the object and click \"Set\", or rename it to match.";
+        hint.style.display = "block";
+      }
+    }
   }
 
   function refreshAllAvailability() {
     const map = getComponentMap();
     Object.keys(map).forEach(updateComponentAvailability);
+    refreshApplyEnabled();
+  }
+
+  // Scan a list of page items (already an allPageItems collection) for the first
+  // whose name contains `kw` (lowercased). Returns the item or null.
+  function scanItemsForName(all, kw) {
+    if (!all) return null;
+    for (let i = 0; i < all.length; i++) {
+      try {
+        const it = all[i];
+        if (!it) continue;
+        // Probe .isValid inside try — invalidated UXP refs throw on access
+        let valid = false;
+        try { valid = it.isValid; } catch (_) { continue; }
+        if (!valid) continue;
+        const n = (it.name || "").toLowerCase();
+        if (n && n.indexOf(kw) !== -1) return it;
+      } catch (_) { /* skip individual stale item */ }
+    }
+    return null;
   }
 
   function findItemByName(doc, keyword) {
@@ -850,20 +1057,26 @@ document.addEventListener("DOMContentLoaded", () => {
     const kw = String(keyword).toLowerCase().trim();
     if (!kw) return null;
     try {
-      const all = doc.allPageItems;
-      for (let i = 0; i < all.length; i++) {
-        try {
-          const it = all[i];
-          if (!it) continue;
-          // Probe .isValid inside try — invalidated UXP refs throw on access
-          let valid = false;
-          try { valid = it.isValid; } catch (_) { continue; }
-          if (!valid) continue;
-          const n = (it.name || "").toLowerCase();
-          if (n && n.indexOf(kw) !== -1) return it;
-        } catch (_) { /* skip individual stale item */ }
-      }
+      return scanItemsForName(doc.allPageItems, kw);
     } catch (e) { console.warn("findItemByName error", e); }
+    return null;
+  }
+
+  // Find an item by name but ONLY within the currently selected page's spread.
+  // Each page here is its own spread sharing a [0,0] origin and may hold objects
+  // with the SAME names as other pages, so component resolution must be scoped
+  // to the selected page — otherwise Apply grabs page 1's objects.
+  function findItemInCurrentPage(keyword) {
+    if (!currentDoc || !keyword) return null;
+    const kw = String(keyword).toLowerCase().trim();
+    if (!kw) return null;
+    try {
+      const spread = currentPage && currentPage.isValid ? currentPage.parent : null;
+      if (spread && spread.isValid) {
+        const hit = scanItemsForName(spread.allPageItems, kw);
+        if (hit) return hit;
+      }
+    } catch (e) { console.warn("findItemInCurrentPage error", e); }
     return null;
   }
 
@@ -902,6 +1115,30 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
+  // Find ALL Groups named `name` (case-insensitive) anywhere in a spread —
+  // including groups nested inside layers. spread.groups only returns top-level
+  // groups, so we scan allPageItems to also catch a "Guide" group that lives
+  // inside a layer (e.g. "Layer 1"). Returns an array (possibly empty).
+  function findGuideGroupsInSpread(spread, name) {
+    const out = [];
+    if (!spread || !name) return out;
+    const target = String(name).toLowerCase().trim();
+    try {
+      const all = spread.allPageItems;
+      for (let i = 0; i < all.length; i++) {
+        try {
+          const it = all[i];
+          if (!it || !it.isValid) continue;
+          if (it.constructor && it.constructor.name === "Group" &&
+              (it.name || "").toLowerCase() === target) {
+            out.push(it);
+          }
+        } catch (_) {}
+      }
+    } catch (e) { console.warn("findGuideGroupsInSpread error", e); }
+    return out;
+  }
+
   // Get children of a layer or group as a plain array of page items.
   function getContainerChildren(container) {
     const out = [];
@@ -925,13 +1162,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function resolveFitTarget() {
-    // Priority 1: find by name (so user-edited name in Layers panel always wins)
+    // Priority 1: by name WITHIN the selected page (each page has its own logo).
+    const inPage = findItemInCurrentPage(fitTargetName);
+    if (inPage) {
+      fitTargetId = inPage.id; // cache for badge
+      return inPage;
+    }
+    // Priority 2: by name anywhere in the doc (covers single-page docs / before a
+    // page is picked).
     const byName = findItemByName(currentDoc, fitTargetName);
     if (byName) {
-      fitTargetId = byName.id; // cache for badge
+      fitTargetId = byName.id;
       return byName;
     }
-    // Priority 2: fall back to last resolved id (from "Use selection")
+    // Priority 3: fall back to last resolved id (from "Use selection")
     if (fitTargetId) {
       const byId = findPageItemById(currentDoc, fitTargetId);
       if (byId && byId.isValid) return byId;
@@ -1063,14 +1307,29 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyAirbusLayout() {
     if (!currentDoc) { setStatus("Open a document first.", "warn"); return; }
 
+    // Required layers must exist (Logo-airbus + letter-A). Block apply otherwise.
+    if (!requiredLayersPresent()) {
+      refreshAllAvailability();
+      setStatus("Required layers \"" + fitTargetName + "\" and \"" + letterRefName + "\" must both exist.", "err");
+      return;
+    }
+
+    // 0. Validate all A-count inputs (0–5, 1 decimal). Block apply if any invalid.
+    const badCount = countInputs.filter((inp) => normalizeCountInput(inp) === null);
+    if (badCount.length) {
+      badCount[0].focus();
+      setStatus("A count must be a number 0–5 (1 decimal). Fix the highlighted field.", "err");
+      return;
+    }
+
     // 1. Resolve logo
     const logo = resolveFitTarget();
     if (!logo || !logo.isValid) {
       setStatus("Logo \"" + fitTargetName + "\" not found.", "err");
       return;
     }
-    // 2. Resolve letter-A inside logo
-    const letterRef = findItemByName(currentDoc, letterRefName);
+    // 2. Resolve letter-A inside logo (scoped to the selected page)
+    const letterRef = findItemInCurrentPage(letterRefName);
     if (!letterRef || !letterRef.isValid) {
       setStatus("Letter reference \"" + letterRefName + "\" not found.", "err");
       return;
@@ -1081,12 +1340,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // From here on, all geometry reads/writes (geometricBounds, pageWidth, margins)
     // must be in POINTS so they match colW (pt). Force ruler to pt and restore in finally.
+    // Use PAGE_ORIGIN so geometricBounds are page-local ([0,0]-based), matching the
+    // per-page trim/margin boxes and the page-scoped component lookups.
     const _vp = currentDoc.viewPreferences;
     const _id0 = getIndesign();
     const _prevH = _vp.horizontalMeasurementUnits;
     const _prevV = _vp.verticalMeasurementUnits;
+    const _prevOrigin = _vp.rulerOrigin;
     _vp.horizontalMeasurementUnits = _id0.MeasurementUnits.POINTS;
     _vp.verticalMeasurementUnits   = _id0.MeasurementUnits.POINTS;
+    _vp.rulerOrigin = _id0.RulerOrigin.PAGE_ORIGIN;
     try {
 
     const dp = currentDoc.documentPreferences;
@@ -1117,6 +1380,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Map of placed bounds (filled as components are positioned in 2-pass apply order)
     const placedBounds = {}; // { logo: [y1,x1,y2,x2], url: ..., etc. }
     const mpRef = currentPage.marginPreferences;
+    // Each page is its own spread with a page-local [0,0] origin, so geometricBounds
+    // are page-local. Components are resolved per-page (findItemInCurrentPage) and
+    // repositioned in place — no cross-page moves. trim/margin are [0,0]-based.
     const trimBounds   = [0, 0, pageH, pageW];
     const marginBounds = [mpRef.top, mpRef.left, pageH - mpRef.bottom, pageW - mpRef.right];
 
@@ -1161,7 +1427,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let urlItem = null, newUrlW = 0, newUrlH = 0;
     if (chkPlaceUrl.checked) {
-      urlItem = findItemByName(currentDoc, urlBlockName);
+      urlItem = findItemInCurrentPage(urlBlockName);
       if (!urlItem || !urlItem.isValid) {
         skipped.push("URL \"" + urlBlockName + "\""); urlItem = null;
       } else {
@@ -1179,7 +1445,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let qrItem = null, qrNewW = 0, qrNewH = 0;
     if (chkPlaceQr.checked) {
-      qrItem = findItemByName(currentDoc, qrBlockName);
+      qrItem = findItemInCurrentPage(qrBlockName);
       if (!qrItem || !qrItem.isValid) {
         skipped.push("QR \"" + qrBlockName + "\""); qrItem = null;
       } else {
@@ -1198,7 +1464,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function resolveTextFrame(checkbox, name, key) {
       if (!checkbox.checked) return null;
-      const it = findItemByName(currentDoc, name);
+      const it = findItemInCurrentPage(name);
       if (!it || !it.isValid) { skipped.push(key + " \"" + name + "\""); return null; }
       const [ty1, tx1, ty2, tx2] = it.geometricBounds;
       const curW = tx2 - tx1;
@@ -1215,8 +1481,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ─── 2-pass position compute ──────────────────────────────────────────
     // Build list of placement plans
-    const logoCntH = parseInt(selLogoCntH.value, 10) || 2;
-    const logoCntV = parseInt(selLogoCntV.value, 10) || 2;
+    const logoCntH = readCount(selLogoCntH, 2);
+    const logoCntV = readCount(selLogoCntV, 2);
     const plans = [
       chkPlaceLogo.checked && {
         key: "logo", w: newLogoW, h: newLogoH,
@@ -1227,36 +1493,36 @@ document.addEventListener("DOMContentLoaded", () => {
       urlItem && {
         key: "url", w: newUrlW, h: newUrlH,
         anchorH: selUrlH.value, anchorV: selUrlV.value,
-        padH: (parseInt(selUrlCntH.value, 10) || 2) * aW,
-        padV: (parseInt(selUrlCntV.value, 10) || 2) * aH,
+        padH: readCount(selUrlCntH, 2) * aW,
+        padV: readCount(selUrlCntV, 2) * aH,
         refH: selUrlRefH.value, refV: selUrlRefV.value
       },
       qrItem && {
         key: "qr", w: qrNewW, h: qrNewH,
         anchorH: selQrH.value, anchorV: selQrV.value,
-        padH: (parseInt(selQrCntH.value, 10) || 1) * aW,
-        padV: (parseInt(selQrCntV.value, 10) || 1) * aH,
+        padH: readCount(selQrCntH, 1) * aW,
+        padV: readCount(selQrCntV, 1) * aH,
         refH: selQrRefH.value, refV: selQrRefV.value
       },
       mainData && {
         key: "main", w: mainData.w, h: mainData.h,
         anchorH: selMainH.value, anchorV: selMainV.value,
-        padH: (parseInt(selMainCntH.value, 10) || 2) * aW,
-        padV: (parseInt(selMainCntV.value, 10) || 2) * aH,
+        padH: readCount(selMainCntH, 2) * aW,
+        padV: readCount(selMainCntV, 2) * aH,
         refH: selMainRefH.value, refV: selMainRefV.value
       },
       campData && {
         key: "camp", w: campData.w, h: campData.h,
         anchorH: selCampH.value, anchorV: selCampV.value,
-        padH: (parseInt(selCampCntH.value, 10) || 2) * aW,
-        padV: (parseInt(selCampCntV.value, 10) || 2) * aH,
+        padH: readCount(selCampCntH, 2) * aW,
+        padV: readCount(selCampCntV, 2) * aH,
         refH: selCampRefH.value, refV: selCampRefV.value
       },
       subData && {
         key: "sub", w: subData.w, h: subData.h,
         anchorH: selSubH.value, anchorV: selSubV.value,
-        padH: (parseInt(selSubCntH.value, 10) || 2) * aW,
-        padV: (parseInt(selSubCntV.value, 10) || 2) * aH,
+        padH: readCount(selSubCntH, 2) * aW,
+        padV: readCount(selSubCntV, 2) * aH,
         refH: selSubRefH.value, refV: selSubRefV.value
       }
     ].filter(Boolean);
@@ -1298,30 +1564,51 @@ document.addEventListener("DOMContentLoaded", () => {
       return [ny1 + dy1, nx1 + dx1, ny1 + dy2, nx1 + dx2];
     }
 
-    // Build zones with configurable counts (cntH H-zones, cntV V-zones)
+    // Offsets (in A units) for each FULL-size guide A. Every A is drawn full-size
+    // and spaced one full step apart (consecutive A's nest/abut as the glyph
+    // shape dictates — no distortion). The COUNT of A's is ceil(cnt), and the
+    // whole stack is shifted INWARD (toward the component) by (ceil(cnt) - cnt)
+    // so the OUTERMOST A lands exactly on the padding boundary (e.g. trim) and
+    // the fractional remainder overlaps the component side instead of spilling
+    // past the boundary. e.g. 2.5 → A's at unit-offsets [-0.5, 0.5, 1.5] from the
+    // component edge (outermost at 2.5 = the true padding distance).
+    function countToOffsets(cnt) {
+      const c = round1(cnt);
+      if (c <= 0.0001) return [];
+      const n = Math.ceil(c - 0.0001);
+      const shift = round1(n - c); // inward shift so outermost A hits the boundary
+      const offs = [];
+      for (let i = 0; i < n; i++) offs.push(round1(i - shift));
+      return offs;
+    }
+
+    // Build zones with configurable counts (cntH H-zones, cntV V-zones).
+    // Every zone is a full-size A (aW × aH); fractional counts shift the stack
+    // inward so the outermost A sits on the boundary (trim), remainder overlaps
+    // the component (e.g. headline).
     function computeLogoGuideZones(letterABounds, logoBounds, anchorH, anchorV, cntH, cntV) {
       const [ay1, ax1, ay2, ax2] = letterABounds;
       const [, lx1L, , lx2L] = logoBounds;
       const zones = [];
       // Horizontal: same Y as letter-A, X extends outward from logo edge
-      for (let i = 0; i < cntH; i++) {
-        const off = i * aW;
+      countToOffsets(cntH).forEach((unit) => {
+        const off = unit * aW;
         if (anchorH === "R") {
-          zones.push({ kind: "H", bounds: [ay1, lx2L + off,           ay2, lx2L + off + aW] });
+          zones.push({ kind: "H", bounds: [ay1, lx2L + off,        ay2, lx2L + off + aW] });
         } else {
-          zones.push({ kind: "H", bounds: [ay1, lx1L - off - aW,      ay2, lx1L - off] });
+          zones.push({ kind: "H", bounds: [ay1, lx1L - off - aW,   ay2, lx1L - off] });
         }
-      }
+      });
       // Vertical: X at letter-A column, Y stacks below/above letter-A
       const vx1 = ax1, vx2 = ax2;
-      for (let i = 0; i < cntV; i++) {
-        const off = i * aH;
+      countToOffsets(cntV).forEach((unit) => {
+        const off = unit * aH;
         if (anchorV === "B") {
-          zones.push({ kind: "V", bounds: [ay2 + off,                vx1, ay2 + off + aH, vx2] });
+          zones.push({ kind: "V", bounds: [ay2 + off,             vx1, ay2 + off + aH, vx2] });
         } else {
-          zones.push({ kind: "V", bounds: [ay1 - off - aH,           vx1, ay1 - off,      vx2] });
+          zones.push({ kind: "V", bounds: [ay1 - off - aH,        vx1, ay1 - off,     vx2] });
         }
-      }
+      });
       return zones;
     }
 
@@ -1356,9 +1643,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const [cy1, cx1, cy2, cx2] = compBounds;
       const forceHBottom = opts && opts.forceHBottom;
       const hFromBottom = forceHBottom ? true : (anchorV === "B");
-      // H side: cntH columns, each column = 2 A stacked vertically
-      for (let col = 0; col < cntH; col++) {
-        const offCol = col * aW;
+      // H side: cntH columns, each column = 2 full A stacked vertically.
+      // Fractional cntH → stack shifts inward so outermost column hits the boundary.
+      countToOffsets(cntH).forEach((unit) => {
+        const offCol = unit * aW;
         let ax1, ax2;
         if (anchorH === "R") { ax1 = cx2 + offCol;        ax2 = ax1 + aW; }
         else                 { ax1 = cx1 - offCol - aW;   ax2 = ax1 + aW; }
@@ -1369,78 +1657,72 @@ document.addEventListener("DOMContentLoaded", () => {
           guideZones.push({ kind: "H", bounds: [cy1,          ax1, cy1 + aH,     ax2] });
           guideZones.push({ kind: "H", bounds: [cy1 + aH,     ax1, cy1 + 2 * aH, ax2] });
         }
-      }
-      // V side: cntV A's stacked, column aligned to anchor H edge of component
+      });
+      // V side: cntV full A's stacked, column aligned to anchor H edge of component.
+      // Fractional cntV → stack shifts inward so outermost A hits the boundary.
       let vx1, vx2;
       if (anchorH === "R") { vx1 = cx2 - aW; vx2 = cx2; }
       else                 { vx1 = cx1;      vx2 = cx1 + aW; }
-      for (let i = 0; i < cntV; i++) {
-        const offY = i * aH;
+      countToOffsets(cntV).forEach((unit) => {
+        const offY = unit * aH;
         if (anchorV === "B") {
           guideZones.push({ kind: "V", bounds: [cy2 + offY,        vx1, cy2 + offY + aH, vx2] });
         } else {
           guideZones.push({ kind: "V", bounds: [cy1 - offY - aH,   vx1, cy1 - offY,      vx2] });
         }
-      }
+      });
     }
 
     if (urlNewBounds) {
       pushZonesForPseudoComponent(
         urlNewBounds, selUrlH.value, selUrlV.value,
-        parseInt(selUrlCntH.value, 10) || 2,
-        parseInt(selUrlCntV.value, 10) || 2
+        readCount(selUrlCntH, 2),
+        readCount(selUrlCntV, 2)
       );
     }
     if (qrNewBounds) {
       pushZonesFixed2AColumn(
         qrNewBounds, selQrH.value, selQrV.value,
-        parseInt(selQrCntH.value, 10) || 2,
-        parseInt(selQrCntV.value, 10) || 2
+        readCount(selQrCntH, 2),
+        readCount(selQrCntV, 2)
       );
     }
     if (mainNewBounds) {
       pushZonesForPseudoComponent(
         mainNewBounds, selMainH.value, selMainV.value,
-        parseInt(selMainCntH.value, 10) || 2,
-        parseInt(selMainCntV.value, 10) || 2
+        readCount(selMainCntH, 2),
+        readCount(selMainCntV, 2)
       );
     }
     if (campNewBounds) {
       pushZonesFixed2AColumn(
         campNewBounds, selCampH.value, selCampV.value,
-        parseInt(selCampCntH.value, 10) || 2,
-        parseInt(selCampCntV.value, 10) || 2,
+        readCount(selCampCntH, 2),
+        readCount(selCampCntV, 2),
         { forceHBottom: true }
       );
     }
     if (subNewBounds) {
       pushZonesFixed2AColumn(
         subNewBounds, selSubH.value, selSubV.value,
-        parseInt(selSubCntH.value, 10) || 2,
-        parseInt(selSubCntV.value, 10) || 2,
+        readCount(selSubCntH, 2),
+        readCount(selSubCntV, 2),
         { forceHBottom: true }
       );
     }
 
-    // 8. Resolve Guide layer/group
-    let guideContainer = findContainerByExactName(currentDoc, "guide");
-    if (!guideContainer) {
-      try {
-        const newLayer = currentDoc.layers.add({ name: "Guide" });
-        guideContainer = { kind: "layer", node: newLayer };
-        console.log("[layout] auto-created Guide layer");
-      } catch (e) {
-        console.warn("Failed to create Guide layer:", e);
-      }
-    }
-
-    // Snapshot all items in Guide layer (for the wipe)
-    const existingInGuide = guideContainer ? getContainerChildren(guideContainer) : [];
+    // 8. Resolve the per-page "Guide" group (lives ON the selected page's spread,
+    //    so each page keeps its own guide set). Created fresh inside doScript.
+    const guideSpread = currentPage.parent;
+    const existingGuideGroups = findGuideGroupsInSpread(guideSpread, "guide");
+    // Legacy: older plugin versions put A clones into a doc-wide LAYER named
+    // "Guide". Detect it so we can delete it (the model is now per-page groups).
+    const legacyGuideLayer = findContainerByExactName(currentDoc, "guide");
+    const hasLegacyLayer = legacyGuideLayer && legacyGuideLayer.kind === "layer";
 
     // 10. Apply
     try {
       const id = getIndesign();
-      const LocationOpts = id.LocationOptions;
       let clonedCount = 0;
       id.app.doScript(function () {
         // 10a. Resize/move components
@@ -1463,15 +1745,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (campNewBounds) campItem.geometricBounds = campNewBounds;
         if (subNewBounds)  subItem.geometricBounds  = subNewBounds;
 
-        // 10b. Wipe Guide layer — remove ALL items (designer relies on Cmd+Z to restore)
-        for (let i = 0; i < existingInGuide.length; i++) {
-          const item = existingInGuide[i];
-          try {
-            if (item && item.isValid) item.remove();
-          } catch (e) { console.warn("wipe Guide item[" + i + "] failed:", e.message || e); }
+        // 10b. Remove ALL existing "Guide" groups on THIS page (handles duplicates
+        //      accumulated from older runs / different layers). Other pages untouched.
+        for (let i = 0; i < existingGuideGroups.length; i++) {
+          const g = existingGuideGroups[i];
+          try { if (g && g.isValid) g.remove(); }
+          catch (e) { console.warn("wipe Guide group[" + i + "] failed:", e.message || e); }
+        }
+        // 10b-legacy. Delete the old doc-wide "Guide" LAYER (clones for every page
+        //             lived here in older versions). Replaced by per-page groups.
+        if (hasLegacyLayer) {
+          try { legacyGuideLayer.node.remove(); console.log("[apply] removed legacy doc-wide Guide layer"); }
+          catch (e) { console.warn("remove legacy Guide layer failed:", e.message || e); }
         }
 
-        // 10c. Clone letterRef for each zone
+        // 10c. Clone letterRef for each zone (clones land on letterRef's spread =
+        //      the selected page's spread, since letterRef was resolved per-page).
+        const newClones = [];
         for (let i = 0; i < guideZones.length; i++) {
           try {
             const clone = letterRef.duplicate();
@@ -1479,15 +1769,17 @@ document.addEventListener("DOMContentLoaded", () => {
             clone.geometricBounds = guideZones[i].bounds;
             try { clone.transparencySettings.blendingSettings.opacity = 50; }
             catch (e) { console.warn("set opacity failed:", e.message || e); }
-            if (guideContainer) {
-              if (guideContainer.kind === "layer") {
-                try { clone.itemLayer = guideContainer.node; } catch (_) {}
-              } else {
-                try { clone.move(LocationOpts.AT_END, guideContainer.node); } catch (_) {}
-              }
-            }
+            newClones.push(clone);
             clonedCount++;
           } catch (e) { console.warn("clone A[" + i + "] failed:", e.message || e); }
+        }
+
+        // 10d. Group the new clones into a fresh per-page "Guide" group.
+        if (newClones.length) {
+          try {
+            const grp = guideSpread.groups.add(newClones);
+            grp.name = "Guide";
+          } catch (e) { console.warn("create Guide group failed:", e.message || e); }
         }
       }, id.ScriptLanguage.JAVASCRIPT, [], id.UndoModes.ENTIRE_SCRIPT, "Apply Airbus layout");
 
@@ -1499,8 +1791,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (mainNewBounds) parts.push("Main " + selMainV.value + selMainH.value);
       if (campNewBounds) parts.push("Camp " + selCampV.value + selCampH.value);
       if (subNewBounds)  parts.push("Sub " + selSubV.value + selSubH.value);
-      parts.push(clonedCount + " A clones" +
-                 (existingInGuide.length ? " (Guide wiped: " + existingInGuide.length + " items)" : ""));
+      parts.push(clonedCount + " A clones in page \"" + currentPage.name + "\" Guide group" +
+                 (existingGuideGroups.length ? " (" + existingGuideGroups.length + " old group(s) replaced)" : ""));
       const skipMsg = skipped.length ? " — skipped: " + skipped.join(", ") : "";
       setStatus("Spacing applied: " + parts.join(", ") +
                 " (A: " + ptToDisplay(aW) + "×" + ptToDisplay(aH) + " " + displayUnitName + ")" + skipMsg + ".",
@@ -1511,10 +1803,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     } finally {
-      // Restore the user's ruler units regardless of how the apply block exited.
+      // Restore the user's ruler units + origin regardless of how the block exited.
       try {
         _vp.horizontalMeasurementUnits = _prevH;
         _vp.verticalMeasurementUnits   = _prevV;
+        _vp.rulerOrigin                = _prevOrigin;
       } catch (_) {}
     }
   }
@@ -1525,12 +1818,14 @@ document.addEventListener("DOMContentLoaded", () => {
     updateFitTargetBadge();
     refreshAllRefSelects();
     updateComponentAvailability("logo");
+    refreshApplyEnabled();
     persistFitTarget();
   });
 
   inpLetterRefName.addEventListener("input", () => {
     letterRefName = inpLetterRefName.value;
     updateComponentAvailability("letter");
+    refreshApplyEnabled();
     persistFitTarget();
   });
 
@@ -1615,18 +1910,8 @@ document.addEventListener("DOMContentLoaded", () => {
   selCampV.addEventListener("change", persistFitTarget);
   selSubH .addEventListener("change", persistFitTarget);
   selSubV .addEventListener("change", persistFitTarget);
-  selLogoCntH.addEventListener("change", persistFitTarget);
-  selLogoCntV.addEventListener("change", persistFitTarget);
-  selUrlCntH .addEventListener("change", persistFitTarget);
-  selUrlCntV .addEventListener("change", persistFitTarget);
-  selQrCntH  .addEventListener("change", persistFitTarget);
-  selQrCntV  .addEventListener("change", persistFitTarget);
-  selMainCntH.addEventListener("change", persistFitTarget);
-  selMainCntV.addEventListener("change", persistFitTarget);
-  selCampCntH.addEventListener("change", persistFitTarget);
-  selCampCntV.addEventListener("change", persistFitTarget);
-  selSubCntH .addEventListener("change", persistFitTarget);
-  selSubCntV .addEventListener("change", persistFitTarget);
+  // Count inputs persist on blur (UXP <input> 'change' is unreliable — use blur)
+  countInputs.forEach((inp) => inp.addEventListener("blur", persistFitTarget));
   [selLogoRefH, selLogoRefV, selUrlRefH, selUrlRefV,
    selQrRefH, selQrRefV, selMainRefH, selMainRefV,
    selCampRefH, selCampRefV, selSubRefH, selSubRefV
@@ -1651,6 +1936,10 @@ document.addEventListener("DOMContentLoaded", () => {
       selMainCntH.value = "2"; selMainCntV.value = "2";
       selCampCntH.value = "2"; selCampCntV.value = "2";
       selSubCntH.value  = "1"; selSubCntV.value  = "2";
+      countInputs.forEach((inp) => {
+        inp.classList.remove("invalid");
+        getRowErrEl(inp).textContent = "";
+      });
       // Ref defaults — re-populate to apply REF_DEFAULTS map
       refSelects.forEach(sel => { sel.value = ""; populateRefSelect(sel); });
       persistFitTarget();
@@ -1713,6 +2002,33 @@ document.addEventListener("DOMContentLoaded", () => {
     snapshot = captureSnapshot();
     setStatus("");
   });
+
+  // "Go" — scroll/jump InDesign to the currently selected page so the user can
+  // visually confirm which page Apply will target.
+  const btnGoToPage = $("btnGoToPage");
+  function goToCurrentPage() {
+    if (!currentDoc || !currentPage || !currentPage.isValid) {
+      setStatus("No page selected.", "warn");
+      return;
+    }
+    try {
+      const id = getIndesign();
+      const win = id.app.activeWindow;
+      win.activePage = currentPage;
+      // Frame the page in the window if the API is available.
+      try { win.zoom(id.ZoomOptions.FIT_PAGE); } catch (_) {}
+      setStatus("Jumped to Page " + (currentPage.name || "?") + ".", "ok");
+    } catch (e) {
+      console.warn("goToCurrentPage failed:", e && e.message);
+      setStatus("Could not jump to page: " + (e.message || e), "err");
+    }
+  }
+  if (btnGoToPage) {
+    btnGoToPage.addEventListener("click", goToCurrentPage);
+    btnGoToPage.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goToCurrentPage(); }
+    });
+  }
 
   // ─── Helpers shared by Fit feature ─────────────────────────────────────────
   function findPageItemById(doc, id) {

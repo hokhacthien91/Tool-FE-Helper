@@ -324,7 +324,7 @@
       <h1>Content Replacer</h1>
       <div class="sub">
         <span class="pill brand">Photoshop UXP Plugin</span>
-        <span class="pill">v0.2.0</span>
+        <span class="pill">v0.2.33</span>
         <span class="pill">by Thien Ho · Technical Solution</span>
       </div>
     </div>
@@ -342,7 +342,9 @@
       <strong>Content Replacer</strong> là plugin Photoshop (UXP) giúp các bạn Designer / Studio
       <strong>thay nội dung hàng loạt</strong> trên file PSD nhiều artboards (hoặc nhiều file PSD mở cùng lúc).
       Một lần khai báo — plugin tự tìm tất cả layer trùng tên ở mọi artboard và thay đồng loạt:
-      sửa text, đổi ảnh trong Smart Object, đổi tên layer, đổi tên artboard, thêm text layer mới,
+      sửa text (kèm <strong>style tag</strong> in đậm / nghiêng / màu / superscript / đổi font ngay trong nội dung),
+      đổi ảnh trong Smart Object, đổi tên layer, đổi tên artboard (template <code>{WxH}</code> hoặc Find&nbsp;&amp;&nbsp;Replace),
+      thêm text layer mới, gộp Smart Object trùng ảnh thành bản dùng chung để giảm dung lượng,
       hoặc chạy Photoshop Action lên các layer đã chọn.
     </p>
 
@@ -406,41 +408,82 @@
         ở mức tốt nhất có thể bằng thuật toán LCS map giữa text cũ và text mới.
       </div>
       <div class="card">
-        <div class="card-title">2. Thay ảnh Smart Object</div>
+        <div class="card-title">2. Style tag trong text</div>
+        Định dạng từng đoạn ngay trong nội dung bằng tag:
+        <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;sup&gt;</code>, <code>&lt;sub&gt;</code>,
+        <code>&lt;color=#hex&gt;</code>, <code>&lt;font="Bold"&gt;</code>, và <code>\n</code> (soft return).
+        Có sẵn <em>Style tag cheatsheet</em> + kiểm tra cú pháp; sai sẽ chặn Apply đến khi sửa.
+      </div>
+      <div class="card">
+        <div class="card-title">3. Thay ảnh Smart Object</div>
         Với layer <em>image</em> (pixel / smartObject), nhấn <strong>Browse…</strong> chọn file mới
         (PNG, JPG, PSD, TIFF, AI, SVG, PDF…). Plugin replace contents và giữ transform của smart object.
       </div>
       <div class="card">
-        <div class="card-title">3. Đổi tên layer hàng loạt</div>
+        <div class="card-title">4. Đổi tên layer hàng loạt</div>
         Điền <em>New name</em> cho một layer → plugin đổi tên layer đó ở mọi artboard cùng lúc.
         Có nút <strong>Update</strong> để rename ngay không cần Apply.
       </div>
       <div class="card">
-        <div class="card-title">4. Đổi tên artboard giữ size suffix</div>
-        Trong mục Artboards, điền tên mới (ví dụ <code>P001_honda_</code>).
-        Plugin tự thêm phần <code>WxH</code> của từng artboard → <code>P001_honda_300x250</code>, <code>P001_honda_728x90</code>…
+        <div class="card-title">5. Đổi tên artboard</div>
+        Hai chế độ: <strong>Template</strong> với placeholder size — <code>{WxH}</code>,
+        <code>{WxH:0.5}</code> (÷2), <code>{WxH:2}</code> (×2) — ví dụ <code>test1_{WxH}_OP1</code>;
+        hoặc <strong>Find &amp; Replace</strong> chỉ đổi 1 chuỗi, giữ nguyên phần còn lại.
+        Nút <strong>Preview</strong> xem trước trước khi áp dụng.
       </div>
       <div class="card">
-        <div class="card-title">5. Append Text Layer</div>
+        <div class="card-title">6. Append Text Layer</div>
         Tạo <strong>thêm 1 text layer</strong> giống nhau lên tất cả artboards đang bật.
         Cấu hình font, size, line-height, màu, box-width, align, anchor X/Y, offset.
-        Có nút <em>Sample from selection</em> để copy thuộc tính từ text layer đang chọn.
+        <em>Sample from selection</em> copy thuộc tính từ text layer đang chọn;
+        <em>Auto-sync with selection</em> tự cập nhật theo layer bạn đang chọn trong Photoshop.
       </div>
       <div class="card">
-        <div class="card-title">6. Run Photoshop Action</div>
+        <div class="card-title">7. Gộp Smart Object trùng ảnh</div>
+        Mục <strong>Duplicate images</strong> phát hiện các Smart Object dùng chung 1 file ảnh nhưng là
+        instance độc lập (sửa 1 cái không cập nhật cái khác, và PSD phình to). Nhấn <strong>Convert</strong>
+        để gộp thành <em>shared clone</em>: sửa 1 lần áp cho tất cả + giảm dung lượng. Phân loại theo
+        mức an toàn safe / warn / skip.
+      </div>
+      <div class="card">
+        <div class="card-title">8. Run Photoshop Action</div>
         Tab <strong>Run Photoshop Action</strong>: chọn 1 hoặc nhiều layer, chọn Action Set + Action
         từ palette Actions của Photoshop, plugin chạy action lên từng layer đã tick.
       </div>
       <div class="card">
-        <div class="card-title">7. Show / Locate layer</div>
+        <div class="card-title">9. Show / Locate layer</div>
         Nút <strong>Show</strong> ở mỗi dòng nhảy đến đúng layer trong Photoshop và highlight nó —
         tiện để kiểm tra trước khi sửa.
       </div>
       <div class="card">
-        <div class="card-title">8. Lọc & tìm kiếm</div>
+        <div class="card-title">10. Lọc & tìm kiếm</div>
         Bộ lọc theo loại (Text / Image / Group / Other), tìm kiếm theo tên layer, tìm artboard theo tên.
         Hỗ trợ <em>Select All</em> / <em>Deselect All</em> theo filter hiện tại.
       </div>
+    </div>
+
+    <h2>Style tag trong nội dung text</h2>
+    <p>
+      Trong ô text của mỗi layer, bạn có thể chèn tag để định dạng từng đoạn — không cần tách layer.
+      Mở <em>Style tag cheatsheet</em> ngay trong panel để xem đầy đủ ví dụ.
+    </p>
+    <table>
+      <tr><th>Tag</th><th>Tác dụng</th><th>Ví dụ</th></tr>
+      <tr><td><code>&lt;b&gt;…&lt;/b&gt;</code></td><td>In đậm (faux nếu thiếu face)</td><td><code>Save &lt;b&gt;$500&lt;/b&gt;</code></td></tr>
+      <tr><td><code>&lt;i&gt;…&lt;/i&gt;</code></td><td>In nghiêng (faux nếu thiếu face)</td><td><code>&lt;i&gt;Terms apply&lt;/i&gt;</code></td></tr>
+      <tr><td><code>&lt;sup&gt;…&lt;/sup&gt;</code></td><td>Superscript (nhỏ + nâng baseline)</td><td><code>Honda&lt;sup&gt;®&lt;/sup&gt;</code></td></tr>
+      <tr><td><code>&lt;sub&gt;…&lt;/sub&gt;</code></td><td>Subscript (nhỏ + hạ baseline)</td><td><code>H&lt;sub&gt;2&lt;/sub&gt;O</code></td></tr>
+      <tr><td><code>&lt;color=#hex&gt;…&lt;/color&gt;</code></td><td>Đổi màu chữ (hex 3 hoặc 6 ký tự, có/không <code>#</code>)</td><td><code>&lt;color=#f00&gt;SALE&lt;/color&gt;</code></td></tr>
+      <tr><td><code>&lt;font="Style"&gt;…&lt;/font&gt;</code></td><td>Đổi style trong cùng family</td><td><code>&lt;font="Bold"&gt;Pioneer&lt;/font&gt;</code></td></tr>
+      <tr><td><code>&lt;font=PSName&gt;…&lt;/font&gt;</code></td><td>Đổi hẳn sang face khác theo PostScript name</td><td><code>&lt;font=Roboto-Bold&gt;x&lt;/font&gt;</code></td></tr>
+      <tr><td><code>\n</code></td><td>Soft return (Shift+Enter) — xuống dòng trong cùng paragraph</td><td><code>Line A\nLine B</code></td></tr>
+    </table>
+    <div class="card tip">
+      <div class="card-title">Lồng tag & kiểm tra cú pháp</div>
+      Tag có thể lồng nhau: <code>&lt;b&gt;&lt;color=#f00&gt;BOLD RED&lt;/color&gt;&lt;/b&gt;</code>.
+      Không phân biệt hoa thường. Giá trị có dấu cách phải đặt trong ngoặc kép (<code>&lt;font="Bold Italic"&gt;</code>).
+      Cú pháp sai (tag lạ, chưa đóng, hex sai, thiếu attribute…) sẽ hiện cảnh báo dưới ô nhập và
+      <strong>chặn Apply</strong> đến khi sửa xong.
     </div>
 
     <h2>Mẹo thực chiến</h2>
@@ -466,8 +509,9 @@
     <table>
       <tr><th>Hành động</th><th>Cách thực hiện</th></tr>
       <tr><td>Scan lại</td><td>Nút <strong>Scan document</strong></td></tr>
-      <tr><td>Bật/tắt toàn bộ artboards</td><td>Nút <strong>All</strong> / <strong>None</strong> ở header Artboards</td></tr>
-      <tr><td>Chọn nhanh tên cũ làm tên mới</td><td>Click vào tên layer ở mỗi dòng</td></tr>
+      <tr><td>Bật/tắt toàn bộ artboards</td><td>Nút <strong>Select All</strong> / <strong>Deselect All</strong> ở header Artboards</td></tr>
+      <tr><td>Xem trước tên artboard mới</td><td>Nút <strong>Preview</strong> trong box Rename</td></tr>
+      <tr><td>Mở bảng style tag</td><td>Click <strong>Style tag cheatsheet</strong></td></tr>
       <tr><td>Copy log</td><td>Nút <strong>Copy</strong> ở Logs</td></tr>
       <tr><td>Reload Actions từ Photoshop</td><td>Nút <strong>↻</strong> bên Action dropdown</td></tr>
     </table>
@@ -493,6 +537,14 @@
       <summary>Run Action không thấy Action mong muốn</summary>
       Action set phải được load sẵn trong palette Actions của Photoshop. Nhấn <strong>↻</strong> để reload danh sách.
     </details>
+    <details>
+      <summary>Apply bị disable dù đã nhập text</summary>
+      Thường do style tag sai cú pháp. Xem cảnh báo đỏ dưới ô nhập (tag chưa đóng, hex sai, thiếu attribute…) và sửa lại; Apply sẽ bật trở lại.
+    </details>
+    <details>
+      <summary>Convert duplicate images không gộp một số layer</summary>
+      Plugin phân loại safe / warn / skip theo mức an toàn. Layer ở nhóm <em>skip</em> (ví dụ có Smart Filter / mask phức tạp) cần kiểm tra thủ công; chỉ convert khi chắc chắn.
+    </details>
 
   </section>
 
@@ -504,8 +556,11 @@
       <strong>Content Replacer</strong> is a Photoshop UXP plugin built for designers and studio teams
       who need to <strong>batch-edit content</strong> across multi-artboard PSDs (or many PSDs at once).
       Declare your changes in one panel — the plugin matches layers by name across all artboards and
-      applies edits in bulk: replace text, swap smart-object images, rename layers, rename artboards,
-      append a new text layer, or run a Photoshop Action against selected layers.
+      applies edits in bulk: replace text (with inline <strong>style tags</strong> for bold / italic /
+      color / superscript / font switching), swap smart-object images, rename layers, rename artboards
+      (template <code>{WxH}</code> or Find&nbsp;&amp;&nbsp;Replace), append a new text layer, merge
+      duplicate smart objects into shared clones to shrink file size, or run a Photoshop Action against
+      selected layers.
     </p>
 
     <div class="card tip">
@@ -568,41 +623,82 @@
         as best as possible via an LCS-based mapping between old and new text.
       </div>
       <div class="card">
-        <div class="card-title">2. Smart-object image swap</div>
+        <div class="card-title">2. Inline style tags</div>
+        Format spans right inside the text with tags:
+        <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;sup&gt;</code>, <code>&lt;sub&gt;</code>,
+        <code>&lt;color=#hex&gt;</code>, <code>&lt;font="Bold"&gt;</code>, plus <code>\n</code> (soft return).
+        A built-in <em>Style tag cheatsheet</em> and live syntax validation (Apply stays disabled until errors are fixed).
+      </div>
+      <div class="card">
+        <div class="card-title">3. Smart-object image swap</div>
         For <em>image</em> layers (pixel / smartObject), click <strong>Browse…</strong> and pick a new file
         (PNG, JPG, PSD, TIFF, AI, SVG, PDF…). The plugin replaces contents and keeps the smart object's transform.
       </div>
       <div class="card">
-        <div class="card-title">3. Bulk layer rename</div>
+        <div class="card-title">4. Bulk layer rename</div>
         Type a <em>New name</em> for a layer — every matching layer across all artboards is renamed at once.
         Use the <strong>Update</strong> button for an instant rename without going through Apply.
       </div>
       <div class="card">
-        <div class="card-title">4. Artboard rename with size suffix</div>
-        Enter a base name (e.g. <code>P001_honda_</code>) — the plugin appends each artboard's
-        <code>WxH</code>, producing <code>P001_honda_300x250</code>, <code>P001_honda_728x90</code>, etc.
+        <div class="card-title">5. Artboard rename</div>
+        Two modes: <strong>Template</strong> with size placeholders — <code>{WxH}</code>,
+        <code>{WxH:0.5}</code> (÷2), <code>{WxH:2}</code> (×2) — e.g. <code>test1_{WxH}_OP1</code>;
+        or <strong>Find &amp; Replace</strong> swapping one substring and keeping the rest.
+        A <strong>Preview</strong> button shows the result before you commit.
       </div>
       <div class="card">
-        <div class="card-title">5. Append Text Layer</div>
+        <div class="card-title">6. Append Text Layer</div>
         Drop an <strong>identical new text layer</strong> onto every enabled artboard.
         Configure font, size, line-height, color, box width, alignment, X/Y anchor, and offset.
-        <em>Sample from selection</em> copies properties from the currently selected text layer.
+        <em>Sample from selection</em> copies properties from the selected text layer;
+        <em>Auto-sync with selection</em> keeps the form in sync with whatever layer you select in Photoshop.
       </div>
       <div class="card">
-        <div class="card-title">6. Run Photoshop Action</div>
+        <div class="card-title">7. Merge duplicate images</div>
+        The <strong>Duplicate images</strong> section finds smart objects that share the same source file but
+        are independent instances (editing one doesn't update the others, and the PSD bloats). Hit
+        <strong>Convert</strong> to merge them into <em>shared clones</em>: edit-once-applies-to-all + smaller files.
+        Grouped by safe / warn / skip risk tiers.
+      </div>
+      <div class="card">
+        <div class="card-title">8. Run Photoshop Action</div>
         Switch to the <strong>Run Photoshop Action</strong> tab, tick layers, pick an Action Set + Action
         from Photoshop's Actions palette, and run it on each ticked layer.
       </div>
       <div class="card">
-        <div class="card-title">7. Show / locate layer</div>
+        <div class="card-title">9. Show / locate layer</div>
         The <strong>Show</strong> button in each row jumps to the layer in Photoshop and highlights it —
         useful for sanity-checking before Apply.
       </div>
       <div class="card">
-        <div class="card-title">8. Filter & search</div>
+        <div class="card-title">10. Filter & search</div>
         Filter by kind (Text / Image / Group / Other), search by layer name, and search artboards by name.
         <em>Select All</em> / <em>Deselect All</em> respect the active filter.
       </div>
+    </div>
+
+    <h2>Inline style tags</h2>
+    <p>
+      In any layer's text field you can wrap spans in tags to format parts of the copy — no need to split layers.
+      Open the in-panel <em>Style tag cheatsheet</em> for the full reference with examples.
+    </p>
+    <table>
+      <tr><th>Tag</th><th>Effect</th><th>Example</th></tr>
+      <tr><td><code>&lt;b&gt;…&lt;/b&gt;</code></td><td>Bold (faux if no face)</td><td><code>Save &lt;b&gt;$500&lt;/b&gt;</code></td></tr>
+      <tr><td><code>&lt;i&gt;…&lt;/i&gt;</code></td><td>Italic (faux if no face)</td><td><code>&lt;i&gt;Terms apply&lt;/i&gt;</code></td></tr>
+      <tr><td><code>&lt;sup&gt;…&lt;/sup&gt;</code></td><td>Superscript (small + raised)</td><td><code>Honda&lt;sup&gt;®&lt;/sup&gt;</code></td></tr>
+      <tr><td><code>&lt;sub&gt;…&lt;/sub&gt;</code></td><td>Subscript (small + lowered)</td><td><code>H&lt;sub&gt;2&lt;/sub&gt;O</code></td></tr>
+      <tr><td><code>&lt;color=#hex&gt;…&lt;/color&gt;</code></td><td>Change text color (3- or 6-digit hex, <code>#</code> optional)</td><td><code>&lt;color=#f00&gt;SALE&lt;/color&gt;</code></td></tr>
+      <tr><td><code>&lt;font="Style"&gt;…&lt;/font&gt;</code></td><td>Switch style within the current family</td><td><code>&lt;font="Bold"&gt;Pioneer&lt;/font&gt;</code></td></tr>
+      <tr><td><code>&lt;font=PSName&gt;…&lt;/font&gt;</code></td><td>Switch to a different face by PostScript name</td><td><code>&lt;font=Roboto-Bold&gt;x&lt;/font&gt;</code></td></tr>
+      <tr><td><code>\n</code></td><td>Soft return (Shift+Enter) — line break inside one paragraph</td><td><code>Line A\nLine B</code></td></tr>
+    </table>
+    <div class="card tip">
+      <div class="card-title">Nesting & validation</div>
+      Tags can be combined: <code>&lt;b&gt;&lt;color=#f00&gt;BOLD RED&lt;/color&gt;&lt;/b&gt;</code>.
+      They're case-insensitive, and any value containing spaces must be quoted (<code>&lt;font="Bold Italic"&gt;</code>).
+      Bad syntax (unknown/unclosed tags, bad hex, missing attributes…) is flagged under the input and
+      <strong>keeps Apply disabled</strong> until you fix it.
     </div>
 
     <h2>Power-user tips</h2>
@@ -628,8 +724,9 @@
     <table>
       <tr><th>Action</th><th>How</th></tr>
       <tr><td>Re-scan</td><td><strong>Scan document</strong> button</td></tr>
-      <tr><td>Toggle all artboards</td><td><strong>All</strong> / <strong>None</strong> in the Artboards header</td></tr>
-      <tr><td>Use the existing name as new name</td><td>Click the layer name in any row</td></tr>
+      <tr><td>Toggle all artboards</td><td><strong>Select All</strong> / <strong>Deselect All</strong> in the Artboards header</td></tr>
+      <tr><td>Preview new artboard names</td><td><strong>Preview</strong> button in the Rename box</td></tr>
+      <tr><td>Open the style tag reference</td><td>Click <strong>Style tag cheatsheet</strong></td></tr>
       <tr><td>Copy logs</td><td><strong>Copy</strong> button in the Logs section</td></tr>
       <tr><td>Reload Photoshop Actions</td><td><strong>↻</strong> button next to the Action dropdown</td></tr>
     </table>
@@ -657,11 +754,19 @@
       <summary>Run Action can't find my action</summary>
       The action set must be loaded in Photoshop's Actions palette. Click <strong>↻</strong> to reload the list.
     </details>
+    <details>
+      <summary>Apply is disabled even though I typed text</summary>
+      Usually a style-tag syntax error. Check the red warning under the input (unclosed tag, bad hex, missing attribute…) and fix it — Apply re-enables once the syntax is valid.
+    </details>
+    <details>
+      <summary>Convert duplicate images skips some layers</summary>
+      The plugin sorts candidates into safe / warn / skip tiers. Layers in the <em>skip</em> tier (e.g. complex smart filters or masks) need a manual check — only convert them when you're sure.
+    </details>
 
   </section>
 
   <footer>
-    Content Replacer · v0.2.0 · © 2026 · by Thien Ho — Technical Solution, Gravity Global
+    Content Replacer · v0.2.33 · © 2026 · by Thien Ho — Technical Solution, Gravity Global
   </footer>
 </div>
 

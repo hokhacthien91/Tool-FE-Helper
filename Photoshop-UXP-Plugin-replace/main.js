@@ -3852,12 +3852,29 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
     const rb = rectSize(measured.boundsNoEffects || measured.bounds);
     const renderedLocalH = rb.height / tkYY;
     const PAD_LOCAL = 20;
-    const fitLocalH = renderedLocalH + PAD_LOCAL;
+    // boundsNoEffects only covers *painted* pixels, so leading/empty lines (e.g.
+    // a "\r" at the start producing a blank first line) contribute zero height —
+    // the box ends up too short and the real text on the next line is clipped,
+    // collapsing the layer to 0×0. Floor the box height by the geometric extent
+    // of all lines: (lineCount × leading). leading/impliedLeading are world px.
+    const sentTSR = toObj.textStyleRange?.[0]?.textStyle || {};
+    const leadWorld = Number(
+      sentTSR.impliedLeading?._value ?? sentTSR.impliedLeading ??
+      sentTSR.leading?._value ?? sentTSR.leading ?? 0
+    );
+    // Count lines = paragraph breaks (\r) + soft returns (ETX) + 1.
+    const ETX_CH = String.fromCharCode(3);
+    let lineCount = 1;
+    for (const ch of psContent) if (ch === "\r" || ch === "\n" || ch === ETX_CH) lineCount++;
+    const lineModelLocalH = leadWorld > 0 ? (lineCount * leadWorld) / tkYY : 0;
+    const fitLocalH = Math.max(renderedLocalH, lineModelLocalH) + PAD_LOCAL;
     const newBottom = shape0.bounds.top + fitLocalH;
+    log(`  [DIAG FIT] lineCount=${lineCount} leadWorld=${leadWorld.toFixed(1)} lineModelLocalH=${lineModelLocalH.toFixed(1)} renderedLocalH=${renderedLocalH.toFixed(1)} → fitLocalH=${fitLocalH.toFixed(1)}`);
     const newShape = {
       ...shape0,
       bounds: { ...shape0.bounds, bottom: newBottom },
     };
+    log(`  [DIAG FIT] pre-autofit-set bounds ${Math.round(rb.width)}×${Math.round(rb.height)} renderedLocalH=${renderedLocalH.toFixed(1)} fitLocalH=${fitLocalH.toFixed(1)} newBottom=${newBottom.toFixed(1)} shapeTop=${shape0.bounds.top}`);
     await bp([{
       _obj: "set",
       _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
@@ -3865,6 +3882,21 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
       _options: { dialogOptions: "dontDisplay" }
     }]);
     log(`  [TXT] autofit box: localH → ${Math.round(fitLocalH)} (rendered canvas=${Math.round(rb.height)} yy=${tkYY.toFixed(3)})`);
+    // [DIAG FIT] Re-read immediately to confirm the layer survived the autofit set.
+    try {
+      await selectLayerById(occ.layerId);
+      const afterFit = await getTargetLayerDescriptor();
+      const fb = rectSize(afterFit.bounds);
+      const fbNE = rectSize(afterFit.boundsNoEffects || afterFit.bounds);
+      const fitChar = afterFit.textKey?.textShape?.[0]?.char?._value ?? "?";
+      const fitShB = afterFit.textKey?.textShape?.[0]?.bounds;
+      log(`  [DIAG FIT] post-autofit-set bounds ${Math.round(fb.width)}×${Math.round(fb.height)} @ ${Math.round(fb.left)},${Math.round(fb.top)} | noEffects ${Math.round(fbNE.width)}×${Math.round(fbNE.height)} char=${fitChar} shapeB=${fitShB ? `${fitShB.left}..${fitShB.right} / ${fitShB.top}..${fitShB.bottom}` : "none"}`);
+      if (fb.width === 0 || fb.height === 0) {
+        log(`  [DIAG FIT] *** LAYER COLLAPSED right after autofit set — text is now invisible. Suspect: box bottom (${newBottom.toFixed(1)}) too small vs shape top, or empty render. ***`);
+      }
+    } catch (e) {
+      log(`  [DIAG FIT] post-autofit re-read failed: ${e?.message || e}`);
+    }
   }
 
   // Realign so the new layer sits at the original visual position.
@@ -3875,9 +3907,11 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
   //   - right align: oldBounds.right matches new right
   //   - center:      horizontal center matches oldBounds center
   //   - top of the rendered text matches oldBounds.top in all cases
+  log(`  [DIAG REALIGN] gate isPointText=${isPointText} oldBounds.width=${Math.round(oldBounds.width)} → ${(isPointText && oldBounds.width > 0) ? "ENTER" : "SKIP"}`);
   if (isPointText && oldBounds.width > 0) {
     const afterSet = await getTargetLayerDescriptor();
     const nb = rectSize(afterSet.bounds);
+    log(`  [DIAG REALIGN] read-for-realign bounds ${Math.round(nb.width)}×${Math.round(nb.height)} @ ${Math.round(nb.left)},${Math.round(nb.top)} → ${(nb.width > 0 && nb.height > 0) ? "ALIGN" : "SKIP (layer already 0×0 here)"}`);
     if (nb.width > 0 && nb.height > 0) {
       const alignRaw = String(
         tk?.paragraphStyleRange?.[0]?.paragraphStyle?.align?._value

@@ -2,12 +2,14 @@
   box-sizing: border-box;
 }
 
-html, body {
+html {
   height: 100%;
   margin: 0;
 }
 
 body {
+  height: 100%;
+  margin: 0;
   padding: 10px 12px 16px;
   font-family: -apple-system, "Segoe UI", sans-serif;
   font-size: 12px;
@@ -15,8 +17,11 @@ body {
   background: #1e1e1e;
   overflow-y: auto;
   overflow-x: hidden;
+  min-width: 450px;
+  box-sizing: border-box;
 }
 
+button,
 input,
 select,
 textarea {
@@ -31,25 +36,11 @@ textarea {
   margin: 0;
 }
 
-/* Buttons are <div role="button"> to avoid the UXP Spectrum shell drawing a
-   default border/fill on real <button> elements. Divs aren't interactive by
-   default, so give them pointer + centering here. */
-.btn,
-.btn-set,
-.link-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  cursor: pointer;
-  user-select: none;
-}
-
 .panel {
   display: flex;
   flex-direction: column;
+  gap: 12px;
 }
-.panel > * + * { margin-top: 10px; }
 
 .header {
   display: flex;
@@ -68,11 +59,26 @@ textarea {
 .doc-info {
   display: flex;
   flex-direction: column;
+  gap: 6px;
   padding: 8px 10px;
   background: #262626;
   border-radius: 4px;
 }
-.doc-info > * + * { margin-top: 4px; }
+
+/* UXP: flex `gap` không hoạt động → tách Document block và hàng Unit */
+.doc-info > * + * { margin-top: 8px; }
+
+.doc-name-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-name-block > span + span { margin-top: 4px; }
+
+#docName {
+  word-break: break-all;
+  line-height: 1.35;
+}
 
 .row {
   display: flex;
@@ -89,77 +95,36 @@ textarea {
   font-weight: 500;
 }
 
-.page-picker {
-  display: flex;
-  align-items: center;
-  padding: 6px 10px;
-  background: #262626;
-  border-radius: 4px;
-}
-.page-picker > * + * { margin-left: 8px; }
-
-.page-picker select {
-  flex: 1;
-  background: #1e1e1e;
-  color: #fff;
-  border: 1px solid #3a3a3a;
-  border-radius: 3px;
-  padding: 4px 6px;
-}
-
 .card {
   background: #262626;
   border-radius: 4px;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
-.card > * + * { margin-top: 8px; }
 
 .card-title {
   display: flex;
   align-items: center;
+  gap: 10px;
   font-weight: 600;
-  color: #d8d8d8;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 6px;
+  color: #ffffff;
+  font-size: 12px;
 }
 
 .dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  margin-right: 6px;
   border-radius: 50%;
+  margin-right: 8px;
 }
 
 .dot-trim    { background: #c84a4a; }
 .dot-bleed   { background: #6e6e6e; }
-.dot-margin  { background: #b561b8; }
 .dot-column  { background: #4ec0c4; }
 .dot-sync    { background: #e8a23a; }
-
-body .link-toggle {
-  margin-left: auto;
-  width: 25px;
-  height: 25px;
-  padding: 5px !important;
-  font-size: 9px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px !important;
-  color: #d0d0d0 !important;
-  cursor: pointer;
-  flex: none;
-}
-body .link-toggle.linked {
-  background: #59a139 !important;
-  color: #ffffff !important;
-}
 
 .badge {
   margin-left: auto;
@@ -174,13 +139,13 @@ body .link-toggle.linked {
 .grid-2 {
   display: flex;
   flex-wrap: wrap;
-  margin: 0 -4px;
+  margin: 0 -6px;
 }
 
 .grid-2 label {
   flex: 0 0 50%;
   display: block;
-  padding: 4px;
+  padding: 6px;
   font-size: 11px;
   color: #b0b0b0;
   box-sizing: border-box;
@@ -190,7 +155,7 @@ body .link-toggle.linked {
 .grid-2 label > select {
   display: block;
   width: 100%;
-  margin-top: 3px;
+  margin-top: 5px;
 }
 
 .grid-2 input {
@@ -205,22 +170,25 @@ body .link-toggle.linked {
 
 .grid-2 input:focus {
   outline: none;
-  border-color: #b7e39b;
+  border-color: #5a8dee;
 }
 
 .hint {
   font-size: 10px;
-  color: #c3c3c3;
+  color: #707070;
 }
 
 .actions {
   display: flex;
-  margin-top: 4px;
+  gap: 8px;
+  margin: 12px 0 12px;
 }
+
+/* UXP: flex `gap` không hoạt động → tách 2 nút (Apply page setup / Revert) bằng margin */
 .actions > * + * { margin-left: 8px; }
 
 .btn {
-  padding: 12px 15px;
+  padding: 7px 14px;
   font-size: 12px;
   font-weight: 500;
   border: none !important;
@@ -230,8 +198,8 @@ body .link-toggle.linked {
 
 .btn-primary {
   flex: 1;
-  background: #b7e39b !important;
-  color: #121212 !important;
+  background: #5a8dee !important;
+  color: #ffffff !important;
 }
 
 .btn-ghost {
@@ -239,21 +207,8 @@ body .link-toggle.linked {
   color: #d0d0d0 !important;
 }
 
-.btn-primary:active { background: #59a139 !important; color: #ffffff !important; }
+.btn-primary:active { background: #4978d4 !important; }
 .btn-ghost:active   { background: #2a2a2a !important; }
-
-#btnRefresh {
-  width: 28px;
-  height: 28px;
-  padding: 0 !important;
-  border-radius: 4px !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  line-height: 1;
-  flex: none;
-}
 
 .status-bar {
   min-height: 16px;
@@ -272,17 +227,17 @@ body .link-toggle.linked {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 6px 0;
 }
-.sync-row > * + * { margin-left: 8px; }
 
 .sync-label {
   display: flex;
   align-items: center;
+  gap: 8px;
   font-size: 11px;
   color: #b0b0b0;
 }
-.sync-label > * + * { margin-left: 6px; }
 
 .sync-badge {
   margin-left: 0;
@@ -294,36 +249,36 @@ body .link-toggle.linked {
 }
 
 .btn-sm {
-  padding: 12px 15px;
+  padding: 4px 10px;
+  font-size: 11px;
 }
 
 .sync-actions {
   display: flex;
-  margin-top: 4px;
+  gap: 6px;
+  margin: 12px 0 12px;
 }
+
+/* UXP: flex `gap` không hoạt động → tách 2 nút Apply spacing / Reset bằng margin */
 .sync-actions > * + * { margin-left: 6px; }
 
-/* Apply actions pinned outside the collapsible section (always visible) */
-.apply-actions-bar {
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-}
-.apply-actions-bar > * + * { margin-top: 8px; }
+/* Nút co giãn lấp đầy dòng: khi đứng 1 mình thì full width, khi có 2 thì chia đôi */
+.btn-fill { flex: 1 1 0; }
 
 .layout-checks {
   display: flex;
   flex-direction: column;
+  gap: 6px;
   margin-top: 6px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: #1e1e1e;
   border-radius: 3px;
 }
-.layout-checks > * + * { margin-top: 4px; }
 
 .chk-row {
   display: flex;
   align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: #b0b0b0;
   cursor: pointer;
@@ -332,8 +287,9 @@ body .link-toggle.linked {
 .chk-row input[type="checkbox"] {
   width: 13px;
   height: 13px;
-  margin: 0 6px 0 0;
+  margin: 0;
   cursor: pointer;
+  margin-right: 5px;
 }
 
 .btn[disabled] {
@@ -344,12 +300,15 @@ body .link-toggle.linked {
 .anchor-row {
   display: flex;
   align-items: center;
+  gap: 6px;
 }
-.anchor-row > * + * { margin-left: 6px; }
 
 .anchor-row .chk-row {
   flex: 1;
 }
+
+/* UXP: flex `gap` không hoạt động → tách label/select trong 1 hàng (Anchor/A count/Ref) */
+.anchor-row > * + * { margin-left: 6px; }
 
 .anchor-sel {
   background: #1e1e1e;
@@ -361,58 +320,34 @@ body .link-toggle.linked {
   font-family: inherit;
 }
 
-/* A-count free numeric input (supports decimals like 1.5, 2.5) */
-.count-input {
+/* A-count input (thay cho select cũ): ô số gọn trong sub-row */
+.cnt-input {
   width: 44px;
   flex: 0 0 auto;
-  background: #1e1e1e !important;
-  color: #fff !important;
-  border: 1px solid #3a3a3a;
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 11px;
-  font-family: inherit;
   text-align: center;
-}
-.count-input:focus {
-  border-color: #5a9bd4;
-  outline: none;
-}
-.count-input.invalid {
-  border-color: #e05a5a !important;
-}
-/* Inline per-row validation message (wraps below the H/V inputs) */
-.count-err {
-  flex-basis: 100%;
-  margin-left: 0 !important;
-  margin-top: 2px;
-  padding-left: 60px; /* align under inputs, past the "A count" label */
-  font-size: 10px;
-  color: #ff8a8a;
-}
-.count-err:empty {
-  display: none;
 }
 
 .name-grid {
   display: flex;
   flex-wrap: wrap;
-  margin: 0 -4px;
+  margin: 0 -6px;
 }
 
 .name-field {
-  flex: 0 0 50%;
-  padding: 4px;
+  flex: 0 0 100%;
+  padding: 6px;
   font-size: 11px;
   color: #b0b0b0;
   box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .name-row {
   display: flex;
-  margin-top: 3px;
+  gap: 4px;
+  margin-top: 5px;
 }
-.name-row > * + * { margin-left: 4px; }
 
 .name-row input {
   flex: 1;
@@ -424,44 +359,34 @@ body .link-toggle.linked {
   padding: 5px 7px;
   font-size: 12px;
   font-family: inherit;
+  flex: 0 0 100%;
 }
 
 .name-row input.has-warning {
-  border-color: #d4a14a !important;
+  border-color: #e5484d !important;
+  box-shadow: 0 0 0 1px #e5484d !important;
 }
-/* Required layer (Logo-airbus / letter-A) missing → hard red error */
-.name-row input.has-error {
-  border-color: #e05a5a !important;
+
+/* optional component: tên không khớp layer nào → viền vàng (khi Apply / khi gõ) */
+.name-row input.has-warning-yellow {
+  border-color: #e2a400 !important;
+  box-shadow: 0 0 0 1px #e2a400 !important;
 }
-.name-field .required-err {
-  display: block;
-  margin-top: 3px;
+/* đỏ (required: logo/letter) thắng vàng khi cùng có */
+.name-row input.has-warning.has-warning-yellow {
+  border-color: #e5484d !important;
+  box-shadow: 0 0 0 1px #e5484d !important;
+}
+
+.name-error {
+  margin-top: 4px;        /* khoảng cách nhỏ giữa input và error */
   font-size: 10px;
-  color: #ff8a8a;
+  line-height: 1.3;
+  color: #e5484d;         /* đỏ, đồng bộ has-warning */
+  display: none;          /* ẩn mặc định, không chiếm chỗ */
 }
-.name-field .required-err:empty {
-  display: none;
-}
-/* Apply button blocked (a required layer is missing) */
-.btn.is-disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-/* Persistent reason shown when Apply is blocked */
-.apply-blocked {
-  margin-top: 8px;
-  padding: 8px 10px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #ff9a9a;
-  background: rgba(224, 90, 90, 0.1);
-  border: 1px solid #e05a5a;
-  border-radius: 4px;
-}
-.apply-blocked:empty {
-  display: none;
-}
+
+.name-error.show { display: block; }
 
 .btn-set {
   background: #3a3a3a !important;
@@ -512,10 +437,13 @@ body .link-toggle.linked {
 .comp-group {
   display: flex;
   flex-direction: column;
-  padding: 12px 0;
+  gap: 8px;
+  padding: 14px 0;
   border-bottom: 1px solid #2a2a2a;
 }
-.comp-group > * + * { margin-top: 6px; }
+
+/* UXP: flex `gap` không hoạt động → tách hàng checkbox và các hàng Anchor/A count/Ref */
+.comp-group > * + * { margin-top: 8px; }
 
 .comp-group:first-child {
   padding-top: 6px;
@@ -527,11 +455,11 @@ body .link-toggle.linked {
 }
 
 .anchor-row {
-  padding: 2px 0;
+  padding: 3px 0;
 }
 
 .sub-row {
-  padding: 2px 0;
+  padding: 3px 0;
 }
 
 .chk-bold {
@@ -541,12 +469,6 @@ body .link-toggle.linked {
 
 .sub-row {
   padding-left: 18px;
-}
-
-/* Only the A-count rows wrap (so the inline error span drops to its own line);
-   Anchor/Ref rows must stay single-line or their dropdowns wrap. */
-.count-row {
-  flex-wrap: wrap;
 }
 
 .sub-label {
@@ -573,89 +495,69 @@ body .link-toggle.linked {
 .section {
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
-.section > * + * { margin-top: 8px; }
 
 .section-header {
   display: flex;
   align-items: center;
-  padding: 8px 4px;
-  background: #232323;
-  border-left: 3px solid #59a139;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #2a2a2a;
   border-radius: 4px;
   cursor: pointer;
   user-select: none;
 }
-.section-header > * + * { margin-left: 8px; }
 
 .section-header:hover {
-  background: #2e2e2e;
+  background: #333;
 }
 
 .section-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: #ffffff;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
 }
 
 .section-caret {
   font-size: 10px;
-  color: #b7e39b;
+  color: #b0b0b0;
   width: 12px;
   display: inline-block;
   text-align: center;
+  transition: transform 0.15s;
+}
+
+.section.collapsed .section-caret {
+  transform: rotate(-90deg);
 }
 
 .section-body {
   display: flex;
   flex-direction: column;
+  gap: 12px;
 }
-.section-body > * + * { margin-top: 10px; }
 
 .section.collapsed .section-body {
   display: none;
 }
 
-.app-footer {
-  display: block;
-  border-top: 1px solid #2a2a2a;
-  padding: 10px 8px 6px;
-  margin-top: 14px;
-  text-align: center;
+.cnt-input.input-corrected {
+  background: #3d1010;
+  transition: background 1.2s ease;
+}
+
+.cnt-warn-row {
+  display: none;
   font-size: 10px;
-  color: #707070;
-  line-height: 1.6;
+  color: #e5484d;
+  padding: 2px 0 2px 8px;
 }
-.footer-title,
-.footer-credit {
+.cnt-warn-row.show {
   display: block;
-  width: 100%;
 }
-.footer-title {
-  color: #e6e6e6;
-  font-size: 11px;
-  font-weight: 500;
-  margin-bottom: 2px;
-}
-.footer-version {
-  color: #707070;
-  font-weight: 400;
-  margin-left: 4px;
-}
-.footer-sep {
-  color: #2a2a2a;
-  margin: 0 2px;
-}
-.footer-credit {
-  font-size: 10px;
-}
-.footer-author {
-  color: #b7e39b;
-  font-weight: 600;
-}
-.footer-copyright {
-  color: #707070;
-  font-weight: 400;
+
+input.input-error {
+  border-color: #c0392b !important;
+  background: #2d1010;
 }

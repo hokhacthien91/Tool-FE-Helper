@@ -3,37 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Page Guides Inspector</title>
+  <title>Page Guides Inspector (PS)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="panel">
 
     <div class="header">
-      <div class="title">Page Guides Inspector</div>
-      <div id="btnRefresh" class="btn btn-ghost" role="button" tabindex="0" title="Refresh">↻</div>
+      <div class="title">Page Guides Inspector (PS)</div>
+      <button id="btnRefresh" class="btn btn-ghost" title="Refresh">↻</button>
     </div>
 
     <div class="doc-info">
-      <div class="row">
+      <div class="doc-name-block">
         <span class="muted">Document</span>
         <span id="docName" class="value-strong">—</span>
       </div>
       <div class="row">
         <span class="muted">Unit</span>
         <select id="selUnit" class="anchor-sel">
-          <option value="mm" selected>mm</option>
+          <option value="px" selected>px</option>
           <option value="in">in</option>
+          <option value="mm">mm</option>
           <option value="cm">cm</option>
           <option value="pt">pt</option>
         </select>
       </div>
-    </div>
-
-    <div id="pagePicker" class="page-picker">
-      <span class="muted">Page</span>
-      <select id="selPage"></select>
-      <div id="btnGoToPage" class="btn-set" role="button" tabindex="0" title="Scroll InDesign to this page">Go</div>
     </div>
 
     <!-- PAGE SETUP SECTION (collapsible) -->
@@ -44,66 +39,22 @@
       </div>
       <div class="section-body">
 
-    <!-- TRIM / PAGE SIZE -->
+    <!-- CANVAS SIZE -->
     <div class="card">
       <div class="card-title">
         <span class="dot dot-trim"></span>
-        Trim (Page size)
+        Canvas size
       </div>
       <div class="grid-2">
         <label>Width<input type="text" inputmode="decimal" id="inpPageW" /></label>
         <label>Height<input type="text" inputmode="decimal" id="inpPageH" /></label>
       </div>
-      <div class="hint">Applies to the whole document.</div>
-    </div>
-
-    <!-- BLEED -->
-    <div class="card">
-      <div class="card-title">
-        <span class="dot dot-bleed"></span>
-        Bleed
-        <div id="lnkBleed" class="link-toggle" role="button" tabindex="0" data-link-group="bleed" title="Link all 4 sides">🔗</div>
-      </div>
-      <div class="grid-2">
-        <label>Top<input type="text" inputmode="decimal" id="inpBleedT" /></label>
-        <label>Bottom<input type="text" inputmode="decimal" id="inpBleedB" /></label>
-        <label>Inside / Left<input type="text" inputmode="decimal" id="inpBleedI" /></label>
-        <label>Outside / Right<input type="text" inputmode="decimal" id="inpBleedO" /></label>
-      </div>
-      <div class="hint">Applies to the whole document.</div>
-    </div>
-
-    <!-- MARGIN -->
-    <div class="card">
-      <div class="card-title">
-        <span class="dot dot-margin"></span>
-        Margin
-        <div id="lnkMargin" class="link-toggle" role="button" tabindex="0" data-link-group="margin" title="Link all 4 sides">🔗</div>
-      </div>
-      <div class="grid-2">
-        <label>Top<input type="text" inputmode="decimal" id="inpMarginT" /></label>
-        <label>Bottom<input type="text" inputmode="decimal" id="inpMarginB" /></label>
-        <label>Inside / Left<input type="text" inputmode="decimal" id="inpMarginL" /></label>
-        <label>Outside / Right<input type="text" inputmode="decimal" id="inpMarginR" /></label>
-      </div>
-    </div>
-
-    <!-- COLUMNS -->
-    <div class="card">
-      <div class="card-title">
-        <span class="dot dot-column"></span>
-        Columns
-      </div>
-      <div class="grid-2">
-        <label>Count<input type="text" inputmode="numeric" id="inpColCount" /></label>
-        <label>Gutter<input type="text" inputmode="decimal" id="inpColGutter" /></label>
-      </div>
-      <div id="colWidthHint" class="hint">Column width: —</div>
+      <div class="hint">Resize canvas document.</div>
     </div>
 
     <div class="actions">
-      <div id="btnApply" class="btn btn-primary" role="button" tabindex="0">Apply page setup</div>
-      <div id="btnRevert" class="btn btn-ghost" role="button" tabindex="0">Revert page setup</div>
+      <button id="btnApply" class="btn btn-primary">Apply page setup</button>
+      <button id="btnRevert" class="btn btn-ghost">Revert page setup</button>
     </div>
 
       </div><!-- /section-body pageSetup -->
@@ -134,43 +85,51 @@
         <label class="name-field">Logo name
           <div class="name-row">
             <input type="text" id="inpFitName" placeholder="Logo-airbus" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="logo" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="logo" title="Apply this name to the selected layer">Set</button>
           </div>
+          <div class="name-error" id="errFitName"></div>
         </label>
         <label class="name-field">Letter ref name
           <div class="name-row">
             <input type="text" id="inpLetterRefName" placeholder="letter-A" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="letter" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="letter" title="Apply this name to the selected layer">Set</button>
           </div>
+          <div class="name-error" id="errLetterRefName"></div>
         </label>
         <label class="name-field">URL block name
           <div class="name-row">
             <input type="text" id="inpUrlBlockName" placeholder="URL-block" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="url" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="url" title="Apply this name to the selected layer">Set</button>
           </div>
         </label>
         <label class="name-field">QR block name
           <div class="name-row">
             <input type="text" id="inpQrBlockName" placeholder="QR-code" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="qr" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="qr" title="Apply this name to the selected layer">Set</button>
           </div>
         </label>
         <label class="name-field">Main-headline name
           <div class="name-row">
             <input type="text" id="inpMainName" placeholder="Main-headline" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="main" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="main" title="Apply this name to the selected layer">Set</button>
           </div>
         </label>
         <label class="name-field">Campaign-line name
           <div class="name-row">
             <input type="text" id="inpCampName" placeholder="campaign-line" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="camp" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="camp" title="Apply this name to the selected layer">Set</button>
           </div>
         </label>
         <label class="name-field">Sub-headline name
           <div class="name-row">
             <input type="text" id="inpSubName" placeholder="Sub-headline" />
-            <div class="btn-set" role="button" tabindex="0" data-set-for="sub" title="Apply this name to the selected object">Set</div>
+            <button class="btn-set" data-set-for="sub" title="Apply this name to the selected layer">Set</button>
+          </div>
+        </label>
+        <label class="name-field">Button CTA name
+          <div class="name-row">
+            <input type="text" id="inpCtaName" placeholder="Button-CTA" />
+            <button class="btn-set" data-set-for="cta" title="Apply this name to the selected layer">Set</button>
           </div>
         </label>
       </div>
@@ -183,12 +142,12 @@
             <select id="selLogoH" class="anchor-sel"><option value="L">Left</option><option value="R" selected>Right</option></select>
             <select id="selLogoV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selLogoCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selLogoCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
             <span class="sub-mini">V</span>
-            <input id="selLogoCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selLogoCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -206,12 +165,12 @@
             <select id="selUrlH" class="anchor-sel"><option value="L">Left</option><option value="R" selected>Right</option></select>
             <select id="selUrlV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selUrlCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selUrlCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
             <span class="sub-mini">V</span>
-            <input id="selUrlCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selUrlCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -229,12 +188,12 @@
             <select id="selQrH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
             <select id="selQrV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selQrCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selQrCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
             <span class="sub-mini">V</span>
-            <input id="selQrCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selQrCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -252,12 +211,12 @@
             <select id="selMainH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
             <select id="selMainV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selMainCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selMainCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
             <span class="sub-mini">V</span>
-            <input id="selMainCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selMainCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -275,12 +234,12 @@
             <select id="selCampH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
             <select id="selCampV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selCampCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selCampCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
             <span class="sub-mini">V</span>
-            <input id="selCampCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selCampCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -298,12 +257,12 @@
             <select id="selSubH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
             <select id="selSubV" class="anchor-sel"><option value="T">Top</option><option value="B" selected>Bottom</option></select>
           </div>
-          <div class="anchor-row sub-row count-row">
+          <div class="anchor-row sub-row">
             <span class="sub-label">A count</span>
             <span class="sub-mini">H</span>
-            <input id="selSubCntH" class="count-input" type="text" inputmode="decimal" />
+            <input id="selSubCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="1" />
             <span class="sub-mini">V</span>
-            <input id="selSubCntV" class="count-input" type="text" inputmode="decimal" />
+            <input id="selSubCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
           </div>
           <div class="anchor-row sub-row">
             <span class="sub-label">Ref</span>
@@ -313,36 +272,47 @@
             <select id="selSubRefV" class="anchor-sel" data-ref-for="sub"></select>
           </div>
         </div>
+
+        <div class="comp-group">
+          <label class="chk-row chk-bold"><input type="checkbox" id="chkPlaceCta" checked /> Button-CTA</label>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Anchor</span>
+            <select id="selCtaH" class="anchor-sel"><option value="L" selected>Left</option><option value="R">Right</option></select>
+            <select id="selCtaV" class="anchor-sel"><option value="T" selected>Top</option><option value="B">Bottom</option></select>
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">A count</span>
+            <span class="sub-mini">H</span>
+            <input id="selCtaCntH" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
+            <span class="sub-mini">V</span>
+            <input id="selCtaCntV" class="anchor-sel cnt-input" type="text" inputmode="decimal" value="2" />
+          </div>
+          <div class="anchor-row sub-row">
+            <span class="sub-label">Ref</span>
+            <span class="sub-mini">H</span>
+            <select id="selCtaRefH" class="anchor-sel" data-ref-for="cta"></select>
+            <span class="sub-mini">V</span>
+            <select id="selCtaRefV" class="anchor-sel" data-ref-for="cta"></select>
+          </div>
+        </div>
       </div>
 
+      <div class="sync-actions">
+        <button id="btnApplyLayout" class="btn btn-primary btn-sm">Apply spacing</button>
+        <button id="btnResetOptions" class="btn btn-ghost btn-sm">Reset options</button>
+      </div>
+      <div class="sync-actions">
+        <button id="btnCaptureSel" class="btn btn-ghost btn-sm btn-fill hidden" title="Fallback (no 'guide' yet): select the A in the logo (Magic Wand / Marquee), then click to use its size for letter-A">Capture A from selection</button>
+        <button id="btnCreateGuide" class="btn btn-ghost btn-sm btn-fill hidden" title="Marquee the A in the logo, then create a 'guide' folder + letter-A cut from it">Create guide</button>
+      </div>
+
+      <div class="hint">Scale + position the components (Logo/URL/QR/Main/Camp/Sub/CTA) per Airbus brand spacing. Anchor + padding configurable per layer.<br>letter-A is auto-sized to the logo's height on <b>Apply spacing</b> — no marquee needed. Only when no 'guide' folder exists do <b>Create guide</b> / <b>Capture A</b> appear as a fallback.</div>
     </div>
 
       </div><!-- /section-body spacing -->
     </div><!-- /sectionSpacing -->
 
-    <!-- APPLY ACTIONS — always visible (outside the collapsible section) -->
-    <div class="apply-actions-bar">
-      <div class="sync-actions">
-        <div id="btnApplyLayout" class="btn btn-primary btn-sm" role="button" tabindex="0">Apply spacing</div>
-        <div id="btnResetOptions" class="btn btn-ghost btn-sm" role="button" tabindex="0">Reset options</div>
-      </div>
-
-      <div class="hint">Scale + position the components (Logo/URL/QR/Main/Camp/Sub) per Airbus brand spacing. Anchor + padding configurable per component.</div>
-      <div id="applyBlockedHint" class="apply-blocked" style="display:none"></div>
-    </div>
-
     <div id="statusBar" class="status-bar"></div>
-
-    <footer class="app-footer">
-      <div class="footer-title">
-        Page Guides <span class="footer-version">v1.0.0</span>
-        <span class="footer-sep">-</span>
-        <span class="footer-copyright">© 2026</span>
-      </div>
-      <div class="footer-credit">
-        by <span class="footer-author">Thien Ho</span> · Technical Solution
-      </div>
-    </footer>
 
   </div>
 

@@ -1,0 +1,37 @@
+{
+  "id": "com.toolstudio.pageguidesinspector.ps",
+  "name": "Page Guides Inspector (PS)",
+  "version": "1.0.0",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "requiredPermissions": {
+    "localFileSystem": "request"
+  },
+  "host": [
+    {
+      "app": "PS",
+      "minVersion": "24.0.0"
+    }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "pageGuidesPanel",
+      "label": {
+        "default": "Page Guides (PS)"
+      },
+      "minimumSize": {
+        "width": 450,
+        "height": 600
+      },
+      "preferredDockedSize": {
+        "width": 520,
+        "height": 820
+      },
+      "preferredFloatingSize": {
+        "width": 570,
+        "height": 900
+      }
+    }
+  ]
+}

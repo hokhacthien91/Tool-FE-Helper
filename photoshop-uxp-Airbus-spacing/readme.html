@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page Guides Inspector (PS) — Readme</title>
+  <style>
+    :root {
+      --gg-green: #b7e39b;
+      --gg-green-dark: #59a139;
+      --gg-accent: #a32600;
+      --gg-cyan: #2bc9de;
+      --gg-blue: #b7e39b; /* deprecated alias → brand green (accent đã chuyển sang --gg-green) */
+      --bg-page: #121212;
+      --bg-card: #1c1c1c;
+      --bg-input: #0a0a0a;
+      --border: #2a2a2a;
+      --text-primary: #f2f2f2;
+      --text-secondary: #b0b0b0;
+      --text-muted: #707070;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+
+    header .accent-bar {
+      width: 6px;
+      height: 36px;
+      background: var(--gg-green);
+      border-radius: 1px;
+    }
+
+    header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 0.3px; }
+
+    header .tag {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border: 1px solid var(--gg-green);
+      border-radius: 4px;
+    }
+
+    h2 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 36px 0 12px;
+      font-size: 13px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+    }
+
+    h2::before {
+      content: "";
+      width: 4px;
+      height: 16px;
+      background: var(--gg-green);
+      border-radius: 1px;
+    }
+
+    h3 { margin: 20px 0 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+
+    p, ul, ol { color: var(--text-secondary); margin: 8px 0 14px; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 4px 0; }
+    strong { color: var(--text-primary); }
+
+    code {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: var(--bg-input);
+      color: var(--gg-green);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+
+    pre {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    pre code { background: transparent; border: none; padding: 0; color: var(--text-primary); }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 22px;
+      margin: 16px 0;
+    }
+
+    .card-title {
+      font-size: 11px;
+      color: var(--gg-green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin: 0 0 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .feature {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+
+    .feature h4 { margin: 0 0 6px; font-size: 13px; color: var(--text-primary); font-weight: 600; }
+    .feature p  { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+
+    th {
+      background: var(--bg-card);
+      color: var(--gg-green);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 11px;
+    }
+
+    td { color: var(--text-secondary); }
+    td:first-child { color: var(--text-primary); font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .badge-ok   { background: rgba(183,227,155,0.15); border: 1px solid var(--gg-green); color: var(--gg-green); }
+    .badge-warn { background: rgba(163,38,0,0.15); border: 1px solid var(--gg-accent); color: #ffb8a0; }
+    .badge-info { background: rgba(43,201,222,0.12); border: 1px solid var(--gg-cyan); color: var(--gg-cyan); }
+
+    .callout {
+      background: rgba(183,227,155,0.08);
+      border-left: 3px solid var(--gg-green);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 14px 0;
+      color: var(--text-secondary);
+    }
+
+    .callout-warn { background: rgba(163,38,0,0.08); border-left-color: var(--gg-accent); }
+
+    .step {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step:last-child { border-bottom: none; }
+
+    .step-num {
+      flex: 0 0 28px; width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--gg-green);
+      color: #121212;
+      font-weight: 700; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .step-body { flex: 1; }
+    .step-body h4 { margin: 2px 0 4px; font-size: 13px; color: var(--text-primary); }
+    .step-body p  { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+    .anchor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .anchor-card {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .anchor-card .name  { font-size: 12px; font-weight: 600; color: var(--gg-green); margin-bottom: 4px; }
+    .anchor-card .specs { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; }
+
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    footer a { color: var(--gg-green); text-decoration: none; font-weight: 600; }
+    footer a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <span class="accent-bar"></span>
+      <h1>Page Guides Inspector <span style="color:var(--gg-green)">(PS)</span></h1>
+      <span class="tag">UXP Plugin · Photoshop · v1.0.0</span>
+    </header>
+
+    <p>InDesign UXP panel <strong>"Page Guides Inspector"</strong> được port sang Photoshop. Cho phép <strong>resize Artboard/Canvas</strong> và tự động bố trí <strong>7 brand component</strong> (Logo · URL · QR · Main-headline · Campaign-line · Sub-headline · Button-CTA) theo <strong>Airbus spacing</strong> dùng <strong>letter-A</strong> làm đơn vị đo. Logo do designer <strong>resize thủ công</strong>; mỗi lần <strong>Apply spacing</strong>, plugin <strong>auto-size letter-A theo chiều cao logo</strong> (chỉ <strong>tỉ lệ glyph</strong> của letter-A là quan trọng — kích thước tuyệt đối không dùng tới). Component resolve <strong>theo tên</strong>; letter-A nằm trong group <code>guide</code>.</p>
+    <p style="margin-top:-6px">📄 Xem so sánh chi tiết PSD ↔ InDesign trong <a href="info.html" style="color:var(--gg-green);font-weight:600">info.html</a>.</p>
+
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="feature">
+        <h4>Artboard / Canvas resize</h4>
+        <p>Resize <strong>artboard</strong> (<code>editArtboardEvent</code>) + tự trim canvas khít; fallback <code>canvasSize</code> cho doc không artboard. Resolution (PPI) không sửa trong panel.</p>
+      </div>
+      <div class="feature">
+        <h4>Airbus spacing</h4>
+        <p>Tự động resize &amp; position <strong>7 component</strong>: Logo, URL, QR, Main-headline, Campaign-line, Sub-headline, Button-CTA trên Photoshop layers.</p>
+      </div>
+      <div class="feature">
+        <h4>Auto-sized letter-A</h4>
+        <p>Mỗi lần Apply: <code>aH = chiều cao logo hiện tại</code>, <code>aW = letterRef.W × (logoH / letterRef.H)</code> — A tự bám theo logo, giữ tỉ lệ glyph. <strong>Không cần baseline / marquee</strong> ở luồng thường.</p>
+      </div>
+      <div class="feature">
+        <h4>A-guide (no delete)</h4>
+        <p>Resize tất cả marker chữ A trong group "guide", đặt thẻ A quanh mỗi component bằng cách reuse → clone (50% opacity). <strong>Không xóa</strong> chữ A nào.</p>
+      </div>
+      <div class="feature">
+        <h4>Reference-based positioning</h4>
+        <p>Component anchor theo <strong>Trim</strong> (viền = layer Outline) hoặc component khác (Logo, URL, QR, Camp…). Hệ 2-pass tự resolve dependency.</p>
+      </div>
+      <div class="feature">
+        <h4>Layer-effect aware</h4>
+        <p>Mọi phép đọc hình học dùng <code>boundsNoEffects</code> — căn theo mép artwork thật, không lệch theo drop-shadow / outer-glow.</p>
+      </div>
+      <div class="feature">
+        <h4>Per-document persistence</h4>
+        <p>Mọi setting (names, anchors, A counts, refs, unit, collapse) + baseline lưu vào <code>localStorage</code> theo doc path — giữ giữa các session.</p>
+      </div>
+      <div class="feature">
+        <h4>Undo as single step</h4>
+        <p>Apply layout wrap trong <code>core.executeAsModal</code> — Cmd+Z hoàn tác cả lượt apply trong 1 step.</p>
+      </div>
+      <div class="feature">
+        <h4>Required-name validation</h4>
+        <p><strong>Logo</strong> + <strong>letter-A</strong> bắt buộc: validate <strong>real-time</strong> — ngay khi load doc và khi gõ tên. Không tìm thấy layer theo tên → <strong>viền đỏ + error text ngay dưới ô input</strong> tức thì. Khi Apply: section tự mở + focus vào ô lỗi. 6 component phụ thiếu tên → group bị disable "name not found", <strong>skip im lặng</strong>.</p>
+      </div>
+      <div class="feature">
+        <h4>Input validation — A count &amp; Canvas size</h4>
+        <p><strong>A count</strong>: accepts a positive decimal number, max <strong>5</strong>. Keyboard filters block non-numeric characters. On blur, invalid values <strong>keep their raw input</strong> and show an inline <strong>red</strong> error below the row (Required / Not a number / Must be 0–5). <strong>Apply spacing</strong> pre-checks all fields and blocks execution if any value is invalid, requiring the user to fix before re-applying. <strong>Canvas size</strong>: inline red border on blur for non-positive or non-numeric values.</p>
+      </div>
+      <div class="feature">
+        <h4>Create guide (fallback)</h4>
+        <p>Chỉ hiện khi <strong>CHƯA</strong> có folder <code>guide</code>. User dùng <strong>Rectangular Marquee</strong> vẽ hộp quanh chữ A trong logo → plugin tạo group <code>guide</code> + layer <code>letter-A</code> (copy, không xoá logo) bên trong artboard. Tạo xong → cả 2 nút fallback tự ẩn.</p>
+      </div>
+      <div class="feature">
+        <h4>Capture A from selection (fallback)</h4>
+        <p>Cũng chỉ hiện khi chưa có <code>guide</code>. Dùng <strong>Rectangular Marquee</strong> vẽ hộp quanh chữ A → nhấn nút → resize layer <code>letter-A</code> về đúng kích thước vùng chọn. Luồng thường <strong>không cần</strong> vì Apply đã auto-size.</p>
+      </div>
+    </div>
+
+    <h2>Install &amp; Run</h2>
+    <div class="card">
+      <p class="card-title">Setup steps</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Mở UXP Developer Tools</h4>
+          <p>Trong Adobe Creative Cloud → Apps → "UXP Developer Tool" (cài nếu chưa có). Yêu cầu Photoshop >= 24.0.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Add plugin</h4>
+          <p>UDT → <strong>Add Plugin</strong> → chọn <code>manifest.json</code> trong folder <code>photoshop-uxp-resize/</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Load &amp; Debug</h4>
+          <p>Mở Photoshop (>= 24.0). Trong UDT row của plugin → bấm <strong>Load</strong> → panel "Page Guides (PS)" xuất hiện trong Plugins menu.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Reload sau khi sửa code</h4>
+          <p>Sửa <code>index.html</code> / <code>index.js</code> / <code>styles.css</code> → UDT → <strong>Reload</strong>. Không cần build.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Cache issue?</strong> Nếu lỗi lạ sau reload: <code>rm -rf ~/Library/Caches/Adobe/UXP/</code> rồi reload lại.
+    </div>
+
+    <h2>UI Overview</h2>
+
+    <h3>Document Info</h3>
+    <p>Hiển thị tên document và unit selector. Đổi unit → input <strong>Width / Height</strong> tự convert (px / in / mm / cm / pt). <strong>px là default</strong>. Resolution (PPI) chỉ dùng nội bộ để convert đơn vị — không hiển thị trên panel.</p>
+
+    <h3>Page Setup (collapsible)</h3>
+    <p>1 card: <strong>Canvas size</strong> (Width / Height). <em>(Bleed / Margin / Columns đã được gỡ — Photoshop không có khái niệm native cho chúng.)</em></p>
+    <ul>
+      <li><strong>Apply page setup</strong> — resize <strong>artboard</strong> (neo trái-trên, nội dung không scale) qua <code>editArtboardEvent</code> + tự trim canvas khít; fallback <code>canvasSize</code> nếu doc không có artboard. <strong>Áp dụng vào PSD.</strong></li>
+      <li><strong>Revert page setup</strong> — trả kích thước trang về <strong>trạng thái ngay trước lần Apply gần nhất</strong> (snapshot chụp trước khi resize, đo theo artboard).</li>
+    </ul>
+    <div class="callout"><strong>Lưu ý:</strong> Apply page setup <em>chỉ</em> resize khung trang — <strong>không</strong> tự dời/scale layer (giống InDesign). Việc tái bố trí là của <strong>Apply spacing</strong>.</div>
+
+    <h3>Airbus Spacing (collapsible)</h3>
+    <p>8 input name + nút <strong>Set</strong>: <strong>Set = pure rename</strong> — gán tên trong ô cho layer đang select (không pin ID, không lưu baseline). Apply resolve component <strong>theo tên</strong>.</p>
+    <ul>
+      <li><strong>Logo</strong> + <strong>letter-A</strong> là <strong>bắt buộc</strong>: khi Apply không tìm thấy → ô input <strong>viền đỏ + dòng error text ngay dưới ô</strong>, section tự mở + focus vào ô. Sửa tên hoặc bấm Set lại → error tự mất.</li>
+      <li>6 component <strong>phụ</strong> (URL/QR/Main/Camp/Sub/CTA): tên không tồn tại → group bị disable nhãn "name not found" và <strong>skip im lặng</strong> khi Apply.</li>
+      <li><strong>letter-A auto-size</strong> trên Apply theo chiều cao logo — luồng thường <strong>không cần marquee / Capture</strong>.</li>
+    </ul>
+    <p>7 component groups: Logo / URL / QR / Main-headline / Campaign-line / Sub-headline / <strong>Button-CTA</strong>. Mỗi group:</p>
+    <ul>
+      <li><strong>Checkbox</strong> — bật / tắt component đó.</li>
+      <li><strong>Anchor H / V</strong> — Left / Right, Top / Bottom.</li>
+      <li><strong>A count H / V</strong> — positive decimal number (0 – 5) used as padding in letter-A units. Only numeric characters are accepted. On blur, invalid values keep their raw input and show an inline <strong>red</strong> error below the row (Required / Not a number / Must be 0–5). <strong>Apply spacing</strong> pre-validates all A count fields and blocks execution if any value is invalid.</li>
+      <li><strong>Ref H / V</strong> — anchor theo <strong>Trim</strong> hoặc component khác.</li>
+    </ul>
+
+    <div class="callout"><strong>2 nút fallback — chỉ hiện khi CHƯA có folder <code>guide</code>:</strong> ngay khi group <code>guide</code> tồn tại, <strong>cả "Create guide" lẫn "Capture A from selection" đều ẩn</strong> (luồng thường không cần đến).</div>
+
+    <p><strong>Nút "Create guide"</strong> <span class="badge badge-warn">Fallback</span> (chỉ khi chưa có <code>guide</code>)<br/><strong>Rectangular Marquee (M)</strong> vẽ hộp quanh chữ A trong logo → nhấn nút → plugin tạo group <code>guide</code> + layer <code>letter-A</code> (copy từ logo, không xoá logo) trong artboard. Sau khi tạo, cả 2 nút fallback ẩn.</p>
+
+    <p><strong>Nút "Capture A from selection"</strong> <span class="badge badge-info">Fallback</span> (chỉ khi chưa có <code>guide</code>)<br/>Khi đã có sẵn layer <code>letter-A</code> nhưng cần căn lại: <strong>Rectangular Marquee (M)</strong> vẽ hộp quanh chữ A → nhấn nút → letter-A resize về đúng kích thước vùng chọn. Luồng thường không cần vì Apply tự auto-size.</p>
+
+    <h2>Component Defaults</h2>
+    <div class="anchor-grid">
+      <div class="anchor-card">
+        <div class="name">Logo</div>
+        <div class="specs">Anchor: R / B<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">URL (½ logo W)</div>
+        <div class="specs">Anchor: R / T<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">QR (H = 2A)</div>
+        <div class="specs">Anchor: L / B<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Main-headline</div>
+        <div class="specs">Anchor: L / T<br/>A count: 2 / 2<br/>Ref: Trim / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Campaign-line</div>
+        <div class="specs">Anchor: L / T<br/>A count: 2 / 2<br/>Ref: Trim / Main</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Sub-headline</div>
+        <div class="specs">Anchor: L / B<br/>A count: 1 / 2<br/>Ref: QR / Trim</div>
+      </div>
+      <div class="anchor-card">
+        <div class="name">Button-CTA</div>
+        <div class="specs">Anchor: L / T<br/>A count: 2 / 2<br/>Ref: Trim / Camp</div>
+      </div>
+    </div>
+
+    <h2>Workflow</h2>
+
+    <div class="card">
+      <p class="card-title">Lần đầu với file mới (chưa có guide)</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><h4>Set Logo</h4><p>Select layer logo → nhập tên trong <strong>Logo name</strong> → bấm <strong>Set</strong>.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><h4>Kiểm tra guide</h4><p>Nếu thấy nút <strong>Create guide</strong> màu cam + cảnh báo vàng → chưa có folder <code>guide</code>.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body"><h4>Marquee chữ A</h4><p><strong>Rectangular Marquee (M)</strong>: vẽ hộp ôm chữ A trong logo.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body"><h4>Create guide</h4><p>Nhấn <strong>Create guide</strong> → plugin tạo group <code>guide</code> + layer <code>letter-A</code> (cắt từ logo). Xong → 2 nút fallback ẩn.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body"><h4>Resize logo (tuỳ chọn)</h4><p>Resize logo thủ công cho vừa layout.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body"><h4>Set các component khác</h4><p>Set URL, QR, Main, Campaign, Sub, Button-CTA → bấm <strong>Apply spacing</strong>.</p></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">Sau khi resize logo (luồng thường)</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><h4>Resize logo</h4><p>Resize logo thủ công đến kích thước mong muốn.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><h4>Apply spacing</h4><p>Bấm <strong>Apply spacing</strong> — thế là xong. Plugin <strong>tự auto-size letter-A</strong> theo chiều cao logo mới (<code>aH = logoH</code>, <code>aW = letterRef.W × logoH/letterRef.H</code>) rồi tính lại toàn bộ spacing. <strong>Không cần marquee / Capture.</strong></p></div>
+      </div>
+    </div>
+    <div class="callout"><strong>Capture A from selection</strong> giờ chỉ là <em>fallback</em> (xem Edge case 2) — luồng cập nhật bình thường chỉ cần bấm Apply spacing lại.</div>
+
+    <h2>Xử lý edge case</h2>
+
+    <h3>Edge case 1 — Không có folder `guide`</h3>
+
+    <div class="card">
+      <p class="card-title">Triệu chứng</p>
+      <p>Mở file → status bar vàng "<strong>No 'guide' folder found…</strong>" + nút <strong>Create guide</strong> hiện lên bên cạnh Capture.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">Tại sao xảy ra</p>
+      <p>File PSD chưa có group tên đúng <code>guide</code> (case-sensitive), hoặc đây là file mới.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">Cách fix — 3 bước</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><p>Đảm bảo đã <strong>Set logo</strong>: <strong>Logo name</strong> input → chọn layer logo → bấm <strong>Set</strong>.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><p>Dùng <strong>Rectangular Marquee (M)</strong>: vẽ hộp ôm chữ A trong logo (không cần chính xác pixel, rộng hơn 1 chút cũng được).</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body"><p>Nhấn <strong>Create guide</strong> → plugin tạo group <code>guide</code> + layer <code>letter-A</code> (cắt từ logo) bên trong artboard.</p></div>
+      </div>
+    </div>
+
+    <p style="margin-top: 12px; padding: 12px; background: rgba(183,227,155,0.08); border-left: 3px solid var(--gg-green); border-radius: 0 6px 6px 0;">
+      <strong>Sau thành công:</strong> <code>guide</code> đã tồn tại → <strong>cả 2 nút Create guide &amp; Capture A đều ẩn</strong>, status bar xanh xác nhận kích thước. Từ đây chỉ cần <strong>Apply spacing</strong>.<br/>
+      <strong>Lưu ý:</strong> Plugin copy layer logo (Layer Via Copy) — logo gốc không bị xoá hay thay đổi.
+    </p>
+
+    <h3>Edge case 2 — marker chữ A bị méo / lệch tỉ lệ sau Apply</h3>
+
+    <div class="card">
+      <p class="card-title">Triệu chứng</p>
+      <p>Sau Apply spacing, các marker chữ A trông <strong>bè ngang hoặc thót</strong> so với chữ A thật trong logo (chiều cao đúng nhưng bề ngang sai).</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">Tại sao xảy ra</p>
+      <p>Apply auto-size theo công thức <code>aH = chiều cao logo</code>, <code>aW = letterRef.W × (logoH / letterRef.H)</code> — tức <strong>chỉ tỉ lệ glyph (W/H) của layer <code>letter-A</code> được dùng</strong>, kích thước tuyệt đối không quan trọng. Nếu layer <code>letter-A</code> bị méo tỉ lệ (vd từng bị scale lệch) thì marker sẽ kế thừa tỉ lệ sai đó.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">Cách fix</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><p>Sửa cho <strong>tỉ lệ W/H</strong> của layer <code>letter-A</code> khớp chữ A thật trong logo — hoặc xoá <code>letter-A</code> + folder <code>guide</code> rồi tạo lại bằng <strong>Create guide</strong> (cắt thẳng từ logo nên tỉ lệ luôn đúng).</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><p><em>(Tuỳ chọn / fallback)</em> Nếu đang ở file chưa có <code>guide</code> và muốn căn nhanh: <strong>Rectangular Marquee (M)</strong> ôm chữ A → <strong>Capture A from selection</strong> để resize lại <code>letter-A</code>.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body"><p>Bấm <strong>Apply spacing</strong> → marker A tính lại theo tỉ lệ đúng.</p></div>
+      </div>
+    </div>
+
+    <p style="margin-top: 12px; padding: 12px; background: rgba(183,227,155,0.08); border-left: 3px solid var(--gg-green); border-radius: 0 6px 6px 0;">
+      <strong>Ghi chú:</strong> Vì chỉ tỉ lệ glyph được dùng, bạn <strong>không cần</strong> Capture sau mỗi lần resize logo — Apply tự bám chiều cao logo mới. Capture chỉ hữu ích như fallback trước khi có <code>guide</code>.
+    </p>
+
+    <h2>Key Concepts</h2>
+
+    <h3>Letter-A là đơn vị đo (auto-size theo logo)</h3>
+    <p>Plugin resolve layer chữ A <strong>theo TÊN</strong> (<code>resolveLetterRef</code>) — không pin ID. Mỗi lần Apply, đơn vị A được tính lại trực tiếp từ logo &amp; letter-A hiện tại, <strong>không đọc baseline nào</strong>:</p>
+    <pre><code>aH = chiều cao logo hiện tại               // logo là wordmark → cap-height = chiều cao "A"
+aW = letterRef.W × (aH / letterRef.H)      // bám tỉ lệ glyph của layer letter-A</code></pre>
+    <p>Vì vậy <strong>kích thước tuyệt đối của layer letter-A không quan trọng</strong> — chỉ cần đúng <strong>tỉ lệ W/H</strong>. Khác InDesign (logo tự fit column width): bản PS <strong>user resize logo thủ công</strong>, A tự bám chiều cao logo. <code>aW/aH</code> dùng để tính padding component (mỗi count = 1 A) và đặt thẻ A guide.</p>
+
+    <h3>Group <code>guide</code> + Create guide / Capture (fallback)</h3>
+    <p>Apply yêu cầu có group <code>guide</code> (chứa các marker <code>letter-A</code> để resize/clone). 2 helper sau <strong>chỉ là fallback bootstrap</strong>, hiện khi chưa có <code>guide</code>:</p>
+    <ul>
+      <li><strong>Create guide</strong> — tạo group <code>guide</code> + layer <code>letter-A</code> cắt thẳng từ logo (tỉ lệ luôn đúng).</li>
+      <li><strong>Capture A from selection</strong> — resize lại <code>letter-A</code> sẵn có theo vùng marquee.</li>
+    </ul>
+    <p>Cả hai vẫn ghi <code>airbusBaseline</code> vào localStorage cho tương thích, nhưng <strong>Apply hiện không đọc giá trị này</strong> — sizing hoàn toàn auto theo công thức trên.</p>
+
+    <h3>2-pass apply</h3>
+    <p>Component reference <strong>Trim</strong> (container) resolve trước (pass 1). Component reference component khác (vd Camp ref Main, CTA ref Camp, Sub ref QR) resolve sau khi component target đã đặt vị trí xong (pass 2).</p>
+
+    <h3>A count — decimal number, 0 – 5</h3>
+    <p>Each component's <strong>A count H</strong> and <strong>A count V</strong> fields accept a <strong>positive decimal number from 0 to 5</strong> (rounded to 1 decimal place). Default: <strong>2</strong> for all components; <strong>Sub-H = 1</strong>.</p>
+    <h4 style="margin:12px 0 6px;font-size:13px;color:var(--text-primary)">Validation behaviour</h4>
+    <ul>
+      <li><strong>Keyboard filter (keydown)</strong> — only digits, <code>.</code>, <code>,</code>, Backspace, Delete and navigation keys are accepted; letter and symbol keys are silently blocked.</li>
+      <li><strong>On blur</strong> — value is parsed. If valid: normalized to 1 decimal place. If invalid: the raw input is <strong>kept as-is</strong> (no auto-reset), the field flashes <strong>red</strong> for 1.2 s and an inline <strong>red</strong> error appears below the row:
+        <ul>
+          <li>Empty → <em>"Required"</em></li>
+          <li>Non-numeric → <em>"Not a number"</em></li>
+          <li>Out of range (negative or &gt; 5) → <em>"Must be 0–5"</em></li>
+        </ul>
+        The error clears automatically when a valid value is entered.
+      </li>
+      <li><strong>Pre-check before Apply spacing</strong> — at the start of <code>applyAirbusLayout()</code>, all 14 A count fields are checked on their raw values. If any are invalid: blur is force-triggered (show inline error), the status bar shows a warning, and <strong>Apply is blocked</strong> until the user fixes and re-applies.</li>
+    </ul>
+    <h4 style="margin:12px 0 6px;font-size:13px;color:var(--text-primary)">How count maps to spacing</h4>
+    <ul>
+      <li><strong>Padding (component positioning)</strong> = <code>count × aW</code> (H) or <code>count × aH</code> (V) — computed as float; fractional counts are fully supported. The component edge still sits at exactly <code>count × aW/aH</code> from the reference edge.</li>
+      <li><strong>Guide markers — whole count</strong>: N full letter-A tiles placed edge-to-edge, no overlap with each other.</li>
+      <li><strong>Guide markers — fractional count</strong> (e.g. 2.5 → <code>aSegs</code> length 3): <strong>every</strong> segment renders as a <strong>full-size</strong> letter-A (<code>aW × aH</code>, glyph never squeezed or masked), tiled by a <strong>full A step</strong> so the tiles never overlap one another.</li>
+      <li><strong>Inward shift</strong>: the whole tile chain is shifted toward the component by the remainder <code>(tileCount − count) × aW/aH</code>. So the <strong>outer</strong> tile aligns exactly with the spacing distance (the trim/border edge), and the extra fractional tile pokes <strong>inward</strong> — it may overlap the component or inner layers, but <strong>never pokes past the border</strong>. Whole counts → remainder 0 → no shift.</li>
+    </ul>
+    <div class="callout" style="margin-top:8px">Design rule: a guide tile may overlap <em>other</em> layers (component / inner layers), but the chain never overlaps itself and never spills outside the border edge.</div>
+
+    <h3>A guide zones (không xóa)</h3>
+    <ul>
+      <li><strong>Logo / URL / Main / CTA</strong> dùng zone builder thường — A xếp theo grid H × V.</li>
+      <li><strong>QR / Camp / Sub</strong> dùng "Fixed 2A column": H side = cntH cột, mỗi cột = 2 A xếp dọc. V side = cntV A xếp dọc.</li>
+      <li>STEP3: xóa mask cũ trên mọi marker <em>trước khi</em> đọc bounds/resize — tránh mask cũ làm sai kích thước khi scale về <code>aW×aH</code>.</li>
+      <li>STEP6: <strong>mọi ô đều là 1 chữ A đầy</strong> (<code>aW×aH</code>), xếp tuần tự sát nhau, <strong>không đè lên nhau</strong>. Không còn ô lẻ / mask. Reference <code>letter-A</code> gốc dùng cho ô đầu, thiếu thì clone (A-guide-clone).</li>
+      <li>Reuse marker có sẵn → thiếu thì clone thêm → surplus delete (chỉ clone, <strong>không bao giờ xóa reference</strong> <code>letter-A</code>).</li>
+    </ul>
+
+    <h3>Layer-effect aware (<code>boundsNoEffects</code>)</h3>
+    <p><code>layer.bounds</code> của Photoshop <strong>phình theo Layer Effect</strong> (drop-shadow / outer-glow) ở cả 4 cạnh → căn nhầm mép. Helper <code>boundsOf(layer)</code> trả <code>boundsNoEffects</code> (mép artwork thật) cho <strong>mọi</strong> phép đọc hình học. Layer không effect → bằng <code>bounds</code> (an toàn).</p>
+
+    <h3>Artboard-aware resize</h3>
+    <p>Document có artboard: <code>canvasSize</code> không đổi artboard. Plugin phát hiện artboard (<code>getArtboards</code>) rồi set <code>artboardRect</code> qua <code>editArtboardEvent</code> (self-verify bằng đọc lại rect), sau đó <strong>trim canvas</strong> khít artboard (canvas không tự co khi artboard nhỏ lại). Snapshot/Revert đo theo artboard, không theo <code>currentDoc.width</code> (canvas có thể lệch).</p>
+
+    <h3>Persistence (localStorage)</h3>
+    <p>Tất cả settings + baseline lưu vào <code>window.localStorage</code> key <code>"pageGuides.ps.page.{doc.path}"</code>. Persist giữa các plugin reload trong cùng máy. <strong>Không lưu trong file PSD</strong> — chuyển máy khác cần set lại.</p>
+
+    <h3>setLayerGeometricBounds</h3>
+    <p>Photoshop UXP không có direct bounds setter như InDesign. Plugin dùng <code>layer.scale()</code> + <code>layer.translate()</code> (đọc mép qua <code>boundsOf</code>) để vừa resize vừa reposition. Text layers (Main/Camp/Sub/CTA) giữ nguyên w/h → scale tự skip (chỉ <code>translate()</code>) để tránh distort.</p>
+
+    <h2>Differences vs InDesign version</h2>
+    <p>Tóm tắt — bản đối chiếu đầy đủ (giống / khác / lý do) nằm trong <a href="info.html" style="color:var(--gg-green);font-weight:600">info.html</a>.</p>
+    <table>
+      <thead>
+        <tr><th>Feature</th><th>InDesign</th><th>Photoshop</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Page size</td><td><code>documentPreferences.pageWidth</code></td><td>Resize <strong>Artboard</strong> (<code>editArtboardEvent</code>) + trim canvas</td></tr>
+        <tr><td>Logo sizing</td><td>Fit vào <strong>column width</strong></td><td>User resize thủ công; <strong>letter-A auto-size theo chiều cao logo</strong></td></tr>
+        <tr><td>Bleed / Margin / Columns</td><td>Native trong document/page</td><td><span class="badge badge-warn">Removed</span> PS không có native</td></tr>
+        <tr><td>Components</td><td>6 (Logo…Sub)</td><td><span class="badge badge-ok">7</span> + Button-CTA</td></tr>
+        <tr><td>Persistence</td><td>Embedded trong INDD (<code>insertLabel</code>)</td><td><span class="badge badge-warn">Machine-local</span> localStorage</td></tr>
+        <tr><td>Multiple pages</td><td>Có — page picker</td><td><span class="badge badge-warn">N/A</span> dùng Artboard</td></tr>
+        <tr><td>Units default</td><td>pt (points)</td><td>px (pixels) + Resolution PPI</td></tr>
+        <tr><td>Layer effects</td><td>n/a (<code>geometricBounds</code>)</td><td><code>boundsNoEffects</code> (tránh glow/shadow)</td></tr>
+        <tr><td>Undo block</td><td><code>UndoModes.ENTIRE_SCRIPT</code></td><td><code>executeAsModal({commandName})</code></td></tr>
+        <tr><td>Layer search</td><td><code>doc.allPageItems</code> (flat)</td><td>Recursive <code>doc.layers</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>UXP Constraints (Photoshop)</h2>
+    <div class="callout callout-warn">
+      <strong>Đọc trước khi sửa code!</strong> Photoshop UXP có những khác biệt quan trọng so với InDesign UXP và browser thông thường.
+    </div>
+    <table>
+      <thead>
+        <tr><th>Constraint</th><th>Workaround</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>require()</code> top-level fail</td><td>Gọi <code>require("photoshop")</code> trong function body.</td></tr>
+        <tr><td>Mọi DOM modification cần <code>executeAsModal</code></td><td>Wrap tất cả layer changes trong <code>core.executeAsModal(async fn, {commandName})</code>.</td></tr>
+        <tr><td><code>layer.bounds</code> read-only</td><td>Dùng <code>layer.scale()</code> + <code>layer.translate()</code> (hàm <code>setLayerGeometricBounds</code>).</td></tr>
+        <tr><td><code>layer.scale()</code> trên text layers distort text</td><td>Text layers (Main/Camp/Sub) chỉ dùng <code>translate()</code> — OK vì chúng không resize.</td></tr>
+        <tr><td>Không có <code>item.isValid</code></td><td><code>isLayerValid()</code> dùng try-catch trên <code>layer.name</code>.</td></tr>
+        <tr><td>Không có <code>doc.insertLabel/extractLabel</code></td><td><code>window.localStorage</code> keyed by <code>doc.path</code>.</td></tr>
+        <tr><td><code>window.confirm/alert</code> không hoạt động</td><td>Build inline UI bằng DOM (giữ nguyên từ InDesign version).</td></tr>
+        <tr><td><code>inset: 0</code> không hoạt động</td><td>Viết đầy đủ <code>top/left/right/bottom</code> + <code>width/height</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Photoshop API notes</h3>
+    <ul>
+      <li><code>layer.bounds</code> = <code>{left, top, right, bottom}</code> in <strong>pixels</strong> — không phải points như InDesign.</li>
+      <li><code>layer.scale(w%, h%, AnchorPosition)</code> và <code>layer.translate(dx, dy)</code> đều <strong>async</strong>, phải <code>await</code>.</li>
+      <li><code>layer.move(targetGroup, Constants.ElementPlacement.PLACEATEND)</code> là <strong>sync</strong> — không cần await.</li>
+      <li><code>doc.createLayerGroup({name})</code> — tạo group, cần trong <code>executeAsModal</code>.</li>
+      <li><code>layer.duplicate()</code> — async, phải <code>await</code> để lấy reference clone.</li>
+      <li>Canvas resize: <code>{_obj: "canvasSize", width: {_unit: "pixelsUnit", …}, horizontal/vertical: …}</code> (anchor là <code>horizontal/vertical</code>, KHÔNG phải <code>canvasSizeAnchor</code>).</li>
+      <li>Artboard resize: <code>{_obj: "editArtboardEvent", artboard: {artboardRect: {_obj:"classFloatRect", top,left,bottom,right}}}</code> — canvasSize/set-to KHÔNG resize được artboard.</li>
+      <li><code>layer.boundsNoEffects</code> = mép artwork không gồm Layer Effect (dùng cho mọi phép tính vị trí).</li>
+      <li>Layer mask: tạo bằng batchPlay <code>make channel → mask, using revealSelection</code> (sau khi select vùng bằng <code>set channel selection → rectangle</code>). Xóa mask: <code>delete channel → mask</code>. Layer phải là active layer (select theo id) khi thực hiện.</li>
+    </ul>
+
+    <h2>Architecture</h2>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Vai trò</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>manifest.json</code></td><td>UXP manifest v5 — panel entrypoint, host = PS >= 24.0.</td></tr>
+        <tr><td><code>index.html</code></td><td>UI structure: document info, page setup card, airbus spacing card.</td></tr>
+        <tr><td><code>index.js</code></td><td>Toàn bộ business logic, wrap trong 1 <code>DOMContentLoaded</code> listener.</td></tr>
+        <tr><td><code>styles.css</code></td><td>Dark theme, hard-coded hex (copy từ InDesign version).</td></tr>
+      </tbody>
+    </table>
+
+    <h3>State (index.js)</h3>
+<pre><code>let currentDoc;
+let currentPage;       // alias for currentDoc (PS has no pages)
+let displayUnitName = "px";
+let snapshot = null;   // for canvas setup revert
+let docResolution = 72; // PPI — for unit conversion
+let aW_global, aH_global; // letter-A dimensions (px) after logo scale
+// + per-component name/id state: fitTargetName, letterRefName, urlBlockName, … (resolve by NAME)</code></pre>
+
+    <h3>Key functions</h3>
+    <table>
+      <thead>
+        <tr><th>Function</th><th>Mô tả</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>getPhotoshop()</code></td><td>require("photoshop") gọi trong function — tránh top-level require</td></tr>
+        <tr><td><code>boundsOf(layer)</code></td><td>Trả <code>boundsNoEffects</code> (mép artwork thật) — dùng cho mọi phép đọc hình học</td></tr>
+        <tr><td><code>getArtboards(ps)</code> / <code>getArtboardRect</code></td><td>Phát hiện artboard + đọc <code>artboardRect</code> qua batchPlay get</td></tr>
+        <tr><td><code>applyCanvasResize(ps, W, H)</code></td><td>Resize artboard (editArtboardEvent) + trim canvas; fallback canvasSize</td></tr>
+        <tr><td><code>captureSnapshotAsync(ps)</code> / <code>getPageSize</code></td><td>Snapshot kích thước trang theo artboard (cho Revert)</td></tr>
+        <tr><td><code>setLayerGeometricBounds(layer, y1,x1,y2,x2)</code></td><td>Resize + reposition layer qua scale+translate (đọc <code>boundsOf</code>)</td></tr>
+        <tr><td><code>findItemByName(doc, keyword)</code></td><td>Recursive layer tree search by name</td></tr>
+        <tr><td><code>isLayerValid(layer)</code></td><td>Validity check qua try-catch (PS không có .isValid)</td></tr>
+        <tr><td><code>resolveFitTarget()</code> / <code>resolveLetterRef()</code></td><td>Resolve layer Logo / letter-A <strong>theo tên</strong> (name-only, exact match) — không pin ID</td></tr>
+        <tr><td><code>applyAirbusLayout()</code></td><td>Main layout function — async, executeAsModal; <strong>auto-size letter-A theo chiều cao logo</strong> + 7 component + A markers</td></tr>
+        <tr><td><code>loadLocalPageState()</code> / <code>saveLocalPageState()</code></td><td>localStorage per-doc key (settings + baseline)</td></tr>
+        <tr><td><code>computeComponentBounds()</code> / <code>pushZonesFixed2AColumn()</code></td><td>Tính bounds + A guide zones; mỗi zone là 1 chữ A đầy, offset khởi tạo <code>−(tileCount − count) × step</code> để dịch chuỗi vào trong (ô lẻ lòi vào phía component, không lòi ra viền)</td></tr>
+        <tr><td><code>cntVal(el, def)</code></td><td>Parse A count input: float clamped to <code>[0, CNT_MAX=5]</code>, rounded to 1 decimal place; empty / non-numeric / negative → default</td></tr>
+        <tr><td><code>getCntWarnEl(el)</code></td><td>Returns the injected <code>.cnt-warn-row</code> div below the A count row for a given input — used by the blur handler to show/hide inline warnings</td></tr>
+        <tr><td><code>aSegs(n)</code></td><td>Chia count thành mảng đoạn: <code>2.5 → [1,1,0.5]</code>. Chỉ <strong>số đoạn</strong> (<code>.length</code>) được dùng để biết vẽ bao nhiêu chữ A đầy — mỗi đoạn (kể cả .5) = 1 chữ A đầy</td></tr>
+        <tr><td><code>selectLayerById(id)</code></td><td>Select layer theo id qua batchPlay — cần trước mask ops (PS yêu cầu active layer)</td></tr>
+        <tr><td><code>clearLayerMask(layer)</code></td><td>Xóa layer mask (nếu có) trước khi đọc bounds/resize marker — tránh mask cũ làm sai geometry</td></tr>
+        <tr><td><code>addRectMask(layer, y1,x1,y2,x2)</code></td><td>Thêm layer mask hình chữ nhật reveal-selection — <strong>không còn dùng để vẽ guide</strong> (mọi ô đều là chữ A đầy, không mask); chỉ giữ lại cho tương thích / <code>clearLayerMask</code> ở STEP3</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Reset &amp; Undo</h2>
+    <div class="card">
+      <p class="card-title">Buttons</p>
+      <ul>
+        <li><strong>Apply spacing</strong> <span class="badge badge-ok">primary</span> — resize A markers + position 7 component + đặt thẻ A guide (không xóa).</li>
+        <li><strong>Cmd+Z trong Photoshop</strong> — undo toàn bộ Apply spacing trong 1 step (History panel PS).</li>
+        <li><strong>Create guide</strong> <span class="badge badge-warn">Fallback</span> <em>(chỉ hiện khi CHƯA có folder guide)</em> — tạo group <code>guide</code> + layer <code>letter-A</code> từ vùng selection trên logo. Tạo xong → ẩn.</li>
+        <li><strong>Capture A from selection</strong> <em>(chỉ hiện khi CHƯA có folder guide)</em> — resize layer <code>letter-A</code> sẵn có về kích thước vùng selection. Luồng thường không cần (Apply auto-size). Cả 2 nút này <strong>ẩn ngay khi <code>guide</code> tồn tại</strong>.</li>
+        <li><strong>Reset options</strong> — reset anchor / A count / ref của 7 component về default (Sub-H = 1, còn lại = 2). Không động tới name inputs, checkbox, baseline hay page setup.</li>
+        <li><strong>Apply page setup</strong> <span class="badge badge-ok">primary</span> — resize artboard + trim canvas.</li>
+        <li><strong>Revert page setup</strong> — trả kích thước trang về trạng thái ngay <strong>trước lần Apply gần nhất</strong>.</li>
+      </ul>
+    </div>
+
+    <h2>Troubleshooting</h2>
+    <table>
+      <thead>
+        <tr><th>Triệu chứng</th><th>Nguyên nhân &amp; Fix</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>"Open a Photoshop document first."</td>
+          <td>Chưa có document mở, hoặc PS chưa ready. Mở PSD rồi bấm ↻ Refresh.</td>
+        </tr>
+        <tr>
+          <td>A count field <strong>flashes red</strong> + error text appears below the row</td>
+          <td>The entered value is invalid (empty, non-numeric, negative, or &gt; 5). The raw input is kept — fix the value manually (0–5), then click <strong>Apply spacing</strong>.</td>
+        </tr>
+        <tr>
+          <td>Status bar warning — Apply spacing did not run</td>
+          <td>One or more A count fields had an invalid raw value when Apply was clicked. Blur was force-triggered to show inline errors on each bad field. Fix the highlighted fields, then click <strong>Apply spacing</strong> again.</td>
+        </tr>
+        <tr>
+          <td>Canvas size field shows a <strong>red border</strong></td>
+          <td>The entered value is not a positive number (empty after trim, zero, negative, or non-numeric). Correct the Width or Height value before clicking <strong>Apply page setup</strong>.</td>
+        </tr>
+        <tr>
+          <td>Ô URL/QR/Main/Camp/Sub/CTA <strong>viền vàng</strong></td>
+          <td>Tên input không match layer nào trong document (ngay khi gõ hoặc sau Apply). Group bị disable và component bị skip khi Apply. Sửa tên đúng hoặc bấm <strong>Set</strong> sau khi chọn layer → viền vàng tự mất. Nếu để trống tên → không hiện vàng (skip hoàn toàn là cố ý).</td>
+        </tr>
+        <tr>
+          <td>Ô Logo / letter-A <strong>viền đỏ + error text dưới ô</strong></td>
+          <td>2 field này <strong>bắt buộc</strong> và validate <strong>real-time</strong>: ngay khi load doc hoặc khi gõ tên, nếu không tìm thấy layer → đỏ tức thì. Khi Apply: section tự mở + focus. Sửa tên hoặc bấm <strong>Set</strong> lại → error tự mất.</td>
+        </tr>
+        <tr>
+          <td>"Logo has zero size."</td>
+          <td>Layer Logo có bounds rỗng. Kiểm tra layer không bị ẩn hoặc bị crop hoàn toàn.</td>
+        </tr>
+        <tr>
+          <td>Nút "Create guide" xuất hiện, cảnh báo vàng</td>
+          <td>Chưa có group <code>guide</code>. <strong>Rectangular Marquee (M)</strong> vẽ hộp quanh chữ A → nhấn <strong>Create guide</strong>.</td>
+        </tr>
+        <tr>
+          <td>"Make a selection around the A…"</td>
+          <td>Nhấn Capture/Create mà chưa có selection. <strong>Rectangular Marquee</strong> vẽ hộp ôm chữ A trước.</td>
+        </tr>
+        <tr>
+          <td>Marker A bị méo / bè ngang sau apply</td>
+          <td><strong>Tỉ lệ glyph (W/H) của layer <code>letter-A</code> sai</strong> — Apply auto-size theo chiều cao logo nên chỉ tỉ lệ được dùng. Sửa tỉ lệ layer <code>letter-A</code>, hoặc xoá <code>guide</code> + tạo lại bằng <strong>Create guide</strong> (cắt thẳng từ logo). <em>Lưu ý:</em> ô lẻ (count số thập phân) cũng là <strong>chữ A đầy</strong> (không bị bóp/mask) — nó lòi vào phía trong (đè component), không lòi ra ngoài viền.</td>
+        </tr>
+        <tr>
+          <td>Apply spacing lỗi "Object is locked"</td>
+          <td>Group "Guide" đang lock. Mở Layers panel PS → unlock layer/group Guide.</td>
+        </tr>
+        <tr>
+          <td>Settings mất sau khi chuyển máy</td>
+          <td>Dùng localStorage — không embedded trong PSD. Cần set lại component names trên máy mới.</td>
+        </tr>
+        <tr>
+          <td>Apply page setup: số đúng nhưng layout không đổi</td>
+          <td>Document dùng <strong>Artboard</strong> — <code>canvasSize</code> không resize artboard. Plugin đã chuyển sang <code>editArtboardEvent</code>; nếu vẫn không đổi, xem log <code>[pagesetup]</code> (artboard×N / chưa đổi).</td>
+        </tr>
+        <tr>
+          <td>Component lệch sau Apply spacing</td>
+          <td>Layer có Drop-shadow / Outer-glow làm <code>bounds</code> phình. Plugin đã dùng <code>boundsNoEffects</code>; kiểm tra log <code>[fxchk]</code> (ΔL/ΔT).</td>
+        </tr>
+        <tr>
+          <td>Sửa code không có hiệu lực</td>
+          <td>Quên reload trong UDT. Hoặc cache stale — clear: <code>rm -rf ~/Library/Caches/Adobe/UXP/</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Roadmap</h2>
+    <ul>
+      <li>Persistence nhúng vào PSD metadata (khi XMP PS UXP ổn định lại — bị broken từ PS 27.0).</li>
+      <li>Auto-resize layer <strong>Outline</strong> (viền) theo artboard khi Apply page setup (hiện phải chỉnh tay).</li>
+      <li>Hỗ trợ artboard không nằm ở gốc (0,0) khi trim canvas.</li>
+      <li>Batch apply layout cho nhiều artboard cùng lúc.</li>
+      <li>CSV import cho name + anchor config.</li>
+      <li>Snapshot history (multi-step undo trong plugin).</li>
+      <li>Resolution editing (hiện tại read-only).</li>
+    </ul>
+
+    <footer>
+      Built by Gravity Global Studio Team · UXP Plugin for Adobe Photoshop · Ported from InDesign version · <a href="https://www.gravityglobal.com/">gravityglobal.com</a>
+    </footer>
+
+  </div>
+</body>
+</html>
