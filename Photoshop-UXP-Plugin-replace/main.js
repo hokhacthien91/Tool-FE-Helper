@@ -38,6 +38,16 @@ const state = {
 };
 
 function nextLinkId() { return `#${++state.idCounter}`; }
+// Grow a textarea to fit ALL its text so nothing is clipped. IMPORTANT: UXP does
+// NOT honor the `rows` attribute (Adobe known issue) — setting el.rows is a no-op.
+// We must size via CSS height, driven by scrollHeight. A UXP textarea that clips
+// its content stops accepting more keystrokes/pastes ("can't type any more"), so
+// keeping height >= content height is what actually unblocks input.
+function autoGrowTextarea(el, minPx = 88) {
+  el.style.height = "auto";               // reset so scrollHeight reflects content
+  const h = Math.max(minPx, el.scrollHeight || 0);
+  el.style.height = h + "px";
+}
 function entryDisplayName(entry) {
   // Merged shared-SO entries always show the combined name (e.g. "A + B"),
   // not the inherited displayPath (which is only one of the share-mates).
@@ -1513,6 +1523,10 @@ function buildUnifiedRow(entry, idx) {
           <input type="checkbox" class="cur-ignore-caps" />
           <span>Ignore All Caps</span>
         </label>
+        <label class="cur-checkbox" title="Turn off standard & discretionary ligatures (e.g. fi, fl, st) so glyphs render individually">
+          <input type="checkbox" class="cur-no-ligatures" />
+          <span>No ligatures</span>
+        </label>
         <span class="cur-hint">Tag inserted at end — edit text between &lt;…&gt; brackets</span>
         <a href="${TAG_EDITOR_URL}" class="cur-open-editor" title="Open full tag editor in browser (WYSIWYG + Raw + live preview)">↗ Full editor</a>
       </div>
@@ -1596,6 +1610,7 @@ function buildUnifiedRow(entry, idx) {
     const input = row.querySelector(".replace-row-input");
     const errorsEl = row.querySelector(".replace-row-errors");
     input.value = entry.newContent || "";
+    autoGrowTextarea(input);
     const runValidate = () => {
       const errs = validateStyleMarkers(input.value);
       state.allEntries[idx].markerErrors = errs;
@@ -1617,11 +1632,16 @@ function buildUnifiedRow(entry, idx) {
     let pendingRefresh = false;
     input.addEventListener("input", () => {
       state.allEntries[idx].newContent = input.value;
+      // Grow the box (via CSS height) to fit all content. A clipped UXP textarea
+      // silently stops accepting keystrokes/pastes ("can't type any more").
+      // DEFER the mutation via setTimeout(0): writing to the textarea's DOM
+      // synchronously inside the input handler truncates a long paste
+      // (UXP DOM-mutation-in-input-listener quirk).
+      setTimeout(() => autoGrowTextarea(input), 0);
       if (pendingRefresh) return;
       pendingRefresh = true;
       setTimeout(() => {
         pendingRefresh = false;
-        input.rows = Math.max(4, input.value.split("\n").length);
         if (input.value.length > 0 && !idInput.value) {
           const newId = nextLinkId();
           idInput.value = newId;
@@ -1630,6 +1650,41 @@ function buildUnifiedRow(entry, idx) {
         runValidate();
         refreshApplyEnabled();
       }, 120);
+    });
+
+    // UXP's native paste silently drops a LONG clipboard payload (short pastes
+    // work). Do the paste ourselves: read plain text and splice it into the
+    // value manually, then fire a synthetic `input` event so state/auto-grow
+    // update. selectionStart/End are unreliable in UXP (they tend to report
+    // end-of-text), so we splice at the reported caret when it looks valid and
+    // otherwise append at the end — which is where the caret usually is here.
+    const spliceIntoInput = (pasted) => {
+      if (!pasted) return;
+      const val = input.value;
+      const len = val.length;
+      let s = input.selectionStart, en = input.selectionEnd;
+      // selectionStart/End are unreliable in UXP (often report end-of-text);
+      // splice at the reported caret when plausible, else append at the end.
+      if (typeof s !== "number" || s < 0 || s > len) s = len;
+      if (typeof en !== "number" || en < s || en > len) en = s;
+      input.value = val.slice(0, s) + pasted + val.slice(en);
+      const caret = s + pasted.length;
+      try { input.setSelectionRange(caret, caret); } catch (_) {}
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    input.addEventListener("paste", (e) => {
+      e.preventDefault(); // always take over — native paste drops long payloads
+      let pasted = "";
+      try {
+        pasted = (e.clipboardData || window.clipboardData)?.getData("text/plain")
+              || (e.clipboardData || window.clipboardData)?.getData("text") || "";
+      } catch (_) { pasted = ""; }
+      if (pasted) { spliceIntoInput(pasted); return; }
+      // Long clipboard payloads: clipboardData can come back empty in UXP.
+      // Fall back to the async clipboard API, which handles large text.
+      navigator.clipboard.readText()
+        .then((t) => spliceIntoInput(t || ""))
+        .catch((err) => log(`[PASTE] clipboard read failed: ${err?.message || err}`));
     });
 
     // ─── Tag generator toolbar ──────────────────────────
@@ -1656,6 +1711,16 @@ function buildUnifiedRow(entry, idx) {
       ignoreCapsBox.checked = !!state.allEntries[idx].ignoreAllCaps;
       ignoreCapsBox.addEventListener("change", () => {
         state.allEntries[idx].ignoreAllCaps = ignoreCapsBox.checked;
+      });
+    }
+
+    // No-ligatures checkbox: persists to entry state so applyReplacements can
+    // force ligature=false + altligature=false on every range when checked.
+    const noLigBox = row.querySelector(".cur-no-ligatures");
+    if (noLigBox) {
+      noLigBox.checked = !!state.allEntries[idx].noLigatures;
+      noLigBox.addEventListener("change", () => {
+        state.allEntries[idx].noLigatures = noLigBox.checked;
       });
     }
 
@@ -3192,14 +3257,18 @@ function parseHexColor(s) {
 //
 // Returns plain text if no styled ranges deviate from base.
 function encodeStyleTags(tk) {
-  // PS uses \r for paragraph breaks (Enter) and \x03 (ETX) for soft returns
-  // (Shift+Enter). Expose paragraph breaks as real newlines and soft returns
-  // as the literal "\n" sequence so users can re-type the same convention.
-  const text = (tk?.textKey || "")
-    .replace(new RegExp("\\x03", "g"), "\\n")
-    .replace(/\r/g, "\n");
+  // Work in the RAW textKey coordinate space (ETX = 1 char, \r = 1 char) so
+  // that textStyleRange from/to offsets line up 1:1 with characters. We only
+  // rewrite ETX → "\n" and \r → real newline at EMIT time, per character —
+  // rewriting up front would nudge every range after a soft return left by
+  // one, which used to make <sup>/<color>/… wrap the wrong glyph (e.g. a
+  // superscript "$" tag landing on the preceding "E" + line break).
+  const raw = tk?.textKey || "";
   const ranges = tk?.textStyleRange || [];
-  if (!text || !ranges.length) return text;
+  if (!raw || !ranges.length) {
+    return raw.replace(new RegExp("\\x03", "g"), "\\n").replace(/\r/g, "\n");
+  }
+  const text = raw; // alias — indices below are all in raw space
 
   // Pick base = style that covers the MOST characters across all ranges
   // (not the single longest range). Two short Medium ranges should outweigh
@@ -3311,6 +3380,11 @@ function encodeStyleTags(tk) {
     return s;
   }
 
+  // ETX (soft return, Shift+Enter) → literal "\n"; \r (paragraph break, Enter)
+  // → real newline. Done per-char so style offsets stay aligned to raw text.
+  const ETX = String.fromCharCode(3);
+  const emitChar = (ch) => (ch === ETX ? "\\n" : ch === "\r" ? "\n" : ch);
+
   let out = "";
   let curKey = "";
   let curFlags = null;
@@ -3323,7 +3397,7 @@ function encodeStyleTags(tk) {
       curKey = k;
       curFlags = f;
     }
-    out += text[i];
+    out += emitChar(text[i]);
   }
   if (curFlags) out += closeTags(curFlags);
   return out;
@@ -3456,6 +3530,14 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
   // User's inline tags (b/i/color/font, sup/sub) are applied AFTER this, on top,
   // so they always win for the tagged span. Untagged chars keep the per-char
   // style from oldRanges via LCS.
+  // Track which new chars got an explicit per-char style from LCS. Chars that
+  // did NOT (e.g. a "3" typed in place of "5") stay baseStyle by default —
+  // which is wrong when they sit inside a differently-styled run: the "3"
+  // replacing "5" in "$500"→"$300" would render at the base *text* size (41.67)
+  // instead of the surrounding digits' size (50). We fill those gaps below from
+  // the nearest assigned neighbour, matching how Photoshop inherits the run
+  // style of the character you type next to.
+  const assigned = new Array(newText.length).fill(false);
   {
     const map = lcsMapOldToNew(oldText, newText);
     for (const r of oldRanges) {
@@ -3464,9 +3546,65 @@ function buildRangesForNewText(oldText, oldRanges, newText, markerSpans) {
       const to = Math.min(oldText.length, r.to ?? 0);
       for (let k = from; k < to; k++) {
         const nj = map[k];
-        if (nj >= 0) posStyle[nj] = r.textStyle;
+        if (nj >= 0) { posStyle[nj] = r.textStyle; assigned[nj] = true; }
       }
     }
+  }
+  // Gap fill: an unassigned char (e.g. a "3" typed in place of "5") flanked by
+  // assigned chars of the SAME visual style inherits that style — it was
+  // inserted mid-run, so it should match its neighbours, not the base *text*
+  // style. Compare by content (size/color/font/baseline), not object identity,
+  // because "$" and "500" in "$500" are separate ranges with identical style.
+  // We fill from the left neighbour when both sides are equivalent (or when
+  // only one side exists and it's equivalent to the fallback base). This is how
+  // Photoshop inherits the run style of the character you type next to.
+  // Match key deliberately EXCLUDES baseline: a "$" that is superscript and the
+  // "00" beside it at the same size/font/color are the same *run* for fill
+  // purposes — the replaced digit belongs with them (size 50), not with the
+  // base heading text (size 41.67). We compare face/size/color only, then reset
+  // baseline to normal on the filled char so it never inherits the neighbour's
+  // super/subscript (e.g. "3" in "$300" must sit on the normal baseline, not
+  // ride up with the superscript "$").
+  const runKey = (ts) => {
+    if (!ts) return "∅";
+    const c = ts.color;
+    const sz = ts.size?._value ?? ts.size ?? "";
+    return [
+      ts.fontPostScriptName || "", ts.fontStyleName || "", sz,
+      c ? `${u(c.red)|0},${u(c.grain ?? c.green)|0},${u(c.blue)|0}` : "",
+    ].join("|");
+  };
+  const clearBaseline = (ts) => {
+    const bl = String(ts?.baseline?._value ?? ts?.baseline ?? "");
+    if (!bl || bl === "normal") return ts; // already normal — no clone needed
+    const cloned = { ...ts, baseline: { _enum: "baselineType", _value: "normal" } };
+    delete cloned.otbaseline;
+    return cloned;
+  };
+  // Prefer the neighbour of the SAME character class (digit↔digit, letter↔
+  // letter). A replaced digit like "2" in "$200" should follow the adjacent
+  // digits "00" (its real run), not a symbol like "$" that may sit in a
+  // different-sized run (e.g. a superscript "$" merged into the heading style
+  // after a prior edit). Falls back to whichever neighbour exists.
+  const cls = (ch) => /\d/.test(ch) ? "d" : /[A-Za-z]/.test(ch) ? "w" : "o";
+  for (let k = 0; k < newText.length; k++) {
+    if (assigned[k]) continue;
+    let l = k - 1; while (l >= 0 && !assigned[l]) l--;
+    let r = k + 1; while (r < newText.length && !assigned[r]) r++;
+    const ls = l >= 0 ? posStyle[l] : null;
+    const rs = r < newText.length ? posStyle[r] : null;
+    const myCls = cls(newText[k]);
+    const lSame = l >= 0 && cls(newText[l]) === myCls;
+    const rSame = r < newText.length && cls(newText[r]) === myCls;
+    // 1) Same-class neighbour wins (right preferred for trailing digits like
+    //    the "2" before "00"); 2) else the run-agreeing side; 3) else any side.
+    let pick = null;
+    if (rSame && lSame) pick = runKey(ls) === runKey(rs) ? ls : rs;
+    else if (rSame) pick = rs;
+    else if (lSame) pick = ls;
+    else if (ls && (!rs || runKey(ls) === runKey(rs))) pick = ls;
+    else if (rs) pick = rs;
+    if (pick) posStyle[k] = clearBaseline(pick);
   }
 
   // Apply sup/sub first (these replace the whole style).
@@ -3827,6 +3965,49 @@ async function replaceTextOnLayer(occ, newContent, opts = {}) {
         }
       } catch (e) {
         log(`  [TXT] ignoreAllCaps failed: ${e?.message || e}`);
+      }
+    }
+    // After textKey is applied, if user asked to disable ligatures, re-set the
+    // text layer with a rangeless textStyleRange spanning the whole string that
+    // forces ligature=false and altligature=false (standard + discretionary).
+    // Done as a separate pass — same rationale as ignoreAllCaps — so the first
+    // pass with original styles doesn't trip on a linked Character Style sheet.
+    if (opts.noLigatures) {
+      try {
+        const cur = await getTargetLayerDescriptor();
+        const curTK = cur.textKey;
+        const len = (curTK?.textKey || "").length;
+        if (len > 0 && curTK?.textStyleRange?.length) {
+          const baseStyle = {
+            ...curTK.textStyleRange[0].textStyle,
+            ligature: false,
+            altligature: false,
+          };
+          if (baseStyle.baseParentStyle) {
+            baseStyle.baseParentStyle = {
+              ...baseStyle.baseParentStyle,
+              ligature: false,
+              altligature: false,
+            };
+          }
+          await bp([{
+            _obj: "set",
+            _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+            to: {
+              _obj: "textLayer",
+              textStyleRange: [{
+                _obj: "textStyleRange",
+                from: 0,
+                to: len,
+                textStyle: baseStyle,
+              }],
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }]);
+          log(`  [TXT] noLigatures: forced ligature=false + altligature=false on 0-${len}`);
+        }
+      } catch (e) {
+        log(`  [TXT] noLigatures failed: ${e?.message || e}`);
       }
     }
   } catch (e) {
@@ -4357,7 +4538,7 @@ async function runTextOps(textOps, step, totalSteps) {
 async function runOneTextOp(entry, occ) {
   try {
     await switchActiveDoc(occ.docId);
-    await replaceTextOnLayer(occ, entry.newContent, { ignoreAllCaps: !!entry.ignoreAllCaps });
+    await replaceTextOnLayer(occ, entry.newContent, { ignoreAllCaps: !!entry.ignoreAllCaps, noLigatures: !!entry.noLigatures });
     state.modifiedDocIds.add(occ.docId);
     log(`[TEXT] ${entry.name} → "${entry.newContent}"  (${occ.target})`);
   } catch (e) {

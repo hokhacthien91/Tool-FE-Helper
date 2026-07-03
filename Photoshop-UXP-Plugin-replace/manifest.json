@@ -1,7 +1,7 @@
 {
   "id": "com.gg.content-replacer.v1",
   "name": "Content Replacer",
-  "version": "0.2.3",
+  "version": "0.2.6",
   "main": "index.html",
   "host": {
     "app": "PS",

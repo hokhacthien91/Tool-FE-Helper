@@ -499,6 +499,13 @@
       Tuy nhiên với text quá phức tạp, hãy kiểm tra lại sau Apply. Trống ô textarea = bỏ qua layer đó.
     </div>
 
+    <div class="card tip">
+      <div class="card-title">No ligatures & Ignore All Caps</div>
+      Mỗi text row có 2 checkbox: <strong>Ignore All Caps</strong> (bỏ định dạng All Caps của layer, hiện chữ đúng như gõ)
+      và <strong>No ligatures</strong> (tắt ligature chuẩn + discretionary — ví dụ <code>fi</code>, <code>fl</code>, <code>st</code> —
+      để từng glyph render riêng, tránh dính chữ). Cả hai áp cho toàn bộ text của layer khi Apply.
+    </div>
+
     <div class="card ok">
       <div class="card-title">Save một lần cho tất cả</div>
       Sau Apply, nút <strong>Save</strong> sẽ lưu tất cả document đã bị chỉnh sửa.
@@ -712,6 +719,14 @@
       <div class="card-title">Mixed text styling caveat</div>
       The plugin tries to preserve <em>mixed styling</em> (uppercase runs, varied colors/fonts inside a single layer).
       For very complex text, double-check the result after Apply. An empty textarea means "skip this layer".
+    </div>
+
+    <div class="card tip">
+      <div class="card-title">No ligatures & Ignore All Caps</div>
+      Each text row has two checkboxes: <strong>Ignore All Caps</strong> (override the layer's All Caps style so text
+      shows exactly as typed) and <strong>No ligatures</strong> (turn off standard + discretionary ligatures — e.g.
+      <code>fi</code>, <code>fl</code>, <code>st</code> — so glyphs render individually instead of joining). Both apply
+      to the layer's entire text on Apply.
     </div>
 
     <div class="card ok">

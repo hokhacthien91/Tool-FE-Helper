@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const chkPlaceMain    = $("chkPlaceMain");
   const chkPlaceCamp    = $("chkPlaceCamp");
   const chkPlaceSub     = $("chkPlaceSub");
+  const chkCustomLogoSize = $("chkCustomLogoSize");
   const selLogoH = $("selLogoH"), selLogoV = $("selLogoV");
   const selUrlH  = $("selUrlH"),  selUrlV  = $("selUrlV");
   const selQrH   = $("selQrH"),   selQrV   = $("selQrV");
@@ -787,6 +788,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof parsed.placeMain === "boolean") { chkPlaceMain.checked = parsed.placeMain; prevFound.main = true; }
         if (typeof parsed.placeCamp === "boolean") { chkPlaceCamp.checked = parsed.placeCamp; prevFound.camp = true; }
         if (typeof parsed.placeSub  === "boolean") { chkPlaceSub.checked  = parsed.placeSub;  prevFound.sub  = true; }
+        if (typeof parsed.customLogoSize === "boolean") chkCustomLogoSize.checked = parsed.customLogoSize;
         if (parsed.logoH) selLogoH.value = parsed.logoH;
         if (parsed.logoV) selLogoV.value = parsed.logoV;
         if (parsed.urlH)  selUrlH.value  = parsed.urlH;
@@ -865,6 +867,7 @@ document.addEventListener("DOMContentLoaded", () => {
         placeMain: !!chkPlaceMain.checked,
         placeCamp: !!chkPlaceCamp.checked,
         placeSub:  !!chkPlaceSub.checked,
+        customLogoSize: !!chkCustomLogoSize.checked,
         logoH: selLogoH.value, logoV: selLogoV.value,
         urlH:  selUrlH.value,  urlV:  selUrlV.value,
         qrH:   selQrH.value,   qrV:   selQrV.value,
@@ -1334,9 +1337,12 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Letter reference \"" + letterRefName + "\" not found.", "err");
       return;
     }
-    // 3. Column width
+    // 3. Column width — only required when the logo is auto-scaled to the column
+    //    (custom logo size keeps the logo as-is, so column width is irrelevant).
     const colW = computeColumnWidthPt();
-    if (isNaN(colW)) { setStatus("Column width invalid.", "err"); return; }
+    if (isNaN(colW) && !chkCustomLogoSize.checked) {
+      setStatus("Column width invalid.", "err"); return;
+    }
 
     // From here on, all geometry reads/writes (geometricBounds, pageWidth, margins)
     // must be in POINTS so they match colW (pt). Force ruler to pt and restore in finally.
@@ -1363,7 +1369,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (curLogoW <= 0 || curLogoH <= 0) {
       setStatus("Logo has zero size.", "err"); return;
     }
-    const logoScale = colW / curLogoW;
+    // Custom logo size: keep the logo as the user sized it (scale = 1, no resize).
+    // Default: scale the logo so its width matches one column. Either way, every
+    // other component (URL ½-logo, QR, A-unit spacing) keys off the resulting size.
+    const logoScale = chkCustomLogoSize.checked ? 1 : (colW / curLogoW);
     const newLogoW  = curLogoW * logoScale;
     const newLogoH  = curLogoH * logoScale;
 
@@ -1728,7 +1737,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // 10a. Resize/move components
         if (chkPlaceLogo.checked) {
           logo.geometricBounds = logoNewBounds;
-        } else {
+        } else if (!chkCustomLogoSize.checked) {
+          // Logo not placed by spacing → fit it to the column (unless custom size,
+          // in which case leave the logo exactly as the user sized it).
           const fit = computeFittedBounds(logo, pageW, pageH, "width", colW);
           if (fit) logo.geometricBounds = fit.bounds;
         }
@@ -1898,6 +1909,7 @@ document.addEventListener("DOMContentLoaded", () => {
   chkPlaceMain.addEventListener("change", persistFitTarget);
   chkPlaceCamp.addEventListener("change", persistFitTarget);
   chkPlaceSub .addEventListener("change", persistFitTarget);
+  chkCustomLogoSize.addEventListener("change", persistFitTarget);
   selLogoH.addEventListener("change", persistFitTarget);
   selLogoV.addEventListener("change", persistFitTarget);
   selUrlH .addEventListener("change", persistFitTarget);

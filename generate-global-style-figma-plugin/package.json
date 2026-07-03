@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node ./build.mjs",
-    "prod": "npm run build && node ./inject-assets.cjs",
+    "prod": "npm run build",
     "demo": "npx http-server ./plugin-generate-global-style-figma",
     "watch": "node ./build.mjs --watch"
   },

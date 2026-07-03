@@ -2,8 +2,125 @@ console.clear();
 
 figma.showUI(__html__, { width: 600, height: 500 });
 
+// --- Tab 4 live preview --------------------------------------------------
+// Keep the latest frame-name mapping the UI sent so we can re-scan whenever
+// the canvas selection changes and tell the UI which frames are found.
+let lastLayoutFrameNames = {};
+
+function sendLayoutPreview() {
+  const selection = figma.currentPage.selection;
+  if (!selection || selection.length === 0) {
+    figma.ui.postMessage({ type: 'layoutPreview', hasSelection: false, found: [], skipped: [] });
+    return;
+  }
+  try {
+    const allTypes = ['color', 'typography', 'button', 'textFamily', 'spacing', 'border', 'shadow', 'breakpoint'];
+    // Dry scan only — don't ship JSON, just find/skipped from the selection.
+    const { found, skipped } = exportFromGlobalStyleLayout(
+      selection, allTypes, lastLayoutFrameNames, 'preview'
+    );
+    figma.ui.postMessage({ type: 'layoutPreview', hasSelection: true, found, skipped });
+  } catch (e) {
+    console.warn('[LAYOUT PREVIEW] scan failed:', e);
+    figma.ui.postMessage({ type: 'layoutPreview', hasSelection: true, found: [], skipped: [] });
+  }
+}
+
+// Note: no longer auto-scanning on selectionchange — the user triggers the
+// scan explicitly via the "Check" button in Tab 4 (message type 'previewLayout').
+
+// Build a "what it created" detail list for Tab 1 (Generate) from source JSON.
+function buildGenerateNotes(globalStyle, createVariables, prefix) {
+  const notes = [];
+  const colorCount = globalStyle.colorNameMap ? Object.keys(globalStyle.colorNameMap).length : 0;
+  const typoCount = Array.isArray(globalStyle.typographyStyles) ? globalStyle.typographyStyles.length : 0;
+  let spacingCount = 0;
+  if (typeof globalStyle.spacingScale === 'string') spacingCount = globalStyle.spacingScale.split(',').filter(s => s.trim()).length;
+  else if (Array.isArray(globalStyle.spacingScale)) spacingCount = globalStyle.spacingScale.length;
+  if (colorCount) notes.push(`Colors: ${colorCount} swatches`);
+  if (typoCount) notes.push(`Typography: ${typoCount} text styles`);
+  if (spacingCount) notes.push(`Spacing: ${spacingCount} steps`);
+  notes.push(createVariables
+    ? `Created Figma Variables + Text Styles${prefix ? ` (prefix "${prefix}")` : ''}`
+    : `Layout preview only (no Variables/Styles created)`);
+  return notes;
+}
+
+// Build a "what it imported / created" detail list for Tab 2 (Import Tokens).
+function buildImportNotes(parsedTokens, tokenFiles, createVariables, generateLayout) {
+  const notes = [];
+  const fileNames = Object.keys(tokenFiles || {});
+  if (fileNames.length) notes.push(`Read ${fileNames.length} JSON file(s): ${fileNames.join(', ')}`);
+  const cnt = (a) => Array.isArray(a) ? a.length : (a && typeof a === 'object' ? Object.keys(a).length : 0);
+  const parts = [];
+  if (cnt(parsedTokens.colors)) parts.push(`${cnt(parsedTokens.colors)} colors`);
+  if (cnt(parsedTokens.typography)) parts.push(`${cnt(parsedTokens.typography)} text styles`);
+  if (cnt(parsedTokens.spacing)) parts.push(`${cnt(parsedTokens.spacing)} spacing`);
+  if (cnt(parsedTokens.borders)) parts.push(`${cnt(parsedTokens.borders)} borders`);
+  if (cnt(parsedTokens.shadows)) parts.push(`${cnt(parsedTokens.shadows)} shadows`);
+  if (cnt(parsedTokens.breakpoints)) parts.push(`${cnt(parsedTokens.breakpoints)} breakpoints`);
+  if (cnt(parsedTokens.buttons)) parts.push(`${cnt(parsedTokens.buttons)} buttons`);
+  if (parts.length) notes.push(`Parsed: ${parts.join(', ')}`);
+  notes.push(createVariables ? 'Created Figma Variables + Text Styles' : 'Did NOT create Variables');
+  notes.push(generateLayout ? 'Generated Global Style layout' : 'Did NOT generate layout');
+  return notes;
+}
+
 figma.ui.onmessage = async (msg) => {
-  if (msg.type === 'checkDuplicates') {
+  if (msg.type === 'previewLayout') {
+    // UI changed the frame-name fields (or opened Tab 4) → rescan now.
+    lastLayoutFrameNames = msg.frameNames || {};
+    sendLayoutPreview();
+    return;
+  } else if (msg.type === 'scanExportSources') {
+    // Tab 3: quick scan of what's available in this file so the UI can disable
+    // checkboxes for token types that have no source data. Counts only — does
+    // not build the full export. Button is excluded (it depends on selection).
+    try {
+      const colorVars = figma.variables.getLocalVariables('COLOR');
+      const paintStyles = figma.getLocalPaintStyles();
+      const textStyles = figma.getLocalTextStyles();
+      const numberVars = figma.variables.getLocalVariables('FLOAT');
+      const effectStyles = figma.getLocalEffectStyles();
+      const numName = (re) => numberVars.some(v => re.test((v.name || '').toLowerCase()) ||
+        re.test(getCollectionName(v.variableCollectionId).toLowerCase()));
+
+      const available = {
+        color: (colorVars.length > 0) || (paintStyles.length > 0),
+        typography: textStyles.length > 0,
+        // FLOAT vars grouped by name/collection keyword
+        spacing: numName(/spacing|space|gap/),
+        shadow: effectStyles.length > 0,
+        border: numName(/border|radius/),
+        breakpoint: numName(/breakpoint|screen|container/)
+      };
+      console.log('[SCAN] available:', JSON.stringify(available));
+      figma.ui.postMessage({ type: 'exportSourcesScanned', available });
+    } catch (e) {
+      console.warn('[SCAN] failed:', e);
+      figma.ui.postMessage({ type: 'exportSourcesScanned', available: null });
+    }
+    return;
+  } else if (msg.type === 'previewButtonFrames') {
+    // Tab 3 "Check" — scan the current selection for the button / text-link
+    // frames (by name) and report which were found, plus whether each holds a
+    // COMPONENT_SET (so the user knows it will export).
+    const selection = figma.currentPage.selection;
+    const frameNames = msg.frameNames || {};
+    const found = [];
+    const skipped = [];
+    if (selection && selection.length) {
+      try {
+        const candidates = collectLayoutFrames(selection);
+        [['button', 'button'], ['textLink', 'textLink']].forEach(([key]) => {
+          const frame = findFramesByName(candidates, makeFrameNameMatcher(key, frameNames))[0];
+          if (frame) found.push(key); else skipped.push(key);
+        });
+      } catch (e) { console.warn('[BUTTON PREVIEW] failed:', e); }
+    }
+    figma.ui.postMessage({ type: 'buttonFramesPreview', hasSelection: !!(selection && selection.length), found, skipped });
+    return;
+  } else if (msg.type === 'checkDuplicates') {
     // Check for duplicate names before creating variables
     const data = msg.data;
     if (!data || !data.length) {
@@ -58,7 +175,7 @@ figma.ui.onmessage = async (msg) => {
       const successMsg = createVariables
         ? 'Global Style generated successfully! Variables & Text Styles created.'
         : 'Global Style generated successfully!';
-      figma.ui.postMessage({ type: 'status', message: successMsg });
+      figma.ui.postMessage({ type: 'status', message: successMsg, notes: buildGenerateNotes(globalStyle, createVariables, prefix) });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
@@ -135,7 +252,7 @@ figma.ui.onmessage = async (msg) => {
         : createVariables
         ? 'Tokens imported successfully! Variables created.'
         : 'Tokens imported successfully! Layout generated.';
-      figma.ui.postMessage({ type: 'status', message: successMsg });
+      figma.ui.postMessage({ type: 'status', message: successMsg, notes: buildImportNotes(parsedTokens, tokenFiles, createVariables, generateLayout) });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
@@ -180,7 +297,7 @@ figma.ui.onmessage = async (msg) => {
         : createVariables
         ? 'Tokens imported successfully! Variables created.'
         : 'Tokens imported successfully! Layout generated.';
-      figma.ui.postMessage({ type: 'status', message: successMsg });
+      figma.ui.postMessage({ type: 'status', message: successMsg, notes: buildImportNotes(parsedTokens, tokenFiles, createVariables, generateLayout) });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
@@ -225,7 +342,7 @@ figma.ui.onmessage = async (msg) => {
         : createVariables
         ? 'Tokens imported successfully! Variables created.'
         : 'Tokens imported successfully! Layout generated.';
-      figma.ui.postMessage({ type: 'status', message: successMsg });
+      figma.ui.postMessage({ type: 'status', message: successMsg, notes: buildImportNotes(parsedTokens, tokenFiles, createVariables, generateLayout) });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
@@ -254,22 +371,63 @@ figma.ui.onmessage = async (msg) => {
       const successMsg = createVariables
         ? 'Global Style generated successfully! Variables & Text Styles created.'
         : 'Global Style generated successfully!';
-      figma.ui.postMessage({ type: 'status', message: successMsg });
+      figma.ui.postMessage({ type: 'status', message: successMsg, notes: buildGenerateNotes(globalStyle, createVariables, prefix) });
     } catch (error) {
       console.error(error);
       figma.ui.postMessage({ type: 'status', message: `Error: ${error.message}`, error: true });
+    }
+  } else if (msg.type === 'exportFromLayout') {
+    try {
+      const tokenTypes = msg.tokenTypes || [];
+      const projectName = msg.projectName || 'Project A — Corporate / Enterprise';
+
+      const selection = figma.currentPage.selection;
+      if (!selection || selection.length === 0) {
+        figma.ui.postMessage({
+          type: 'status',
+          message: 'Please select the "Global Style" section on the canvas first.',
+          error: true
+        });
+        return;
+      }
+
+      const frameNames = msg.frameNames || {};
+      const { exported, skipped, found, notices, notes } = exportFromGlobalStyleLayout(selection, tokenTypes, frameNames, projectName);
+
+      figma.ui.postMessage({
+        type: 'layoutExported',
+        tokens: exported,
+        skipped: skipped,
+        found: found,
+        notices: notices,
+        notes: notes,
+        projectName: projectName
+      });
+    } catch (error) {
+      console.error(error);
+      figma.ui.postMessage({
+        type: 'status',
+        message: `Error exporting from layout: ${error.message}`,
+        error: true
+      });
     }
   } else if (msg.type === 'exportTokens') {
     try {
       const tokenTypes = msg.tokenTypes || [];
       const projectName = msg.projectName || 'Project A — Corporate / Enterprise';
-      
-      const exportedTokens = await exportTokensFromFigma(tokenTypes, projectName);
-      
+      const textColor = msg.textColor || '#000000';
+      const buttonFrameNames = msg.buttonFrameNames || {};
+      // Button is read from the current canvas selection (like Tab 4).
+      const buttonSelection = tokenTypes.includes('button') ? figma.currentPage.selection : null;
+
+      const { exported: exportedTokens, skipped, notes } = await exportTokensFromFigma(tokenTypes, projectName, textColor, buttonFrameNames, buttonSelection);
+
       // Send back to UI for download
-      figma.ui.postMessage({ 
-        type: 'tokensExported', 
+      figma.ui.postMessage({
+        type: 'tokensExported',
         tokens: exportedTokens,
+        skipped: skipped,
+        notes: notes,
         projectName: projectName
       });
     } catch (error) {
@@ -993,53 +1151,160 @@ function rgbToHex(r, g, b) {
 // EXPORT TOKENS FUNCTIONS
 // ============================================
 
-async function exportTokensFromFigma(tokenTypes, projectName) {
+// Human-readable labels for the "skipped (not found)" notice in the UI,
+// shared by both exporters (Export Tokens + Export from Layout).
+const TOKEN_LABELS = {
+  color: 'Color',
+  typography: 'Typography',
+  spacing: 'Spacing',
+  shadow: 'Shadow',
+  border: 'Border',
+  breakpoint: 'Breakpoint',
+  button: 'Button / Text Link',
+  textFamily: 'Text Family'
+};
+
+// True when a value holds no leaf data: an empty object, or an object whose
+// every value is itself empty (recursively). Catches deeply-nested empties
+// like border:{ radius:{}, width:{} } and button:{}, textLink:{}.
+function isEmptyDeep(v) {
+  if (v == null) return true;
+  if (typeof v !== 'object') return false; // a string/number/bool is real data
+  if (Array.isArray(v)) return v.length === 0;
+  const keys = Object.keys(v);
+  if (keys.length === 0) return true;
+  return keys.every(k => isEmptyDeep(v[k]));
+}
+
+// True when an exported token object carries no actual token data — only the
+// wrapper metadata ($schema/$type/$project/config) or empty data branches.
+const EXPORT_META_KEYS = new Set(['$schema', '$type', '$project', 'config']);
+function isEmptyTokenResult(result) {
+  if (!result || typeof result !== 'object') return true;
+  const dataKeys = Object.keys(result).filter(k => !EXPORT_META_KEYS.has(k));
+  if (dataKeys.length === 0) return true;
+  return dataKeys.every(k => isEmptyDeep(result[k]));
+}
+
+// Count leaf token entries in an exported result (ignores $meta wrappers).
+function countTokenLeaves(result) {
+  if (!result || typeof result !== 'object') return 0;
+  let n = 0;
+  const META = new Set(['$schema', '$type', '$project', 'config']);
+  function walk(o) {
+    for (const k of Object.keys(o)) {
+      if (META.has(k)) continue;
+      const v = o[k];
+      if (v && typeof v === 'object' && (v.value !== undefined || v.fontSize !== undefined || v.mobile || v.default)) n++;
+      else if (v && typeof v === 'object' && !Array.isArray(v)) walk(v);
+      else if (Array.isArray(v)) n += v.length;
+    }
+  }
+  walk(result);
+  return n;
+}
+
+async function exportTokensFromFigma(tokenTypes, projectName, textColor = '#000000', buttonFrameNames = {}, buttonSelection = null) {
   const exported = {};
-  
+  // Track requested token types that produced no data so the UI can tell the
+  // user which ones were skipped instead of silently shipping empty files.
+  const skipped = [];
+  // Human-readable "what it saw / what it did" lines for the UI.
+  const notes = [];
+
+  // Keep `type` only if `result` has real data; otherwise record it as skipped.
+  function keep(type, result) {
+    if (isEmptyTokenResult(result)) {
+      console.log(`[EXPORT] ⊘ ${type} skipped (no data found)`);
+      skipped.push(TOKEN_LABELS[type] || type);
+      notes.push(`${TOKEN_LABELS[type] || type}: not found`);
+      return;
+    }
+    exported[type] = result;
+    return result;
+  }
+
   // Get all Figma data
   const colorVariables = figma.variables.getLocalVariables("COLOR");
   const textStyles = figma.getLocalTextStyles();
   const numberVariables = figma.variables.getLocalVariables("FLOAT");
   const paintStyles = figma.getLocalPaintStyles();
-  
+  const fontSizeVarCount = numberVariables.filter(v => /font[\s\-]?size/i.test(v.name || '')).length;
+
+  console.log(`[EXPORT] seen: ${colorVariables.length} color vars, ${paintStyles.length} paint styles, ${textStyles.length} text styles, ${numberVariables.length} number vars`);
+
   // Export each token type
   if (tokenTypes.includes('color')) {
+    console.log('[EXPORT] ▶ color start');
     // Prefer Color Variables; fall back to Color Styles (Paint Styles)
     // when the file has no local color variables (e.g. styles-only files).
+    let r;
     if (colorVariables && colorVariables.length > 0) {
-      exported.color = exportColorTokens(colorVariables, projectName);
+      r = keep('color', exportColorTokens(colorVariables, projectName));
+      if (r) notes.push(`Colors: ${countTokenLeaves(r)} from ${colorVariables.length} Variables`);
     } else {
-      exported.color = exportColorTokensFromPaintStyles(paintStyles, projectName);
+      r = keep('color', exportColorTokensFromPaintStyles(paintStyles, projectName));
+      if (r) notes.push(`Colors: ${countTokenLeaves(r)} from ${paintStyles.length} Color Styles (no variables)`);
     }
+    console.log('[EXPORT] ✔ color done');
   }
-  
+
   if (tokenTypes.includes('typography')) {
-    exported.typography = await exportTypographyTokens(textStyles, projectName);
+    console.log('[EXPORT] ▶ typography start');
+    const r = keep('typography', await exportTypographyTokens(textStyles, projectName, textColor));
+    if (r) {
+      let line = `Typography: ${countTokenLeaves({ x: r.textStyles })} styles from ${textStyles.length} Text Styles`;
+      if (fontSizeVarCount > 0) line += ` + ${fontSizeVarCount} Font-size Variables (responsive sizes merged)`;
+      notes.push(line);
+    }
+    console.log('[EXPORT] ✔ typography done');
   }
-  
+
   if (tokenTypes.includes('spacing')) {
-    exported.spacing = exportSpacingTokens(numberVariables, projectName);
+    console.log('[EXPORT] ▶ spacing start');
+    const r = keep('spacing', exportSpacingTokens(numberVariables, projectName));
+    if (r) notes.push(`Spacing: ${countTokenLeaves(r)} from Number Variables`);
+    console.log('[EXPORT] ✔ spacing done');
   }
-  
+
   if (tokenTypes.includes('shadow')) {
+    console.log('[EXPORT] ▶ shadow start');
     const effectStyles = figma.getLocalEffectStyles();
-    exported.shadow = exportShadowTokens(effectStyles, projectName);
+    const r = keep('shadow', exportShadowTokens(effectStyles, projectName));
+    if (r) notes.push(`Shadow: ${countTokenLeaves(r)} from ${effectStyles.length} Effect Styles`);
+    console.log('[EXPORT] ✔ shadow done');
   }
-  
+
   if (tokenTypes.includes('border')) {
-    exported.border = exportBorderTokens(numberVariables, projectName);
+    console.log('[EXPORT] ▶ border start');
+    const r = keep('border', exportBorderTokens(numberVariables, projectName));
+    if (r) notes.push(`Border: ${countTokenLeaves(r)} radius/width from Number Variables`);
+    console.log('[EXPORT] ✔ border done');
   }
-  
+
   if (tokenTypes.includes('breakpoint')) {
-    exported.breakpoint = exportBreakpointTokens(numberVariables, projectName);
+    console.log('[EXPORT] ▶ breakpoint start');
+    const r = keep('breakpoint', exportBreakpointTokens(numberVariables, projectName));
+    if (r) notes.push(`Breakpoint: ${countTokenLeaves(r)} from Number Variables`);
+    console.log('[EXPORT] ✔ breakpoint done');
   }
-  
+
   if (tokenTypes.includes('button')) {
-    // Button tokens might need special handling (from components)
-    exported.button = exportButtonTokens(projectName);
+    console.log('[EXPORT] ▶ button start');
+    // Button: read from the canvas selection (preferred) or fall back to a
+    // document scan for exact "Buttons"/"Text Links" frames.
+    const r = keep('button', exportButtonTokens(projectName, buttonFrameNames, buttonSelection));
+    if (r) {
+      const src = (buttonSelection && buttonSelection.length) ? 'from selected frame' : 'from document scan';
+      const hasBtn = r.button && Object.keys(r.button).length > 0;
+      const hasLink = r.textLink && Object.keys(r.textLink).length > 0;
+      notes.push(`Button: ${src}${hasBtn ? ', button ✓' : ''}${hasLink ? ', text-link ✓' : ''}${!hasBtn && !hasLink ? ' — none found' : ''}`);
+    }
+    console.log('[EXPORT] ✔ button done');
   }
-  
-  return exported;
+
+  console.log('[EXPORT] ✔✔ ALL DONE, sending to UI');
+  return { exported, skipped, notes };
 }
 
 function exportColorTokens(colorVariables, projectName) {
@@ -1159,9 +1424,9 @@ function exportColorTokensFromPaintStyles(paintStyles, projectName) {
   };
 }
 
-async function exportTypographyTokens(textStyles, projectName) {
+async function exportTypographyTokens(textStyles, projectName, textColor = '#000000') {
   const textStylesData = {};
-  
+
   // Styles to skip - these are already exported in linksColors
   const skipStyles = ['default', 'hover', 'focus'];
   
@@ -1205,8 +1470,9 @@ async function exportTypographyTokens(textStyles, projectName) {
   
   // Second pass: build nested structure
   Object.keys(stylesByName).forEach(styleName => {
+   try {
     const breakpointStyles = stylesByName[styleName];
-    
+
     console.log(`[EXPORT TYPOGRAPHY] Building structure for style: ${styleName}`);
     console.log(`[EXPORT TYPOGRAPHY]   → Available breakpoints:`, Object.keys(breakpointStyles));
     
@@ -1280,11 +1546,43 @@ async function exportTypographyTokens(textStyles, projectName) {
         textStylesData[styleName] = { [firstBreakpoint]: buildStyleObject(style, null, bodyFontFamily, styleName) };
       }
     }
+   } catch (e) {
+     console.error(`[EXPORT TYPOGRAPHY] ✖ FAILED on style "${styleName}":`, e && e.message, e);
+   }
   });
-  
+
+  // Enrich with per-breakpoint font sizes from Typography Variables. Text
+  // styles only carry one size each (usually desktop); the "Typography"
+  // variable collection often stores Font-size with Desktop/Mobile modes. We
+  // keep the text style as the base and only ADD the missing mobile/tablet
+  // sizes from the variables — never overwrite an existing value.
+  try {
+    enrichTypographyWithVariableModes(textStylesData, textStyles);
+  } catch (e) {
+    console.warn('[EXPORT TYPOGRAPHY] variable-mode enrich failed, skipping:', e);
+  }
+
+  // Figma Text Styles do not store color, so apply the user-chosen default
+  // color (set in the UI) to every style's base. Users can change it before
+  // exporting or edit the JSON afterwards.
+  // Rebuild the base object so plain properties (incl. `color`) come first and
+  // the breakpoint overrides (`desktop`/`tablet`) always stay LAST.
+  Object.keys(textStylesData).forEach(styleName => {
+    const base = textStylesData[styleName] && textStylesData[styleName].mobile;
+    if (!base) return;
+    if (textColor && base.color === undefined) base.color = textColor;
+    textStylesData[styleName].mobile = reorderStyleProps(base);
+  });
+
   // Export linksColors from Link text styles
-  const linksColors = await exportLinksColors(textStyles);
-  
+  let linksColors = null;
+  try {
+    linksColors = exportLinksColors(textStyles);
+  } catch (e) {
+    console.warn('[EXPORT TYPOGRAPHY] linksColors export failed, skipping:', e);
+    linksColors = null;
+  }
+
   const result = {
     "$schema": "https://gravity-flex.dev/schemas/tokens.json",
     "$type": "typography",
@@ -1300,43 +1598,152 @@ async function exportTypographyTokens(textStyles, projectName) {
   return result;
 }
 
-async function exportLinksColors(textStyles) {
-  const linksColors = {};
-  
-  // First, try to find "Links Colors" Frame layout (new format)
-  let linksColorsFrame = null;
-  figma.root.children.forEach(page => {
-    const frames = page.findAll(node => 
-      node.type === 'FRAME' && node.name === 'Links Colors'
-    );
-    if (frames.length > 0 && !linksColorsFrame) {
-      linksColorsFrame = frames[0];
+// Reorder a style's base properties so plain props come first in a stable
+// order and the breakpoint override objects (desktop/tablet) are always last.
+function reorderStyleProps(obj) {
+  const ORDER = ['fontSize', 'lineHeight', 'fontWeight', 'fontStyle', 'fontFamily', 'letterSpacing', 'textTransform', 'color'];
+  const out = {};
+  ORDER.forEach(k => { if (obj[k] !== undefined) out[k] = obj[k]; });
+  // any other plain (non-breakpoint) props we didn't list, preserve them
+  Object.keys(obj).forEach(k => {
+    if (out[k] === undefined && k !== 'desktop' && k !== 'tablet') out[k] = obj[k];
+  });
+  // breakpoint overrides last
+  if (obj.tablet !== undefined) out.tablet = obj.tablet;
+  if (obj.desktop !== undefined) out.desktop = obj.desktop;
+  return out;
+}
+
+// Map a Figma variable mode name to a breakpoint key, or null.
+function modeNameToBreakpoint(name) {
+  const s = (name || '').toLowerCase();
+  if (/mobile|\bsm\b|small|phone/.test(s)) return 'mobile';
+  if (/tablet|\bmd\b|medium/.test(s)) return 'tablet';
+  if (/desktop|\blg\b|large|default|web/.test(s)) return 'desktop';
+  return null;
+}
+
+// Normalize a font-size variable key / style name for matching:
+// "Font/Font-size/Display H1" → "display h1"; "H1" → "h1"; "Number  Large" → "number large".
+function normSizeKey(s) {
+  return String(s || '')
+    .replace(/^.*\//, '')          // drop the "Font/Font-size/" path
+    .toLowerCase()
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Add missing per-breakpoint font sizes to `textStylesData` from the Typography
+// variable collection's Font-size variables (which can carry Desktop/Mobile
+// modes). Text style values are kept as-is; only ADD sizes for breakpoints the
+// style is missing. Never overwrites.
+function enrichTypographyWithVariableModes(textStylesData, textStyles) {
+  const floats = figma.variables.getLocalVariables('FLOAT');
+  // Font-size variables = name mentions "font-size" / "font size", or live in a
+  // collection named like Typography. Build: sizeKey -> { bp -> "<n>px" }.
+  const sizeByKey = {};
+  // Cache collection mode maps: collectionId -> { modeId -> breakpoint }.
+  const collModeBp = {};
+  function modeMapFor(collId) {
+    if (collModeBp[collId]) return collModeBp[collId];
+    let map = {};
+    try {
+      const coll = figma.variables.getVariableCollectionById(collId);
+      if (coll && coll.modes) coll.modes.forEach(m => { map[m.modeId] = modeNameToBreakpoint(m.name); });
+    } catch (e) {}
+    collModeBp[collId] = map;
+    return map;
+  }
+
+  floats.forEach(v => {
+    const nameLc = (v.name || '').toLowerCase();
+    if (!/font[\s\-]?size/.test(nameLc)) return; // only Font-size variables
+    const key = normSizeKey(v.name);
+    if (!key) return;
+    const modeBp = modeMapFor(v.variableCollectionId);
+    const byMode = v.valuesByMode || {};
+    if (!sizeByKey[key]) sizeByKey[key] = {};
+    Object.keys(byMode).forEach(modeId => {
+      const bp = modeBp[modeId];
+      const raw = byMode[modeId];
+      if (!bp || typeof raw !== 'number') return;
+      sizeByKey[key][bp] = `${raw}px`;
+    });
+  });
+
+  if (Object.keys(sizeByKey).length === 0) return; // no font-size variables
+
+  // Map each text style → its font-size key. Prefer a bound variable on the
+  // style's fontSize; fall back to matching the style name.
+  const styleToSizeKey = {};
+  textStyles.forEach(st => {
+    let key = null;
+    try {
+      const bound = st.boundVariables && st.boundVariables.fontSize;
+      const id = bound && (bound.id || (Array.isArray(bound) && bound[0] && bound[0].id));
+      if (id) {
+        const bv = figma.variables.getVariableById(id);
+        if (bv) key = normSizeKey(bv.name);
+      }
+    } catch (e) {}
+    if (!key) key = normSizeKey(parseTextStyleName(st.name).styleName || st.name);
+    styleToSizeKey[normSizeKey(parseTextStyleName(st.name).styleName || st.name)] = key;
+  });
+
+  // For each exported style, fill in breakpoints it doesn't have yet.
+  Object.keys(textStylesData).forEach(styleName => {
+    const entry = textStylesData[styleName];
+    const base = entry && entry.mobile;
+    if (!base) return;
+    const lookupKey = styleToSizeKey[normSizeKey(styleName)] || normSizeKey(styleName);
+    const sizes = sizeByKey[lookupKey];
+    if (!sizes) return;
+
+    // Determine which breakpoint the base size represents: if a nested
+    // desktop/tablet override exists it's already responsive — skip. Otherwise
+    // the base IS one breakpoint; add the OTHER breakpoints from variables.
+    const hasDesktopOverride = base.desktop && base.desktop.fontSize;
+    const hasTabletOverride = base.tablet && base.tablet.fontSize;
+
+    // Add desktop override if base differs from variable desktop size and none set.
+    if (!hasDesktopOverride && sizes.desktop && sizes.desktop !== base.fontSize) {
+      base.desktop = Object.assign({}, base.desktop, { fontSize: sizes.desktop });
+    }
+    if (!hasTabletOverride && sizes.tablet && sizes.tablet !== base.fontSize) {
+      base.tablet = Object.assign({}, base.tablet, { fontSize: sizes.tablet });
+    }
+    // If the base size matches the variable's DESKTOP size, the base is desktop
+    // and the variable's MOBILE size is the true mobile base. Reflect that:
+    // move base size into a desktop override and set base (mobile) to the
+    // mobile size — only when we can do so unambiguously.
+    if (sizes.desktop && sizes.mobile && base.fontSize === sizes.desktop && !hasDesktopOverride) {
+      base.desktop = Object.assign({}, base.desktop, { fontSize: sizes.desktop });
+      base.fontSize = sizes.mobile;
+      console.log(`[EXPORT TYPOGRAPHY] ${styleName}: mobile=${sizes.mobile} desktop=${sizes.desktop} (from variables)`);
     }
   });
-  
-  if (linksColorsFrame) {
-    console.log(`[EXPORT LINKS] Found Links Colors Frame, parsing from layout...`);
-    const result = await exportLinksColorsFromLayout(linksColorsFrame);
-    if (result && Object.keys(result).length > 0) {
-      return result;
-    }
-    console.log(`[EXPORT LINKS] Layout export returned empty, trying text styles...`);
-  }
-  
-  // Fallback: Find Link text styles: Link/Default, Link/Hover, Link/Focus
+}
+
+function exportLinksColors(textStyles) {
+  const linksColors = {};
+
+  // Read link styling ONLY from Link text styles (and their description).
+  // We do NOT scan the document for "Links Colors" frames or text nodes —
+  // that was the cause of the export hang on large files.
   const linkStyles = textStyles.filter(style => {
     const name = style.name.toLowerCase();
     return name.startsWith('link/') || name.startsWith('links/');
   });
-  
+
   if (linkStyles.length === 0) {
     return null;
   }
-  
+
   // Parse each link style
   for (const style of linkStyles) {
     const name = style.name.toLowerCase();
-    
+
     // Parse state: "link/default" → "default", "link/hover" → "hover", "link/focus" → "focus"
     let state = 'default';
     if (name.includes('/hover')) {
@@ -1346,141 +1753,13 @@ async function exportLinksColors(textStyles) {
     } else if (name.includes('/default')) {
       state = 'default';
     }
-    
-    // Extract color from description (Text styles don't support fills)
-    // Color is stored in description when importing
+
+    // Color (and other link props) are stored in the text style description
+    // when imported. Text styles themselves don't carry a color.
     const description = style.description || '';
     const properties = parseLinkDescription(description);
-    
-    // Get color from description
-    let color = properties.color || null;
-    console.log(`[EXPORT LINKS] Processing style: ${style.name}`);
-    console.log(`[EXPORT LINKS] Description: ${description}`);
-    console.log(`[EXPORT LINKS] Color from description: ${color}`);
-    
-    // Fallback: If color not in description, try to find it from text nodes using this style
-    if (!color) {
-      try {
-        // Find all text nodes in all pages that use this style
-        const allPages = figma.root.children;
-        let textNodes = [];
-        
-        for (const page of allPages) {
-          const nodes = page.findAll(node => {
-            return node.type === 'TEXT' && node.textStyleId === style.id;
-          });
-          textNodes = textNodes.concat(nodes);
-        }
-        
-        console.log(`[EXPORT LINKS] Found ${textNodes.length} text nodes using style ${style.name}`);
-        
-        if (textNodes.length > 0) {
-          const firstTextNode = textNodes[0];
-          if (firstTextNode.fills && firstTextNode.fills.length > 0) {
-            const fill = firstTextNode.fills[0];
-            if (fill.type === 'SOLID') {
-              // Check if color is bound to a variable
-              if (fill.boundVariables && fill.boundVariables.color) {
-                try {
-                  const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-                  if (variable) {
-                    const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-                    if (collection && collection.modes.length > 0) {
-                      const modeId = collection.modes[0].modeId;
-                      let value = variable.valuesByMode[modeId];
-                      value = resolveVariableValue(value);
-                      color = colorToHexString(value);
-                      console.log(`[EXPORT LINKS] Found color from text node variable: ${color}`);
-                    }
-                  }
-                } catch (e) {
-                  console.warn(`[EXPORT LINKS] Failed to resolve color variable from text node:`, e);
-                  if (fill.color) {
-                    color = colorToHexString(fill.color);
-                    console.log(`[EXPORT LINKS] Fallback to direct color from text node: ${color}`);
-                  }
-                }
-              } else if (fill.color) {
-                color = colorToHexString(fill.color);
-                console.log(`[EXPORT LINKS] Found color from text node: ${color}`);
-              }
-            }
-          }
-        } else {
-          console.log(`[EXPORT LINKS] No text nodes found using style ${style.name}, trying to find from layout...`);
-          
-          // Fallback: Try to find color from layout "Links Colors" section
-          // Look for frames named "Default Link", "Hover Link", or "Focus Link"
-          let layoutNodeName = null;
-          if (state === 'default') {
-            layoutNodeName = 'Default Link';
-          } else if (state === 'hover') {
-            layoutNodeName = 'Hover Link';
-          } else if (state === 'focus') {
-            layoutNodeName = 'Focus Link';
-          }
-          
-          if (layoutNodeName) {
-            // Find frame with this name in all pages
-            for (const page of allPages) {
-              const layoutFrames = page.findAll(node => {
-                return node.type === 'FRAME' && node.name === layoutNodeName;
-              });
-              
-              if (layoutFrames.length > 0) {
-                const layoutFrame = layoutFrames[0];
-                // Find text node inside this frame
-                const textNodesInLayout = layoutFrame.findAll(node => {
-                  return node.type === 'TEXT' && node.name === 'Link Text';
-                });
-                
-                if (textNodesInLayout.length > 0) {
-                  const layoutTextNode = textNodesInLayout[0];
-                  if (layoutTextNode.fills && layoutTextNode.fills.length > 0) {
-                    const fill = layoutTextNode.fills[0];
-                    if (fill.type === 'SOLID') {
-                      // Check if color is bound to a variable
-                      if (fill.boundVariables && fill.boundVariables.color) {
-                        try {
-                          const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-                          if (variable) {
-                            const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-                            if (collection && collection.modes.length > 0) {
-                              const modeId = collection.modes[0].modeId;
-                              let value = variable.valuesByMode[modeId];
-                              value = resolveVariableValue(value);
-                              color = colorToHexString(value);
-                              console.log(`[EXPORT LINKS] Found color from layout variable: ${color}`);
-                            }
-                          }
-                        } catch (e) {
-                          console.warn(`[EXPORT LINKS] Failed to resolve color variable from layout:`, e);
-                          if (fill.color) {
-                            color = colorToHexString(fill.color);
-                            console.log(`[EXPORT LINKS] Fallback to direct color from layout: ${color}`);
-                          }
-                        }
-                      } else if (fill.color) {
-                        color = colorToHexString(fill.color);
-                        console.log(`[EXPORT LINKS] Found color from layout: ${color}`);
-                      }
-                    }
-                  }
-                  break; // Found, no need to continue searching
-                }
-              }
-            }
-          }
-          
-          if (!color) {
-            console.log(`[EXPORT LINKS] No color found for ${style.name}, color will be missing. Please import JSON again to update description.`);
-          }
-        }
-      } catch (e) {
-        console.warn(`[EXPORT LINKS] Error finding color from text nodes:`, e);
-      }
-    }
-    
+    const color = properties.color || null;
+
     if (state === 'default') {
       // Default properties
       if (color) {
@@ -1532,173 +1811,6 @@ async function exportLinksColors(textStyles) {
   return linksColors;
 }
 
-async function exportLinksColorsFromLayout(linksColorsFrame) {
-  const linksColors = {};
-  
-  try {
-    console.log(`[EXPORT LINKS] Parsing from Links Colors Frame layout`);
-    
-    // Find "Preview Links" Frame inside Links Colors Frame
-    const previewLinksFrame = linksColorsFrame.findAll(node => 
-      node.type === 'FRAME' && node.name === 'Preview Links'
-    )[0];
-    
-    if (!previewLinksFrame) {
-      console.warn('[EXPORT LINKS] Preview Links Frame not found');
-      return null;
-    }
-    
-    console.log(`[EXPORT LINKS] Found Preview Links Frame with ${previewLinksFrame.children.length} children`);
-    
-    // Parse each link state from Frame children
-    for (const child of previewLinksFrame.children) {
-      if (child.type !== 'FRAME') continue;
-      
-      const frameName = child.name;
-      console.log(`[EXPORT LINKS] Processing Frame: ${frameName}`);
-      
-      // Determine state from frame name
-      let state = null;
-      if (frameName === 'Default Link') {
-        state = 'default';
-      } else if (frameName === 'Hover Link') {
-        state = 'hover';
-      } else if (frameName === 'Focus Link') {
-        state = 'focus';
-      }
-      
-      if (!state) continue;
-      
-      // Find text node inside this frame (could be direct child or nested in Focus Outline)
-      let textNode = null;
-      if (state === 'focus') {
-        // For Focus Link, text is inside "Focus Outline" Frame
-        const focusOutlineFrame = child.findAll(node => 
-          node.type === 'FRAME' && node.name === 'Focus Outline'
-        )[0];
-        if (focusOutlineFrame) {
-          textNode = focusOutlineFrame.findAll(node => 
-            node.type === 'TEXT' && node.name === 'Link Text'
-          )[0];
-        }
-      } else {
-        // For Default and Hover, text is direct child
-        textNode = child.findAll(node => 
-          node.type === 'TEXT' && node.name === 'Link Text'
-        )[0];
-      }
-      
-      if (!textNode) {
-        console.warn(`[EXPORT LINKS] No Link Text found in ${frameName}`);
-        continue;
-      }
-      
-      // Extract color from text node fills (can be bound to variable or direct color)
-      let color = null;
-      if (textNode.fills && textNode.fills.length > 0) {
-        const fill = textNode.fills[0];
-        if (fill.type === 'SOLID') {
-          // Check if color is bound to a variable
-          if (fill.boundVariables && fill.boundVariables.color) {
-            try {
-              const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-              if (variable) {
-                const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-                if (collection && collection.modes.length > 0) {
-                  const modeId = collection.modes[0].modeId;
-                  let value = variable.valuesByMode[modeId];
-                  value = resolveVariableValue(value);
-                  color = colorToHexString(value);
-                  console.log(`[EXPORT LINKS] Found color from variable for ${state}: ${color}`);
-                }
-              }
-            } catch (e) {
-              console.warn(`[EXPORT LINKS] Failed to resolve color variable:`, e);
-              if (fill.color) {
-                color = colorToHexString(fill.color);
-                console.log(`[EXPORT LINKS] Fallback to direct color for ${state}: ${color}`);
-              }
-            }
-          } else if (fill.color) {
-            color = colorToHexString(fill.color);
-            console.log(`[EXPORT LINKS] Found direct color for ${state}: ${color}`);
-          }
-        }
-      }
-      
-      // Extract underline property from text decoration
-      let underline = 'none';
-      if (textNode.textDecoration === 'UNDERLINE') {
-        underline = 'underline';
-        console.log(`[EXPORT LINKS] Found underline for ${state}`);
-      }
-      
-      // Extract underline-offset (for hover state)
-      let underlineOffset = null;
-      if (state === 'hover' && underline === 'underline') {
-        // Default to 0.2em if underline is present
-        underlineOffset = '0.2em';
-      }
-      
-      // Extract outline-offset (for focus state)
-      let outlineOffset = null;
-      if (state === 'focus') {
-        // Find "Focus Outline" Frame inside Focus Link Frame
-        const focusOutlineFrame = child.findAll(node => 
-          node.type === 'FRAME' && node.name === 'Focus Outline'
-        )[0];
-        
-        if (focusOutlineFrame) {
-          // outline-offset is typically the padding value
-          const padding = focusOutlineFrame.paddingLeft || focusOutlineFrame.paddingTop || 0;
-          if (padding > 0) {
-            outlineOffset = `${padding}px`;
-            console.log(`[EXPORT LINKS] Found outline-offset for focus: ${outlineOffset}`);
-          } else {
-            outlineOffset = '3px'; // Default
-          }
-        } else {
-          outlineOffset = '3px'; // Default
-        }
-      }
-      
-      // Build linksColors object
-      if (state === 'default') {
-        if (color) linksColors.color = color;
-        linksColors.underline = underline;
-        linksColors['font-weight'] = 'inherit';
-      } else if (state === 'hover') {
-        if (!linksColors.hover) linksColors.hover = {};
-        if (color) linksColors.hover.color = color;
-        if (underline === 'underline') {
-          linksColors.hover.underline = underline;
-          if (underlineOffset) {
-            linksColors.hover['underline-offset'] = underlineOffset;
-          }
-        }
-      } else if (state === 'focus') {
-        if (!linksColors.focus) linksColors.focus = {};
-        if (color) linksColors.focus.color = color;
-        if (outlineOffset) {
-          linksColors.focus['outline-offset'] = outlineOffset;
-        }
-      }
-    }
-    
-    // Return null if no valid data found
-    if (Object.keys(linksColors).length === 0) {
-      console.warn('[EXPORT LINKS] No valid link colors found in layout');
-      return null;
-    }
-    
-    console.log(`[EXPORT LINKS] Successfully exported linksColors from layout:`, linksColors);
-    return linksColors;
-  } catch (error) {
-    console.error('[EXPORT LINKS] Error exporting from layout:', error);
-    return null;
-  }
-}
-
 function parseLinkDescription(description) {
   const properties = {};
   
@@ -1737,7 +1849,7 @@ function parseLinkDescription(description) {
 
 function buildStyleObject(style, baseStyle = null, bodyFontFamily = null, styleName = null) {
   const styleObj = {};
-  
+
   // fontSize
   if (style.fontSize !== undefined) {
     styleObj.fontSize = `${style.fontSize}px`;
@@ -1916,108 +2028,18 @@ function buildStyleObject(style, baseStyle = null, bodyFontFamily = null, styleN
     }
   }
   
-  // color
-  // Text styles don't have fills directly, need to find from text nodes using this style
-  if (style.fills && style.fills.length > 0) {
-    const fill = style.fills[0];
-    if (fill.type === 'SOLID') {
-      // Check if color is bound to a variable
-      if (fill.boundVariables && fill.boundVariables.color) {
-        try {
-          const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-          if (variable) {
-            const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-            if (collection && collection.modes.length > 0) {
-              const modeId = collection.modes[0].modeId;
-              let value = variable.valuesByMode[modeId];
-              value = resolveVariableValue(value);
-              styleObj.color = colorToHexString(value);
-            }
-          }
-        } catch (e) {
-          console.warn(`Could not resolve color variable:`, e);
-          if (fill.color) {
-      styleObj.color = colorToHexString(fill.color);
-          }
-        }
-      } else if (fill.color) {
-        styleObj.color = colorToHexString(fill.color);
-      }
-    }
-  } else if (baseStyle && baseStyle.fills && baseStyle.fills.length > 0) {
-    const fill = baseStyle.fills[0];
-    if (fill.type === 'SOLID') {
-      // Check if color is bound to a variable
-      if (fill.boundVariables && fill.boundVariables.color) {
-        try {
-          const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-          if (variable) {
-            const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-            if (collection && collection.modes.length > 0) {
-              const modeId = collection.modes[0].modeId;
-              let value = variable.valuesByMode[modeId];
-              value = resolveVariableValue(value);
-              styleObj.color = colorToHexString(value);
-            }
-          }
-        } catch (e) {
-          console.warn(`Could not resolve color variable:`, e);
-          if (fill.color) {
-      styleObj.color = colorToHexString(fill.color);
-          }
-        }
-      } else if (fill.color) {
-        styleObj.color = colorToHexString(fill.color);
-      }
-    }
-  } else if (style.id) {
-    // For all styles, try to find color from text nodes using this style
-    try {
-      const allPages = figma.root.children;
-      let textNodes = [];
-      
-      for (const page of allPages) {
-        const nodes = page.findAll(node => {
-          return node.type === 'TEXT' && node.textStyleId === style.id;
-        });
-        textNodes = textNodes.concat(nodes);
-      }
-      
-      if (textNodes.length > 0) {
-        const firstTextNode = textNodes[0];
-        if (firstTextNode.fills && firstTextNode.fills.length > 0) {
-          const fill = firstTextNode.fills[0];
-          if (fill.type === 'SOLID') {
-            // Check if color is bound to a variable
-            if (fill.boundVariables && fill.boundVariables.color) {
-              try {
-                const variable = figma.variables.getVariableById(fill.boundVariables.color.id);
-                if (variable) {
-                  const collection = figma.variables.getVariableCollectionById(variable.variableCollectionId);
-                  if (collection && collection.modes.length > 0) {
-                    const modeId = collection.modes[0].modeId;
-                    let value = variable.valuesByMode[modeId];
-                    value = resolveVariableValue(value);
-                    styleObj.color = colorToHexString(value);
-                  }
-                }
-              } catch (e) {
-                console.warn(`Could not resolve color variable from text node:`, e);
-                if (fill.color) {
-                  styleObj.color = colorToHexString(fill.color);
-                }
-              }
-            } else if (fill.color) {
-              styleObj.color = colorToHexString(fill.color);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`Could not extract color from style ${styleName}:`, e);
-    }
+  // NOTE: No `color` field. Figma Text Styles do not store color — text color is
+  // managed separately as Color Styles/Variables (exported to colors.json). We
+  // intentionally do NOT scan the document to "borrow" a color from a text node.
+
+  // Normalize italic: a fontWeight like "semibold italic" would become an
+  // invalid CSS var (--font-weight-semibold italic). Split the italic marker
+  // into a separate fontStyle so the weight stays a single clean token.
+  if (typeof styleObj.fontWeight === 'string' && /\bitalic\b/i.test(styleObj.fontWeight)) {
+    styleObj.fontWeight = styleObj.fontWeight.replace(/\s*\bitalic\b/i, '').trim() || 'regular';
+    styleObj.fontStyle = 'italic';
   }
-  
+
   return styleObj;
 }
 
@@ -2071,26 +2093,34 @@ function exportSpacingTokens(numberVariables, projectName) {
       let cleanName = name.replace(/^Spacing\s*-\s*[^/]+\//, '');
       cleanName = cleanName.replace(/^Spacing\s*\/?/i, '');
       
-      // Parse: could be "1", "1/desktop", etc.
+      // Parse: could be "1", "Design/1", "Design/1/desktop", etc.
+      // The KEY is the full path (preserving groups), MINUS a trailing
+      // breakpoint segment if present. Using only parts[0] would collapse
+      // every variable in a group (e.g. "Design/#1".."Design/#19") to the
+      // same key "Design" and overwrite them — that's the bug we're fixing.
       const parts = cleanName.split('/').filter(p => p);
-      const key = parts[0];
-      
-      // If variable name has breakpoint (e.g., "1/desktop"), use that
-      if (parts.length >= 2) {
-        const breakpoint = parts[1].toLowerCase();
-        if (breakpoint === 'mobile' || breakpoint === 'tablet' || breakpoint === 'desktop') {
-          const modeId = modeMap[breakpoint] || Object.keys(variable.valuesByMode)[0];
-          let value = variable.valuesByMode[modeId];
-          value = resolveVariableValue(value);
-          
-          if (!spacingData[key]) {
-            spacingData[key] = {};
-          }
-          spacingData[key][breakpoint] = {
-            value: value === 0 ? "0" : `${value}px`
-          };
-          return;
+      const lastPart = parts.length > 0 ? parts[parts.length - 1].toLowerCase() : '';
+      const lastIsBreakpoint = lastPart === 'mobile' || lastPart === 'tablet' || lastPart === 'desktop';
+
+      // Key = everything except a trailing breakpoint segment.
+      const keyParts = lastIsBreakpoint ? parts.slice(0, -1) : parts;
+      const key = keyParts.join('/') || cleanName;
+
+      // If variable name ends with a breakpoint (e.g. "Design/1/desktop"),
+      // only that breakpoint's value lives in this variable.
+      if (lastIsBreakpoint) {
+        const breakpoint = lastPart;
+        const modeId = modeMap[breakpoint] || Object.keys(variable.valuesByMode)[0];
+        let value = variable.valuesByMode[modeId];
+        value = resolveVariableValue(value);
+
+        if (!spacingData[key]) {
+          spacingData[key] = {};
         }
+        spacingData[key][breakpoint] = {
+          value: value === 0 ? "0" : `${value}px`
+        };
+        return;
       }
       
       // Otherwise, get values from all modes
@@ -2421,30 +2451,54 @@ function exportBreakpointTokens(numberVariables, projectName) {
   };
 }
 
-function exportButtonTokens(projectName) {
+function exportButtonTokens(projectName, frameNames = {}, selectionRoots = null) {
   console.log('[EXPORT BUTTON] Starting button export...');
-  
+
   try {
-    // Find "Buttons" Frame (layout) - search in all pages
+    try { figma.skipInvisibleInstanceChildren = true; } catch (e) {}
+
     let buttonsFrame = null;
     let textLinksFrame = null;
-    
-    // Search in all pages
-    figma.root.children.forEach(page => {
-      const buttonsFrames = page.findAll(node => 
-        node.type === 'FRAME' && node.name === 'Buttons'
-      );
-      const textLinksFrames = page.findAll(node => 
-        node.type === 'FRAME' && node.name === 'Text Links'
-      );
-      if (buttonsFrames.length > 0 && !buttonsFrame) {
-        buttonsFrame = buttonsFrames[0];
+
+    // PRIMARY: read from the current canvas selection (like Tab 4). The user
+    // selects the Buttons frame (or the whole Global Style) and we match the
+    // button / text-link frame by name within that selection. This avoids the
+    // slow whole-document walk and works regardless of where the frame lives.
+    const roots = Array.isArray(selectionRoots) ? selectionRoots.filter(Boolean) : [];
+    if (roots.length > 0) {
+      const candidates = collectLayoutFrames(roots);
+      const matchButton = makeFrameNameMatcher('button', frameNames);
+      const matchTextLink = makeFrameNameMatcher('textLink', frameNames);
+      buttonsFrame = findFramesByName(candidates, matchButton)[0] || null;
+      textLinksFrame = findFramesByName(candidates, matchTextLink)[0] || null;
+      console.log(`[EXPORT BUTTON] from selection → Buttons: ${buttonsFrame && buttonsFrame.name}, Text Links: ${textLinksFrame && textLinksFrame.name}`);
+    }
+
+    // FALLBACK: no selection (or nothing matched) → shallow top-level walk for
+    // exact "Buttons"/"Text Links" frames, as before. Depth-limited so it never
+    // descends into the huge typography frames (that used to hang on big files).
+    if (!buttonsFrame && !textLinksFrame) {
+      const MAX_DEPTH = 3;
+      const DESCEND_TYPES = new Set(['PAGE', 'SECTION']);
+      function shallowFind(node, depth) {
+        if (buttonsFrame && textLinksFrame) return;
+        const children = node.children;
+        if (!children) return;
+        for (const child of children) {
+          if (child.type === 'FRAME' && child.name === 'Buttons' && !buttonsFrame) { buttonsFrame = child; continue; }
+          if (child.type === 'FRAME' && child.name === 'Text Links' && !textLinksFrame) { textLinksFrame = child; continue; }
+          if (depth < MAX_DEPTH && DESCEND_TYPES.has(child.type)) {
+            shallowFind(child, depth + 1);
+            if (buttonsFrame && textLinksFrame) return;
+          }
+        }
       }
-      if (textLinksFrames.length > 0 && !textLinksFrame) {
-        textLinksFrame = textLinksFrames[0];
+      for (const page of figma.root.children) {
+        shallowFind(page, 0);
+        if (buttonsFrame && textLinksFrame) break;
       }
-    });
-    
+    }
+
     console.log(`[EXPORT BUTTON] Found Buttons Frame: ${!!buttonsFrame}`);
     console.log(`[EXPORT BUTTON] Found Text Links Frame: ${!!textLinksFrame}`);
     
@@ -2540,10 +2594,24 @@ function exportButtonLayout(buttonsFrame) {
       
       const result = exportButtonComponentSet(componentSet);
       console.log(`[EXPORT BUTTON] Component Set export result keys:`, Object.keys(result));
-      
+
       // Check if result is empty
       if (!result || Object.keys(result).length === 0) {
-        console.warn('[EXPORT BUTTON] Component Set export returned empty result, trying Button Grid format...');
+        // The structured parser only understands Type/Color/Size/State variant
+        // names. For generic variants ("Property 1/2/3") it returns empty —
+        // fall back to the RAW parser (same one Tab 4 uses) so we still export
+        // the variant matrix + measured styles instead of dropping the button.
+        console.warn('[EXPORT BUTTON] Structured parse empty, falling back to RAW variant export...');
+        try {
+          const raw = layoutExportButtonRaw(componentSet);
+          if (raw && raw.variants && raw.variants.length) {
+            console.log(`[EXPORT BUTTON] RAW export: ${raw.variants.length} variants`);
+            return raw;
+          }
+        } catch (e) {
+          console.warn('[EXPORT BUTTON] RAW fallback failed:', e);
+        }
+        console.warn('[EXPORT BUTTON] RAW empty too, trying Button Grid format...');
       } else {
         return result;
       }
@@ -11717,5 +11785,761 @@ async function generateButtonLayoutFromTokens(parent, buttonData, colorVariables
   parent.appendChild(section);
 }
 
+// ============================================================================
+// EXPORT FROM GLOBAL STYLE LAYOUT (reads values directly from layer tree)
+// ============================================================================
+// Unlike the Variables/Styles exporter, this reads a "Global Style" preview
+// section (selected on canvas) and pulls values straight from the layout:
+//   Color frame      → swatches (fill + name + hex text)
+//   Typography frame → each "typo/type-style" row (label + sample text node)
+//   Button frame     → component set variants
+//   Example Text Family → font family names
+// ----------------------------------------------------------------------------
+
+const SCHEMA_URL = "https://gravity-flex.dev/schemas/tokens.json";
+
+// Default frame names per token type, matching what Tab 1 generates. The UI
+// lets the user override these (names can differ across files).
+// Use singular stems so the "contains" matcher catches both singular and
+// plural / suffixed frame names: "Color" matches Color / Colors / Color Styles
+// / Example Colors; "Button" matches Button / Buttons.
+const LAYOUT_DEFAULT_FRAME_NAMES = {
+  color: 'Color',
+  typography: 'Typography',
+  button: 'Button',
+  textLink: 'Text Link',
+  textFamily: 'Text Family',
+  spacing: 'Spacing',
+  border: 'Border',
+  shadow: 'Shadow',
+  breakpoint: 'Breakpoint'
+};
+
+// Case-insensitive "frame name contains the query" matcher. Falls back to the
+// default name for the type when the user leaves the field blank.
+function makeFrameNameMatcher(type, frameNames) {
+  const raw = frameNames && typeof frameNames[type] === 'string' ? frameNames[type].trim() : '';
+  const needle = (raw || LAYOUT_DEFAULT_FRAME_NAMES[type] || '').toLowerCase();
+  return (name) => !!needle && (name || '').toLowerCase().includes(needle);
+}
+
+// `roots` is the selection array (one wrapper frame, or several sibling frames).
+function exportFromGlobalStyleLayout(roots, tokenTypes, frameNames, projectName) {
+  const exported = {};
+  const skipped = [];
+  const found = [];
+  const notices = []; // non-fatal warnings to surface in the UI
+  const notes = [];   // "what it saw / what it did" per type
+
+  // Keep `type` only if `result` has real data; otherwise record it as skipped
+  // so the UI can tell the user it was not found in the selected layout.
+  // `found` / `skipped` carry the token type KEY (color/typography/...) so the
+  // UI can colour the matching frame-name input.
+  function keep(type, result) {
+    const label = TOKEN_LABELS[type] || type;
+    if (isEmptyTokenResult(result)) {
+      console.log(`[LAYOUT EXPORT] ⊘ ${type} skipped (not found in layout)`);
+      skipped.push(type);
+      notes.push(`${label}: not found in selected layout`);
+      return;
+    }
+    if (result.__notices) notices.push(...result.__notices);
+    exported[type] = result;
+    found.push(type);
+    notes.push(`${label}: ${countTokenLeaves(result)} read from layout`);
+  }
+
+  // Collect candidate frames from the whole selection for name lookup.
+  const topFrames = collectLayoutFrames(roots);
+
+  if (tokenTypes.includes('color')) {
+    console.log('[LAYOUT EXPORT] ▶ color');
+    keep('color', layoutExportColors(topFrames, projectName, makeFrameNameMatcher('color', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ color');
+  }
+  if (tokenTypes.includes('typography')) {
+    console.log('[LAYOUT EXPORT] ▶ typography');
+    keep('typography', layoutExportTypography(topFrames, projectName, makeFrameNameMatcher('typography', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ typography');
+  }
+  if (tokenTypes.includes('button')) {
+    console.log('[LAYOUT EXPORT] ▶ button');
+    keep('button', layoutExportButton(topFrames, projectName, makeFrameNameMatcher('button', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ button');
+  }
+  if (tokenTypes.includes('textFamily')) {
+    console.log('[LAYOUT EXPORT] ▶ textFamily');
+    keep('textFamily', layoutExportTextFamily(topFrames, projectName, makeFrameNameMatcher('textFamily', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ textFamily');
+  }
+  if (tokenTypes.includes('spacing')) {
+    console.log('[LAYOUT EXPORT] ▶ spacing');
+    keep('spacing', layoutExportSpacing(topFrames, projectName, makeFrameNameMatcher('spacing', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ spacing');
+  }
+  if (tokenTypes.includes('border')) {
+    console.log('[LAYOUT EXPORT] ▶ border');
+    keep('border', layoutExportBorder(topFrames, projectName, makeFrameNameMatcher('border', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ border');
+  }
+  if (tokenTypes.includes('shadow')) {
+    console.log('[LAYOUT EXPORT] ▶ shadow');
+    keep('shadow', layoutExportShadow(topFrames, projectName, makeFrameNameMatcher('shadow', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ shadow');
+  }
+  if (tokenTypes.includes('breakpoint')) {
+    console.log('[LAYOUT EXPORT] ▶ breakpoint');
+    keep('breakpoint', layoutExportBreakpoint(topFrames, projectName, makeFrameNameMatcher('breakpoint', frameNames)));
+    console.log('[LAYOUT EXPORT] ✔ breakpoint');
+  }
+
+  return { exported, skipped, found, notices, notes };
+}
+
+// Return the candidate frames for name-matching from the selection.
+// `roots` is the selection array — the user may select the single wrapping
+// "Global Style" frame OR several sibling frames (Example Colors, Example Text
+// Styles, …) at once. We include each selected node ITSELF (so selecting the
+// frames directly works) plus their children and one level of sections (so
+// selecting the wrapper works too).
+function collectLayoutFrames(roots) {
+  const list = Array.isArray(roots) ? roots : [roots];
+  const frames = [];
+  const seen = new Set();
+  function push(node) {
+    if (node && !seen.has(node.id)) { seen.add(node.id); frames.push(node); }
+  }
+  function collect(node, depth) {
+    const children = node.children;
+    if (!children) return;
+    for (const child of children) {
+      push(child);
+      // descend through sections/the root to reach sibling frames
+      if (depth < 2 && child.type === 'SECTION') {
+        collect(child, depth + 1);
+      }
+    }
+  }
+  list.forEach(root => {
+    push(root);        // the selected node itself
+    collect(root, 0);  // and its children
+  });
+  return frames;
+}
+
+function findFramesByName(frames, predicate) {
+  return frames.filter(f => predicate(f.name || ''));
+}
+
+// Deep-walk helper: find all descendant nodes matching a test (no depth cap,
+// but used on small subtrees only).
+function deepFindAll(node, test, out) {
+  out = out || [];
+  const children = node.children;
+  if (!children) return out;
+  for (const child of children) {
+    if (test(child)) out.push(child);
+    deepFindAll(child, test, out);
+  }
+  return out;
+}
+
+// Convert a node's first SOLID fill to a hex/rgba string, or null.
+function nodeSolidColorString(node) {
+  const fills = node && node.fills;
+  if (!fills || fills === figma.mixed || fills.length === 0) return null;
+  const fill = fills[0];
+  if (!fill || fill.type !== 'SOLID') return null;
+  const c = fill.color;
+  const a = fill.opacity !== undefined ? fill.opacity : 1;
+  return colorToHexString({ r: c.r, g: c.g, b: c.b, a: a });
+}
+
+// ---- Colors -----------------------------------------------------------------
+// Each swatch is its OWN small frame containing a colored box (SOLID fill) plus
+// a name text and a hex text. We walk swatch-by-swatch so a box is only ever
+// paired with the labels INSIDE its own swatch — no global proximity guessing.
+function layoutExportColors(frames, projectName, matchFrame) {
+  const colorData = {};
+  const notices = []; // human-readable warnings (e.g. renamed duplicate keys)
+  const colorFrames = findFramesByName(frames, matchFrame);
+  const hexRe = /^#?[0-9a-fA-F]{3,8}$/;
+
+  // Write a color without losing an earlier one that shares the name. If the
+  // name is already taken by a DIFFERENT value, store under "name-2", "name-3"…
+  // and record a notice so the UI can tell the user. Identical re-writes are
+  // silently ignored (true duplicate, nothing lost).
+  function putColor(name, value) {
+    const existing = colorData[name];
+    if (!existing) { colorData[name] = { value: value, description: "" }; return; }
+    if (existing.value === value) return; // same color, same name — no loss
+    let i = 2;
+    while (colorData[`${name}-${i}`] && colorData[`${name}-${i}`].value !== value) i++;
+    const newKey = `${name}-${i}`;
+    if (!colorData[newKey]) colorData[newKey] = { value: value, description: "" };
+    notices.push(`"${name}" (${value}) renamed to "${newKey}" — duplicate color name`);
+  }
+
+  colorFrames.forEach(colorFrame => {
+    // A "swatch" is the smallest container that holds exactly one fill box.
+    // Find every fill box, then walk UP to the swatch container and read the
+    // texts within that container only.
+    const boxes = deepFindAll(colorFrame, n =>
+      (n.type === 'RECTANGLE' || n.type === 'FRAME' || n.type === 'ELLIPSE') &&
+      nodeSolidColorString(n) !== null
+    );
+
+    const seenContainers = new Set();
+    boxes.forEach(box => {
+      // The swatch container = the box's parent's parent chain that also holds
+      // text. Start at parent and climb until we find text siblings.
+      let container = box.parent;
+      let texts = [];
+      let climbs = 0;
+      while (container && climbs < 4) {
+        texts = deepFindAll(container, n => n.type === 'TEXT');
+        if (texts.length > 0) break;
+        container = container.parent;
+        climbs++;
+      }
+      if (!container || seenContainers.has(container.id)) {
+        // Fall back: use box's own fill with hex as name.
+        const hexOnly = nodeSolidColorString(box);
+        if (hexOnly && !seenContainers.has(box.id)) {
+          putColor(hexOnly.toLowerCase(), hexOnly.toLowerCase());
+        }
+        return;
+      }
+      seenContainers.add(container.id);
+
+      const hex = nodeSolidColorString(box);
+      if (!hex) return;
+
+      const labels = texts.map(t => (t.characters || '').trim()).filter(Boolean);
+      // Name = first label that is not a hex code; else the hex text; else hex value.
+      let name = labels.find(s => !hexRe.test(s));
+      if (!name) name = labels.find(s => hexRe.test(s));
+      if (!name) name = hex;
+
+      // Prefer a hex shown as text if present (it's the source of truth in the
+      // design), otherwise use the box fill.
+      const hexLabel = labels.find(s => hexRe.test(s));
+      const value = (hexLabel ? (hexLabel.startsWith('#') ? hexLabel : '#' + hexLabel) : hex).toLowerCase();
+
+      const key = name.trim();
+      if (!key) return;
+      putColor(key, value);
+    });
+  });
+
+  colorData.transparent = { value: "transparent", description: "Transparent color" };
+
+  const result = {
+    "$schema": SCHEMA_URL,
+    "$type": "color",
+    "$project": projectName,
+    "color": colorData
+  };
+  // Non-enumerable so it never lands in the exported JSON, but exportFrom… can
+  // read it to surface warnings to the UI.
+  if (notices.length) Object.defineProperty(result, '__notices', { value: notices, enumerable: false });
+  return result;
+}
+
+// ---- Typography -------------------------------------------------------------
+// Each breakpoint frame ("Desktop| Typography", "Tablet + Mobile | Typography")
+// contains rows: typo > type-style > [title(label), sampleText]. We read the
+// label to name the style and the sample text node for the actual properties.
+function layoutExportTypography(frames, projectName, matchFrame) {
+  const textStyles = {};
+
+  const typoFrames = findFramesByName(frames, matchFrame);
+
+  typoFrames.forEach(typoFrame => {
+    const frameBreakpoint = breakpointFromName(typoFrame.name);
+    let rowsHandled = 0;
+
+    // --- Strategy A: structured layout produced by Tab 1 (older) -------------
+    // Rows are FRAMEs named "type-style" with a child "title" frame.
+    const rows = deepFindAll(typoFrame, n => n.type === 'FRAME' && n.name === 'type-style');
+    rows.forEach(row => {
+      const titleFrame = (row.children || []).find(c => c.type === 'FRAME' && c.name === 'title');
+      let label = null;
+      let labelNode = null;
+      if (titleFrame) {
+        labelNode = deepFindAll(titleFrame, n => n.type === 'TEXT')[0];
+        if (labelNode) label = (labelNode.characters || '').trim();
+      }
+      if (!label) return;
+
+      const sampleTexts = deepFindAll(row, n => n.type === 'TEXT' && n !== labelNode);
+      const sample = sampleTexts.sort((a, b) => (b.fontSize || 0) - (a.fontSize || 0))[0];
+      if (!sample) return;
+
+      const styleName = parseTextStyleName(label).styleName;
+      addTextStyle(textStyles, styleName, frameBreakpoint, layoutBuildTextStyleObject(sample));
+      rowsHandled++;
+    });
+
+    // --- Strategy A2: "Global Style from Figma" layout -----------------------
+    // Each style is a FRAME holding a "Label" TEXT (the style name, rendered in
+    // a uniform UI font) and a "Preview Text" TEXT (the actual sample carrying
+    // the real font/size/weight). Read the name from Label, the props from
+    // Preview Text — NOT from Label (which is uniformly Inter/16).
+    if (rowsHandled === 0) {
+      const styleFrames = deepFindAll(typoFrame, n =>
+        n.type === 'FRAME' &&
+        (n.children || []).some(c => c.type === 'TEXT' && /^label$/i.test(c.name || '')) &&
+        (n.children || []).some(c => c.type === 'TEXT' && /preview/i.test(c.name || ''))
+      );
+      styleFrames.forEach(sf => {
+        const labelNode = (sf.children || []).find(c => c.type === 'TEXT' && /^label$/i.test(c.name || ''));
+        const previewNode = (sf.children || []).find(c => c.type === 'TEXT' && /preview/i.test(c.name || ''));
+        const label = labelNode ? (labelNode.characters || '').trim() : (sf.name || '').trim();
+        if (!label || !previewNode) return;
+        // Style key: keep the design's label verbatim (slugified) since these
+        // names are intentional (e.g. "P16 - Regular", "Number Large", "Quote").
+        const styleName = slugifyStyleName(label);
+        if (!styleName) return;
+        const bp = frameBreakpoint || 'desktop';
+        addTextStyle(textStyles, styleName, bp, layoutBuildTextStyleObject(previewNode));
+        rowsHandled++;
+      });
+    }
+
+    // --- Strategy B: free-form / hand-built layout ---------------------------
+    // No structured rows → walk every TEXT node and treat each style-looking
+    // label (e.g. "H1 Heading 56px Bold", "Body Text 16px Regular") as one
+    // style. The label text IS the sample. Used for hand-built designs where
+    // frame/layer names are arbitrary like "Frame 246".
+    if (rowsHandled === 0) {
+      // Walk TEXT nodes in document order. A group header (e.g. "Medium Text
+      // Styles (…)") switches the "current breakpoint"; subsequent style rows
+      // belong to that breakpoint — exactly how the page reads top-to-bottom.
+      // This is robust to header being a sibling (not an ancestor) of styles.
+      const texts = deepFindAll(typoFrame, n => n.type === 'TEXT');
+      let currentBp = frameBreakpoint || 'desktop';
+      texts.forEach(t => {
+        const label = (t.characters || '').trim();
+        if (!label) return;
+
+        const styleName = deriveStyleNameFromLabel(label);
+        if (styleName) {
+          addTextStyle(textStyles, styleName, currentBp, layoutBuildTextStyleObject(t));
+          return;
+        }
+        // Not a style row → maybe a group header that names a breakpoint.
+        const headerBp = isGroupHeader(label) ? breakpointFromName(label) : null;
+        if (headerBp) currentBp = headerBp;
+      });
+    }
+  });
+  return {
+    "$schema": SCHEMA_URL,
+    "$type": "typography",
+    "$project": projectName,
+    "textStyles": textStyles
+  };
+}
+
+// First write wins per (styleName, breakpoint) so earlier/larger rows are not
+// overwritten by later duplicates.
+function addTextStyle(textStyles, styleName, breakpoint, obj) {
+  if (!styleName) return;
+  if (!textStyles[styleName]) textStyles[styleName] = {};
+  if (!textStyles[styleName][breakpoint]) textStyles[styleName][breakpoint] = obj;
+}
+
+// Map a free-text label to a style key, or null if it isn't a style row.
+// "H1 Heading 56px Bold" → "h1", "Body Text 16px Regular" → "body",
+// "Body Text Small 14px Regular" → "body-small", "Caption" → "caption".
+function deriveStyleNameFromLabel(label) {
+  if (!label) return null;
+  const s = label.toLowerCase();
+  // Headings H1..H6
+  const h = s.match(/\bh([1-6])\b/);
+  if (h) return `h${h[1]}`;
+  if (/\bdisplay\b/.test(s)) return 'display';
+  if (/\bbody\b/.test(s)) {
+    if (/\bsmall\b|\bxs\b/.test(s)) return 'body-small';
+    if (/\blarge\b|\blg\b/.test(s)) return 'body-large';
+    return 'body';
+  }
+  if (/\bcaption\b/.test(s)) return 'caption';
+  if (/\bsubtitle\b|\bsubhead/.test(s)) return 'subtitle';
+  if (/\boverline\b|\beyebrow\b|\blabel\b/.test(s)) return 'label';
+  if (/\bquote\b|\bblockquote\b/.test(s)) return 'quote';
+  return null; // headers like "Default (Large) Text Styles (…)" are skipped
+}
+
+// Detect a breakpoint from a group header / frame name. Group headers look like
+// "Default (Large) Text Styles (Desktop Large - 1920px + 1440px)",
+// "Medium Text Styles (Desktop Small + Tablet - …)", "Small Text Styles (Mobile - 414px)".
+// The parenthetical lists multiple device widths, so we must classify on the
+// GROUP label (the part before the first "("), not the whole string — otherwise
+// "Medium … (Desktop Small + Tablet)" matches "small" → mobile by mistake.
+function breakpointFromName(name) {
+  const full = (name || '').toLowerCase();
+  if (!full) return null;
+  // Classify primarily on the leading group label.
+  const label = full.split('(')[0].trim() || full;
+  // Tablet / Medium first (so "Medium" isn't shadowed by a stray "small").
+  if (/\bmedium\b|\btablet\b|\bmd\b/.test(label)) return 'tablet';
+  if (/\bsmall\b|\bmobile\b|\bsm\b/.test(label)) return 'mobile';
+  if (/\bdefault\b|\blarge\b|\bdesktop\b|\blg\b/.test(label)) return 'desktop';
+  // Fallback: explicit device words anywhere (frame names without a header).
+  if (/\bmobile\b/.test(full)) return 'mobile';
+  if (/\btablet\b/.test(full)) return 'tablet';
+  if (/\bdesktop\b/.test(full)) return 'desktop';
+  return null;
+}
+
+// Turn an explicit style label into a stable token key:
+// "P16 - Regular" → "p16-regular", "Number Large" → "number-large", "H2" → "h2".
+function slugifyStyleName(label) {
+  return (label || '')
+    .toLowerCase()
+    .replace(/\s*[-–—/]\s*/g, '-')   // dashes/slashes → single hyphen
+    .replace(/[^a-z0-9]+/g, '-')     // any other run → hyphen
+    .replace(/^-+|-+$/g, '');        // trim hyphens
+}
+
+// A group header is a section title like "Default (Large) Text Styles (…)" or
+// "Medium Text Styles (…)" — it mentions "text styles"/"typography" and is NOT
+// itself a style row. Used to switch the current breakpoint while reading rows.
+function isGroupHeader(label) {
+  const s = (label || '').toLowerCase();
+  return /text styles?|typograph/.test(s) && !deriveStyleNameFromLabel(label);
+}
+
+function layoutBuildTextStyleObject(textNode) {
+  const obj = {};
+
+  if (typeof textNode.fontSize === 'number') {
+    obj.fontSize = `${textNode.fontSize}px`;
+  }
+
+  // lineHeight
+  const lh = textNode.lineHeight;
+  if (lh && typeof lh === 'object') {
+    if (lh.unit === 'PERCENT') obj.lineHeight = `${Math.round(lh.value)}%`;
+    else if (lh.unit === 'PIXELS') obj.lineHeight = `${lh.value}px`;
+    // AUTO → omit
+  }
+
+  // fontWeight + fontFamily from fontName
+  const fn = textNode.fontName;
+  if (fn && fn !== figma.mixed) {
+    if (fn.family) obj.fontFamily = fn.family;
+    if (fn.style) obj.fontWeight = layoutNormalizeWeight(fn.style);
+  }
+
+  // letterSpacing (omit 0)
+  const ls = textNode.letterSpacing;
+  if (ls && typeof ls === 'object' && ls.value) {
+    const unit = ls.unit === 'PERCENT' ? '%' : ls.unit === 'PIXELS' ? 'px' : '';
+    if (ls.value !== 0) obj.letterSpacing = `${ls.value}${unit}`;
+  }
+
+  return obj;
+}
+
+// Normalize a Figma font style ("Heavy", "Bold", "SemiBold Italic", …) to a
+// lowercase weight token. Broader than extractWeightFromFontStyle (adds
+// heavy/black/thin/extra weights) and never returns null — falls back to the
+// lowercased style name so nothing is lost.
+function layoutNormalizeWeight(style) {
+  if (!style) return null;
+  const s = style.toLowerCase();
+  const italic = s.includes('italic') || s.includes('oblique');
+  let w = null;
+  if (s.includes('thin') || s.includes('hairline')) w = 'thin';
+  else if (s.includes('extralight') || s.includes('extra light') || s.includes('ultralight')) w = 'extralight';
+  else if (s.includes('semibold') || s.includes('semi-bold') || s.includes('semi bold') || s.includes('demibold')) w = 'semibold';
+  else if (s.includes('extrabold') || s.includes('extra bold') || s.includes('ultrabold')) w = 'extrabold';
+  else if (s.includes('black') || s.includes('heavy')) w = 'black';
+  else if (s.includes('bold')) w = 'bold';
+  else if (s.includes('medium')) w = 'medium';
+  else if (s.includes('light')) w = 'light';
+  else if (s.includes('regular') || s.includes('normal') || s.includes('book')) w = 'regular';
+  if (!w) {
+    // Unknown style name — keep it (minus any trailing "italic") rather than null.
+    w = s.replace(/\s*(italic|oblique)\s*/g, '').trim() || 'regular';
+  }
+  return italic ? `${w} italic` : w;
+}
+
+// ---- Button -----------------------------------------------------------------
+// Read the button COMPONENT_SET as RAW variants: list every property/value seen
+// and capture per-variant geometry/colors, without forcing a Type/Color/Size/
+// State shape (this design uses generic "Property 1/2/3").
+function layoutExportButton(frames, projectName, matchFrame) {
+  const result = {
+    "$schema": SCHEMA_URL,
+    "$type": "button",
+    "$project": projectName,
+    "config": {
+      "examples": { "defaultText": "Button", "textLinkText": "Text link" },
+      "icons": { "default": "arrow--right" }
+    },
+    "button": {},
+    "textLink": {}
+  };
+
+  const buttonFrames = findFramesByName(frames, matchFrame);
+  for (const bf of buttonFrames) {
+    const componentSet = deepFindAll(bf, n => n.type === 'COMPONENT_SET')[0];
+    if (componentSet) {
+      try {
+        result.button = layoutExportButtonRaw(componentSet);
+      } catch (e) {
+        console.warn('[LAYOUT EXPORT] button parse failed:', e);
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
+// Build a RAW button export from a component set: collect the set of values for
+// each variant property, and one entry per component capturing its variant
+// values + measured geometry/colors.
+function layoutExportButtonRaw(componentSet) {
+  const components = componentSet.children || [];
+
+  // 1) Collect property → set of values, in first-seen order.
+  const propValues = {}; // propName -> ordered array of unique values
+  const variants = [];
+
+  components.forEach(comp => {
+    let props = comp.variantProperties;
+    if (!props || Object.keys(props).length === 0) {
+      // parse from name "Property 1=Primary, Property 2=Large, ..."
+      props = {};
+      (comp.name || '').split(',').forEach(part => {
+        const idx = part.indexOf('=');
+        if (idx > -1) {
+          const k = part.slice(0, idx).trim();
+          const v = part.slice(idx + 1).trim();
+          if (k && v) props[k] = v;
+        }
+      });
+    }
+
+    Object.keys(props).forEach(k => {
+      if (!propValues[k]) propValues[k] = [];
+      if (propValues[k].indexOf(props[k]) === -1) propValues[k].push(props[k]);
+    });
+
+    variants.push({
+      name: comp.name,
+      properties: props,
+      style: layoutExtractButtonComponentStyle(comp)
+    });
+  });
+
+  return {
+    "variantProperties": propValues,
+    "variants": variants
+  };
+}
+
+// Measure one button component: padding, radius, border, fill + text colors.
+function layoutExtractButtonComponentStyle(comp) {
+  const style = {};
+
+  if (typeof comp.paddingLeft === 'number' || typeof comp.paddingTop === 'number') {
+    style.padding = {
+      top: comp.paddingTop || 0,
+      right: comp.paddingRight || 0,
+      bottom: comp.paddingBottom || 0,
+      left: comp.paddingLeft || 0
+    };
+  }
+  if (typeof comp.itemSpacing === 'number') style.gap = comp.itemSpacing;
+  if (typeof comp.cornerRadius === 'number' && comp.cornerRadius !== figma.mixed) {
+    style.borderRadius = comp.cornerRadius;
+  }
+  if (typeof comp.width === 'number') style.width = comp.width;
+  if (typeof comp.height === 'number') style.minHeight = comp.height;
+
+  // Background fill
+  const bg = nodeSolidColorString(comp);
+  if (bg) style.background = bg.toLowerCase();
+
+  // Border (stroke)
+  if (comp.strokes && comp.strokes.length > 0 && comp.strokes[0].type === 'SOLID') {
+    const c = comp.strokes[0].color;
+    style.borderColor = colorToHexString({ r: c.r, g: c.g, b: c.b, a: comp.strokes[0].opacity !== undefined ? comp.strokes[0].opacity : 1 }).toLowerCase();
+    if (typeof comp.strokeWeight === 'number') style.borderWidth = comp.strokeWeight;
+  }
+
+  // Text color (first text node inside the component)
+  const textNode = deepFindAll(comp, n => n.type === 'TEXT')[0];
+  if (textNode) {
+    const tc = nodeSolidColorString(textNode);
+    if (tc) style.textColor = tc.toLowerCase();
+    if (textNode.characters) style.label = textNode.characters;
+  }
+
+  return style;
+}
+
+// ---- Text Family ------------------------------------------------------------
+// The "Example Text Family" frames each showcase one font family by name.
+function layoutExportTextFamily(frames, projectName, matchFrame) {
+  const families = {};
+
+  const familyFrames = findFramesByName(frames, matchFrame);
+  familyFrames.forEach(frame => {
+    const texts = deepFindAll(frame, n => n.type === 'TEXT');
+    // The display name shown big is the family; read its fontName too.
+    texts.forEach(t => {
+      const fn = t.fontName;
+      if (fn && fn !== figma.mixed && fn.family) {
+        const fam = fn.family;
+        if (!families[fam]) {
+          families[fam] = { family: fam, styles: [] };
+        }
+        const style = fn.style;
+        if (style && families[fam].styles.indexOf(style) === -1) {
+          families[fam].styles.push(style);
+        }
+      }
+    });
+  });
+
+  return {
+    "$schema": SCHEMA_URL,
+    "$type": "textFamily",
+    "$project": projectName,
+    "textFamily": families
+  };
+}
+
+// ---- Spacing ----------------------------------------------------------------
+// The "Spacing" frame holds a table: a header row [Name, Mobile, Tablet,
+// Desktop] then one row per token. Rows are FRAMEs whose direct TEXT children
+// are the cells in column order. We read them positionally.
+function layoutExportSpacing(frames, projectName, matchFrame) {
+  const spacingData = {};
+  const spacingFrames = findFramesByName(frames, matchFrame);
+  const COLS = ['mobile', 'tablet', 'desktop'];
+
+  spacingFrames.forEach(frame => {
+    // Candidate rows: FRAMEs with >= 2 direct TEXT children (name + value(s)).
+    const rows = deepFindAll(frame, n =>
+      n.type === 'FRAME' &&
+      (n.children || []).filter(c => c.type === 'TEXT').length >= 2
+    );
+    rows.forEach(row => {
+      const cells = (row.children || []).filter(c => c.type === 'TEXT').map(c => (c.characters || '').trim());
+      if (!cells.length) return;
+      const name = cells[0];
+      // Skip the header row.
+      if (/^name$/i.test(name)) return;
+      const key = name;
+      if (!key || spacingData[key]) return;
+      const obj = {};
+      COLS.forEach((bp, i) => {
+        const v = cells[i + 1];
+        if (v) obj[bp] = { value: v };
+      });
+      if (Object.keys(obj).length) spacingData[key] = obj;
+    });
+  });
+
+  return { "$schema": SCHEMA_URL, "$type": "spacing", "$project": projectName, "spacing": spacingData };
+}
+
+// ---- Border -----------------------------------------------------------------
+// The "Border" frame has "Radius Examples" / "Width Examples" sub-frames; each
+// example is a FRAME named after the token, containing a sample rect + a value
+// TEXT like "8px" + an optional description TEXT.
+function layoutExportBorder(frames, projectName, matchFrame) {
+  const border = { radius: {}, width: {} };
+  const borderFrames = findFramesByName(frames, matchFrame);
+
+  function readExamples(container, bucket) {
+    if (!container) return;
+    (container.children || []).forEach(ex => {
+      if (ex.type !== 'FRAME') return;
+      const texts = deepFindAll(ex, n => n.type === 'TEXT').map(t => (t.characters || '').trim()).filter(Boolean);
+      // value = first text that looks like a number/px; name = the frame name.
+      const valText = texts.find(t => /^-?\d/.test(t));
+      const name = (ex.name || '').trim();
+      if (!name || !valText || bucket[name]) return;
+      const desc = texts.find(t => t !== name && t !== valText) || '';
+      bucket[name] = { value: valText, description: desc };
+    });
+  }
+
+  borderFrames.forEach(frame => {
+    const radiusFrame = deepFindAll(frame, n => n.type === 'FRAME' && /radius/i.test(n.name || ''))[0];
+    const widthFrame = deepFindAll(frame, n => n.type === 'FRAME' && /width/i.test(n.name || ''))[0];
+    readExamples(radiusFrame, border.radius);
+    readExamples(widthFrame, border.width);
+  });
+
+  return { "$schema": SCHEMA_URL, "$type": "border", "$project": projectName, "border": border };
+}
+
+// ---- Shadow -----------------------------------------------------------------
+// The "Shadows" frame has a "Shadow Examples" sub-frame; each example is a
+// FRAME named after the token, holding a sample rect carrying the effects.
+function layoutExportShadow(frames, projectName, matchFrame) {
+  const shadow = {};
+  const shadowFrames = findFramesByName(frames, matchFrame);
+
+  shadowFrames.forEach(frame => {
+    // Every FRAME that contains a node with drop/inner-shadow effects is one
+    // shadow token; name from the frame, value from the effects.
+    const examples = deepFindAll(frame, n =>
+      n.type === 'FRAME' &&
+      deepFindAll(n, m => Array.isArray(m.effects) && m.effects.some(e =>
+        e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW')).length > 0
+    );
+    examples.forEach(ex => {
+      const fxNode = deepFindAll(ex, m => Array.isArray(m.effects) && m.effects.some(e =>
+        e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW'))[0];
+      if (!fxNode) return;
+      const name = (ex.name || '').trim();
+      if (!name || shadow[name]) return;
+      // Skip the wrapping "Shadow Examples" container if it ever matches.
+      if (/examples?$/i.test(name)) return;
+      shadow[name] = { value: effectsToShadowString(fxNode.effects), description: "" };
+    });
+  });
+
+  return { "$schema": SCHEMA_URL, "$type": "shadow", "$project": projectName, "shadow": shadow };
+}
+
+// ---- Breakpoint -------------------------------------------------------------
+// The "Breakpoints" frame holds a table: header [Name, Min Width, Max Width,
+// Description] then one row per breakpoint.
+function layoutExportBreakpoint(frames, projectName, matchFrame) {
+  const breakpoint = {};
+  const bpFrames = findFramesByName(frames, matchFrame);
+
+  bpFrames.forEach(frame => {
+    const rows = deepFindAll(frame, n =>
+      n.type === 'FRAME' &&
+      (n.children || []).filter(c => c.type === 'TEXT').length >= 2
+    );
+    rows.forEach(row => {
+      const cells = (row.children || []).filter(c => c.type === 'TEXT').map(c => (c.characters || '').trim());
+      const name = cells[0];
+      if (!name || /^name$/i.test(name) || breakpoint[name]) return;
+      const entry = {};
+      if (cells[1]) entry.value = cells[1];
+      if (cells[2]) entry.max = cells[2];
+      if (cells[3]) entry.description = cells[3];
+      if (Object.keys(entry).length) breakpoint[name] = entry;
+    });
+  });
+
+  return { "$schema": SCHEMA_URL, "$type": "breakpoint", "$project": projectName, "breakpoint": breakpoint };
+}
 
 

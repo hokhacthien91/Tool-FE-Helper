@@ -12,10 +12,10 @@ Clone and duplicate HTML banner folders. Two modes: **Clone Size** and **Duplica
 
 ### 1. Start the tool
 
-- **macOS**: Double-click `start.command`
-- **Windows**: Double-click `start.bat`
+- **macOS**: Double-click `start-mac.command`
+- **Windows**: Double-click `start-win.bat`
 
-Browser will open automatically at `http://localhost:8000`.
+Browser will open automatically at `http://localhost:8080`.
 
 ### 2. Prepare source folder
 
@@ -24,8 +24,8 @@ Copy your banner folder into `clone-folder/`. Example:
 ```
 clone-folder/
 ├── index.php
-├── start.command
-├── start.bat
+├── start-mac.command
+├── start-win.bat
 ├── 728x90/            ← source folder
 ├── v1-728x90/         ← also works with prefix/suffix
 └── 728x90-test/       ← also works

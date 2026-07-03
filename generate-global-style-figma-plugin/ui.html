@@ -91,6 +91,60 @@
       background: #e3f2fd;
       color: #1976d2;
     }
+    .message .msg-main {
+      font-weight: 600;
+    }
+    .message .msg-skipped {
+      margin-top: 6px;
+      font-size: 11px;
+      opacity: 0.85;
+      line-height: 1.6;
+    }
+    .message .msg-chip {
+      display: inline-block;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 10px;
+      padding: 1px 8px;
+      margin: 2px 3px 0;
+      white-space: nowrap;
+    }
+    /* Tab 4: per-token frame-name mapping rows */
+    .frame-map-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+    }
+    .frame-map-row > label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 130px;
+      margin: 0;
+      cursor: pointer;
+    }
+    .frame-map-row .frame-name-input {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 5px 8px;
+      font-size: 12px;
+      border: 2px solid #d0d0d0;   /* neutral until export tells us */
+      border-radius: 4px;
+      outline: none;
+    }
+    .frame-name-input.found {
+      border-color: #2e7d32;       /* green: frame found with data */
+      background: #f3fbf3;
+    }
+    .frame-name-input.missing {
+      border-color: #f5a623;       /* amber: not found / no data */
+      background: #fff9ec;
+    }
+    .frame-map-hint {
+      font-size: 11px;
+      color: #888;
+      margin: 0 0 10px 0;
+    }
     .checkbox-group {
       margin: 0 0 12px 0;
       padding: 10px;
@@ -278,7 +332,7 @@
       border-bottom: 2px solid #e0e0e0;
     }
     .tab {
-      padding: 8px 16px;
+      padding: 8px;
       background: transparent;
       border: none;
       border-bottom: 2px solid transparent;
@@ -322,7 +376,8 @@
   <div class="tabs">
     <button class="tab active" data-tab="tab1">From JSON / Figma</button>
     <button class="tab" data-tab="tab2">Import Tokens</button>
-    <button class="tab" data-tab="tab3">Export Tokens</button>
+    <button class="tab" data-tab="tab3">Export Tokens From Variables/Styles</button>
+    <button class="tab" data-tab="tab4">Export Tokens From Layout</button>
   </div>
 
   <!-- Tab 1: Existing Functionality -->
@@ -441,14 +496,90 @@
         </label>
       </div>
 
+      <div id="exportButtonFrames" class="checkbox-group">
+        <div class="frame-map-hint">Button is read from your <strong>canvas selection</strong> — select the Buttons frame (or the whole Global Style) before exporting. Frame names to match (editable):</div>
+        <div class="frame-map-row">
+          <label>Button</label>
+          <input type="text" class="frame-name-input" data-export-frame-for="button" value="Button">
+        </div>
+        <div class="frame-map-row">
+          <label>Text Link</label>
+          <input type="text" class="frame-name-input" data-export-frame-for="textLink" value="Text Link">
+        </div>
+        <button id="checkButtonFramesBtn" type="button" style="background:#6b7280; margin-top:8px; width:auto; padding:6px 14px; font-size:12px;">Check Selection</button>
+      </div>
+
       <div class="prefix-input show">
         <label for="exportProjectName">Project Name:</label>
         <input type="text" id="exportProjectName" placeholder="e.g., Project A — Corporate / Enterprise">
         <div class="prefix-hint">Used for $project field in exported JSON files</div>
       </div>
 
+      <div class="prefix-input show">
+        <label for="exportTextColor">Default text color for typography:</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="color" id="exportTextColorPicker" value="#000000" style="width:40px; height:32px; padding:0; border:1px solid #d0d0d0; border-radius:4px; cursor:pointer;">
+          <input type="text" id="exportTextColor" value="#000000" style="flex:1; padding:5px 8px; font-size:12px; border:1px solid #d0d0d0; border-radius:4px;">
+        </div>
+        <div class="prefix-hint">Applied as the <code>color</code> on every typography style (Figma Text Styles don't store color). Change before exporting.</div>
+      </div>
+
       <div id="exportMessage" class="message"></div>
       <button id="exportTokensBtn">Export & Download</button>
+    </div>
+  </div>
+
+  <!-- Tab 4: Export from Global Style Layout (reads directly from layers) -->
+  <div id="tab4" class="tab-content">
+    <div class="option-card">
+      <h3>Export from Global Style Layout</h3>
+      <p>Select the <strong>Global Style</strong> section on the canvas, then export. Reads values directly from the layout layers (not Variables/Styles).</p>
+
+      <div class="checkbox-group">
+        <div class="frame-map-hint">Frame name to read from (editable — names may differ in your file). Select the Global Style on canvas, then click <strong>Check</strong>: <span style="color:#2e7d32">green</span> = found, <span style="color:#f5a623">amber</span> = not found.</div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="color" checked> Colors</label>
+          <input type="text" class="frame-name-input" data-frame-for="color" value="Color">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="typography" checked> Typography</label>
+          <input type="text" class="frame-name-input" data-frame-for="typography" value="Typography">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="button" checked> Button</label>
+          <input type="text" class="frame-name-input" data-frame-for="button" value="Button">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="textFamily" checked> Text Family</label>
+          <input type="text" class="frame-name-input" data-frame-for="textFamily" value="Text Family">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="spacing" checked> Spacing</label>
+          <input type="text" class="frame-name-input" data-frame-for="spacing" value="Spacing">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="border" checked> Border</label>
+          <input type="text" class="frame-name-input" data-frame-for="border" value="Border">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="shadow" checked> Shadow</label>
+          <input type="text" class="frame-name-input" data-frame-for="shadow" value="Shadow">
+        </div>
+        <div class="frame-map-row">
+          <label><input type="checkbox" data-layout-token="breakpoint" checked> Breakpoint</label>
+          <input type="text" class="frame-name-input" data-frame-for="breakpoint" value="Breakpoint">
+        </div>
+      </div>
+
+      <div class="prefix-input show">
+        <label for="layoutProjectName">Project Name:</label>
+        <input type="text" id="layoutProjectName" placeholder="e.g., Project A — Corporate / Enterprise">
+        <div class="prefix-hint">Used for $project field in exported JSON files</div>
+      </div>
+
+      <div id="layoutMessage" class="message"></div>
+      <button id="checkLayoutBtn" style="background:#6b7280; margin-bottom:8px;">Check Selection</button>
+      <button id="exportLayoutBtn">Export from Selection</button>
     </div>
   </div>
 
@@ -503,15 +634,65 @@
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const targetTab = tab.getAttribute('data-tab');
-        
+
         // Remove active class from all tabs and contents
         tabs.forEach(t => t.classList.remove('active'));
         tabContents.forEach(tc => tc.classList.remove('active'));
-        
+
         // Add active class to clicked tab and corresponding content
         tab.classList.add('active');
         document.getElementById(targetTab).classList.add('active');
+
+        // Entering Tab 3 → scan the file so we can disable token types with no data.
+        if (targetTab === 'tab3') {
+          parent.postMessage({ pluginMessage: { type: 'scanExportSources' } }, '*');
+        }
       });
+    });
+
+    // Tab 4 live preview: send the current frame-name mapping to the plugin so
+    // it can scan the selection and report which frames are found.
+    function getLayoutFrameNames() {
+      const frameNames = {};
+      document.querySelectorAll('#tab4 .frame-name-input').forEach(inp => {
+        frameNames[inp.getAttribute('data-frame-for')] = inp.value.trim();
+      });
+      return frameNames;
+    }
+    function requestLayoutPreview() {
+      parent.postMessage({
+        pluginMessage: { type: 'previewLayout', frameNames: getLayoutFrameNames() }
+      }, '*');
+    }
+    // Shared helpers for the "what it saw / what it did" detail block.
+    function escHtml(s) {
+      return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    }
+    // Render a bulleted Details block from an array of note strings ('' = blank).
+    function notesBlock(notes, label) {
+      if (!notes || !notes.length) return '';
+      return `<div class="msg-skipped"><strong>${label || 'Details'}:</strong><br>${
+        notes.map(n => (n === '' ? '' : '• ' + escHtml(n))).join('<br>')
+      }</div>`;
+    }
+
+    // Paint each frame-name input: green = found, amber = not found, neutral otherwise.
+    function colorFrameInputs(found, skipped) {
+      document.querySelectorAll('#tab4 .frame-name-input').forEach(inp => {
+        const key = inp.getAttribute('data-frame-for');
+        inp.classList.remove('found', 'missing');
+        if (found.includes(key)) inp.classList.add('found');
+        else if (skipped.includes(key)) inp.classList.add('missing');
+      });
+    }
+    // Scan only when the user clicks the "Check" button (no live re-scan).
+    const checkLayoutBtn = document.getElementById('checkLayoutBtn');
+    if (checkLayoutBtn) {
+      checkLayoutBtn.addEventListener('click', requestLayoutPreview);
+    }
+    // Clear the green/amber hints when a frame name is edited (stale until re-check).
+    document.querySelectorAll('#tab4 .frame-name-input').forEach(inp => {
+      inp.addEventListener('input', () => inp.classList.remove('found', 'missing'));
     });
 
     // Tab 2: Import Tokens
@@ -683,6 +864,17 @@
     // Export Tokens
     const exportTokensBtn = document.getElementById('exportTokensBtn');
     const exportProjectName = document.getElementById('exportProjectName');
+    const exportTextColor = document.getElementById('exportTextColor');
+    const exportTextColorPicker = document.getElementById('exportTextColorPicker');
+
+    // Keep the color picker and the hex text input in sync.
+    if (exportTextColorPicker && exportTextColor) {
+      exportTextColorPicker.addEventListener('input', () => { exportTextColor.value = exportTextColorPicker.value; });
+      exportTextColor.addEventListener('input', () => {
+        const v = exportTextColor.value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) exportTextColorPicker.value = v;
+      });
+    }
 
     exportTokensBtn.addEventListener('click', () => {
       // Get selected token types
@@ -698,14 +890,93 @@
       }
 
       const projectName = exportProjectName.value.trim() || 'Project A — Corporate / Enterprise';
+      const rawColor = (exportTextColor && exportTextColor.value.trim()) || '#000000';
+      const textColor = /^#[0-9a-fA-F]{3,8}$/.test(rawColor) ? rawColor.toLowerCase() : '#000000';
+
+      // Frame names to match the button / text-link frame in the selection.
+      const buttonFrameNames = {};
+      document.querySelectorAll('#tab3 .frame-name-input[data-export-frame-for]').forEach(inp => {
+        buttonFrameNames[inp.getAttribute('data-export-frame-for')] = inp.value.trim();
+      });
 
       showLoading('Exporting tokens from Figma...');
       exportTokensBtn.disabled = true;
-      
+
       parent.postMessage({
         pluginMessage: {
           type: 'exportTokens',
           tokenTypes: selectedTokens,
+          projectName: projectName,
+          textColor: textColor,
+          buttonFrameNames: buttonFrameNames
+        }
+      }, '*');
+    });
+
+    // Show the button frame-name inputs only when the Button checkbox is on.
+    const exportButtonCheckbox = document.querySelector('#tab3 input[data-token="button"]');
+    const exportButtonFrames = document.getElementById('exportButtonFrames');
+    function syncButtonFramesVisibility() {
+      if (exportButtonFrames) exportButtonFrames.style.display = (exportButtonCheckbox && exportButtonCheckbox.checked) ? '' : 'none';
+    }
+    if (exportButtonCheckbox) exportButtonCheckbox.addEventListener('change', syncButtonFramesVisibility);
+    syncButtonFramesVisibility();
+
+    // Tab 3 "Check" — preview whether the button / text-link frames match the
+    // current selection (green = found, amber = not found).
+    function getExportButtonFrameNames() {
+      const f = {};
+      document.querySelectorAll('#tab3 .frame-name-input[data-export-frame-for]').forEach(inp => {
+        f[inp.getAttribute('data-export-frame-for')] = inp.value.trim();
+      });
+      return f;
+    }
+    const checkButtonFramesBtn = document.getElementById('checkButtonFramesBtn');
+    if (checkButtonFramesBtn) {
+      checkButtonFramesBtn.addEventListener('click', () => {
+        parent.postMessage({ pluginMessage: { type: 'previewButtonFrames', frameNames: getExportButtonFrameNames() } }, '*');
+      });
+    }
+    document.querySelectorAll('#tab3 .frame-name-input[data-export-frame-for]').forEach(inp => {
+      inp.addEventListener('input', () => inp.classList.remove('found', 'missing'));
+    });
+
+    // Export from Global Style Layout (Tab 4)
+    const exportLayoutBtn = document.getElementById('exportLayoutBtn');
+    const layoutProjectName = document.getElementById('layoutProjectName');
+    const layoutMessage = document.getElementById('layoutMessage');
+
+    exportLayoutBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('#tab4 input[type="checkbox"][data-layout-token]');
+      const selectedTokens = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.getAttribute('data-layout-token'));
+
+      if (selectedTokens.length === 0) {
+        layoutMessage.textContent = 'Please select at least one token type to export.';
+        layoutMessage.className = 'message error show';
+        return;
+      }
+
+      const projectName = layoutProjectName.value.trim() || 'Project A — Corporate / Enterprise';
+
+      // Collect the (editable) frame name to match for each token type, and
+      // reset the border state to neutral until the export reports back.
+      const frameNames = {};
+      document.querySelectorAll('#tab4 .frame-name-input').forEach(inp => {
+        const key = inp.getAttribute('data-frame-for');
+        frameNames[key] = inp.value.trim();
+        inp.classList.remove('found', 'missing');
+      });
+
+      showLoading('Exporting from selected layout...');
+      exportLayoutBtn.disabled = true;
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'exportFromLayout',
+          tokenTypes: selectedTokens,
+          frameNames: frameNames,
           projectName: projectName
         }
       }, '*');
@@ -945,16 +1216,24 @@
             targetMessage = importMessage || message;
           } else if (tabId === 'tab3') {
             targetMessage = exportMessage || message;
+          } else if (tabId === 'tab4') {
+            targetMessage = layoutMessage || message;
           }
         }
-        
+
         // Fallback to main message if no specific message found
         if (!targetMessage) targetMessage = message;
-        
-        targetMessage.textContent = msg.message;
+
+        // Show the message, plus a "Details" block when the plugin sent notes.
+        if (msg.notes && msg.notes.length) {
+          targetMessage.innerHTML = `<div class="msg-main">${escHtml(msg.message)}</div>` + notesBlock(msg.notes, 'Details');
+        } else {
+          targetMessage.textContent = msg.message;
+        }
         targetMessage.className = msg.error ? 'message error show' : 'message success show';
         if (exportTokensBtn) exportTokensBtn.disabled = false;
         if (importTokensBtn) importTokensBtn.disabled = false;
+        if (exportLayoutBtn) exportLayoutBtn.disabled = false;
       } else if (msg.type === 'duplicatesFound') {
         hideLoading();
         showModal(msg.duplicates);
@@ -982,17 +1261,159 @@
       } else if (msg.type === 'tokensExported') {
         hideLoading();
         const tokens = msg.tokens;
+        const skipped = msg.skipped || [];
+        const notes = msg.notes || [];
         const projectName = msg.projectName;
-        
-        // Create zip file with all token files
-        downloadTokensAsZip(tokens, projectName);
-        
+
         const downloadCount = Object.keys(tokens).length;
-        if (exportMessage) {
-          exportMessage.textContent = `Successfully exported ${downloadCount} token file(s) as ZIP!`;
-          exportMessage.className = 'message success show';
+
+        // Render skipped types as small chips on a second line, when any.
+        const skippedHtml = skipped.length
+          ? `<div class="msg-skipped">Not found in this file (skipped): ${
+              skipped.map(s => `<span class="msg-chip">${escHtml(s)}</span>`).join('')
+            }</div>`
+          : '';
+
+        // "What it saw / what it did" — one line per token type.
+        const notesHtml = notesBlock(notes, 'Details');
+
+        if (downloadCount === 0) {
+          // Nothing was found for any requested token type — don't download an
+          // empty ZIP, just tell the user what was missing.
+          if (exportMessage) {
+            exportMessage.innerHTML =
+              `<div class="msg-main">⚠️ Nothing to export</div>` +
+              `<div class="msg-skipped">None of the selected token types were found in this file.</div>` +
+              notesHtml;
+            exportMessage.className = 'message error show';
+          }
+        } else {
+          // Create zip file with all token files that actually had data.
+          downloadTokensAsZip(tokens, projectName);
+
+          if (exportMessage) {
+            const fileWord = downloadCount === 1 ? 'file' : 'files';
+            exportMessage.innerHTML =
+              `<div class="msg-main">✅ Exported ${downloadCount} token ${fileWord} as ZIP</div>` +
+              skippedHtml + notesHtml;
+            exportMessage.className = 'message success show';
+          }
         }
         exportTokensBtn.disabled = false;
+      } else if (msg.type === 'layoutPreview') {
+        // Live scan result (selection changed or frame name edited).
+        if (msg.hasSelection) {
+          colorFrameInputs(msg.found || [], msg.skipped || []);
+        } else {
+          // No selection → clear all hints back to neutral.
+          colorFrameInputs([], []);
+        }
+      } else if (msg.type === 'exportSourcesScanned') {
+        // Disable checkboxes for token types with no source data in this file.
+        // Button is left alone (depends on canvas selection).
+        const avail = msg.available;
+        document.querySelectorAll('#tab3 input[type="checkbox"][data-token]').forEach(cb => {
+          const key = cb.getAttribute('data-token');
+          if (key === 'button') return;
+          const label = cb.closest('label');
+          if (!avail) { // scan failed → leave everything enabled
+            cb.disabled = false;
+            if (label) { label.style.opacity = ''; label.title = ''; }
+            const note = label && label.querySelector('.none-note');
+            if (note) note.remove();
+            return;
+          }
+          const has = !!avail[key];
+          cb.disabled = !has;
+          if (!has) cb.checked = false;
+          if (label) {
+            label.style.opacity = has ? '' : '0.5';
+            label.title = has ? '' : 'No data found in this file';
+            let note = label.querySelector('.none-note');
+            if (!has) {
+              if (!note) {
+                note = document.createElement('span');
+                note.className = 'none-note';
+                note.style.cssText = 'font-size:10px; color:#f5a623; margin-left:6px;';
+                note.textContent = '(none found)';
+                label.appendChild(note);
+              }
+            } else if (note) {
+              note.remove();
+            }
+          }
+        });
+      } else if (msg.type === 'buttonFramesPreview') {
+        // Tab 3 button "Check" result — color the button/text-link inputs.
+        const found = msg.found || [], skipped = msg.skipped || [];
+        document.querySelectorAll('#tab3 .frame-name-input[data-export-frame-for]').forEach(inp => {
+          const key = inp.getAttribute('data-export-frame-for');
+          inp.classList.remove('found', 'missing');
+          if (found.includes(key)) inp.classList.add('found');
+          else if (skipped.includes(key)) inp.classList.add('missing');
+        });
+        if (exportMessage) {
+          if (!msg.hasSelection) {
+            exportMessage.innerHTML = '<div class="msg-main">⚠️ Nothing selected</div><div class="msg-skipped">Select the Buttons frame (or Global Style) on canvas, then Check.</div>';
+            exportMessage.className = 'message error show';
+          } else {
+            const lbl = { button: 'Button', textLink: 'Text Link' };
+            const foundTxt = found.length ? 'Found: ' + found.map(k => lbl[k] || k).join(', ') : 'No button frames found';
+            const missTxt = skipped.length ? ' · Not found: ' + skipped.map(k => lbl[k] || k).join(', ') : '';
+            exportMessage.innerHTML = `<div class="msg-main">${found.length ? '✅' : '⚠️'} ${foundTxt}${missTxt}</div>`;
+            exportMessage.className = found.length ? 'message success show' : 'message error show';
+          }
+        }
+      } else if (msg.type === 'layoutExported') {
+        hideLoading();
+        const tokens = msg.tokens;
+        const skipped = msg.skipped || []; // token-type KEYS, e.g. 'color'
+        const found = msg.found || [];     // token-type KEYS that had data
+        const projectName = msg.projectName;
+
+        // Color each frame-name input: green = found, amber = not found.
+        colorFrameInputs(found, skipped);
+
+        const TOKEN_LABELS = {
+          color: 'Colors', typography: 'Typography',
+          button: 'Button / Text Link', textFamily: 'Text Family',
+          spacing: 'Spacing', border: 'Border', shadow: 'Shadow', breakpoint: 'Breakpoint'
+        };
+
+        const downloadCount = Object.keys(tokens).length;
+
+        // Render skipped types as small chips on a second line, when any.
+        const skippedHtml = skipped.length
+          ? `<div class="msg-skipped">Not found — check the frame name (amber): ${
+              skipped.map(k => `<span class="msg-chip">${TOKEN_LABELS[k] || k}</span>`).join('')
+            }</div>`
+          : '';
+
+        // "What it saw / what it did" per type.
+        const detailsHtml = notesBlock(msg.notes || [], 'Details');
+        // Non-fatal warnings (e.g. duplicate color names auto-renamed).
+        const noticesHtml = notesBlock(msg.notices || [], '⚠️ Notes');
+
+        if (layoutMessage) {
+          if (downloadCount === 0) {
+            // Nothing usable in the selected layout — don't download an empty ZIP.
+            layoutMessage.innerHTML =
+              `<div class="msg-main">⚠️ Nothing to export</div>` +
+              `<div class="msg-skipped">None of the selected token types were found in the selected layout.</div>` +
+              detailsHtml;
+            layoutMessage.className = 'message error show';
+          } else {
+            // Reuse the same zip download mechanism.
+            downloadTokensAsZip(tokens, projectName);
+
+            const fileWord = downloadCount === 1 ? 'file' : 'files';
+            layoutMessage.innerHTML =
+              `<div class="msg-main">✅ Exported ${downloadCount} ${fileWord} from layout as ZIP</div>` +
+              skippedHtml + detailsHtml + noticesHtml;
+            layoutMessage.className = 'message success show';
+          }
+        }
+        if (exportLayoutBtn) exportLayoutBtn.disabled = false;
       }
     };
 
@@ -1004,7 +1425,8 @@
         'shadow': 'shadow.json',
         'border': 'border.json',
         'breakpoint': 'breakpoints.json',
-        'button': 'button.json'
+        'button': 'button.json',
+        'textFamily': 'text-family.json'
       };
       return mapping[tokenType] || `${tokenType}.json`;
     }
@@ -1013,12 +1435,14 @@
       try {
         const zip = new JSZip();
         
-        // Add each token file to zip
+        // Add each token file to zip. Encode as UTF-8 bytes — JSZip treats a
+        // raw string as latin-1, which corrupts multi-byte chars like "—".
+        const utf8 = new TextEncoder();
         Object.keys(tokens).forEach(tokenType => {
           const tokenData = tokens[tokenType];
           const fileName = getFileNameForTokenType(tokenType);
           const jsonString = JSON.stringify(tokenData, null, 2);
-          zip.file(fileName, jsonString);
+          zip.file(fileName, utf8.encode(jsonString));
         });
         
         // Generate zip file
@@ -1048,7 +1472,7 @@
 
     function downloadJSON(fileName, data) {
       const jsonString = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
