@@ -1,0 +1,22 @@
+# Portainer Stack — PPTX Master Builder
+# Cách dùng: Portainer → Stacks → Add stack → dán file này (build từ Git repo hoặc upload).
+# Truy cập nội bộ qua VPN: http://<server-ip>:8765
+services:
+  pptx-master:
+    build: .                      # build từ Dockerfile cùng thư mục
+    image: pptx-master:latest
+    container_name: pptx-master
+    restart: unless-stopped
+    ports:
+      - "8765:8765"               # đổi cổng trái nếu 8765 đã bận, vd "3940:8765"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8765"
+    # LibreOffice render cần RAM — đặt trần để 1 request nặng không hạ server.
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+    # /tmp trong container đủ cho file tạm (tự dọn sau 6h + LRU). Không cần volume.
+    tmpfs:
+      - /tmp

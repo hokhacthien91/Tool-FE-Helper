@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pptx
+*.command
+*.bat
+.DS_Store
+.git
+.gitignore
+README.md
+newmaster.py

@@ -22,13 +22,17 @@ _PROGRESS = {}   # token -> {done, total, name, state:'running'|'done'|'error', 
 _PRESET_SLUG = {"default": "recommended", "fixicon": "fix-icons",
                 "fiximg": "fix-images", "editimg": "edit-images",
                 "editall": "edit-all", "fixall": "fix-all"}
+_VERIFY = {}   # token -> {done, total, state:'running'|'done'|'error', result|error}
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
 from build import plan, build
-from preview import render_slide
+from preview import render_slide, renderer_name, verify_visual
 
-PORT = 8765
+PORT = int(os.environ.get("PORT", "8765"))
+# HOST: mặc định 127.0.0.1 (chạy local an toàn). Trong Docker/server đặt HOST=0.0.0.0
+# (docker-compose đã set) để truy cập từ ngoài container.
+HOST = os.environ.get("HOST", "127.0.0.1")
 WORK = os.path.join(tempfile.gettempdir(), "pptx_master_builder")
 os.makedirs(WORK, exist_ok=True)
 _TTL_SEC = 6 * 3600   # file/token cũ hơn 6 giờ -> dọn
@@ -135,6 +139,13 @@ input[type=checkbox],input[type=radio]{accent-color:var(--acc-dark)}
 .el-seg input{display:none}
 .el-seg input:checked+span{background:var(--acc);color:#121212;font-weight:600;display:inline-block;margin:-5px -11px;padding:5px 11px}
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:99;cursor:zoom-out}
+.lb-close{position:fixed;top:18px;right:22px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:#1c1c1c;color:var(--fg);font-size:20px;line-height:1;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;transition:.15s}
+.lb-close:hover{background:var(--acc);color:#121212;border-color:var(--acc)}
+.lb-label{position:fixed;top:22px;left:50%;transform:translateX(-50%);z-index:100;background:#1c1c1c;border:1px solid var(--line);border-radius:20px;padding:6px 16px;font-size:13px;font-weight:600;color:var(--fg)}
+.lb-nav{position:fixed;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:1px solid var(--line);background:#1c1c1c;color:var(--fg);font-size:26px;line-height:1;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;transition:.15s}
+.lb-nav:hover{background:var(--acc);color:#121212;border-color:var(--acc)}
+.lb-nav:disabled{opacity:.3;cursor:default}
+.lb-prev{left:22px}.lb-next{right:22px}
 /* lightbox: preview slide dùng full (92vw). Ảnh/icon element (.sm) cap 480px vì SVG icon
    nhỏ không có kích thước nội tại -> nếu không cap sẽ bị phóng full màn hình. */
 .lb img{max-width:92vw;max-height:92vh;width:auto;height:auto;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px #000}
@@ -155,6 +166,15 @@ td{vertical-align:middle}
 .footer-credit{font-size:12px;color:var(--mut)}
 .footer-author{color:var(--acc);font-weight:600}
 .footer-copyright{color:var(--mut);font-weight:400}
+.verify-box{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.vf-summary{font-size:14px;font-weight:600;margin-bottom:8px}
+.vf-grid{display:flex;flex-wrap:wrap;gap:6px}
+.vf-slide{font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--line);display:flex;gap:6px;align-items:center}
+.vf-clk{cursor:zoom-in}.vf-clk:hover{filter:brightness(1.25)}
+.vf-slide.match{background:rgba(89,161,57,.15);color:var(--acc)}
+.vf-slide.close{background:rgba(224,184,74,.15);color:#e0b84a}
+.vf-slide.diff{background:rgba(200,60,40,.2);color:#ffb8a0}
+.vf-slide.fail{background:#222;color:var(--mut)}
 .drop-err{color:#ffb8a0;font-weight:600}
 .preset{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#12151c;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px}
 .preset-lb{font-size:13px;color:var(--fg);font-weight:600}
@@ -164,7 +184,7 @@ td{vertical-align:middle}
 .hint{background:#12151c;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:14px;font-size:13px;line-height:1.6}
 .hint b{color:var(--acc)}
 .hint .lbl{display:inline-block;background:rgba(89,161,57,.18);color:var(--acc);border-radius:3px;padding:1px 7px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-right:4px}
-.bar{height:6px;background:#0a0a0a;border-radius:3px;overflow:hidden;margin-top:8px;border:1px solid var(--line)}
+.bar{display:block;width:100%;height:6px;background:#0a0a0a;border-radius:3px;overflow:hidden;margin-top:8px;border:1px solid var(--line)}
 .bar>i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s}
 </style></head><body><div class="wrap">
 <div class="topbar">
@@ -205,12 +225,17 @@ td{vertical-align:middle}
     </select>
     <span class="preset-hint" id="presetHint">Content images + text editable, icons/background/decor fixed. Pick another preset to change all layouts at once.</span>
   </div>
+  <div class="row" style="margin:4px 0 10px">
+    <span class="mut" id="layCount"></span>
+    <button class="btn sec" id="collapseAll" type="button">Collapse all</button>
+  </div>
   <div id="rows"></div>
 
   <div class="row" style="margin-top:14px">
     <span class="mut" id="status"></span>
     <button class="btn" id="buildBtn">⚙️ Build master slides</button>
   </div>
+  <div id="statusBar"></div>
 </div>
 
 <div class="card hide" id="step3">
@@ -223,13 +248,27 @@ td{vertical-align:middle}
     <span class="lbl">Duplicate</span> Right-click a sample slide → <b>Duplicate Slide</b>, then edit. Keeps <b>full formatting</b> (multi-color titles, every element) — best when you want the exact approved look.
   </div>
   <p class="warn hide" id="warn" style="margin:10px 0 0"></p>
+  <div class="verify-box">
+    <div class="row">
+      <span class="mut">Auto-check: compare every sample slide against the original — confirm the output looks identical.</span>
+      <button class="btn sec" id="verifyBtn">🔍 Verify output</button>
+    </div>
+    <div id="verifyStatus" class="mut" style="margin-top:8px"></div>
+    <div id="verifyResult" class="hide" style="margin-top:10px"></div>
+  </div>
 </div>
 <footer class="app-footer">
   <div class="footer-title">PPTX Master Builder <span class="footer-version">v1.0.0</span> <span class="footer-sep">–</span> <span class="footer-copyright">© 2026</span></div>
   <div class="footer-credit">by <span class="footer-author">Thien Ho</span> · Technical Solution</div>
 </footer>
 </div>
-<div id="lb" class="lb hide"><img id="lbimg" alt="preview lớn"></div>
+<div id="lb" class="lb hide">
+  <button id="lbClose" class="lb-close" aria-label="Close" title="Close (Esc)">✕</button>
+  <div id="lbLabel" class="lb-label hide"></div>
+  <button id="lbPrev" class="lb-nav lb-prev hide" aria-label="Previous slide" title="Previous (←)">‹</button>
+  <img id="lbimg" alt="preview">
+  <button id="lbNext" class="lb-nav lb-next hide" aria-label="Next slide" title="Next (→)">›</button>
+</div>
 <script>
 let token=null, groups=[];
 const $=id=>document.getElementById(id);
@@ -297,6 +336,14 @@ async function upload(f){
   </div>`).join('');
   document.querySelectorAll('.chk').forEach(c=>c.onchange=()=>c.closest('.lay').classList.toggle('off',!c.checked));
   document.querySelectorAll('.caret').forEach(c=>c.onclick=()=>{c.closest('.lay').classList.toggle('collapsed');io.takeRecords();scan();});
+  // nút Collapse all: ẩn TOÀN BỘ danh sách layout -> chỉ còn 1 dòng "N layouts · M slides".
+  const nSlides=groups.reduce((a,g)=>a+g.slides.length,0);
+  $('layCount').textContent=groups.length+' layout'+(groups.length>1?'s':'')+' · '+nSlides+' slides';
+  $('collapseAll').onclick=()=>{
+    const hidden=$('rows').classList.toggle('hide');
+    $('collapseAll').textContent=hidden?'Show layouts':'Collapse all';
+    if(!hidden){io.takeRecords();scan();}   // mở lại -> nạp preview trong vùng nhìn
+  };
   // nút xóa element: toggle class deleted (build sẽ bỏ qua)
   document.querySelectorAll('.el-del').forEach(b=>b.onclick=()=>b.closest('.el').classList.toggle('deleted'));
 
@@ -357,9 +404,18 @@ async function upload(f){
   }
   scan();
   $('preset').value='default';$('presetHint').textContent=PRESET_IDLE;   // reset preset cho file mới
+  $('rows').classList.remove('hide');$('collapseAll').textContent='Collapse all';   // reset collapse cho file mới
   $('step1').classList.add('hide');$('step2').classList.remove('hide');$('step3').classList.add('hide');
 }
-$('lb').onclick=()=>$('lb').classList.add('hide');
+const closeLb=()=>{$('lb').classList.add('hide');
+  ['lbLabel','lbPrev','lbNext'].forEach(id=>$(id).classList.add('hide'));vfPos=-1;};
+$('lb').onclick=e=>{ if(e.target.id==='lb'||e.target.id==='lbClose') closeLb(); };   // click nền hoặc nút ✕
+document.addEventListener('keydown',e=>{
+  if($('lb').classList.contains('hide'))return;
+  if(e.key==='Escape')closeLb();
+  else if(e.key==='ArrowLeft'&&vfPos>0)openDiff(vfPos-1);           // ← slide trước
+  else if(e.key==='ArrowRight'&&vfPos>=0&&vfPos<vfDiffs.length-1)openDiff(vfPos+1);  // → slide sau
+});
 // "Choose another file": mở hộp thoại chọn file LUÔN (không quay về màn đầu).
 // Chọn file mới -> change event -> upload() tự phân tích & thay thế. Hủy dialog -> giữ nguyên.
 $('reset').onclick=()=>{file.value='';file.click()};
@@ -379,7 +435,8 @@ $('buildBtn').onclick=async()=>{
   });
   const options={ prune:false, disabled, choices };
   $('buildBtn').disabled=true;
-  $('status').innerHTML='<span class="spin"></span> <span id="pmsg">Starting…</span><span class="bar"><i id="barfill"></i></span>';
+  $('status').innerHTML='<span class="spin"></span> <span id="pmsg">Starting…</span>';
+  $('statusBar').innerHTML='<span class="bar"><i id="barfill"></i></span>';   // bar riêng -> full width
   const esc2=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
   // khởi build nền -> poll /progress hiện "layout X/Y" THẬT
   const preset=$('preset').value||'default';   // preset đang chọn -> chèn vào tên file
@@ -400,8 +457,8 @@ $('buildBtn').onclick=async()=>{
     };
     poll();
   });
-  setTimeout(()=>{$('buildBtn').disabled=false;$('status').textContent='';},400);
-  if(d.error){alert('Error: '+d.error);return}
+  setTimeout(()=>{$('buildBtn').disabled=false;$('status').textContent='';$('statusBar').innerHTML='';},400);
+  if(d.error){$('statusBar').innerHTML='';alert('Error: '+d.error);return}
   $('rl').textContent=d.layouts;$('rs').textContent=d.slides;
   $('dl').href='/download?token='+token; if(d.filename)$('dl').setAttribute('download',d.filename);
   // cảnh báo nếu tên layout trùng -> đã tự thêm số
@@ -410,8 +467,115 @@ $('buildBtn').onclick=async()=>{
       +d.renamed.map(r=>`<b>${r.to}</b>`).join(', ');
     $('warn').classList.remove('hide');
   } else $('warn').classList.add('hide');
+  $('verifyResult').classList.add('hide');$('verifyStatus').textContent='';$('verifyBtn').disabled=false;   // reset verify cho build mới
   $('step3').classList.remove('hide');
 };
+
+// VERIFY: so sánh slide output vs gốc. Hiện badge từng slide DẦN (streaming) + ETA tổng ngay từ đầu.
+const vfBadge=s=>{
+  if(s.status==='render-failed')   // slide quá nặng để render so sánh -> vẫn click được để nav
+    return `<span class="vf-slide fail vf-clk" data-diff="${s.index}" title="This slide is too complex to auto-render for comparison — the slide itself is fine. Please open it in PowerPoint and check manually.">Slide ${s.index} · too complex, please check manual</span>`;
+  // mọi slide render được -> click xem ảnh so sánh [gốc | output | vùng đỏ]
+  if(s.has_diff){
+    const tip=s.status==='match'
+      ? 'Click to see side-by-side (original | output | changes) — should look identical'
+      : 'Click to see what differs (red = changed area)';
+    return `<span class="vf-slide ${s.status} vf-clk" data-diff="${s.index}" title="${tip}">Slide ${s.index} · ${s.pct}% 🔍</span>`;
+  }
+  return `<span class="vf-slide ${s.status}">Slide ${s.index} · ${s.pct}%</span>`;};
+$('verifyBtn').onclick=async()=>{
+  $('verifyBtn').disabled=true;
+  vfDiffs=[]; vfPos=-1;   // reset list slide cho lần verify mới
+  $('verifyResult').classList.remove('hide');
+  $('verifyResult').innerHTML='<div class="vf-grid" id="vfGrid"></div>';   // grid hiện dần
+  $('verifyStatus').innerHTML='<span class="spin"></span> Starting…';
+  const t0=Date.now();
+  const fmt=ms=>{const s=Math.round(ms/1000);return (s>=60?Math.floor(s/60)+'m ':'')+(s%60)+'s';};
+  try{ await fetch('/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}); }
+  catch(e){ $('verifyBtn').disabled=false;$('verifyStatus').textContent='Verify failed to start.';return; }
+  let shown=0;
+  const d=await new Promise((resolve)=>{
+    const poll=async()=>{
+      let p; try{ p=await (await fetch('/verifyprogress?token='+token)).json(); }catch(e){ setTimeout(poll,400);return; }
+      if(p.state==='running'){
+        const done=p.done||0, tot=p.total||0, pct=tot?Math.round(done/tot*100):0;
+        const el=Date.now()-t0;
+        // ETA TỔNG ngay từ slide đầu tiên (el/done * tot) + thời gian còn lại
+        const totalEst=done>0?fmt(el/done*tot):'…';
+        const left=(done>0&&tot)?fmt(el/done*(tot-done)):'…';
+        $('verifyStatus').innerHTML=
+          `<span class="spin"></span> Comparing slide ${Math.min(done+1,tot||done+1)}/${tot||'?'} — ${pct}% `
+          +`<span class="mut">· ${fmt(el)} of ~${totalEst} · ~${left} left</span>`
+          +`<span class="bar"><i style="width:${pct}%"></i></span>`;
+        // biết tổng slide sớm -> khởi tạo vfDiffs đủ total (slide chưa xong = ready:false = "waiting")
+        if(tot&&vfDiffs.length!==tot)
+          vfDiffs=Array.from({length:tot},(_,i)=>vfDiffs[i]||{index:i+1,ready:false});
+        // render badge MỚI + đánh dấu slide đã xong (ready) để click xem ngay
+        const rows=p.rows||[];
+        for(;shown<rows.length;shown++){
+          const r=rows[shown];
+          $('vfGrid').insertAdjacentHTML('beforeend', vfBadge(r));
+          vfDiffs[r.index-1]={index:r.index,pct:r.pct,status:r.status,ready:!!r.has_diff,failed:r.status==='render-failed'};
+        }
+        // lightbox đang mở -> tự cập nhật: slide vừa xong mà đang xem thì hiện ảnh, refresh label/nav
+        if(!$('lb').classList.contains('hide')&&vfPos>=0)openDiff(vfPos);
+        setTimeout(poll,400);
+      }
+      else if(p.state==='done'){ resolve(p); }
+      else if(p.state==='error'){ resolve({error:p.error||'verify failed'}); }
+      else setTimeout(poll,400);
+    };
+    poll();
+  });
+  const totalTime=fmt(Date.now()-t0);
+  $('verifyBtn').disabled=false;
+  if(d.error){ $('verifyStatus').textContent='⚠️ '+d.error; $('verifyResult').classList.add('hide'); return; }
+  // tóm tắt + đảm bảo grid đầy đủ (đề phòng poll cuối bỏ sót badge)
+  const diff=d.count_diff||0, min=d.min_pct;
+  const closeN=(d.slides||[]).filter(s=>s.status==='close').length;   // 97-99.5% = khác nhẹ
+  const skipped=(d.slides||[]).filter(s=>s.status==='render-failed').length;
+  const skipNote=skipped?` <span class="mut">· ${skipped} slide(s) too complex to check — review manually</span>`:'';
+  const closeNote=closeN?` <span style="color:#e0b84a">· ${closeN} slide(s) slightly different — click to check</span>`:'';
+  const summary=(diff>0
+    ? `<span style="color:#ffb8a0">⚠️ ${diff} slide(s) differ from the original</span> (lowest ${min}%)`
+    : (closeN>0
+        ? `<span class="ok">✓ No major differences</span> (lowest ${min}%)`
+        : `<span class="ok">✅ All checked slides match the original</span> (lowest ${min}% similar)`))
+    +closeNote+skipNote+` <span class="mut">· done in ${totalTime}</span>`;
+  $('verifyStatus').innerHTML='';
+  $('verifyResult').innerHTML=`<div class="vf-summary">${summary}</div><div class="vf-grid">${(d.slides||[]).map(vfBadge).join('')}</div>`;
+  // list ĐỦ mọi slide (mọi slide click xem được — trạng thái ready/failed cập nhật ở đây)
+  vfDiffs=(d.slides||[]).map(s=>({index:s.index,pct:s.pct,status:s.status,ready:!!s.has_diff,failed:s.status==='render-failed'}));
+};
+// LIGHTBOX DIFF: duyệt qua MỌI slide (1..total) bằng prev/next + phím ←→. Slide chưa render xong
+// -> "waiting…", tự đổi thành ảnh khi xong (poll gọi lại openDiff). Slide lỗi -> "too complex".
+let vfDiffs=[], vfPos=-1;
+function openDiff(pos){
+  if(pos<0||pos>=vfDiffs.length)return;
+  vfPos=pos; const s=vfDiffs[pos]||{index:pos+1};
+  const total=vfDiffs.length;
+  $('lbLabel').classList.remove('hide');
+  $('lbPrev').classList.remove('hide'); $('lbNext').classList.remove('hide');
+  $('lbPrev').disabled=pos===0; $('lbNext').disabled=pos===total-1;
+  $('lb').classList.remove('hide');
+  if(s.ready){                     // đã render xong -> hiện ảnh so sánh
+    $('lbimg').className=''; $('lbimg').style.display='';
+    $('lbimg').src='/verifydiff?token='+token+'&slide='+s.index+'&t='+Date.now();
+    $('lbLabel').textContent=`Slide ${s.index} · ${s.pct}% (${pos+1}/${total})`;
+  }else{                           // chưa xong hoặc lỗi -> KHÔNG có ảnh
+    $('lbimg').removeAttribute('src'); $('lbimg').style.display='none';
+    $('lbLabel').textContent=s.failed
+      ? `Slide ${s.index} · too complex to compare (${pos+1}/${total})`
+      : `Slide ${s.index} · ⏳ waiting to render… (${pos+1}/${total})`;
+  }
+}
+$('verifyResult').addEventListener('click',e=>{
+  const b=e.target.closest('.vf-clk'); if(!b)return;
+  const pos=vfDiffs.findIndex(s=>s.index==b.dataset.diff);
+  if(pos>=0)openDiff(pos);
+});
+$('lbPrev').onclick=e=>{e.stopPropagation();openDiff(vfPos-1);};
+$('lbNext').onclick=e=>{e.stopPropagation();openDiff(vfPos+1);};
 </script></body></html>"""
 
 
@@ -546,6 +710,36 @@ def _run_build(token, req):
         _PROGRESS[token] = {"state": "error", "error": str(e)}
 
 
+def _run_verify(token):
+    """So sánh trực quan slide gốc vs slide output (nền). Ghi tiến độ vào _VERIFY[token]."""
+    src = os.path.join(WORK, token + "_src.pptx")
+    out = os.path.join(WORK, token + "_master.pptx")
+
+    def on_progress(done, total, row):
+        v = _VERIFY.get(token)
+        if v is not None:
+            v["done"] = done
+            v["total"] = total
+            v.setdefault("rows", []).append(row)   # tích lũy để UI hiện DẦN từng slide
+
+    try:
+        if not os.path.isfile(out):
+            _VERIFY[token] = {"state": "error", "error": "Build the file first."}
+            return
+        _VERIFY[token] = {"done": 0, "total": 0, "state": "running", "rows": []}
+        # ảnh diff [gốc|output|đỏ] cho slide không khớp -> lưu {token}_diff{i}.png, serve qua /verifydiff
+        res = verify_visual(src, out, on_progress=on_progress,
+                            diff_dir=WORK, diff_prefix=token + "_diff")
+        if not res.get("ok"):
+            _VERIFY[token] = {"state": "error", "error": res.get("error", "verify failed")}
+            return
+        _VERIFY[token] = {"state": "done", "result": res}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _VERIFY[token] = {"state": "error", "error": str(e)}
+
+
 def _read_multipart(handler):
     """Parse 1 file upload từ multipart/form-data (stdlib, không cần cgi)."""
     ctype = handler.headers.get("Content-Type", "")
@@ -598,6 +792,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path.startswith("/verifydiff"):
+            # ảnh diff [gốc|output|đỏ] của 1 slide không khớp (đã lưu lúc verify)
+            q = parse_qs(self.path.split("?", 1)[-1])
+            token = q.get("token", [""])[0]
+            slide = int(q.get("slide", ["1"])[0])
+            dp = os.path.join(WORK, f"{token}_diff{slide}.png")
+            if not os.path.isfile(dp):
+                self._json({"error": "no diff"}, 404)
+                return
+            data = open(dp, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif self.path.startswith("/preview"):
             q = parse_qs(self.path.split("?", 1)[-1])
             token = q.get("token", [""])[0]
@@ -628,6 +837,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(blob)))
             self.end_headers()
             self.wfile.write(blob)
+        elif self.path.startswith("/verifyprogress"):
+            q = parse_qs(self.path.split("?", 1)[-1])
+            token = q.get("token", [""])[0]
+            v = _VERIFY.get(token)
+            if v is None:
+                self._json({"state": "unknown"})
+            elif v.get("state") == "done":
+                self._json({"state": "done", **v["result"]})
+            elif v.get("state") == "error":
+                self._json({"state": "error", "error": v.get("error", "verify failed")})
+            else:
+                self._json({"state": "running", "done": v.get("done", 0),
+                            "total": v.get("total", 0), "rows": v.get("rows", [])})
         elif self.path.startswith("/progress"):
             q = parse_qs(self.path.split("?", 1)[-1])
             token = q.get("token", [""])[0]
@@ -674,6 +896,14 @@ class Handler(BaseHTTPRequestHandler):
                 _PROGRESS[token] = {"done": 0, "total": 0, "name": "", "state": "running"}
                 threading.Thread(target=_run_build, args=(token, req), daemon=True).start()
                 self._json({"started": True, "token": token})
+            elif self.path == "/verify":
+                length = int(self.headers.get("Content-Length", 0))
+                req = json.loads(self.rfile.read(length))
+                token = req["token"]
+                # verify chạy nền -> ghi _VERIFY; client poll /verifyprogress
+                _VERIFY[token] = {"done": 0, "total": 0, "state": "running"}
+                threading.Thread(target=_run_verify, args=(token,), daemon=True).start()
+                self._json({"started": True, "token": token})
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:
@@ -686,11 +916,19 @@ if __name__ == "__main__":
     n = _cleanup_old(time.time())   # dọn rác tạm từ các lần chạy trước
     if n:
         print(f"Đã dọn {n} file tạm cũ.")
+    rn = renderer_name()
+    if rn:
+        print(f"Preview renderer: {rn}")
+    else:
+        print("⚠ Không tìm thấy renderer preview (qlmanage/LibreOffice). Build vẫn chạy,"
+              " nhưng preview slide sẽ trống. Cài LibreOffice để bật preview trên Windows/Linux.")
     url = f"http://localhost:{PORT}"
-    print(f"PPTX Master Builder đang chạy tại: {url}")
+    print(f"PPTX Master Builder đang chạy tại: http://{HOST}:{PORT}")
     print("Nhấn Ctrl+C để dừng.")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # chỉ tự mở trình duyệt khi chạy local (Mac/Win). Trong Docker (HOST=0.0.0.0) thì bỏ qua.
+    if HOST in ("127.0.0.1", "localhost"):
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

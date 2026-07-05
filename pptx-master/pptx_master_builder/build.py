@@ -21,7 +21,10 @@ from layout import create_layout, max_shape_id
 from newmaster import create_master
 from promote import IdGen, copy_static, make_title_ph, make_pic_ph, make_pic_ph_from_original
 
-SHAPE_TAGS = (qn("p:sp"), qn("p:pic"), qn("p:grpSp"), qn("p:graphicFrame"))
+# PHẢI khớp tập shape mà classify._walk duyệt (slide.shapes) — nếu thiếu tag nào (vd p:cxnSp
+# connector) thì sp_children ngắn hơn rep.shapes -> zip() ghép LỆCH role từ vị trí đó + mất
+# shape cuối. cxnSp = đường kẻ nối, copy như static.
+SHAPE_TAGS = (qn("p:sp"), qn("p:pic"), qn("p:grpSp"), qn("p:graphicFrame"), qn("p:cxnSp"))
 
 
 def _base_blank(master):
@@ -241,15 +244,16 @@ def _build_one_layout(prs, new_master_part, layout_lst, base, name, rep, members
 
     _sanitize_layout(part)   # net an toàn: dọn chart/rel mồ côi còn sót bất kể đường nào
 
-    # gắn lại slide gốc về layout mới (giữ slide làm 'slide mẫu' text/ảnh thật để duplicate).
-    # CHỈ reassign khi layout CŨ của slide "trống" (nội dung nằm trên slide, như deck chưa có
-    # master). Nếu slide KẾ THỪA ảnh/logo từ layout cũ (deck đã có master đẹp như V2) -> GIỮ
-    # nguyên, reassign sẽ làm mất phần kế thừa.
+    # gắn lại slide về layout mới (để làm 'slide mẫu' khớp layout). CHỈ reassign slide ĐẠI DIỆN
+    # (rep = members[0]) — layout build TỪ rep nên fixed-content của layout khớp rep. Các slide
+    # KHÁC trong nhóm có nội dung RIÊNG (đặc biệt deck có slide Blank chứa content trực tiếp như
+    # slide 64-68 của V2) -> nếu reassign sẽ hiện ĐÈ fixed-content của rep lên -> CHỒNG CHÉO.
+    # Giữ layout gốc cho chúng (chúng vẫn là slide mẫu độc lập, không nhiễm content rep).
+    # Điều kiện _layout_is_blankish: rep phải đang ở layout trống mới reassign (deck chưa-master).
     if reassign:
-        for m in members:
-            sp = prs.slides[m.index - 1]
-            if _layout_is_blankish(sp.slide_layout):
-                _reassign_layout(sp.part, part)
+        rep_sp = prs.slides[rep.index - 1]
+        if _layout_is_blankish(rep_sp.slide_layout):
+            _reassign_layout(rep_sp.part, part)
     return part, n_txt_ph, n_pic_ph
 
 
@@ -265,9 +269,29 @@ def _strip_placeholder(sp_el):
 
 
 def _layout_is_blankish(layout) -> bool:
-    """Layout 'trống' = không có picture kế thừa (Blank của deck chưa build master).
-    Deck đã có master (V2) thì layout chứa ảnh nền/logo -> KHÔNG reassign để khỏi mất."""
-    return not any(sh.shape_type == MSO_PICTURE for sh in layout.shapes)
+    """Layout 'trống' = không kế thừa NỘI DUNG gì (không picture, không text nội dung). Deck chưa
+    build master dùng layout Blank -> reassign an toàn. Deck đã có master (V2): layout mang
+    ảnh nền/logo HOẶC text nội dung -> KHÔNG reassign (nếu không slide kế thừa nội dung lạ từ
+    layout -> chồng chéo, như slide 11 kế thừa text của slide đại diện).
+    BỎ QUA placeholder chrome chuẩn (date / footer / slide-number) — chúng có text như
+    '01/07/2026', '‹#›' nhưng KHÔNG phải nội dung leak, layout Blank luôn có sẵn."""
+    from pptx.enum.shapes import PP_PLACEHOLDER
+    CHROME_PH = {PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.SLIDE_NUMBER}
+    for sh in layout.shapes:
+        if sh.shape_type == MSO_PICTURE:
+            return False
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            # placeholder date/footer/slidenumber -> chrome chuẩn, không tính là nội dung
+            ph_type = None
+            if sh.is_placeholder:
+                try:
+                    ph_type = sh.placeholder_format.type
+                except Exception:
+                    ph_type = None
+            if ph_type in CHROME_PH:
+                continue
+            return False
+    return True
 
 
 def _sanitize_layout(part):
