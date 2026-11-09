@@ -1,0 +1,661 @@
+// Tasks called from Python (vr/ae.py). Each takes the params object and
+// returns a plain object that is written as JSON.
+
+function vrTask_status(P) {
+    var pr = app.project;
+    return {
+        file: pr.file ? pr.file.fsName : null,
+        dirty: pr.dirty,
+        items: pr.numItems,
+        version: app.version
+    };
+}
+
+function vrTask_open(P) {
+    var cur = app.project;
+    var curPath = cur.file ? cur.file.fsName : null;
+    if (vrSamePath(curPath, P.path)) return { opened: false, already: true, file: curPath };
+    if (cur.dirty && cur.numItems > 0 && !P.force) {
+        return { opened: false, blocked: true, file: curPath, dirty: true };
+    }
+    if (cur.numItems > 0 || curPath) cur.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+    var f = new File(P.path);
+    if (!f.exists) return { opened: false, error: "file not found: " + P.path };
+    // A modal dialog (newer-version project, conversion notice) would stop the
+    // script with no answer; suppressed, AE throws or carries on instead.
+    var openErr = null;
+    app.beginSuppressDialogs();
+    try { app.open(f); } catch (e) { openErr = vrErr(e); }
+    app.endSuppressDialogs(false);
+    if (openErr) return { opened: false, error: "After Effects could not open the project (" + openErr +
+        "). If it was saved with a newer After Effects than " + app.version + ", open it there or update AE." };
+    return { opened: true, file: app.project.file ? app.project.file.fsName : null, items: app.project.numItems };
+}
+
+// Close the open project without saving, but only if it is P.path (a job
+// copy about to be removed). Any other project is left alone.
+function vrTask_close_if(P) {
+    var cur = app.project;
+    if (!cur.file || !vrSamePath(cur.file.fsName, P.path)) return { closed: false };
+    cur.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+    return { closed: true };
+}
+
+function vrTask_save(P) {
+    app.project.save();
+    return { saved: true, file: app.project.file.fsName };
+}
+
+// Copy a project by opening the source and saving it under a new path.
+// A plain file copy breaks footage that AE resolves relative to the .aep's
+// folder (measured: 9 missing items at the source, 66 in a copied file);
+// Save As writes the resolved paths. The source file is never written.
+function vrTask_save_as_copy(P) {
+    var o = vrTask_open({ path: P.src, force: P.force });
+    if (o.blocked || o.error) return o;
+    var dst = new File(P.dst);
+    if (dst.exists) return { error: "destination exists: " + P.dst };
+    app.project.save(dst);
+    return { file: app.project.file.fsName, items: app.project.numItems };
+}
+
+function vrTask_open_comp(P) {
+    var c = vrFindComp(P.comp);
+    if (!c) return { error: "comp not found: " + P.comp };
+    c.openInViewer();
+    return { ok: true };
+}
+
+// Relink missing footage by file name. P.map = {basename: absolute path}.
+// Refuses to touch any project other than P.project (never the client's file).
+function vrTask_relink(P) {
+    if (!app.project.file || !vrSamePath(app.project.file.fsName, P.project)) {
+        return { error: "open project is not " + P.project };
+    }
+    var done = [], left = [];
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (!(it instanceof FootageItem) || !it.footageMissing) continue;
+        var stored = null;
+        try { stored = it.missingFootagePath; } catch (e) {}
+        try { if (!stored && it.mainSource.file) stored = it.mainSource.file.fsName; } catch (e) {}
+        var base = stored ? stored.split("/").pop() : it.name;
+        var hit = P.map[base];
+        if (!hit) { left.push(base); continue; }
+        try { it.replace(new File(hit)); done.push(base); }
+        catch (e) { left.push(base + " (" + vrErr(e) + ")"); }
+    }
+    if (done.length && P.save) app.project.save();
+    return { relinked: done, missing: left };
+}
+
+function vrInstalledEffects() {
+    var set = {};
+    for (var i = 0; i < app.effects.length; i++) set[app.effects[i].matchName] = true;
+    return set;
+}
+
+// Fonts used by text layers of one comp (or all comps when comp is null).
+function vrFontsOf(comps) {
+    var out = {};
+    for (var c = 0; c < comps.length; c++) {
+        var C = comps[c];
+        for (var k = 1; k <= C.numLayers; k++) {
+            var L = C.layer(k);
+            if (!(L instanceof TextLayer)) continue;
+            var td;
+            try { td = L.property("ADBE Text Properties").property("ADBE Text Document").value; } catch (e) { continue; }
+            var ps = td.font;
+            var sub = null, fam = "";
+            try { sub = td.fontObject.isSubstitute; fam = td.fontObject.familyName; } catch (e) {}
+            if (!out[ps]) out[ps] = { font: ps, family: fam, substitute: sub, layers: [] };
+            if (sub === true) out[ps].substitute = true;
+            if (out[ps].layers.length < 5) out[ps].layers.push(C.name + " / " + L.name);
+        }
+    }
+    var arr = [];
+    for (var f in out) if (out.hasOwnProperty(f)) arr.push(out[f]);
+    return arr;
+}
+
+function vrEffectsOf(comps, installed) {
+    var miss = {};
+    for (var c = 0; c < comps.length; c++) {
+        var C = comps[c];
+        for (var k = 1; k <= C.numLayers; k++) {
+            var L = C.layer(k);
+            var par = L.property("ADBE Effect Parade");
+            if (!par) continue;
+            for (var e = 1; e <= par.numProperties; e++) {
+                var fx = par.property(e);
+                if (installed[fx.matchName]) continue;
+                var key = fx.matchName;
+                if (!miss[key]) miss[key] = { matchName: key, name: fx.name, where: [] };
+                if (miss[key].where.length < 5) miss[key].where.push(C.name + " / " + L.name);
+            }
+        }
+    }
+    var arr = [];
+    for (var m in miss) if (miss.hasOwnProperty(m)) arr.push(miss[m]);
+    return arr;
+}
+
+function vrMissingFootage(items) {
+    var arr = [];
+    for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it instanceof FootageItem && it.footageMissing) {
+            var p = "";
+            try { p = it.missingFootagePath; } catch (e) { p = ""; }
+            arr.push({ name: it.name, path: p });
+        }
+    }
+    return arr;
+}
+
+// Missing footage that can show up in a render: reached from the comp only
+// through enabled, non-guide layers. Middlesex's master has 3 missing files,
+// all on disabled layers (render matched the delivery); Airbus CW45 had 13 on
+// live layers and rendered as colour bars.
+function vrVisibleMissing(comp) {
+    var out = [], seen = {};
+    function walk(C, chain, depth) {
+        if (depth > 12) return;
+        for (var k = 1; k <= C.numLayers; k++) {
+            var L = C.layer(k);
+            if (!L.enabled || L.guideLayer || !L.hasVideo) continue;
+            var s = L.source;
+            if (!s) continue;
+            if (s instanceof CompItem) { walk(s, chain + " > " + s.name, depth + 1); continue; }
+            if (s instanceof FootageItem && s.footageMissing && !seen[s.id]) {
+                seen[s.id] = true;
+                out.push({ name: s.name, where: chain + " / " + L.name });
+            }
+        }
+    }
+    walk(comp, comp.name, 0);
+    return out;
+}
+
+// Every item a comp depends on, recursively.
+function vrDeps(comp) {
+    var seen = {}, items = [], comps = [];
+    function walk(C) {
+        if (seen[C.id]) return;
+        seen[C.id] = true;
+        comps.push(C);
+        items.push(C);
+        for (var k = 1; k <= C.numLayers; k++) {
+            var s = C.layer(k).source;
+            if (!s || seen[s.id]) continue;
+            if (s instanceof CompItem) walk(s);
+            else { seen[s.id] = true; items.push(s); }
+        }
+    }
+    walk(comp);
+    return { items: items, comps: comps };
+}
+
+function vrTask_intake(P) {
+    var pr = app.project;
+    var comps = [], all = [], allComps = [];
+    for (var i = 1; i <= pr.numItems; i++) {
+        var it = pr.item(i);
+        all.push(it);
+        if (!(it instanceof CompItem)) continue;
+        allComps.push(it);
+        comps.push({
+            id: it.id, name: it.name, folder: vrFolderPath(it), w: it.width, h: it.height,
+            duration: it.duration, fps: it.frameRate, layers: it.numLayers, usedIn: it.usedIn.length,
+            workStart: it.workAreaStart, workDur: it.workAreaDuration
+        });
+    }
+    var installed = vrInstalledEffects();
+    var om = [];
+    try {
+        if (allComps.length) {
+            var rq = pr.renderQueue.items.add(allComps[0]);
+            om = rq.outputModule(1).templates;
+            rq.remove();
+        }
+    } catch (e) { om = []; }
+    return {
+        file: pr.file ? pr.file.fsName : null,
+        bpc: pr.bitsPerChannel,
+        comps: comps,
+        fonts: vrFontsOf(allComps),
+        footageMissing: vrMissingFootage(all),
+        effectsMissing: vrEffectsOf(allComps, installed),
+        omTemplates: om
+    };
+}
+
+// ---------------------------------------------------------------- analyze
+
+// Text layers or vector logos (.ai/.eps/.svg/.pdf) inside a precomp: things a
+// cover crop must not cut. Middlesex's NEXUS intro is an .ai logo, no text.
+function vrCompHasText(C, depth) {
+    if (depth > 3) return false;
+    for (var k = 1; k <= C.numLayers; k++) {
+        var L = C.layer(k);
+        if (!L.enabled) continue;
+        if (L instanceof TextLayer) return true;
+        try { if (L.source && L.source.file && /\.(ai|eps|svg|pdf)$/i.test(L.source.file.name)) return true; } catch (e) {}
+        if (L.source instanceof CompItem && vrCompHasText(L.source, depth + 1)) return true;
+    }
+    return false;
+}
+
+function vrSampleTime(L, C) {
+    var a = Math.max(L.inPoint, 0), b = Math.min(L.outPoint, C.duration);
+    if (b <= a) return Math.max(0, Math.min(C.duration - 0.01, a));
+    return a + (b - a) * 0.5;
+}
+
+function vrCoverage(r, C) {
+    if (!r) return 0;
+    var ix = Math.max(0, Math.min(r.x1, C.width) - Math.max(r.x0, 0));
+    var iy = Math.max(0, Math.min(r.y1, C.height) - Math.max(r.y0, 0));
+    return (ix * iy) / (C.width * C.height);
+}
+
+// Every [t1, t2] span between two consecutive keyframes of any animated
+// property of a layer (transform, masks, effects, text animators). BCB's whole
+// animation lives in keyframes between 0 and 6.3 s while every layer starts at
+// 0, so in-points alone sampled only the settled frames.
+function vrKeySpans(group, out) {
+    for (var i = 1; i <= group.numProperties && out.length < 60; i++) {
+        var p;
+        try { p = group.property(i); } catch (e) { continue; }
+        if (!p) continue;
+        if (p.propertyType === PropertyType.PROPERTY) {
+            var n = 0;
+            try { n = p.numKeys; } catch (e) { n = 0; }
+            for (var k = 1; k < n; k++) out.push([p.keyTime(k), p.keyTime(k + 1)]);
+        } else if (p.numProperties) {
+            vrKeySpans(p, out);
+        }
+    }
+    return out;
+}
+
+function vrTask_analyze(P) {
+    var C = vrFindComp(P.master);
+    if (!C) return { error: "comp not found: " + P.master };
+    var dep = vrDeps(C);
+    var installed = vrInstalledEffects();
+    var layers = [];
+    var children = {};
+    for (var k = 1; k <= C.numLayers; k++) {
+        var L = C.layer(k);
+        if (L.parent) {
+            if (!children[L.parent.index]) children[L.parent.index] = [];
+            children[L.parent.index].push(k);
+        }
+    }
+    for (var k = 1; k <= C.numLayers; k++) {
+        var L = C.layer(k);
+        var kind = vrLayerKind(L);
+        var t = vrSampleTime(L, C);
+        var r = null;
+        try { r = vrLayerRect(L, t); } catch (e) { r = null; }
+        var cov = vrCoverage(r, C);
+        var role = "CONTENT", conf = "high", why = "", hasText = false;
+        var hasExpr = false;
+        try {
+            var tg = L.property("ADBE Transform Group");
+            for (var q = 1; q <= tg.numProperties; q++) {
+                var pp = tg.property(q);
+                if (pp.canSetExpression && pp.expressionEnabled && pp.expression !== "") hasExpr = true;
+            }
+        } catch (e) {}
+        var srcName = "";
+        try { srcName = L.source ? L.source.name : ""; } catch (e) {}
+        if (L.parent) {
+            role = "FOLLOW"; why = "child of L" + L.parent.index + " (" + L.parent.name + ")";
+        } else if (kind === "audio") {
+            role = "IGNORE"; why = "audio";
+        } else if (L.guideLayer) {
+            role = "IGNORE"; why = "guide layer";
+        } else if (kind === "camera" || kind === "light") {
+            role = "IGNORE"; why = kind + " 3D (not supported)"; conf = "low";
+        } else if (kind === "adjustment") {
+            role = "BG"; why = "adjustment layer covers the frame";
+        } else if (kind === "text") {
+            role = "CONTENT"; why = "text layer";
+        } else if (kind === "null") {
+            if (children[k]) { role = "CONTENT"; why = "null controlling " + children[k].length + " child layer(s)"; conf = "low"; }
+            else { role = "IGNORE"; why = "null with no children"; }
+        } else if ((kind === "still" || kind === "footage") && vrHasAlpha(L) && cov >= 0.3 && cov < 0.98) {
+            // A cut-out (person, product, aircraft): neither x max (crops it, BCB lost the
+            // woman's head at 9:16) nor x min (leaves it tiny) is right.
+            role = "SUBJECT"; conf = "low";
+            why = "cut-out image (has alpha) covering " + Math.round(cov * 100) + "% of the frame: likely the subject";
+        } else if (cov >= 0.98) {
+            role = "BG"; why = "covers " + Math.round(cov * 100) + "% of the frame";
+            if (kind === "comp" && vrCompHasText(L.source, 0)) { conf = "low"; hasText = true; why += ", but the precomp has text/logo inside"; }
+        } else if (cov >= 0.85) {
+            role = "BG"; conf = "low"; why = "covers " + Math.round(cov * 100) + "% of the frame";
+        } else {
+            role = "CONTENT"; why = "takes " + Math.round(cov * 100) + "% of the frame";
+            if (kind === "still" || kind === "shape") why += " (" + kind + ")";
+            if (cov > 0.5) conf = "low";
+        }
+        if (r && r.rotated && role !== "FOLLOW" && role !== "IGNORE") { conf = "low"; why += ", rotated"; }
+        if (hasExpr) { conf = "low"; why += ", transform has an expression"; }
+        var matteOf = null;
+        try { if (L.hasTrackMatte && L.trackMatteLayer) matteOf = L.trackMatteLayer.index; } catch (e) {}
+        var srcId = null, srcT = null;
+        if (kind === "comp" && !L.timeRemapEnabled && L.stretch !== 0) {
+            srcId = L.source.id;
+            srcT = Math.max(0, Math.min(L.source.duration - L.source.frameDuration, (t - L.startTime) * 100 / L.stretch));
+        }
+        var spans = [];
+        if (L.hasVideo && !L.guideLayer) {
+            try { vrKeySpans(L, spans); } catch (e) { spans = []; }
+        }
+        var srcFile = null;
+        try { if (L.source && L.source.file && !L.source.footageMissing) srcFile = L.source.file.fsName; } catch (e) {}
+        layers.push({
+            keySpans: spans, srcFile: srcFile, blendNormal: L.blendingMode === BlendingMode.NORMAL,
+            srcLayers: (L.source instanceof CompItem) ? L.source.numLayers : null,
+            srcVideo: (L.source && !(L.source instanceof CompItem) && L.source.mainSource && !L.source.mainSource.isStill) ? true : false,
+            index: k, name: L.name, kind: kind, source: srcName, srcId: srcId, srcTime: srcT,
+            srcW: L.source && L.source.width ? L.source.width : null, srcH: L.source && L.source.height ? L.source.height : null,
+            enabled: L.enabled,
+            audible: (function () { try { return L.hasAudio && L.audioEnabled; } catch (e) { return false; } })(),
+            inPoint: L.inPoint, outPoint: L.outPoint, parent: L.parent ? L.parent.index : null,
+            children: children[k] || [], role: role, conf: conf, why: why, coverage: cov, hasText: hasText,
+            rect: r, sampleTime: t, expr: hasExpr, matte: matteOf, threeD: L.threeDLayer
+        });
+    }
+    // A null takes the role of its children: if any child covers the frame,
+    // scaling the null by x max is what keeps that child covering.
+    for (var i = 0; i < layers.length; i++) {
+        var N = layers[i];
+        if (N.kind !== "null" || N.parent || !N.children.length) continue;
+        for (var j = 0; j < N.children.length; j++) {
+            var ch = layers[N.children[j] - 1];
+            if (ch.coverage >= 0.98) {
+                N.role = "BG"; N.conf = "low";
+                N.why = "null controlling L" + ch.index + " (" + ch.name + ") which covers " + Math.round(ch.coverage * 100) + "% of the frame";
+                break;
+            }
+        }
+    }
+    // A track matte follows the role of the layer it mattes.
+    for (var i = 0; i < layers.length; i++) {
+        if (layers[i].matte === null) continue;
+        var m = layers[layers[i].matte - 1];
+        if (m && !m.parent && m.role !== layers[i].role) {
+            m.role = layers[i].role; m.why = "track matte of L" + layers[i].index; m.conf = "high";
+        }
+    }
+    var installedFx = vrEffectsOf(dep.comps, installed);
+    return {
+        master: { name: C.name, w: C.width, h: C.height, duration: C.duration, fps: C.frameRate,
+                  workStart: C.workAreaStart, workDur: C.workAreaDuration, bg: vrArr(C.bgColor) },
+        layers: layers,
+        fonts: vrFontsOf(dep.comps),
+        footageMissing: vrMissingFootage(dep.items),
+        footageMissingVisible: vrVisibleMissing(C),
+        effectsMissing: installedFx
+    };
+}
+
+// ---------------------------------------------------------------- frames
+
+// saveFrameToPng is asynchronous, writes at the comp's preview resolution and
+// comes out near-black (flat 25/255) in a 32 bpc project. So: switch to 8 bpc
+// and full resolution, queue the grabs, and hand back the previous state;
+// Python waits for the files, then calls vrTask_restore with it.
+function vrTask_frames(P) {
+    var done = 0, errs = [];
+    var prev = { bpc: app.project.bitsPerChannel, res: {} };
+    if (app.project.bitsPerChannel !== 8) app.project.bitsPerChannel = 8;
+    for (var i = 0; i < P.frames.length; i++) {
+        var fr = P.frames[i];
+        var c = fr.compId ? app.project.itemByID(fr.compId) : vrFindComp(fr.comp);
+        if (!c) { errs.push("comp not found: " + fr.comp); continue; }
+        if (prev.res[String(c.id)] === undefined) {
+            prev.res[String(c.id)] = vrArr(c.resolutionFactor);
+            c.resolutionFactor = [1, 1];
+        }
+        var f = new File(fr.path);
+        if (f.exists) f.remove();
+        try { c.saveFrameToPng(fr.t, f); done++; }
+        catch (e) { errs.push(fr.comp + " @" + fr.t + ": " + vrErr(e)); }
+    }
+    return { queued: done, errors: errs, prev: prev };
+}
+
+function vrTask_restore(P) {
+    var prev = P.prev;
+    for (var n in prev.res) {
+        if (!prev.res.hasOwnProperty(n)) continue;
+        var c = app.project.itemByID(parseInt(n, 10));
+        if (c) c.resolutionFactor = prev.res[n];
+    }
+    if (app.project.bitsPerChannel !== prev.bpc) app.project.bitsPerChannel = prev.bpc;
+    if (P.save) app.project.save();
+    return { ok: true };
+}
+
+// ---------------------------------------------------------------- build
+
+function vrMapProp(prop, fnVal, fnTan, warn, label) {
+    if (prop.canSetExpression && prop.expressionEnabled && prop.expression !== "") {
+        warn.push(label + ": has an expression, left unchanged");
+        return;
+    }
+    if (prop.numKeys === 0) {
+        prop.setValue(fnVal(vrArr(prop.value)));
+        return;
+    }
+    for (var k = 1; k <= prop.numKeys; k++) {
+        var tin = null, tout = null;
+        if (fnTan && prop.isSpatial) {
+            tin = vrArr(prop.keyInSpatialTangent(k));
+            tout = vrArr(prop.keyOutSpatialTangent(k));
+        }
+        prop.setValueAtKey(k, fnVal(vrArr(prop.keyValue(k))));
+        if (tin) prop.setSpatialTangentsAtKey(k, fnTan(tin), fnTan(tout));
+    }
+}
+
+function vrOne(v) { return v.length === 1 ? v[0] : v; }
+
+// Position mapping. mode "axis": x*Kw, y*Kh (keeps edge-anchored elements at
+// their edge). mode "center": uniform k about the frame centre (keeps a group
+// of elements together; for BG it also guarantees the frame stays covered).
+function vrMapLayer(L, k, Kw, Kh, ox, oy, warn, mode, M, C, lin) {
+    var tr = L.property("ADBE Transform Group");
+    var label = "L" + L.index + " " + L.name;
+    var ax = Kw, ay = Kh, bx = ox, by = oy;
+    if (lin) {
+        ax = lin.ax; bx = lin.bx + ox; ay = lin.ay; by = lin.by + oy;
+    } else if (mode === "center") {
+        ax = k; ay = k;
+        bx = C.width / 2 - M.width / 2 * k + ox;
+        by = C.height / 2 - M.height / 2 * k + oy;
+    }
+    Kw = ax; Kh = ay; ox = bx; oy = by;
+    var sc = tr.property("ADBE Scale");
+    vrMapProp(sc, function (v) {
+        var o = [v[0] * k, v[1] * k];
+        if (v.length > 2) o.push(v[2]);
+        return o;
+    }, null, warn, label + " Scale");
+    var pos = tr.property("ADBE Position");
+    if (pos.dimensionsSeparated) {
+        vrMapProp(tr.property("ADBE Position_0"), function (v) { return v[0] * Kw + ox; }, null, warn, label + " X Position");
+        vrMapProp(tr.property("ADBE Position_1"), function (v) { return v[0] * Kh + oy; }, null, warn, label + " Y Position");
+    } else {
+        vrMapProp(pos, function (v) {
+            var o = [v[0] * Kw + ox, v[1] * Kh + oy];
+            if (v.length > 2) o.push(v[2]);
+            return o;
+        }, function (t) {
+            var o = [t[0] * Kw, t[1] * Kh];
+            if (t.length > 2) o.push(t[2]);
+            return o;
+        }, warn, label + " Position");
+    }
+}
+
+function vrHasAlpha(L) {
+    try { return L.source.mainSource.hasAlpha === true; } catch (e) { return false; }
+}
+
+// Position map for one axis of a SUBJECT layer scaled by k: an edge the
+// subject touches in the master stays touched (BCB: the woman stands on the
+// bottom edge). Touching both or neither edge keeps its relative position.
+function vrSubjectAxis(a, b, m, n, k) {
+    var tol = m * 0.02;
+    var near = a <= tol, far = b >= m - tol;
+    if (far && !near) return { mul: k, add: n - m * k };
+    if (near && !far) return { mul: k, add: 0 };
+    return { mul: n / m, add: 0 };
+}
+
+function vrScaleRatios(L) {
+    var sc = L.property("ADBE Transform Group").property("ADBE Scale");
+    var out = [];
+    if (sc.numKeys === 0) out.push(vrArr(sc.value));
+    for (var k = 1; k <= sc.numKeys; k++) out.push(vrArr(sc.keyValue(k)));
+    var r = [];
+    for (var i = 0; i < out.length; i++) r.push(out[i][1] === 0 ? null : out[i][0] / out[i][1]);
+    return r;
+}
+
+// aerender -comp picks a comp by name: never share one with another comp.
+function vrUniqueCompName(want, self) {
+    var name = want, n = 1;
+    for (;;) {
+        var clash = false;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var it = app.project.item(i);
+            if (it !== self && it instanceof CompItem && it.name === name) { clash = true; break; }
+        }
+        if (!clash) return name;
+        n++;
+        name = want + " (VR" + n + ")";
+    }
+}
+
+function vrTask_build(P) {
+    var M = vrFindComp(P.master);
+    if (!M) return { error: "comp not found: " + P.master };
+    var root = app.project.rootFolder;
+    var folder = vrFindFolder(P.folder, root);
+    if (!folder) folder = app.project.items.addFolder(P.folder);
+    var results = [];
+    for (var s = 0; s < P.sizes.length; s++) {
+        var S = P.sizes[s];
+        var warn = [];
+        // Remove the previous build of this size so reruns do not pile up copies.
+        for (var i = app.project.numItems; i >= 1; i--) {
+            var it = app.project.item(i);
+            if (it instanceof CompItem && it.name === S.name && it.parentFolder === folder) it.remove();
+        }
+        var C = M.duplicate();
+        C.name = vrUniqueCompName(S.want || S.name, C);
+        C.parentFolder = folder;
+        C.width = S.w;
+        C.height = S.h;
+        var Kw = S.w / M.width, Kh = S.h / M.height;
+        var kBg = S.bg_k, kContent = S.content_k;
+        var mapped = 0;
+        for (var k = 1; k <= C.numLayers; k++) {
+            var L = C.layer(k);
+            if (L.parent) continue;
+            var role = P.roles[String(k)];
+            // Per-layer override from the reviewer: extra scale and offset on top
+            // of the role's rule (BCB designer: logo x1.08, text x1.0).
+            var ov = (S.layers && S.layers[String(k)]) || {};
+            var om = ov.k ? ov.k : 1, odx = ov.dx || 0, ody = ov.dy || 0;
+            if (role === "BG") { vrMapLayer(L, kBg * om, Kw, Kh, odx, ody, warn, "center", M, C); mapped++; }
+            else if (role === "CONTENT") { vrMapLayer(L, kContent * om, Kw, Kh, S.ox + odx, S.oy + ody, warn, S.layout, M, C); mapped++; }
+            else if (role === "SUBJECT") {
+                var ML = M.layer(k);
+                var rr = null;
+                try { rr = vrLayerRect(ML, vrSampleTime(ML, M)); } catch (e) { rr = null; }
+                if (!rr) rr = { x0: 0, y0: 0, x1: M.width, y1: M.height };
+                var ks = S.subject_k * om;
+                var kx = vrSubjectAxis(rr.x0, rr.x1, M.width, C.width, ks);
+                var ky = vrSubjectAxis(rr.y0, rr.y1, M.height, C.height, ks);
+                vrMapLayer(L, ks, Kw, Kh, (S.sx || 0) + odx, (S.sy || 0) + ody, warn, "subject", M, C,
+                           { ax: kx.mul, bx: kx.add, ay: ky.mul, by: ky.add });
+                mapped++;
+            }
+        }
+        // Verify on the built comp: no layer may change its X/Y scale ratio.
+        var stretched = [];
+        for (var k = 1; k <= C.numLayers; k++) {
+            var a = vrScaleRatios(M.layer(k)), b = vrScaleRatios(C.layer(k));
+            for (var j = 0; j < a.length && j < b.length; j++) {
+                if (a[j] !== null && b[j] !== null && Math.abs(a[j] - b[j]) > 0.0005) {
+                    stretched.push("L" + k + " " + C.layer(k).name); break;
+                }
+            }
+        }
+        results.push({ name: C.name, w: C.width, h: C.height, mapped: mapped, warnings: warn,
+                       stretched: stretched, kw: Kw, kh: Kh, bg_k: kBg, content_k: kContent, subject_k: S.subject_k,
+                       layout: S.layout });
+    }
+    if (P.save) app.project.save();
+    return { sizes: results };
+}
+
+// ---------------------------------------------------------------- bounds
+
+// Comp-space rects of every visible CONTENT layer (and its descendants) at
+// the given times, for the master and the built comps (same layer indices).
+function vrTask_bounds(P) {
+    var out = {};
+    for (var c = 0; c < P.comps.length; c++) {
+        var C = vrFindComp(P.comps[c]);
+        if (!C) continue;
+        var rows = [];
+        for (var i = 0; i < P.times.length; i++) {
+            var t = P.times[i];
+            for (var n = 0; n < P.layers.length; n++) {
+                var L = C.layer(P.layers[n]);
+                if (!L.enabled || !L.hasVideo || L.guideLayer) continue;
+                if (t < L.inPoint || t >= L.outPoint) continue;
+                var r = null;
+                try { r = vrLayerRect(L, t); } catch (e) { r = null; }
+                if (r) rows.push({ t: t, layer: L.index, name: L.name, x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 });
+            }
+        }
+        out[P.comps[c]] = { w: C.width, h: C.height, rects: rows };
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------- compare
+
+// Comp-space rect of every visible layer (any role, any depth in the layer
+// list) at each time, keyed by name: used to compare a built comp with the
+// designer's own comp of the same size, whose layer order may differ.
+function vrTask_rects_all(P) {
+    var out = {};
+    for (var c = 0; c < P.comps.length; c++) {
+        var C = vrFindComp(P.comps[c]);
+        if (!C) continue;
+        var rows = [];
+        for (var i = 0; i < P.times.length; i++) {
+            var t = P.times[i];
+            for (var k = 1; k <= C.numLayers; k++) {
+                var L = C.layer(k);
+                if (!L.enabled || !L.hasVideo || L.guideLayer || L.nullLayer) continue;
+                if (t < L.inPoint || t >= L.outPoint) continue;
+                var r = null;
+                try { r = vrLayerRect(L, t); } catch (e) { r = null; }
+                if (r) rows.push({ t: t, i: k, name: L.name, x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 });
+            }
+        }
+        out[P.comps[c]] = { w: C.width, h: C.height, rects: rows };
+    }
+    return out;
+}

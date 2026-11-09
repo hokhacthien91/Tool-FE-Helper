@@ -1,0 +1,27 @@
+VIDEO RESIZE
+============
+
+Needs After Effects, and internet the first time.
+
+1. Unzip. Keep the folder somewhere permanent (e.g. Documents): your jobs are saved in it.
+
+2. Start
+     Mac:      double-click "Start Video Resize.command"
+     Windows:  double-click "Start Video Resize.bat"
+     Terminal: cd into this folder, then run
+
+                 bash app/run.sh
+
+   First run installs Python (about 1 min). Next times: "Quick Start".
+
+3. Keep the terminal window open. Closing it stops the tool.
+
+If something blocks you
+  Mac "Apple could not verify...":   run "bash app/run.sh" in Terminal once (step 2);
+                                     double-click works after that
+  Windows "protected your PC":       More info > Run anyway
+  Mac asks to control After Effects: OK
+  "AE did not answer":               After Effects > Settings > Scripting & Expressions >
+                                     tick "Allow Scripts to Write Files and Access Network"
+
+Help: the "Guide" button in the tool. Commands: docs/RUN.md

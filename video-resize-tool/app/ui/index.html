@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Resize</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand" id="home">Video Resize <span class="mut">PoC</span></div>
+  <nav class="steps" id="steps"></nav>
+  <div class="jobname mut" id="jobname"></div>
+  <a class="guidelink" href="/ui/guide.html" target="_blank" title="How to use the tool, with screenshots and a walkthrough video">📖 Guide</a>
+</header>
+<div class="busy hidden" id="busy"><div class="spin"></div><span id="busymsg"></span><span class="small mut">· don't use After Effects until this finishes</span><div class="bar"><i id="busybar"></i></div></div>
+<div class="err hidden" id="err"></div>
+<main id="view"></main>
+<div class="lb hidden" id="lb">
+  <div class="lb-inner">
+    <div class="lb-head"><b id="lbtitle"></b>
+      <label title="White dashed = action safe (90% of the frame). Yellow dashed = title safe: keep text inside it."><input type="checkbox" id="lbsafe"> Safe area <span class="small mut">(white = action safe 90%, yellow = title safe)</span></label>
+      <button class="ghost" id="lbclose">Close ✕</button></div>
+    <div class="lb-body">
+      <figure><div class="frame" id="lbframe"><img id="lbimg"><div class="safe"></div></div><figcaption id="lbcap"></figcaption></figure>
+      <figure><div class="frame"><img id="lbmaster"></div><figcaption>Master at the same time</figcaption></figure>
+      <figure><div class="frame"><img id="lbref"></div><figcaption>Designer's comp at the same time</figcaption></figure>
+    </div>
+  </div>
+</div>
+<script src="/ui/app.js"></script>
+</body>
+</html>

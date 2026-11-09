@@ -1,0 +1,138 @@
+// Shared helpers for every task. ExtendScript is ES3: no JSON, no Array.map,
+// no let/const. Results are written to __OUT as JSON (tmp file + rename so the
+// Python side never reads a half-written file).
+
+function vrStr(v) {
+    var t = typeof v;
+    if (v === null || v === undefined) return "null";
+    if (t === "number") return isFinite(v) ? String(Math.round(v * 10000) / 10000) : "null";
+    if (t === "boolean") return v ? "true" : "false";
+    if (t === "string") {
+        return '"' + v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")
+            .replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+    }
+    if (v instanceof Array) {
+        var a = [];
+        for (var i = 0; i < v.length; i++) a.push(vrStr(v[i]));
+        return "[" + a.join(",") + "]";
+    }
+    var o = [];
+    for (var k in v) {
+        if (v.hasOwnProperty(k)) o.push(vrStr(String(k)) + ":" + vrStr(v[k]));
+    }
+    return "{" + o.join(",") + "}";
+}
+
+// Same file? Python may send "C:/x/a.aep" while AE reports "C:\\x\\A.aep":
+// compare AE's own canonical form, case-insensitive on Windows.
+function vrSamePath(a, b) {
+    if (!a || !b) return false;
+    var x = new File(a).fsName, y = new File(b).fsName;
+    if ($.os.indexOf("Windows") >= 0) { x = x.toLowerCase(); y = y.toLowerCase(); }
+    return x === y;
+}
+
+function vrWrite(obj) {
+    var tmp = new File(__OUT + ".tmp");
+    tmp.encoding = "UTF-8";
+    tmp.lineFeed = "Unix";
+    tmp.open("w");
+    tmp.write(vrStr(obj));
+    tmp.close();
+    var dst = new File(__OUT);
+    if (dst.exists) dst.remove();
+    tmp.rename(dst.name);
+}
+
+// Never concatenate an Error object into a string: AE pops a modal dialog
+// ("Object of type Error found...") instead of throwing. Read .message only.
+function vrErr(e) {
+    var m = "";
+    try { m = e.message; } catch (x) { m = "unknown error"; }
+    var ln = "";
+    try { ln = e.line; } catch (x) { ln = ""; }
+    return m + (ln ? " (line " + ln + ")" : "");
+}
+
+// name, or "id:<itemID>" (comp names repeat in real projects).
+function vrFindComp(name) {
+    var P = app.project;
+    if (typeof name === "string" && name.indexOf("id:") === 0) {
+        var byId = P.itemByID(parseInt(name.substr(3), 10));
+        return byId instanceof CompItem ? byId : null;
+    }
+    for (var i = 1; i <= P.numItems; i++) {
+        var it = P.item(i);
+        if (it instanceof CompItem && it.name === name) return it;
+    }
+    return null;
+}
+
+function vrFindFolder(name, parent) {
+    var P = app.project;
+    for (var i = 1; i <= P.numItems; i++) {
+        var it = P.item(i);
+        if (it instanceof FolderItem && it.name === name && it.parentFolder === parent) return it;
+    }
+    return null;
+}
+
+function vrFolderPath(it) {
+    var p = [], x = it.parentFolder;
+    while (x && x !== app.project.rootFolder) { p.unshift(x.name); x = x.parentFolder; }
+    return "/" + p.join("/");
+}
+
+function vrArr(v) {
+    if (v instanceof Array) { var o = []; for (var i = 0; i < v.length; i++) o.push(v[i]); return o; }
+    return [v];
+}
+
+// Axis-aligned comp-space rect of a layer at time t, following the parent
+// chain. Rotation is ignored (reported as 'rotated' so callers can lower
+// their confidence).
+function vrLayerRect(L, t) {
+    var r;
+    try { r = L.sourceRectAtTime(t, false); } catch (e) { r = null; }
+    if (!r || (r.width === 0 && r.height === 0)) {
+        if (L.source && L.source.width) r = { left: 0, top: 0, width: L.source.width, height: L.source.height };
+        else return null;
+    }
+    var pts = [[r.left, r.top], [r.left + r.width, r.top + r.height]];
+    var rotated = false;
+    var cur = L;
+    var guard = 0;
+    while (cur && guard < 20) {
+        var tr = cur.property("ADBE Transform Group");
+        var a = vrArr(tr.property("ADBE Anchor Point").valueAtTime(t, false));
+        var s = vrArr(tr.property("ADBE Scale").valueAtTime(t, false));
+        var p = vrArr(tr.property("ADBE Position").valueAtTime(t, false));
+        var rz = 0;
+        try { rz = tr.property("ADBE Rotate Z").valueAtTime(t, false); } catch (e) { rz = 0; }
+        if (Math.abs(rz % 360) > 0.01) rotated = true;
+        for (var i = 0; i < pts.length; i++) {
+            pts[i] = [(pts[i][0] - a[0]) * s[0] / 100 + p[0], (pts[i][1] - a[1]) * s[1] / 100 + p[1]];
+        }
+        cur = cur.parent;
+        guard++;
+    }
+    var x0 = Math.min(pts[0][0], pts[1][0]), x1 = Math.max(pts[0][0], pts[1][0]);
+    var y0 = Math.min(pts[0][1], pts[1][1]), y1 = Math.max(pts[0][1], pts[1][1]);
+    return { x0: x0, y0: y0, x1: x1, y1: y1, rotated: rotated };
+}
+
+function vrLayerKind(L) {
+    if (L instanceof TextLayer) return "text";
+    if (L instanceof ShapeLayer) return "shape";
+    if (L instanceof CameraLayer) return "camera";
+    if (L instanceof LightLayer) return "light";
+    if (L.nullLayer) return "null";
+    if (L.adjustmentLayer) return "adjustment";
+    var src = L.source;
+    if (!src) return "other";
+    if (src instanceof CompItem) return "comp";
+    try { if (src.mainSource instanceof SolidSource) return "solid"; } catch (e) {}
+    try { if (src.mainSource.isStill) return "still"; } catch (e) {}
+    if (!L.hasVideo && L.hasAudio) return "audio";
+    return "footage";
+}
