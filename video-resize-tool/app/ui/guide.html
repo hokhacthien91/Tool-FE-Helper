@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Resize Guide</title>
+<link rel="stylesheet" href="/ui/style.css">
+<style>
+  .g { max-width: 980px; margin: 0 auto; padding: 18px 16px 80px; }
+  .g h1 { font-size: 24px; margin: 8px 0 4px; }
+  .g h2 { font-size: 18px; margin: 34px 0 8px; display: flex; gap: 10px; align-items: center; }
+  .g h2 .n { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--acc); color: var(--acc-ink); font-size: 15px; flex: none; }
+  .g p, .g li { line-height: 1.6; }
+  .g figure { margin: 12px 0; }
+  .g figure img { width: 100%; max-width: 760px; display: block; border-radius: 8px; border: 1px solid var(--line); }
+  .g figcaption { font-size: 12px; color: var(--mut); margin-top: 4px; }
+  .g video { width: 100%; max-height: none; border-radius: 8px; border: 1px solid var(--line); }
+  .g .toc { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; }
+  .g .toc a { padding: 3px 10px; border-radius: 99px; background: var(--chip); border: 1px solid var(--line);
+    color: var(--ink); text-decoration: none; font-size: 13px; }
+  .g .note { padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); margin: 10px 0; }
+  .g .tip { padding: 10px 14px; border-radius: 8px; background: var(--pass-bg); margin: 10px 0; }
+  .g table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+  .g th, .g td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .g code { font-size: 13px; background: var(--chip); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  .g h3 { font-size: 15px; margin: 22px 0 6px; }
+  .g kbd { font: 12px ui-monospace, monospace; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; }
+  .g .back { color: var(--acc); text-decoration: none; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" style="color:inherit;text-decoration:none">Video Resize <span class="mut">PoC</span></a>
+  <span class="mut">Guide</span>
+</header>
+<main class="g">
+  <a class="back" href="/">← Back to the tool</a>
+  <h1>Video Resize guide</h1>
+  <p>One finished <code>.aep</code> at one size → an MP4 per size you type, plus a working <code>.aep</code> with a comp per size.</p>
+  <div class="toc">
+    <a href="#start">Start</a><a href="#s1">1 Intake</a><a href="#s2">2 Roles</a><a href="#s3">3 Review</a><a href="#s4">4 Render</a>
+    <a href="#auto">Auto</a><a href="#files">Files</a><a href="#limits">Limits</a>
+  </div>
+
+  <video controls preload="metadata" poster="/ui/guide/poster.jpg" src="/ui/guide/walkthrough.mp4"></video>
+  <p class="mut small">Middlesex 10s-LAND 1920x1080 → 1080x1920. Waits sped up; the real run takes about 4.5 min.</p>
+
+  <h2 id="start">Start</h2>
+  <ul>
+    <li>Open After Effects, then double-click <b>Start Video Resize</b> (.command on Mac, .bat on Windows). First run installs Python, about 1 min.</li>
+    <li>Later: <b>Quick Start</b>. Keep the terminal window open; closing it stops the tool.</li>
+    <li>Mac blocks the file? Run <code>bash app/run.sh</code> in Terminal once. Asked to let Terminal control After Effects: <b>OK</b>.</li>
+    <li>While the yellow bar shows, don't touch After Effects.</li>
+  </ul>
+
+  <h2 id="s1"><span class="n">1</span>Intake</h2>
+  <ul>
+    <li>Paste the <code>.aep</code> path → <b>Read file</b>. The original is never written; the tool works on a copy.</li>
+    <li>Pick the <b>master comp</b> (<i>suggested</i> = the tool's guess) and the <b>sizes</b> (even numbers only).</li>
+    <li>❌ missing font → install it, or tick <i>continue anyway</i>.</li>
+  </ul>
+  <figure><img src="/ui/guide/02-intake.jpg" alt="Intake"></figure>
+
+  <h2 id="s2"><span class="n">2</span>Layer roles <span class="you">👤 You check</span></h2>
+  <table>
+    <tr><td><b>BACKGROUND</b></td><td>Fill: covers the frame, sides cropped</td></tr>
+    <tr><td><b>CONTENT</b></td><td>Fit: text and logos stay inside, get smaller</td></tr>
+    <tr><td><b>SUBJECT</b></td><td>Between the two: person or product, keeps its edge</td></tr>
+    <tr><td><b>FOLLOWS PARENT / IGNORE</b></td><td>Not touched</td></tr>
+  </table>
+  <p>Check the yellow ⚠ rows, fix any wrong role → <b>Confirm roles → Build</b>.</p>
+  <figure><img src="/ui/guide/03-roles.jpg" alt="Layer roles"></figure>
+
+  <h2 id="s3"><span class="n">3</span>Review sizes <span class="you">👤 You check</span></h2>
+  <table>
+    <tr><td><span class="st FAIL">FAIL</span></td><td>Edge uncovered or layer stretched. Must fix.</td></tr>
+    <tr><td><span class="st WARN">WARN</span></td><td>Text out of frame, text inside a background, scene cropped, expression. Look closely.</td></tr>
+    <tr><td><span class="st PASS">PASS</span></td><td>Nothing found at the sample times.</td></tr>
+  </table>
+  <p>Each message ends with <i>Fix:</i>. Click a frame to compare it with the master; tick <b>Safe area</b> (yellow = keep text inside).</p>
+  <ol>
+    <li>Change a value (Content X/Y, Text/logo ×, Background ×…) → <b>Apply</b> rebuilds.</li>
+    <li>Good → choose <b>✅ OK</b> → <b>Apply</b>. Only OK sizes render.</li>
+    <li>Can't fix with values → <b>✋ Edit by hand in AE</b>, save in AE, <i>Re-read from AE</i>.</li>
+  </ol>
+  <figure><img src="/ui/guide/04-review.jpg" alt="Review sizes"></figure>
+
+  <h2 id="s4"><span class="n">4</span>Render &amp; deliver <span class="you">👤 You check</span></h2>
+  <ul>
+    <li>Watch every MP4: the checks only saw the sample times.</li>
+    <li><b>Export report.html</b> to share. <b>Copy deliverables</b> → MP4s, <code>.aep</code>, report into <code>&lt;folder&gt;/&lt;master&gt;_resize/</code>.</li>
+  </ul>
+  <figure><img src="/ui/guide/06-render.jpg" alt="Render"></figure>
+
+  <h2 id="auto">Auto</h2>
+  <p>Tick <b>Auto</b> in step 1: guessed roles, every size without FAIL rendered, report built. Stops on visible missing footage or a FAIL.
+    Best for simple, familiar files.</p>
+
+  <h2 id="files">Files</h2>
+  <p><code>Video Resize/jobs/&lt;job&gt;/</code>: working <code>.aep</code>, <code>mp4/</code>, <code>report/</code>. Removed jobs go to <code>jobs/_trash/</code>.</p>
+
+  <h2 id="limits">Limits</h2>
+  <ul>
+    <li>Text inside per-scene precomps is not re-laid out (Showa, MTM).</li>
+    <li>No brand-guideline checks, no PSD layouts yet.</li>
+    <li>Very tall/wide sizes, 3D cameras, rotated layers: edit by hand.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,158 @@
+:root {
+  --bg: #f4f4f1; --card: #ffffff; --ink: #1d1d1b; --mut: #6d6d68; --line: #e1e1dc;
+  --acc: #2b59c3; --acc-ink: #ffffff; --pass: #1f7a3d; --warn: #9a5c00; --fail: #b3261e;
+  --pass-bg: #e6f3ea; --warn-bg: #fbf0dc; --fail-bg: #fbe5e3; --chip: #eeeeea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151515; --card: #1f1f1f; --ink: #ececea; --mut: #9b9b96; --line: #33332f;
+    --acc: #6f97ff; --acc-ink: #0d1430; --pass: #5bc27d; --warn: #e2a948; --fail: #ef6b62;
+    --pass-bg: #18301f; --warn-bg: #33270f; --fail-bg: #3a1714; --chip: #2a2a27;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.hidden { display: none !important; }
+.mut { color: var(--mut); }
+button { font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid var(--acc);
+  background: var(--acc); color: var(--acc-ink); padding: 7px 14px; font-weight: 600; }
+button.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+input[type=text], input[type=number], select { font: inherit; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+input[type=number] { width: 80px; }
+
+.top { position: sticky; top: 0; z-index: 5; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 16px; cursor: pointer; }
+.steps { display: flex; gap: 4px; flex-wrap: wrap; }
+.steps a { padding: 4px 10px; border-radius: 99px; color: var(--mut); text-decoration: none; font-size: 13px; }
+.steps a.on { background: var(--acc); color: var(--acc-ink); font-weight: 600; }
+.steps a.done { color: var(--ink); cursor: pointer; }
+.steps a.off { pointer-events: none; opacity: .5; }
+.jobname { margin-left: auto; font-size: 12px; max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.busy { position: sticky; top: 49px; z-index: 4; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--line); }
+.busy .bar { flex: 1 1 160px; height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.busy .bar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .4s; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--acc); border-radius: 50%;
+  animation: sp 0.9s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.err { padding: 10px 16px; background: var(--fail-bg); color: var(--fail); border-bottom: 1px solid var(--line);
+  white-space: pre-wrap; }
+
+main { max-width: 1240px; margin: 0 auto; padding: 18px 16px 80px; }
+h1 { font-size: 20px; margin: 4px 0 2px; } h2 { font-size: 16px; margin: 0 0 8px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 320px; min-width: 0; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+.pf { display: grid; grid-template-columns: 28px 90px 1fr; gap: 4px 8px; align-items: start; }
+.pf .k { font-weight: 600; }
+details summary { cursor: pointer; color: var(--mut); }
+
+.comps { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.comps label { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 10px;
+  border-bottom: 1px solid var(--line); cursor: pointer; }
+.comps label:hover { background: var(--chip); }
+.comps .f { font-size: 12px; color: var(--mut); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 99px;
+  background: var(--chip); border: 1px solid var(--line); font-size: 13px; }
+.chip.sel { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
+.chip button { all: unset; cursor: pointer; padding: 0 2px; }
+.chip.preset { cursor: pointer; }
+.st { font-weight: 700; font-size: 12px; padding: 1px 9px; border-radius: 99px; }
+.st.PASS { color: var(--pass); background: var(--pass-bg); }
+.st.WARN { color: var(--warn); background: var(--warn-bg); }
+.st.FAIL { color: var(--fail); background: var(--fail-bg); }
+.lv-FAIL { color: var(--fail); } .lv-WARN { color: var(--warn); } .lv-PASS { color: var(--pass); }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 5px 6px; text-align: left; vertical-align: middle; }
+.tbl th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.tbl img { width: 120px; display: block; border-radius: 3px; }
+.tbl tr.low td { background: var(--warn-bg); }
+.tbl tr.edited td:nth-child(4) { outline: 2px solid var(--acc); outline-offset: -2px; }
+.wrap { overflow-x: auto; }
+
+.strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px; }
+.strip figure { margin: 0; flex: none; cursor: zoom-in; }
+.strip img { height: 132px; display: block; border-radius: 4px; border: 2px solid transparent; }
+.strip figure.bad img { border-color: var(--fail); }
+.strip figure.warn img { border-color: var(--warn); }
+.strip figcaption { font-size: 11px; color: var(--mut); text-align: center; }
+.sizehead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sizehead h2 { margin: 0; }
+.params { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-top: 6px; }
+.params label { display: grid; gap: 2px; font-size: 12px; color: var(--mut); }
+.decide { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.items { margin: 6px 0 0; padding-left: 18px; }
+
+.prog { height: 6px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0; }
+.prog i { display: block; height: 100%; background: var(--acc); }
+video { max-width: 100%; max-height: 420px; background: #000; border-radius: 6px; }
+
+.lb { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.75); display: flex; padding: 16px; }
+.lb-inner { margin: auto; background: var(--card); border-radius: 10px; padding: 12px; max-width: 100%; max-height: 100%; overflow: auto; }
+.lb-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.lb-head button { margin-left: auto; }
+.lb-body { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.lb-body figure { margin: 0; }
+.lb-body figcaption { font-size: 12px; color: var(--mut); text-align: center; }
+.frame { position: relative; display: inline-block; }
+.frame img { display: block; max-height: 72vh; max-width: min(92vw, 900px); }
+.safe { position: absolute; inset: 5%; border: 1px dashed rgba(255,255,255,.9); outline: 1px dashed rgba(0,0,0,.6);
+  display: none; pointer-events: none; }
+.safe::after { content: ""; position: absolute; inset: 5.6%; border: 1px dashed rgba(255,220,0,.9); }
+.lb.showsafe .safe { display: block; }
+.jobs a { color: var(--acc); text-decoration: none; }
+.small { font-size: 12px; }
+
+/* A flex row stretches its children to the tallest one by default, which
+   squashed a 1457x336 logo into a square. Keep every thumbnail's own ratio. */
+.thumbs { display: flex; gap: 4px; align-items: center; }
+.thumbs img { width: 110px; height: auto; max-height: 110px; object-fit: contain; }
+
+/* comp list: the size is the thing people look for */
+.comps .dims { display: grid; justify-items: end; gap: 2px; }
+.size { display: inline-block; font-weight: 700; font-variant-numeric: tabular-nums; padding: 1px 8px;
+  border-radius: 6px; background: var(--chip); border: 1px solid var(--line); }
+.tag { font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 99px; background: var(--pass-bg); color: var(--pass); }
+.tag.mut { background: var(--chip); color: var(--mut); }
+.comps label.helper b { font-weight: 500; color: var(--mut); }
+
+/* compare with designer, per-layer adjustments, AI suggestion */
+.cmp { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; display: grid; gap: 6px; }
+.cmp select { max-width: 420px; }
+.layersbox { margin-top: 10px; }
+.layersbox input[type=number] { width: 70px; }
+.sug { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg); display: grid; gap: 4px; justify-items: start; }
+/* '?' cursor only on text that explains; a button stays a hand */
+label[title], summary[title] { cursor: help; }
+
+/* Auto mode toggle: a full-width card, not a footnote next to the button */
+.autobox { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0 0; padding: 14px 16px;
+  border: 2px solid var(--acc); border-radius: 10px; background: var(--card); cursor: pointer; }
+.autobox input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--acc); flex: none; cursor: pointer; }
+.autobox > span { display: grid; gap: 2px; }
+.autobox b { font-size: 15px; }
+.autobox.on { background: var(--acc); color: var(--acc-ink); }
+.autobox.on .mut { color: var(--acc-ink); opacity: .85; }
+
+/* trash icon button in the jobs table */
+button.del { padding: 5px 7px; line-height: 0; color: var(--mut); border-color: transparent; }
+button.del:hover { color: var(--fail); border-color: var(--fail); background: var(--fail-bg); }
+
+/* Guide link, top right */
+.guidelink { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--acc); color: var(--acc);
+  text-decoration: none; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.guidelink:hover { background: var(--acc); color: var(--acc-ink); }
+.top:not(:has(.jobname:not(:empty))) .guidelink { margin-left: auto; }
+
+/* "you check" marker on the steps where a person approves */
+.you { font-size: 12px; font-weight: 600; vertical-align: middle; padding: 2px 9px; border-radius: 99px;
+  background: var(--warn-bg); color: var(--warn); margin-left: 6px; }
