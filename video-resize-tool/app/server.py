@@ -102,6 +102,10 @@ class H(BaseHTTPRequestHandler):
                     s["reference_options"] = pipeline.reference_options(job, s)
                 if job.get("intake"):  # jobs made before a ranking change get it too
                     job["intake"]["comps"].sort(key=pipeline.comp_rank)
+                job["ai_available"] = pipeline.ai_available()
+                job["unused_versions"] = pipeline.unused_versions(job)
+                job["task_folder_hint"] = pipeline.suggest_task_folder(job)
+                job["render_plan"] = pipeline.render_plan(job)
                 return self._json(job)
             m = re.match(r"^/jobs/([^/]+)/(.+)$", path)
             if m:
@@ -135,6 +139,14 @@ class H(BaseHTTPRequestHandler):
             act = m.group(2)
             if act == "delete":
                 return self._json(pipeline.delete_job(m.group(1)))
+            if act == "clear_error":
+                j = pipeline.load(m.group(1))
+                if not j.get("busy"):
+                    j["error"] = None
+                    pipeline.save(j)
+                return self._json({"ok": True})
+            if act == "cancel":
+                return self._json({"ok": pipeline.request_cancel(m.group(1))})
             job = pipeline.load(m.group(1))
             if act == "master":
                 sizes = [s for s in b.get("sizes", []) if 4 <= int(s["w"]) <= 30000 and 4 <= int(s["h"]) <= 30000]
@@ -151,15 +163,19 @@ class H(BaseHTTPRequestHandler):
             elif act == "reference":
                 pipeline.set_reference(job, b["key"], b.get("ref"))
             elif act == "deliver":
-                pipeline.deliver(job, b.get("folder", ""))
+                pipeline.deliver(job, b.get("folder", ""), b.get("clean", True), b.get("include"))
             elif act == "suggest":
-                pipeline.suggest(job, b["key"])
+                pipeline.suggest(job, b["key"], b.get("note", ""), b.get("base"))
             elif act == "size":
-                pipeline.update_size(job, b["key"], b.get("params"), b.get("action", "rebuild"))
+                pipeline.update_size(job, b["key"], b.get("params"), b.get("action", "rebuild"), b.get("n"), b.get("vid"))
             elif act == "beats":
                 pipeline.refresh_beats(job)
             elif act == "render":
-                pipeline.start_render(job)
+                pipeline.start_render(job, bool(b.get("all")))
+            elif act == "deliver_check":
+                return self._json(pipeline.deliver_check(pipeline.load(job["id"]), b.get("folder", "")))
+            elif act == "recheck_footage":
+                pipeline.recheck_footage(job)
             elif act == "report":
                 return self._json(report.build(pipeline.mark_stale(pipeline.load(job["id"]))))
             elif act == "open":

@@ -186,6 +186,26 @@ def kill_tree(p, hard=False):
         pass
 
 
+def kill_render_cores(project):
+    """aerender starts aerendercore as its own process (macOS: parent 1, its
+    own process group), so killing aerender's group leaves it rendering.
+    Kill every aerendercore working on this project. Measured 12/11 on a
+    cancelled render: aerendercore was still running 20 s later."""
+    if IS_WIN:
+        return  # untested there; taskkill /T on aerender is expected to cover its children
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    except OSError:
+        return
+    for line in out.splitlines():
+        pid, _, cmd = line.strip().partition(" ")
+        if "aerendercore" in cmd and project in cmd:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+
+
 def ae_prefs_files():
     """AE preference text files, newest version first."""
     if IS_WIN:

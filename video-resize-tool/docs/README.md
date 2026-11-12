@@ -55,8 +55,8 @@ speed them up 8×.
 |---|---|---|
 | 1 · Intake | Opens the original in AE and *Saves As* `jobs/<id>/<name>-resize.aep`. Reads comps, fonts, footage | Picks the master comp and the sizes. Missing fonts need an explicit "continue anyway" |
 | 2 · Layer roles | Guesses a role per layer: **BACKGROUND** (×max), **SUBJECT** (×√(Kw·Kh)), **CONTENT** (×min), **FOLLOWS PARENT**, **IGNORE**. Grabs thumbnails | **Check 1**: fixes the ⚠ rows |
-| 3 · Review sizes | Duplicates the master into each size in the `VR-Resize` folder, applies the roles, grabs frames at the sample times, runs the checks | **Check 2**: OK / change values and rebuild / edit by hand in AE and re-read |
-| 4 · Render | `aerender` H.264 (40 Mbps above HD, 15 Mbps otherwise), checks each MP4 | **Check 3**: watch the MP4s, export `report.html` + `report.zip` |
+| 3 · Review sizes | Duplicates the master into each size, next to the master comp (named like the master with the new size, Comment “Built by Video Resize”), applies the roles, grabs frames at the sample times, runs the checks | **Check 2**: per size a table of versions (Original, AI n, AE edit n). Open in AE + Reload, AI suggest, Use a version, Approve |
+| 4 · Render & deliver | Renders only approved sizes that changed (*Render all again* for every one) with `aerender` H.264 (40 Mbps above HD, 15 Mbps otherwise), checks each MP4 | **Check 3**: watch the MP4s, then **Copy deliverables** into the task folder (report included in `1-Doc`) |
 
 ## Resize rules
 
@@ -69,7 +69,13 @@ speed them up 8×.
 - Only Scale and Position of layers **without a parent** change. Every keyframe is mapped, eases are
   kept, spatial tangents are scaled. Anchor Points are not touched; children follow their parent.
   Properties with an expression are skipped and reported as WARN.
-- Quick per-size controls: content X/Y (px), `Text/logo ×`, `Background ×`, subject ×/X/Y, per-layer k/dx/dy.
+- Step 3 shows each size as a list of **versions** (team, 12/11): **Original** (the tool's first build, kept as a comp `<size comp>_Original` right after the build), **AI n** (`_AI<n>`), **AE edit n** (`_AEedit<n>`). Each size card is a table: the designer row on top when there is a designer comp at that size (the master is its own card above), then one row per version (Original, AI n by number, AE edit n), frames lined up by sample time; the highlighted row is in use (the size comp, the one that renders). **Use <version>** replaces the size comp with a copy of that version's comp; what was in use is kept first (as Original, or as "AE edit n" when it was changed in AE), so switching never loses anything. The **trash** button deletes a version and its comp (not the Original, not the one in use). Older jobs that did not keep the Original show it dashed: *Build Original* rebuilds it from the default values. **Reload** and **Use** clear Approve; a rebuild from step 2 does too.
+- **✨ AI suggest** (optional request, and *from* which version) adds an AI row (about 1 min, at most 6 AI versions). Each row shows its distance to the designer in %. No value fields: every adjustment is made in AE (**Open in AE**, then **Reload**). Any size folds to one line with *hide* (Approve does not fold it).
+- **Before copying** (12/11 review): a box lists where the files go, warns when the folder does not exist yet (a typo would create a new task folder) or has no `3-Working Files` / `4-Output`, and holds back MP4s that are outdated, failed their check or are not approved (tick *copy anyway* per size).
+- **Going back** to step 1 or 2: step 1 with the same master keeps every size that is still selected (versions, approval, MP4) and the confirmed roles; a new master or a removed size asks first. Step 2 says *Rebuild all sizes* and lists what is lost before it runs.
+- **Delivery** (step 4, *Copy deliverables*) uses the team's task folder layout: MP4s → `4-Output`, working `.aep` → `3-Working Files`, report zip → `1-Doc`; a folder is created only when a file goes into it (no empty `2-Stock` or `OLD`). Picking the `4-Output` folder itself means its parent. A file of the same name from an earlier delivery moves to `OLD/<name>_<yyyymmdd-hhmm>` instead of being overwritten. When the job has version comps (Original, AI n, AE edit n), the tool asks whether to remove them from the **delivered** `.aep` (recommended); the job's own `.aep` keeps them. Measured on BCB: 7 version comps would otherwise ship next to the designer's comps.
+- **Cancel** (in the busy bar) stops Build, Reload, AI suggest, Re-pick, Build Original, Check again and Render; it is hidden for the steps it cannot stop (copying deliverables, switching or deleting a version, opening in AE). It also stops a wait on AE that never answers. Quick AE calls (status, save, rename…) give up after 30–120 s instead of 10 min. AI suggest and Render stop at once (the `claude` / `aerender` process is killed, and the `aerendercore` that aerender leaves behind as a separate process; a half-written MP4 is deleted). A script AE is running cannot be interrupted, so Build/Reload stop after the current AE step (a few seconds); sizes built so far stay, a size cancelled before its checks shows *not checked*.
+- The storyboard shows only key frames: one per hold (no visible keyframe running, no layer starting or ending), so every state is complete and no text is half-faded. In-between frames are still checked; tick **All frames** to see them. A frame a check flags is always shown.
 
 ## Sample times
 
@@ -131,7 +137,7 @@ real test before the team relies on it. Override the AE location with `VR_AE_DIR
 ## PoC limits
 
 - No PSD layout reference yet.
-- No automatic re-layout for extreme ratios (1520x240, 7168x1296): use "Edit by hand in AE".
+- No automatic re-layout for extreme ratios (1520x240, 7168x1296): adjust in AE (**Open in AE**, then **Reload**).
 - No 3D cameras, rotated layers (reported only) or expressions on transforms.
 - Checks only run at the sample times (up to 10), not every frame.
 - No brand-guideline rules: logo minimum size, clear space, platform safe zones, minimum text size.
@@ -167,11 +173,11 @@ Video Resize/
 | Block on **visible** missing footage | Step 2 | Only files reached through enabled layers count. Middlesex has 3 missing files, all on disabled layers, so it is not blocked; CW45 has 4 visible ones, so it is |
 | **SUBJECT** role | Step 2 | Scales ×√(Kw·Kh), keeps the edge it touches. A cut-out image covering 30–98% of the frame is guessed as SUBJECT |
 | **Alpha** measure for full-frame layers | Step 2 | A PNG or precomp spanning the frame but under 60% drawn, solid strokes (≥85%) or text → CONTENT. Skips track mattes, non-Normal blend modes and empty samples (<0.5%) |
-| Subject X/Y, per-layer adjustments | Step 3 | `params.sx/sy`, `params.layers = {idx: {k, dx, dy}}` |
+| Subject X/Y | Step 3 | `params.sx/sy` (`params.layers` still applied if an old job has it; no UI) |
 | Compare with the **designer's comp** of the same size | Step 3 | Found by name (WxH tokens stripped). Measures the centre offset of each name-matched layer and the pixel difference per sample time |
-| **AI suggest** | Step 3 | `claude -p` (Sonnet) Reads 3 frames (master, resize at the same time, resize mid-animation) and returns values as JSON, incl. layout and per-layer dx/dy. Runs with `--tools Read` only: with just `--allowedTools Read` it also ran Bash (drew a grid into /tmp). 1–4 minutes. Never applied by itself: "Use these values", then Apply. The frames leave the machine (Anthropic) |
+| **AI suggest** | Step 3 | `claude -p` (Sonnet) Reads 3 frames (master, resize at the same time, resize mid-animation) and returns values as JSON, incl. layout (no per-layer values). Runs with `--tools Read` only: with just `--allowedTools Read` it also ran Bash (drew a grid into /tmp). About 1 minute (`--effort low`; default effort thought for 3+ minutes). No MCP servers (`--strict-mcp-config`). Built as its own version to compare; nothing changes until *Use*. Without Claude Code on the machine the AI controls are greyed out with a note (`ai_available` in the job response, re-checked every 30 s); everything else works. The frames leave the machine (Anthropic) |
 | **Cropped scene** warning | Checks | Precomp ≥3 layers or video as background, background/content ≥ 1.5 → WARN with the % of width/height kept |
-| **Copy deliverables** | Step 4 | Copies MP4s, `.aep` and `report.zip` into `<folder>/<master>_resize/`, never overwrites |
+| **Copy deliverables** | Step 4 | Into the task folder: MP4s → `4-Output`, `.aep` → `3-Working Files`, report → `1-Doc`; an older file of the same name moves to `OLD` (see *Delivery* above) |
 | **Auto** (checkbox, step 1) | Steps 1 → 4 | Uses the guessed roles, approves every size without a FAIL, renders, builds the report. Stops on visible missing footage (step 2) or a FAIL (step 3). BCB 1:1→9:16 done in 64 s; CW45 stops at step 2 |
 | Delete job | Home | Moves the job folder to `jobs/_trash/` (move it back to restore) |
 | Master picked by comp **id** | Step 1 | Comp names repeat (Middlesex: 15 duplicated names). Picking the 2nd `Soccer-Kick` (8 layers) used to analyse the 1st (9 layers) |

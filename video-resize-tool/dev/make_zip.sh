@@ -10,7 +10,7 @@ STAGE="$(mktemp -d)/Video Resize"
 mkdir -p "$STAGE" "$BASE/dev/dist"
 rsync -a \
   --exclude '/dev' --exclude '/jobs' --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
-  --exclude '.DS_Store' --exclude '.gitignore' \
+  --exclude '.DS_Store' --exclude '.gitignore' --exclude '~$*' \
   ./ "$STAGE/"
 chmod +x "$STAGE/Start Video Resize.command" "$STAGE/Quick Start.command" "$STAGE/app/run.sh"
 rm -f "$OUT"

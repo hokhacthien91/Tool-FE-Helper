@@ -170,7 +170,8 @@ def main():
         # The UI polls every few seconds: keep request lines out of this window.
         server.H.log_message = lambda *args: None
         os.makedirs(JOBS, exist_ok=True)
-        threading.Thread(target=server.main, daemon=True).start()
+        srv = threading.Thread(target=server.main, daemon=True)
+        srv.start()
         for _ in range(40):
             if server_up():
                 break
@@ -191,8 +192,12 @@ Video Resize is open in your browser.
 • First time on macOS: "Terminal wants access to control Adobe After Effects" → click OK.
 • Keep this window open while you work. Close it (or press Ctrl+C) to stop the tool.""")
     try:
-        while True:
-            time.sleep(3600)
+        # Wait on the server itself: when `--restart` shuts it down from
+        # another window, this launcher must exit too (it used to sleep on
+        # forever, leaving one stray process per restart).
+        while srv.is_alive():
+            srv.join(1)
+        print("\nStopped: another copy of the tool took over.")
     except KeyboardInterrupt:
         print("\nStopped.")
 

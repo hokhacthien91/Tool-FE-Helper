@@ -35,7 +35,7 @@
   <span class="mut">Guide</span>
 </header>
 <main class="g">
-  <a class="back" href="/">← Back to the tool</a>
+  <a class="back" href="/"><i data-ic="arrowLeft"></i> Back to the tool</a>
   <h1>Video Resize guide</h1>
   <p>One finished <code>.aep</code> at one size → an MP4 per size you type, plus a working <code>.aep</code> with a comp per size.</p>
   <div class="toc">
@@ -44,7 +44,7 @@
   </div>
 
   <video controls preload="metadata" poster="/ui/guide/poster.jpg" src="/ui/guide/walkthrough.mp4"></video>
-  <p class="mut small">Middlesex 10s-LAND 1920x1080 → 1080x1920. Waits sped up; the real run takes about 4.5 min.</p>
+  <p class="mut small">Middlesex 10s-LAND 1920x1080 → 1080x1920: one AI suggest, the rendered MP4, delivery and the report. Waits sped up ×8; the real run took 4.5 min.</p>
 
   <h2 id="start">Start</h2>
   <ul>
@@ -58,21 +58,21 @@
   <ul>
     <li>Paste the <code>.aep</code> path → <b>Read file</b>. The original is never written; the tool works on a copy.</li>
     <li>Pick the <b>master comp</b> (<i>suggested</i> = the tool's guess) and the <b>sizes</b> (even numbers only).</li>
-    <li>❌ missing font → install it, or tick <i>continue anyway</i>.</li>
+    <li><i data-ic="xCircle" class="lv-FAIL"></i> missing font → install it, or tick <i>continue anyway</i>.</li>
   </ul>
   <figure><img src="/ui/guide/02-intake.jpg" alt="Intake"></figure>
 
-  <h2 id="s2"><span class="n">2</span>Layer roles <span class="you">👤 You check</span></h2>
+  <h2 id="s2"><span class="n">2</span>Layer roles <span class="you"><i data-ic="user"></i> You check</span></h2>
   <table>
     <tr><td><b>BACKGROUND</b></td><td>Fill: covers the frame, sides cropped</td></tr>
     <tr><td><b>CONTENT</b></td><td>Fit: text and logos stay inside, get smaller</td></tr>
     <tr><td><b>SUBJECT</b></td><td>Between the two: person or product, keeps its edge</td></tr>
     <tr><td><b>FOLLOWS PARENT / IGNORE</b></td><td>Not touched</td></tr>
   </table>
-  <p>Check the yellow ⚠ rows, fix any wrong role → <b>Confirm roles → Build</b>.</p>
+  <p>Check the yellow <i data-ic="alert" class="lv-WARN"></i> rows, fix any wrong role, then <b>Confirm roles: build <i data-ic="arrowRight"></i></b>.</p>
   <figure><img src="/ui/guide/03-roles.jpg" alt="Layer roles"></figure>
 
-  <h2 id="s3"><span class="n">3</span>Review sizes <span class="you">👤 You check</span></h2>
+  <h2 id="s3"><span class="n">3</span>Review sizes <span class="you"><i data-ic="user"></i> You check</span></h2>
   <table>
     <tr><td><span class="st FAIL">FAIL</span></td><td>Edge uncovered or layer stretched. Must fix.</td></tr>
     <tr><td><span class="st WARN">WARN</span></td><td>Text out of frame, text inside a background, scene cropped, expression. Look closely.</td></tr>
@@ -80,18 +80,26 @@
   </table>
   <p>Each message ends with <i>Fix:</i>. Click a frame to compare it with the master; tick <b>Safe area</b> (yellow = keep text inside).</p>
   <ol>
-    <li>Change a value (Content X/Y, Text/logo ×, Background ×…) → <b>Apply</b> rebuilds.</li>
-    <li>Good → choose <b>✅ OK</b> → <b>Apply</b>. Only OK sizes render.</li>
-    <li>Can't fix with values → <b>✋ Edit by hand in AE</b>, save in AE, <i>Re-read from AE</i>.</li>
+    <li>Each size is a table: one row per <b>version</b> (Original, AI 1, AE edit 1…), the designer's comp on top when there is one, frames lined up by time. The blue row is <b>in use</b> (it renders). The master is the card at the top of the page.</li>
+    <li>Needs a change → <b><i data-ic="external"></i> Open in AE</b>, adjust it there, then <b><i data-ic="refresh"></i> Reload</b>.</li>
+    <li>Want ideas → <b><i data-ic="sparkles"></i> AI suggest</b> (optional: what to change, and <i>from</i> which version) adds a row. <b><i data-ic="swap"></i> Use</b> on a row makes it render; nothing is lost.</li>
+    <li>Good → <b><i data-ic="square"></i> Approve</b>. Only approved sizes render. <b>hide</b> folds a size to one line.</li>
   </ol>
+  <p class="note small"><b>Good to know.</b> <b>Reload</b> and <b>Use</b> clear Approve: approve again.
+    <b>Cancel</b> stops after the current After Effects step (a few seconds).
+    Going back to step 1–2 and confirming again rebuilds every size (the tool asks first).
+    <b>Re-pick sample times</b> on the master card picks new frames after you change the master's timing.</p>
   <figure><img src="/ui/guide/04-review.jpg" alt="Review sizes"></figure>
 
-  <h2 id="s4"><span class="n">4</span>Render &amp; deliver <span class="you">👤 You check</span></h2>
+  <h2 id="s4"><span class="n">4</span>Render &amp; deliver <span class="you"><i data-ic="user"></i> You check</span></h2>
   <ul>
     <li>Watch every MP4: the checks only saw the sample times.</li>
-    <li><b>Export report.html</b> to share. <b>Copy deliverables</b> → MP4s, <code>.aep</code>, report into <code>&lt;folder&gt;/&lt;master&gt;_resize/</code>.</li>
+    <li><b>Render</b> (end of step 3) only renders sizes that changed; <i>Render all again</i> redoes every one.</li>
+    <li><b>Copy deliverables</b> into the task folder: MP4s → <code>4-Output</code>, <code>.aep</code> → <code>3-Working Files</code>, report → <code>1-Doc</code>. Older files of the same name move to <code>OLD</code>.</li>
+    <li>Before copying, a box shows: a new folder (typo?), MP4s held back (outdated, FAIL or not approved), and whether to leave unused versions out of the delivered <code>.aep</code>.</li>
   </ul>
   <figure><img src="/ui/guide/06-render.jpg" alt="Render"></figure>
+  <figure><img src="/ui/guide/07-deliver.jpg" alt="Copy deliverables: the check before copying"></figure>
 
   <h2 id="auto">Auto</h2>
   <p>Tick <b>Auto</b> in step 1: guessed roles, every size without FAIL rendered, report built. Stops on visible missing footage or a FAIL.
@@ -107,5 +115,6 @@
     <li>Very tall/wide sizes, 3D cameras, rotated layers: edit by hand.</li>
   </ul>
 </main>
+<script src="/ui/icons.js"></script>
 </body>
 </html>

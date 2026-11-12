@@ -4,3 +4,10 @@ dev/dist/
 __pycache__/
 *.pyc
 .DS_Store
+~$*
+# Client material stays out of this public repo (it ships only in the internal zip):
+# demo deliveries, review reports with screenshots, decks, re-shot guide pictures/video.
+dev/demo/
+dev/review-*/
+dev/review-*.zip
+*.pptx

@@ -59,6 +59,64 @@ function vrTask_save_as_copy(P) {
     return { file: app.project.file.fsName, items: app.project.numItems };
 }
 
+// Remove a comp this tool built (the AI preview after Use / Discard). Never
+// touches a comp without the tool's mark.
+function vrTask_remove_comp(P) {
+    var n = 0;
+    for (var i = app.project.numItems; i >= 1; i--) {
+        var it = app.project.item(i);
+        if (it instanceof CompItem && it.name === P.name && vrIsBuilt(it)) { it.remove(); n++; }
+    }
+    return { removed: n };
+}
+
+function vrFindBuilt(name) {
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (it instanceof CompItem && it.name === name && vrIsBuilt(it)) return it;
+    }
+    return null;
+}
+
+// Keep a version: copy a comp the tool built under a new name, same folder.
+function vrTask_dup_comp(P) {
+    var c = vrFindBuilt(P.name);
+    if (!c) return { error: "comp not found: " + P.name };
+    var d = c.duplicate();
+    d.name = vrUniqueCompName(P.to, d);
+    d.parentFolder = c.parentFolder;
+    d.comment = VR_MARK;
+    return { name: d.name };
+}
+
+// Make a version the one that renders: the size's comp becomes a copy of it.
+// The size comp keeps its name, so renders and the delivered .aep do not change.
+function vrTask_replace_comp(P) {
+    var src = vrFindBuilt(P.src);
+    if (!src) return { error: "comp not found: " + P.src };
+    var dst = vrFindBuilt(P.dst);
+    var folder = dst ? dst.parentFolder : src.parentFolder;
+    if (dst) dst.remove();
+    var d = src.duplicate();
+    d.name = vrUniqueCompName(P.dst, d);
+    d.parentFolder = folder;
+    d.comment = VR_MARK;
+    return { name: d.name };
+}
+
+// Rename a comp this tool built (older jobs named sizes "<master>_<WxH>",
+// which repeats the size when the master's name has one).
+function vrTask_rename_comp(P) {
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (it instanceof CompItem && it.name === P.name && vrIsBuilt(it)) {
+            it.name = vrUniqueCompName(P.to, it);
+            return { name: it.name };
+        }
+    }
+    return { name: null };
+}
+
 function vrTask_open_comp(P) {
     var c = vrFindComp(P.comp);
     if (!c) return { error: "comp not found: " + P.comp };
@@ -207,7 +265,7 @@ function vrTask_intake(P) {
         comps.push({
             id: it.id, name: it.name, folder: vrFolderPath(it), w: it.width, h: it.height,
             duration: it.duration, fps: it.frameRate, layers: it.numLayers, usedIn: it.usedIn.length,
-            workStart: it.workAreaStart, workDur: it.workAreaDuration
+            workStart: it.workAreaStart, workDur: it.workAreaDuration, vr: vrIsBuilt(it)
         });
     }
     var installed = vrInstalledEffects();
@@ -528,6 +586,18 @@ function vrScaleRatios(L) {
     return r;
 }
 
+// Comps the tool builds carry this in their Comment, so a rebuild only ever
+// removes its own comp. Since size comps sit next to the master, a planned
+// name can equal the designer's comp (BCB: ..._1_1080x1920 in /4. Render).
+var VR_MARK = "Built by Video Resize";
+var VR_LEGACY_FOLDER = "VR-Resize";
+
+function vrIsBuilt(it) {
+    if (!(it instanceof CompItem)) return false;
+    if (it.comment === VR_MARK) return true;
+    return !!(it.parentFolder && it.parentFolder.name === VR_LEGACY_FOLDER);
+}
+
 // aerender -comp picks a comp by name: never share one with another comp.
 function vrUniqueCompName(want, self) {
     var name = want, n = 1;
@@ -539,16 +609,22 @@ function vrUniqueCompName(want, self) {
         }
         if (!clash) return name;
         n++;
-        name = want + " (VR" + n + ")";
+        name = want + (n === 2 ? "_VR" : "_VR" + (n - 1));
     }
+}
+
+// New size comps go next to the master (the designer's render folder);
+// a master at the project root gets the old VR-Resize folder instead.
+function vrOutputFolder(M) {
+    var root = app.project.rootFolder;
+    if (M.parentFolder && M.parentFolder !== root) return M.parentFolder;
+    return vrFindFolder(VR_LEGACY_FOLDER, root) || app.project.items.addFolder(VR_LEGACY_FOLDER);
 }
 
 function vrTask_build(P) {
     var M = vrFindComp(P.master);
     if (!M) return { error: "comp not found: " + P.master };
-    var root = app.project.rootFolder;
-    var folder = vrFindFolder(P.folder, root);
-    if (!folder) folder = app.project.items.addFolder(P.folder);
+    var folder = vrOutputFolder(M);
     var results = [];
     for (var s = 0; s < P.sizes.length; s++) {
         var S = P.sizes[s];
@@ -556,11 +632,12 @@ function vrTask_build(P) {
         // Remove the previous build of this size so reruns do not pile up copies.
         for (var i = app.project.numItems; i >= 1; i--) {
             var it = app.project.item(i);
-            if (it instanceof CompItem && it.name === S.name && it.parentFolder === folder) it.remove();
+            if (it !== M && it.name === S.name && vrIsBuilt(it)) it.remove();
         }
         var C = M.duplicate();
         C.name = vrUniqueCompName(S.want || S.name, C);
         C.parentFolder = folder;
+        C.comment = VR_MARK;
         C.width = S.w;
         C.height = S.h;
         var Kw = S.w / M.width, Kh = S.h / M.height;

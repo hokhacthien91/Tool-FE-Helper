@@ -8,7 +8,7 @@ import subprocess
 import time
 
 from . import system
-from .system import kill_tree, popen_group_kwargs
+from .system import kill_render_cores, kill_tree, popen_group_kwargs
 
 PROG_RE = re.compile(r"PROGRESS:\s+\d+:\d+:\d+:\d+ \((\d+)\)")
 
@@ -25,7 +25,7 @@ def pick_template(templates, w, h):
     return want
 
 
-def aerender(project, comp, template, out, logpath, on_progress=None, timeout=3600):
+def aerender(project, comp, template, out, logpath, on_progress=None, timeout=3600, should_stop=None):
     if os.path.exists(out):
         os.remove(out)  # never mistake a previous render for this one
     # Read at call time: system.follow_running_ae() may have switched version.
@@ -60,6 +60,9 @@ def aerender(project, comp, template, out, logpath, on_progress=None, timeout=36
         if p.poll() is not None:
             reason = "aerender exited (%s) before finishing" % p.returncode
             break
+        if should_stop and should_stop():
+            status, reason = "cancelled", "cancelled by the user"
+            break
         if time.time() - t0 > timeout:
             reason = "timeout after %ds" % timeout
             break
@@ -67,6 +70,10 @@ def aerender(project, comp, template, out, logpath, on_progress=None, timeout=36
         kill_tree(p)
         time.sleep(1.0)
         kill_tree(p, hard=True)
+    if status != "done":
+        kill_render_cores(project)  # it outlives aerender and would keep writing the MP4
+    if status == "cancelled" and os.path.exists(out):
+        os.remove(out)  # a half-written MP4
     if status == "done" and not os.path.exists(out):
         status, reason = "failed", "log says finished but no output file"
     warnings = sorted(set(re.sub(r"Grouped_Message_\{.*?\}", "", ln).strip()

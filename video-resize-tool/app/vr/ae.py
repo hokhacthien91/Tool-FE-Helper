@@ -37,8 +37,28 @@ def _jsx_lib(name):
         return f.read()
 
 
-def run(task, params=None, timeout=600):
+# Tasks that take a second at most. A lost call (12/11: two tools drove the same
+# AE at once and one answer never came) then fails in 30-60 s, not 10 minutes.
+QUICK = {"status": 30, "save": 120, "open_comp": 60, "remove_comp": 60, "rename_comp": 60,
+         "dup_comp": 60, "replace_comp": 60, "close_if": 60}
+
+
+class AECancelled(Exception):
+    """Cancel was pressed while waiting for AE (pipeline treats it as Cancel)."""
+
+
+# Per worker thread: a function that says whether Cancel was pressed.
+_tls = threading.local()
+
+
+def set_cancel_check(fn):
+    _tls.cancelled = fn
+
+
+def run(task, params=None, timeout=None):
     """Run vrTask_<task>(params) in AE and return its result dict."""
+    if timeout is None:
+        timeout = QUICK.get(task, 600)
     os.makedirs(RUN_DIR, exist_ok=True)
     rid = uuid.uuid4().hex[:10]
     out = os.path.join(RUN_DIR, "%s_%s.json" % (task, rid))
@@ -64,7 +84,11 @@ def run(task, params=None, timeout=600):
             raise AEError(err)
         # AE may still be working after the hand-over returned: wait on the file.
         deadline = time.time() + timeout
+        cancelled = getattr(_tls, "cancelled", None)
         while not os.path.exists(out):
+            if cancelled and cancelled():
+                # AE may still finish this script; the step stops waiting for it.
+                raise AECancelled()
             if time.time() > deadline:
                 raise AEError("AE did not answer task '%s' within %ds. Either a dialog is open in After Effects, "
                               "or 'Allow Scripts to Write Files and Access Network' is off "

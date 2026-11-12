@@ -3,6 +3,10 @@ one screenshot per step. Waiting segments are logged so they can be sped up.
 
   python record_guide.py <out_dir> [<aep> <master comp> <WxH>]
 Writes <out_dir>/raw.webm, <out_dir>/segments.json, <out_dir>/0*.png
+VR_URL picks the server (default :8767); run it on a test server with its own
+VR_JOBS so the demo job does not land in the user's jobs. VR_TASK is the task
+folder Copy deliverables writes into (default <out_dir>/task).
+Needs After Effects free: it builds, asks the AI, renders and delivers for real.
 """
 import json
 import os
@@ -12,15 +16,17 @@ import time
 from playwright.sync_api import sync_playwright
 
 OUT = sys.argv[1]
-URL = "http://127.0.0.1:8767/"
+URL = os.environ.get("VR_URL", "http://127.0.0.1:8767/")
 AEP = sys.argv[2] if len(sys.argv) > 4 else \
     "/Users/thien.ho/Projects/Tool-FE-Helper/Video-resize-testset/01-Middlesex-dOOH/P0012743-Middlesex-NEXUS-dOOH-022.aep"
 MASTER = sys.argv[3] if len(sys.argv) > 4 else "P0012743-Middlesex-NEXUS-10s-LAND"
 TW, TH = (sys.argv[4] if len(sys.argv) > 4 else "1080x1920").split("x")
 SZ = "#sz-%sx%s" % (TW, TH)
 W, H = 1440, 900
+TASK = os.environ.get("VR_TASK") or os.path.join(sys.argv[1], "task", "P0012743 Middlesex resize")
 
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(os.path.dirname(TASK), exist_ok=True)  # the task folder itself is created by the tool
 segs = []  # [start, end] seconds of waits, relative to T0
 T0 = None
 
@@ -40,6 +46,13 @@ CAP_JS = """(t) => {
   }
   el.innerHTML = t; el.style.display = t ? 'block' : 'none';
 }"""
+
+
+def centre(loc):
+    """Scroll so the element sits mid-screen, clear of the caption at the bottom
+    (scroll_into_view_if_needed leaves it at the edge, under the caption)."""
+    loc.evaluate("e => e.scrollIntoView({block: 'center'})")
+    loc.page.wait_for_timeout(300)
 
 
 def cap(page, text, hold=2.5):
@@ -74,7 +87,7 @@ def full(page, name):
 
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = p.chromium.launch(channel="chrome")  # the installed Chrome: no browser download needed
     ctx = b.new_context(viewport={"width": W, "height": H}, color_scheme="dark",
                         record_video_dir=OUT, record_video_size={"width": W, "height": H})
     page = ctx.new_page()
@@ -95,19 +108,19 @@ with sync_playwright() as p:
     # ---- 1. intake
     cap(page, "Step 1 · Preflight: fonts and footage are checked first. Missing footage on disabled layers is only a warning", 3.5)
     radio = page.locator('input[name=m][data-name="%s"]' % MASTER)
-    radio.scroll_into_view_if_needed()
+    centre(radio)
     cap(page, "Pick the <b>master comp</b>: each comp shows its own size; likely masters come first", 2)
     radio.click()
     page.wait_for_timeout(1200)
     chip = page.locator('.chip.preset[data-w="%s"][data-h="%s"]' % (TW, TH) + '')
-    chip.scroll_into_view_if_needed()
+    centre(chip)
     cap(page, "Pick the <b>sizes</b> to make: presets, or type a custom W x H", 1.5)
     chip.click()
     page.wait_for_timeout(1200)
-    page.locator("#autobox").scroll_into_view_if_needed()
+    centre(page.locator("#autobox"))
     cap(page, "<b>Auto</b> runs steps 2 → 4 in one go. Here we leave it off to show each step", 3)
     full(page, "02-intake.png")
-    page.locator("#next").scroll_into_view_if_needed()
+    centre(page.locator("#next"))
     click_wait(page, "#next", "#go", "Analysing layers and grabbing thumbnails…")
 
     # ---- 2. roles
@@ -118,19 +131,20 @@ with sync_playwright() as p:
     page.wait_for_timeout(1200)
     cap(page, "Rows marked ⚠ are guesses with low confidence: check those, change the role if wrong", 3)
     full(page, "03-roles.png")
-    page.locator("#go").scroll_into_view_if_needed()
+    centre(page.locator("#go"))
     click_wait(page, "#go", "#render", "Building the new size in AE, grabbing frames at every sample time, running checks…")
 
     # ---- 3. review
     page.evaluate("window.scrollTo(0, 0)")
-    cap(page, "Step 3 · Review sizes (you check): master and new size, frame by frame at the same times", 3.5)
+    cap(page, "Step 3 · Review sizes (you check): the master on top, then a table per size", 3)
     card = page.locator(SZ)
-    card.scroll_into_view_if_needed()
-    cap(page, "Status PASS / WARN / FAIL comes from the checks: stretching, uncovered edges, text out of frame", 3.5)
+    centre(card)
+    cap(page, "One row per <b>version</b>, frames lined up by time. The blue row is <b>in use</b>: it renders", 3.5)
+    cap(page, "PASS / WARN / FAIL come from the checks: stretching, uncovered edges, text out of frame", 3)
     full(page, "04-review.png")
-    fig = page.locator(SZ + " .strip figure").nth(2)
-    fig.scroll_into_view_if_needed()
-    cap(page, "Click a frame to compare it side by side with the master", 1.2)
+    fig = page.locator(SZ + " .rowstrip figure[data-i]").nth(1)
+    centre(fig)
+    cap(page, "Click a frame to compare it with the master at the same moment", 1.2)
     fig.click()
     page.wait_for_selector("#lb:not(.hidden)")
     page.wait_for_timeout(1500)
@@ -139,34 +153,73 @@ with sync_playwright() as p:
     shot(page, "05-compare.png")
     page.click("#lbclose")
     page.wait_for_timeout(600)
-    params = page.locator(SZ + " .params")
-    params.scroll_into_view_if_needed()
-    cap(page, "Not right? Move content X/Y, scale text/logo or background, or ✨ AI suggest, then Rebuild", 3.5)
-    ok = page.locator(SZ + ' input[value=ok]')
-    ok.scroll_into_view_if_needed()
-    cap(page, "Happy with it: choose <b>✅ OK</b> and click <b>Apply</b>", 1.5)
-    ok.check()
+    box = page.locator(SZ + " textarea")
+    centre(box)
+    cap(page, "Not right? <b>Open in AE</b> and adjust there, then <b>Reload</b>. Or ask the AI for a version", 3.5)
+    box.click()
+    box.type("make the text a bit bigger", delay=25)
     page.wait_for_timeout(500)
-    page.click(SZ + ' [data-act=apply]')
+    # Either the new AI row or an error (usage limit…): never wait forever on the AI.
+    click_wait(page, SZ + " [data-act=suggest]", SZ + " .vlab b:has-text('AI 1'), #err:not(.hidden)",
+               "The AI looks at the frames and builds its own version…")
+    centre(page.locator(SZ))
+    cap(page, "The AI version is a new row. <b>Use</b> makes it the one that renders; nothing is lost", 4)
+    ok = page.locator(SZ + " [data-act=ok]")
+    centre(ok)
+    cap(page, "Happy with the one in use: <b>Approve</b>. Only approved sizes render", 2)
+    ok.click()
     page.wait_for_selector("#render:not([disabled])", timeout=60000)
     page.wait_for_timeout(800)
-    page.locator("#render").scroll_into_view_if_needed()
-    cap(page, "Then <b>Render</b> every approved size", 1.5)
+    centre(page.locator("#render"))
+    cap(page, "Then <b>Render</b>: only sizes that changed are rendered", 1.5)
     click_wait(page, "#render", "video", "aerender is rendering the MP4…")
 
-    # ---- 4. render
+    # ---- 4. render & deliver
     page.evaluate("window.scrollTo(0, 0)")
-    cap(page, "Step 4 · Render (you check): watch every MP4, mainly the motion between the sample times", 3)
+    cap(page, "Step 4 · Render & deliver (you check): watch every MP4, mainly the motion between the sample times", 3)
     full(page, "06-render.png")
-    page.locator("#rep").scroll_into_view_if_needed()
-    cap(page, "<b>Export report.html</b>: frames, checks and video in one page + a .zip to send", 2)
+    # Show the result: the rendered MP4, full screen, at real speed (not sped up).
+    vid = page.locator("video").first
+    centre(vid)
+    cap(page, "Here is the result: the 9:16 MP4 the tool rendered", 2)
+    page.evaluate(CAP_JS, "")
+    vid.evaluate("v => { v.muted = true; v.currentTime = 0; }")
+    vid.evaluate("v => v.requestFullscreen ? v.requestFullscreen().catch(() => null) : null")
+    page.wait_for_timeout(800)
+    vid.evaluate("v => v.play()")
+    page.wait_for_timeout(int((vid.evaluate("v => v.duration") or 10) * 1000) + 600)
+    page.evaluate("() => document.fullscreenElement ? document.exitFullscreen() : null")
+    page.wait_for_timeout(800)
+    centre(page.locator("#outdir"))
+    cap(page, "Type the <b>task folder</b> (the one with 1-Doc, 2-Stock, 3-Working Files, 4-Output)", 2)
+    page.fill("#outdir", "")
+    page.type("#outdir", TASK, delay=8)
+    page.wait_for_timeout(500)
+    page.click("#deliver")
+    page.wait_for_selector("#cleanbox")
+    centre(page.locator("#cleanbox"))
+    cap(page, "A last check: where the files go, MP4s held back, and the unused versions left out of the .aep", 4)
+    shot(page, "07-deliver.png")
+    click_wait(page, "#cleango", ".lv-PASS code", "Copying MP4s, the working .aep and the report…")
+    cap(page, "MP4s → 4-Output · .aep → 3-Working Files · report → 1-Doc", 3)
+
+    # ---- the report (read the job id first: the report page has no `job`)
+    jid = page.evaluate("job && job.id")
+    centre(page.locator("#rep"))
+    cap(page, "<b>Preview report</b>: the QC report that went into 1-Doc", 1.5)
     page.click("#rep")
     page.wait_for_selector("#replink a", timeout=120000)
-    page.wait_for_timeout(1000)
-    page.locator("#outdir").scroll_into_view_if_needed()
-    cap(page, "<b>Copy deliverables</b>: MP4s + working .aep + report.zip into your output folder. Done.", 4)
-    shot(page, "07-deliver.png")
-    jid = page.evaluate("job && job.id")
+    href = page.eval_on_selector("#replink a", "a => a.href")
+    page.goto(href)
+    page.wait_for_load_state("load")
+    page.wait_for_timeout(1200)
+    cap(page, "Every size: frames next to the master, the checks, the version in use and the MP4 results", 3)
+    for _ in range(6):
+        page.mouse.wheel(0, 450)
+        page.wait_for_timeout(900)
+    cap(page, "Send it with the files, or keep it as the record of the job. Done.", 3)
+    page.go_back()
+    page.wait_for_timeout(800)
     page.close()
     ctx.close()
     b.close()
